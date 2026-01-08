@@ -14,9 +14,15 @@ let package = Package(
             targets: ["JellyfinKit"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/jellyfin/jellyfin-sdk-swift.git", from: "0.6.0"),
+    ],
     targets: [
         .target(
-            name: "JellyfinKit"
+            name: "JellyfinKit",
+            dependencies: [
+                .product(name: "JellyfinAPI", package: "jellyfin-sdk-swift"),
+            ]
         ),
         .testTarget(
             name: "JellyfinKitTests",

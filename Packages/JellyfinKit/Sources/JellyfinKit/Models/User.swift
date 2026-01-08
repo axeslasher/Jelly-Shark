@@ -1,7 +1,10 @@
 import Foundation
 
 /// Represents a Jellyfin user
-public struct User: Identifiable, Sendable, Codable, Equatable {
+///
+/// This is a clean, app-specific representation of a user.
+/// It is created from the SDK's UserDto via the adapter layer.
+public struct User: Identifiable, Sendable, Equatable, Hashable {
     /// Unique identifier for the user
     public let id: String
 
@@ -14,7 +17,7 @@ public struct User: Identifiable, Sendable, Codable, Equatable {
     /// Whether this user is an administrator
     public let isAdministrator: Bool
 
-    /// URL to the user's profile image
+    /// Tag for the user's profile image
     public let primaryImageTag: String?
 
     public init(
@@ -29,36 +32,5 @@ public struct User: Identifiable, Sendable, Codable, Equatable {
         self.serverId = serverId
         self.isAdministrator = isAdministrator
         self.primaryImageTag = primaryImageTag
-    }
-}
-
-// MARK: - Codable
-
-extension User {
-    enum CodingKeys: String, CodingKey {
-        case id = "Id"
-        case name = "Name"
-        case serverId = "ServerId"
-        case isAdministrator = "Policy"
-        case primaryImageTag = "PrimaryImageTag"
-    }
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        name = try container.decode(String.self, forKey: .name)
-        serverId = try container.decodeIfPresent(String.self, forKey: .serverId)
-        primaryImageTag = try container.decodeIfPresent(String.self, forKey: .primaryImageTag)
-
-        // Policy is a nested object in the API
-        if let policy = try? container.nestedContainer(keyedBy: PolicyCodingKeys.self, forKey: .isAdministrator) {
-            isAdministrator = (try? policy.decode(Bool.self, forKey: .isAdministrator)) ?? false
-        } else {
-            isAdministrator = false
-        }
-    }
-
-    private enum PolicyCodingKeys: String, CodingKey {
-        case isAdministrator = "IsAdministrator"
     }
 }

@@ -1,7 +1,10 @@
 import Foundation
 
 /// Represents a media item from Jellyfin (movie, episode, etc.)
-public struct MediaItem: Identifiable, Sendable, Codable, Equatable {
+///
+/// This is a clean, app-specific representation of media.
+/// It is created from the SDK's BaseItemDto via the adapter layer.
+public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// Unique identifier for the item
     public let id: String
 
@@ -32,7 +35,7 @@ public struct MediaItem: Identifiable, Sendable, Codable, Equatable {
     /// Genres associated with this item
     public let genres: [String]?
 
-    /// Tag for the primary image
+    /// Tags for various images
     public let imageTags: ImageTags?
 
     /// User-specific data (watch status, favorite, etc.)
@@ -90,7 +93,7 @@ public struct MediaItem: Identifiable, Sendable, Codable, Equatable {
 // MARK: - Supporting Types
 
 /// Types of media items in Jellyfin
-public enum MediaType: String, Sendable, Codable {
+public enum MediaType: String, Sendable, Hashable {
     case movie = "Movie"
     case series = "Series"
     case season = "Season"
@@ -103,16 +106,10 @@ public enum MediaType: String, Sendable, Codable {
     case folder = "Folder"
     case collectionFolder = "CollectionFolder"
     case unknown
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let rawValue = try container.decode(String.self)
-        self = MediaType(rawValue: rawValue) ?? .unknown
-    }
 }
 
 /// Image tags for a media item
-public struct ImageTags: Sendable, Codable, Equatable {
+public struct ImageTags: Sendable, Equatable, Hashable {
     public let primary: String?
     public let backdrop: String?
     public let banner: String?
@@ -132,18 +129,10 @@ public struct ImageTags: Sendable, Codable, Equatable {
         self.thumb = thumb
         self.logo = logo
     }
-
-    enum CodingKeys: String, CodingKey {
-        case primary = "Primary"
-        case backdrop = "Backdrop"
-        case banner = "Banner"
-        case thumb = "Thumb"
-        case logo = "Logo"
-    }
 }
 
 /// User-specific data for a media item
-public struct UserData: Sendable, Codable, Equatable {
+public struct UserData: Sendable, Equatable, Hashable {
     /// Playback position in ticks
     public let playbackPositionTicks: Int64?
 
@@ -172,14 +161,6 @@ public struct UserData: Sendable, Codable, Equatable {
         self.played = played
         self.lastPlayedDate = lastPlayedDate
     }
-
-    enum CodingKeys: String, CodingKey {
-        case playbackPositionTicks = "PlaybackPositionTicks"
-        case playCount = "PlayCount"
-        case isFavorite = "IsFavorite"
-        case played = "Played"
-        case lastPlayedDate = "LastPlayedDate"
-    }
 }
 
 // MARK: - Computed Properties
@@ -206,29 +187,21 @@ extension MediaItem {
               total > 0 else { return nil }
         return Double(position) / Double(total)
     }
-}
 
-// MARK: - Codable
+    /// Whether the user has started watching this item
+    public var hasProgress: Bool {
+        guard let percentage = progressPercentage else { return false }
+        return percentage > 0 && percentage < 1
+    }
 
-extension MediaItem {
-    enum CodingKeys: String, CodingKey {
-        case id = "Id"
-        case name = "Name"
-        case originalTitle = "OriginalTitle"
-        case type = "Type"
-        case overview = "Overview"
-        case productionYear = "ProductionYear"
-        case runTimeTicks = "RunTimeTicks"
-        case communityRating = "CommunityRating"
-        case officialRating = "OfficialRating"
-        case genres = "Genres"
-        case imageTags = "ImageTags"
-        case userData = "UserData"
-        case seriesId = "SeriesId"
-        case seriesName = "SeriesName"
-        case seasonId = "SeasonId"
-        case seasonName = "SeasonName"
-        case indexNumber = "IndexNumber"
-        case parentIndexNumber = "ParentIndexNumber"
+    /// Display title for episodes (e.g., "S01E05 - Episode Title")
+    public var episodeDisplayTitle: String? {
+        guard type == .episode,
+              let season = parentIndexNumber,
+              let episode = indexNumber else { return nil }
+
+        let seasonStr = String(format: "S%02d", season)
+        let episodeStr = String(format: "E%02d", episode)
+        return "\(seasonStr)\(episodeStr) - \(name)"
     }
 }

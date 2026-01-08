@@ -1,10 +1,7 @@
 import Foundation
 
 /// Errors that can occur when communicating with the Jellyfin API
-public enum APIError: Error, Sendable, Equatable {
-    /// The requested feature is not yet implemented
-    case notImplemented
-
+public enum APIError: Error, Sendable {
     /// The server URL is invalid
     case invalidURL
 
@@ -44,8 +41,6 @@ public enum APIError: Error, Sendable, Equatable {
 extension APIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case .notImplemented:
-            return "This feature is not yet implemented"
         case .invalidURL:
             return "Invalid server URL"
         case .httpError(let statusCode):
@@ -63,7 +58,7 @@ extension APIError: LocalizedError {
         case .decodingError(let message):
             return "Failed to parse response: \(message)"
         case .unsupportedServerVersion(let version):
-            return "Server version \(version) is not supported. Minimum required: \(ServerInfo.minimumVersion)"
+            return "Server version \(version) is not supported. Minimum required: 10.8.0"
         case .notAuthenticated:
             return "Not authenticated. Please sign in."
         case .generic(let message):

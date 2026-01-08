@@ -1,7 +1,10 @@
 import Foundation
 
 /// Represents a Jellyfin library/collection
-public struct Library: Identifiable, Sendable, Codable, Equatable {
+///
+/// This is a clean, app-specific representation of a library.
+/// It is created from the SDK's BaseItemDto via the adapter layer.
+public struct Library: Identifiable, Sendable, Equatable, Hashable {
     /// Unique identifier for the library
     public let id: String
 
@@ -33,7 +36,7 @@ public struct Library: Identifiable, Sendable, Codable, Equatable {
 }
 
 /// Types of library collections in Jellyfin
-public enum CollectionType: String, Sendable, Codable {
+public enum CollectionType: String, Sendable, Hashable {
     case movies = "movies"
     case tvshows = "tvshows"
     case music = "music"
@@ -46,22 +49,38 @@ public enum CollectionType: String, Sendable, Codable {
     case playlists = "playlists"
     case folders = "folders"
     case unknown
-
-    public init(from decoder: Decoder) throws {
-        let container = try decoder.singleValueContainer()
-        let rawValue = try container.decode(String.self)
-        self = CollectionType(rawValue: rawValue) ?? .unknown
-    }
 }
 
-// MARK: - Codable
+// MARK: - Computed Properties
 
 extension Library {
-    enum CodingKeys: String, CodingKey {
-        case id = "Id"
-        case name = "Name"
-        case collectionType = "CollectionType"
-        case primaryImageTag = "PrimaryImageTag"
-        case childCount = "ChildCount"
+    /// SF Symbol name for the library type
+    public var systemImageName: String {
+        switch collectionType {
+        case .movies:
+            return "film.fill"
+        case .tvshows:
+            return "tv.fill"
+        case .music:
+            return "music.note"
+        case .musicvideos:
+            return "music.note.tv.fill"
+        case .homevideos:
+            return "video.fill"
+        case .boxsets:
+            return "square.stack.fill"
+        case .books:
+            return "book.fill"
+        case .photos:
+            return "photo.fill"
+        case .livetv:
+            return "antenna.radiowaves.left.and.right"
+        case .playlists:
+            return "music.note.list"
+        case .folders:
+            return "folder.fill"
+        case .unknown, .none:
+            return "questionmark.folder.fill"
+        }
     }
 }
