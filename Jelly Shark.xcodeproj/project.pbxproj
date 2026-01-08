@@ -96,6 +96,7 @@
 				6DBADABF2F0E33E200380536 /* CLAUDE.md */,
 				6DBADABE2F0E33D200380536 /* .claude */,
 				6DBADABA2F0E33A000380536 /* docs */,
+				6DBADAD12F0E500000000001 /* Packages */,
 				6DBADA902F0E2C2D00380536 /* Jelly Shark */,
 				6DBADAA02F0E2C2E00380536 /* Jelly SharkTests */,
 				6DBADAAA2F0E2C2E00380536 /* Jelly SharkUITests */,
@@ -111,6 +112,13 @@
 				6DBADAA72F0E2C2E00380536 /* Jelly SharkUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		6DBADAD12F0E500000000001 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Packages;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -135,6 +143,9 @@
 			);
 			name = "Jelly Shark";
 			packageProductDependencies = (
+				6DBADAD22F0E500000000002 /* JellyfinKit */,
+				6DBADAD32F0E500000000003 /* DesignSystem */,
+				6DBADAD42F0E500000000004 /* Features */,
 			);
 			productName = "Jelly Shark";
 			productReference = 6DBADA8E2F0E2C2D00380536 /* Jelly Shark.app */;
@@ -218,6 +229,11 @@
 			);
 			mainGroup = 6DBADA852F0E2C2D00380536;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				6DBADAD52F0E500000000005 /* XCLocalSwiftPackageReference "Packages/JellyfinKit" */,
+				6DBADAD62F0E500000000006 /* XCLocalSwiftPackageReference "Packages/DesignSystem" */,
+				6DBADAD72F0E500000000007 /* XCLocalSwiftPackageReference "Packages/Features" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 6DBADA8F2F0E2C2D00380536 /* Products */;
 			projectDirPath = "";
@@ -648,6 +664,36 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		6DBADAD52F0E500000000005 /* XCLocalSwiftPackageReference "Packages/JellyfinKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/JellyfinKit;
+		};
+		6DBADAD62F0E500000000006 /* XCLocalSwiftPackageReference "Packages/DesignSystem" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/DesignSystem;
+		};
+		6DBADAD72F0E500000000007 /* XCLocalSwiftPackageReference "Packages/Features" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/Features;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6DBADAD22F0E500000000002 /* JellyfinKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = JellyfinKit;
+		};
+		6DBADAD32F0E500000000003 /* DesignSystem */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = DesignSystem;
+		};
+		6DBADAD42F0E500000000004 /* Features */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Features;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 6DBADA862F0E2C2D00380536 /* Project object */;
 }
