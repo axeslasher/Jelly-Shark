@@ -83,21 +83,11 @@ private struct ThemeKey: EnvironmentKey {
     static let defaultValue: any Theme = StandardTheme()
 }
 
-private struct ThemeManagerKey: EnvironmentKey {
-    @MainActor static let defaultValue: ThemeManager = .shared
-}
-
 public extension EnvironmentValues {
     /// The current theme
     var theme: any Theme {
         get { self[ThemeKey.self] }
         set { self[ThemeKey.self] = newValue }
-    }
-
-    /// The theme manager
-    var themeManager: ThemeManager {
-        get { self[ThemeManagerKey.self] }
-        set { self[ThemeManagerKey.self] = newValue }
     }
 }
 
@@ -108,6 +98,6 @@ public extension View {
     func withThemeEnvironment(_ manager: ThemeManager = .shared) -> some View {
         self
             .environment(\.theme, manager.currentTheme)
-            .environment(\.themeManager, manager)
+            .environment(manager)
     }
 }

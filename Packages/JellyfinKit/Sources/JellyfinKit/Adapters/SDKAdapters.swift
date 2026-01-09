@@ -20,7 +20,7 @@ extension User {
         self.init(
             id: dto.id ?? "",
             name: dto.name ?? "Unknown",
-            serverId: dto.serverId,
+            serverId: dto.serverID,
             isAdministrator: dto.policy?.isAdministrator ?? false,
             primaryImageTag: dto.primaryImageTag
         )
@@ -39,15 +39,15 @@ extension MediaItem {
             type: MediaType(from: dto.type),
             overview: dto.overview,
             productionYear: dto.productionYear,
-            runTimeTicks: dto.runTimeTicks,
-            communityRating: dto.communityRating,
+            runTimeTicks: dto.runTimeTicks.map(Int64.init),
+            communityRating: dto.communityRating.map(Double.init),
             officialRating: dto.officialRating,
             genres: dto.genres,
             imageTags: ImageTags(from: dto.imageTags),
             userData: dto.userData.map { UserData(from: $0) },
-            seriesId: dto.seriesId,
+            seriesId: dto.seriesID,
             seriesName: dto.seriesName,
-            seasonId: dto.seasonId,
+            seasonId: dto.seasonID,
             seasonName: dto.seasonName,
             indexNumber: dto.indexNumber,
             parentIndexNumber: dto.parentIndexNumber
@@ -117,10 +117,10 @@ extension UserData {
     /// Create UserData from the SDK's UserItemDataDto
     init(from dto: JellyfinAPI.UserItemDataDto) {
         self.init(
-            playbackPositionTicks: dto.playbackPositionTicks,
+            playbackPositionTicks: dto.playbackPositionTicks.map(Int64.init),
             playCount: dto.playCount,
             isFavorite: dto.isFavorite ?? false,
-            played: dto.played ?? false,
+            played: dto.isPlayed ?? false,
             lastPlayedDate: dto.lastPlayedDate
         )
     }
@@ -144,8 +144,8 @@ extension Library {
 // MARK: - CollectionType Adapter
 
 extension CollectionType {
-    /// Create a CollectionType from the SDK's CollectionTypeOptions
-    init(from type: JellyfinAPI.CollectionTypeOptions?) {
+    /// Create a CollectionType from the SDK's CollectionType
+    init(from type: JellyfinAPI.CollectionType?) {
         guard let type = type else {
             self = .unknown
             return
@@ -181,15 +181,11 @@ extension CollectionType {
 }
 
 // MARK: - APIError Adapter
-
-extension APIError {
-    /// Create an APIError from the SDK's JellyfinAPIError
-    static func from(sdkError: JellyfinAPI.JellyfinAPIError) -> APIError {
-        switch sdkError {
-        case .unauthenticated:
-            return .unauthorized
-        default:
-            return .generic(sdkError.localizedDescription)
-        }
-    }
-}
+//
+// NOTE: The SDK doesn't expose a JellyfinAPIError type. Instead it uses:
+// - JellyfinClient.ClientError for client-specific errors
+// - APIError from the Get library for HTTP errors
+// - Standard Swift errors
+//
+// Error handling in JellyfinClient needs to be updated to handle these types.
+// This adapter is removed for now to allow compilation.

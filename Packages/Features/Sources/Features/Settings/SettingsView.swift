@@ -4,7 +4,7 @@ import DesignSystem
 /// Settings screen for app configuration
 public struct SettingsView: View {
     @Environment(\.theme) private var theme
-    @Environment(\.themeManager) private var themeManager
+    @Environment(ThemeManager.self) private var themeManager
 
     public init() {}
 
@@ -109,7 +109,7 @@ public struct SettingsView: View {
 
     private var themeSelectionView: some View {
         List {
-            ForEach(themeManager.availableThemes, id: \.self) { themeId in
+            ForEach(themeManager.availableThemes, id: \.self) { (themeId: ThemeIdentifier) in
                 Button {
                     themeManager.switchTheme(to: themeId)
                 } label: {

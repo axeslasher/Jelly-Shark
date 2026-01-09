@@ -1,10 +1,11 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 
 import PackageDescription
 
 let package = Package(
     name: "DesignSystem",
     platforms: [
+        .macOS(.v14),
         .tvOS(.v26),
         .visionOS(.v2)
     ],

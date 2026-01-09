@@ -158,10 +158,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         let sdkConfiguration = JellyfinAPI.JellyfinClient.Configuration(
             url: configuration.serverURL,
+            accessToken: nil,
             client: configuration.clientName,
-            version: configuration.clientVersion,
             deviceName: configuration.deviceName,
-            deviceID: configuration.deviceID
+            deviceID: configuration.deviceID,
+            version: configuration.clientVersion
         )
 
         self.sdkClient = JellyfinAPI.JellyfinClient(configuration: sdkConfiguration)
@@ -182,8 +183,6 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             _userId = userDto.id
 
             return user
-        } catch let error as JellyfinAPI.JellyfinAPIError {
-            throw APIError.from(sdkError: error)
         } catch let error as APIError {
             throw error
         } catch {
@@ -192,7 +191,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     public func signOut() async {
-        await sdkClient.signOut()
+        try? await sdkClient.signOut()
         _currentUser = nil
         _userId = nil
     }
@@ -205,13 +204,14 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         do {
+            var parameters = Paths.GetUserViewsParameters()
+            parameters.userID = userId
+
             let response = try await sdkClient.send(
-                Paths.getUserViews(userID: userId)
+                Paths.getUserViews(parameters: parameters)
             )
 
             return response.value.items?.compactMap { Library(from: $0) } ?? []
-        } catch let error as JellyfinAPI.JellyfinAPIError {
-            throw APIError.from(sdkError: error)
         } catch let error as APIError {
             throw error
         } catch {
@@ -232,14 +232,12 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.startIndex = startIndex
             parameters.isRecursive = true
             parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
-            parameters.sortBy = [ItemSortBy.sortName.rawValue]
+            parameters.sortBy = [.sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
-        } catch let error as JellyfinAPI.JellyfinAPIError {
-            throw APIError.from(sdkError: error)
         } catch let error as APIError {
             throw error
         } catch {
@@ -256,12 +254,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         do {
             let response = try await sdkClient.send(
-                Paths.getItem(userID: userId, itemID: itemId)
+                Paths.getItem(itemID: itemId, userID: userId)
             )
 
             return MediaItem(from: response.value)
-        } catch let error as JellyfinAPI.JellyfinAPIError {
-            throw APIError.from(sdkError: error)
         } catch let error as APIError {
             throw error
         } catch {
@@ -297,17 +293,16 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         do {
             var parameters = Paths.GetResumeItemsParameters()
+            parameters.userID = userId
             parameters.limit = limit
             parameters.fields = [.overview, .genres, .dateCreated]
             parameters.mediaTypes = [.video]
 
             let response = try await sdkClient.send(
-                Paths.getResumeItems(userID: userId, parameters: parameters)
+                Paths.getResumeItems(parameters: parameters)
             )
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
-        } catch let error as JellyfinAPI.JellyfinAPIError {
-            throw APIError.from(sdkError: error)
         } catch let error as APIError {
             throw error
         } catch {
@@ -324,17 +319,16 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         do {
             var parameters = Paths.GetLatestMediaParameters()
+            parameters.userID = userId
             parameters.parentID = libraryId
             parameters.limit = limit
             parameters.fields = [.overview, .genres, .dateCreated]
 
             let response = try await sdkClient.send(
-                Paths.getLatestMedia(userID: userId, parameters: parameters)
+                Paths.getLatestMedia(parameters: parameters)
             )
 
             return response.value.compactMap { MediaItem(from: $0) }
-        } catch let error as JellyfinAPI.JellyfinAPIError {
-            throw APIError.from(sdkError: error)
         } catch let error as APIError {
             throw error
         } catch {
