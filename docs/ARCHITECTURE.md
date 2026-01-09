@@ -23,9 +23,69 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 - Data model definitions (Media, User, Library, etc.)
 - Media streaming coordination
 
-**Dependencies**: Foundation, potentially Alamofire or native URLSession
+**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift)
 
 **Platform support**: Fully shared (iOS, tvOS, visionOS)
+
+#### SDK Integration Architecture
+
+JellyfinKit wraps the official `jellyfin-sdk-swift` package using a **Facade/Wrapper pattern**. This provides a clean, app-specific API while leveraging the official SDK for network requests and API compatibility.
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                  App (Features module)                   │
+├─────────────────────────────────────────────────────────┤
+│                   JellyfinKit (ours)                     │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │  JellyfinClientProtocol                           │  │
+│  │  - Clean, app-focused async API                   │  │
+│  │  - Our domain types: User, MediaItem, Library     │  │
+│  └──────────────────────┬────────────────────────────┘  │
+│                         │ wraps                          │
+│  ┌──────────────────────▼────────────────────────────┐  │
+│  │           jellyfin-sdk-swift (official)           │  │
+│  │  - JellyfinAPI.JellyfinClient                     │  │
+│  │  - SDK types: BaseItemDto, UserDto, etc.          │  │
+│  │  - Auto-generated from OpenAPI spec               │  │
+│  └───────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### Why This Pattern?
+
+**Benefits of wrapping the SDK:**
+1. **Clean API surface**: App code works with simple `User`, `MediaItem`, `Library` types instead of verbose SDK DTOs
+2. **Isolation from SDK changes**: SDK updates don't ripple through the entire app
+3. **Testability**: `JellyfinClientProtocol` enables easy mocking for unit tests
+4. **Curated functionality**: Only expose methods the app actually needs
+5. **Computed conveniences**: Add `formattedRuntime`, `progressPercentage`, etc. on our types
+
+**What the SDK provides:**
+- Auto-generated API coverage matching Jellyfin server OpenAPI spec
+- Proper authentication header handling
+- Type-safe request/response handling
+- Maintained by the Jellyfin team
+
+#### Adapter Layer
+
+The `Adapters/SDKAdapters.swift` file contains extensions that map SDK types to our domain types:
+
+```swift
+// SDK type → Our type
+extension User {
+    init(from dto: JellyfinAPI.UserDto) { ... }
+}
+
+extension MediaItem {
+    init(from dto: JellyfinAPI.BaseItemDto) { ... }
+}
+
+extension Library {
+    init(from dto: JellyfinAPI.BaseItemDto) { ... }
+}
+```
+
+This adapter pattern keeps mapping logic centralized and testable.
 
 ---
 
@@ -205,7 +265,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 
 ## Open Questions
 
-1. **Networking layer**: Native URLSession vs Alamofire?
+1. ~~**Networking layer**: Native URLSession vs Alamofire?~~ → Resolved: Using official `jellyfin-sdk-swift` SDK
 2. **Navigation architecture**: Coordinator pattern or SwiftUI native?
 3. **State management**: Observable macros vs manual publishers?
 
@@ -222,3 +282,4 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 | 2025-01-07 | Min deployment tvOS/visionOS 26.0 | Target latest features, smaller user base acceptable for v1 |
 | 2025-01-07 | Start with established video player libs | Don't reinvent playback; focus on UI/UX differentiation |
 | 2025-01-07 | Runtime theme switching | User control is core to customization philosophy |
+| 2025-01-08 | Adopt jellyfin-sdk-swift with wrapper | Official SDK provides API coverage; wrapper pattern gives clean app-facing types |
