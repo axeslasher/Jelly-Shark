@@ -18,8 +18,8 @@ Jelly Shark is a premium Jellyfin client for tvOS and visionOS that elevates the
 - Apple Vision Pro (visionOS 26.0+)
 
 **Development Requirements**:
-- Xcode 16.0+
-- Swift 6.0+
+- Xcode 26.0+
+- Swift 6.2+
 - SwiftUI
 
 ## Building & Running
@@ -80,7 +80,7 @@ JellyfinKit (API Client) → Jellyfin Server → SwiftData (Local Cache)
 ```
 
 ### Tech Stack
-- Language: Swift 6.0+
+- Language: Swift 6.2+
 - UI Framework: SwiftUI
 - Networking: URLSession (or Alamofire if complexity warrants)
 - Persistence: SwiftData
