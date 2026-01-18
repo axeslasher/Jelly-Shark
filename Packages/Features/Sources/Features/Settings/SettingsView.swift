@@ -14,7 +14,7 @@ public struct SettingsView: View {
                 // Server Section
                 Section {
                     NavigationLink {
-                        serverSettingsView
+                        ServerConnectionView()
                     } label: {
                         settingsRow(
                             icon: "server.rack",
@@ -85,26 +85,6 @@ public struct SettingsView: View {
             }
         }
         .padding(.vertical, SpacingTokens.xs)
-    }
-
-    private var serverSettingsView: some View {
-        VStack(spacing: SpacingTokens.lg) {
-            Image(systemName: "server.rack")
-                .font(.system(size: 64))
-                .foregroundStyle(theme.secondary)
-
-            Text("Connect to Server")
-                .font(.jsHeadline)
-                .foregroundStyle(theme.primary)
-
-            Text("Enter your Jellyfin server URL to get started")
-                .font(.jsBody)
-                .foregroundStyle(theme.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(theme.background)
-        .navigationTitle("Server")
     }
 
     private var themeSelectionView: some View {
