@@ -53,8 +53,10 @@ public struct ServerConnectionView: View {
                             .font(.jsCaption)
                             .foregroundStyle(theme.secondary)
 
-                        TextField("https://demo.jellyfin.org", text: $viewModel.serverURL)
+                        TextField("https://demo.jellyfin.org/stable", text: $viewModel.serverURL)
+                            #if !os(tvOS)
                             .textFieldStyle(.roundedBorder)
+                            #endif
                             .autocorrectionDisabled()
                             #if os(tvOS)
                             .keyboardType(.URL)
@@ -68,7 +70,9 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         TextField("demo", text: $viewModel.username)
+                            #if !os(tvOS)
                             .textFieldStyle(.roundedBorder)
+                            #endif
                             .autocorrectionDisabled()
                     }
 
@@ -79,7 +83,9 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         SecureField("Password (leave empty for demo)", text: $viewModel.password)
+                            #if !os(tvOS)
                             .textFieldStyle(.roundedBorder)
+                            #endif
                     }
                 }
                 .padding(.horizontal, SpacingTokens.xl)

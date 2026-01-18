@@ -16,8 +16,8 @@ public enum ConnectionState: Equatable, Sendable {
 public final class ServerConnectionViewModel {
     // MARK: - Input State
 
-    /// Server URL input (e.g., "https://demo.jellyfin.org")
-    public var serverURL: String = "https://demo.jellyfin.org"
+    /// Server URL input (e.g., "https://demo.jellyfin.org/stable")
+    public var serverURL: String = "https://demo.jellyfin.org/stable"
 
     /// Username input
     public var username: String = "demo"
