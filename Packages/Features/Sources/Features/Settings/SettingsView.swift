@@ -5,6 +5,7 @@ import DesignSystem
 public struct SettingsView: View {
     @Environment(\.theme) private var theme
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(ServerConnectionViewModel.self) private var connection
 
     public init() {}
 
@@ -19,7 +20,7 @@ public struct SettingsView: View {
                         settingsRow(
                             icon: "server.rack",
                             title: "Server",
-                            subtitle: "Not connected"
+                            subtitle: serverSubtitle
                         )
                     }
                 } header: {
@@ -64,6 +65,20 @@ public struct SettingsView: View {
                 }
             }
             .navigationTitle("Settings")
+        }
+    }
+
+    private var serverSubtitle: String {
+        switch connection.state {
+        case .connected:
+            if let user = connection.connectedUser {
+                return "Connected as \(user.name)"
+            }
+            return "Connected"
+        case .connecting, .authenticating:
+            return "Connecting..."
+        case .disconnected:
+            return "Not connected"
         }
     }
 
@@ -137,4 +152,5 @@ public struct SettingsView: View {
     SettingsView()
         .withThemeEnvironment()
         .environment(AppSession())
+        .environment(ServerConnectionViewModel())
 }

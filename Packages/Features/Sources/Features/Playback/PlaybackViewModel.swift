@@ -300,8 +300,7 @@ public final class PlaybackViewModel {
 
     func handlePlaybackEnded() async {
         if item.type == .episode,
-           let next = try? await client.getNextEpisode(after: item),
-           let next {
+           let next = try? await client.getNextEpisode(after: item) {
             nextEpisode = next
         } else {
             await stop()

@@ -6,7 +6,7 @@ import JellyfinKit
 public struct ServerConnectionView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
-    @State private var viewModel = ServerConnectionViewModel()
+    @Environment(ServerConnectionViewModel.self) private var viewModel
 
     public init() {}
 
@@ -30,7 +30,8 @@ public struct ServerConnectionView: View {
     // MARK: - Connection Form
 
     private var connectionForm: some View {
-        ScrollView {
+        @Bindable var viewModel = viewModel
+        return ScrollView {
             VStack(spacing: SpacingTokens.xl) {
                 // Header
                 VStack(spacing: SpacingTokens.md) {
@@ -279,4 +280,5 @@ public struct ServerConnectionView: View {
     }
     .withThemeEnvironment()
     .environment(AppSession())
+    .environment(ServerConnectionViewModel())
 }

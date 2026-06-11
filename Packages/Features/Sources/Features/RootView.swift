@@ -6,6 +6,7 @@ import DesignSystem
 public struct RootView: View {
     @State private var themeManager = ThemeManager.shared
     @State private var session = AppSession()
+    @State private var connectionViewModel = ServerConnectionViewModel()
     @State private var selectedTab: Tab = .home
 
     public init() {}
@@ -38,6 +39,7 @@ public struct RootView: View {
         }
         .withThemeEnvironment(themeManager)
         .environment(session)
+        .environment(connectionViewModel)
     }
 }
 
