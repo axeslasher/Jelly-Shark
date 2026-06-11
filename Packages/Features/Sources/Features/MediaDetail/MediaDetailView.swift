@@ -6,6 +6,9 @@ import DesignSystem
 /// Shows full information, play button, and related content
 public struct MediaDetailView: View {
     @Environment(\.theme) private var theme
+    @Environment(AppSession.self) private var session
+
+    @State private var isPresentingPlayer = false
 
     let item: MediaItem
 
@@ -32,6 +35,19 @@ public struct MediaDetailView: View {
         }
         .background(theme.background)
         .navigationTitle(item.name)
+        #if os(macOS)
+        .sheet(isPresented: $isPresentingPlayer) {
+            if let client = session.client {
+                PlaybackContainerView(client: client, item: item)
+            }
+        }
+        #else
+        .fullScreenCover(isPresented: $isPresentingPlayer) {
+            if let client = session.client {
+                PlaybackContainerView(client: client, item: item)
+            }
+        }
+        #endif
     }
 
     private var heroSection: some View {
@@ -56,10 +72,12 @@ public struct MediaDetailView: View {
                         .foregroundStyle(theme.primary)
 
                     // Play Button
-                    Button(action: {}) {
+                    Button {
+                        isPresentingPlayer = true
+                    } label: {
                         HStack(spacing: SpacingTokens.sm) {
                             Image(systemName: "play.fill")
-                            Text("Play")
+                            Text(item.hasProgress ? "Resume" : "Play")
                         }
                         .font(.jsTitle)
                         .foregroundStyle(theme.background)
@@ -69,6 +87,7 @@ public struct MediaDetailView: View {
                         .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .disabled(session.client == nil)
                 }
             }
     }
@@ -139,4 +158,5 @@ public struct MediaDetailView: View {
         )
     }
     .withThemeEnvironment()
+    .environment(AppSession())
 }

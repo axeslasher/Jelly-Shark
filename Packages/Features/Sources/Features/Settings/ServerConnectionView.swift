@@ -5,6 +5,7 @@ import JellyfinKit
 /// View for connecting to a Jellyfin server
 public struct ServerConnectionView: View {
     @Environment(\.theme) private var theme
+    @Environment(AppSession.self) private var session
     @State private var viewModel = ServerConnectionViewModel()
 
     public init() {}
@@ -21,6 +22,9 @@ public struct ServerConnectionView: View {
             }
         }
         .navigationTitle("Server")
+        .onAppear {
+            viewModel.attach(session: session)
+        }
     }
 
     // MARK: - Connection Form
@@ -274,4 +278,5 @@ public struct ServerConnectionView: View {
         ServerConnectionView()
     }
     .withThemeEnvironment()
+    .environment(AppSession())
 }

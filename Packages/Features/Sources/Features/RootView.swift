@@ -5,6 +5,7 @@ import DesignSystem
 /// Handles top-level navigation and theme application
 public struct RootView: View {
     @State private var themeManager = ThemeManager.shared
+    @State private var session = AppSession()
     @State private var selectedTab: Tab = .home
 
     public init() {}
@@ -36,6 +37,7 @@ public struct RootView: View {
                 .tag(Tab.settings)
         }
         .withThemeEnvironment(themeManager)
+        .environment(session)
     }
 }
 

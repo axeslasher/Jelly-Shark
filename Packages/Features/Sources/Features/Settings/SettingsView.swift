@@ -136,4 +136,5 @@ public struct SettingsView: View {
 #Preview {
     SettingsView()
         .withThemeEnvironment()
+        .environment(AppSession())
 }
