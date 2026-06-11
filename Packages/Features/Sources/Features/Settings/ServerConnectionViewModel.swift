@@ -46,9 +46,17 @@ public final class ServerConnectionViewModel {
     /// The Jellyfin client instance
     private var client: JellyfinClient?
 
+    /// Shared session to publish the client into after connecting
+    private weak var session: AppSession?
+
     // MARK: - Initialization
 
     public init() {}
+
+    /// Attach the shared session so the connected client can be published app-wide
+    public func attach(session: AppSession) {
+        self.session = session
+    }
 
     // MARK: - Actions
 
@@ -90,6 +98,7 @@ public final class ServerConnectionViewModel {
             libraries = try await newClient.getLibraries()
 
             state = .connected
+            session?.setClient(newClient)
         } catch let error as APIError {
             errorMessage = error.localizedDescription
             state = .disconnected
@@ -112,6 +121,7 @@ public final class ServerConnectionViewModel {
         libraries = []
         state = .disconnected
         errorMessage = nil
+        session?.clearClient()
     }
 
     // MARK: - Helpers

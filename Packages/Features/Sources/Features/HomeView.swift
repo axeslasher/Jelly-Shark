@@ -5,6 +5,7 @@ import DesignSystem
 /// Displays continue watching, recently added, and recommendations
 struct HomeView: View {
     @Environment(\.theme) private var theme
+    @Environment(ServerConnectionViewModel.self) private var connection
 
     var body: some View {
         NavigationStack {
@@ -45,12 +46,19 @@ struct HomeView: View {
                         .foregroundStyle(theme.primary)
                         .padding(.top, SpacingTokens.md)
 
-                    Text("Connect to a Jellyfin server to see your media")
+                    Text(heroSubtitle)
                         .font(.jsBody)
                         .foregroundStyle(theme.secondary)
                         .padding(.top, SpacingTokens.xs)
                 }
             }
+    }
+
+    private var heroSubtitle: String {
+        if connection.state == .connected, let user = connection.connectedUser {
+            return "Signed in as \(user.name)"
+        }
+        return "Connect to a Jellyfin server to see your media"
     }
 
     private func section(title: String, icon: String) -> some View {
@@ -69,7 +77,14 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: SpacingTokens.cardGap) {
                     ForEach(0..<5) { index in
-                        placeholderCard(index: index)
+                        Button(action: {}) {
+                            placeholderCard(index: index)
+                        }
+                        #if os(tvOS)
+                        .buttonStyle(.card)
+                        #else
+                        .buttonStyle(.plain)
+                        #endif
                     }
                 }
             }
@@ -98,4 +113,5 @@ struct HomeView: View {
 #Preview {
     HomeView()
         .withThemeEnvironment()
+        .environment(ServerConnectionViewModel())
 }

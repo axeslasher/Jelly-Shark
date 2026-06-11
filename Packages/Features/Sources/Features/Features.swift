@@ -4,8 +4,3 @@
 import SwiftUI
 import JellyfinKit
 import DesignSystem
-
-// MARK: - Public Exports
-
-// Re-export commonly used types
-public typealias JellyfinClientProtocol = JellyfinKit.JellyfinClient

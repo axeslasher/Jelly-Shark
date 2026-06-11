@@ -70,6 +70,62 @@ public protocol JellyfinClientProtocol: Sendable {
     ///   - limit: Maximum number of items to return
     /// - Returns: Array of recently added media items
     func getLatestItems(libraryId: String?, limit: Int?) async throws -> [MediaItem]
+
+    // MARK: - Playback
+
+    /// Fetch playback information for an item (media sources and play session)
+    /// - Parameters:
+    ///   - itemId: The item ID
+    ///   - startTimeTicks: Intended start position in ticks
+    ///   - audioStreamIndex: Preferred audio stream index
+    ///   - subtitleStreamIndex: Preferred subtitle stream index
+    /// - Returns: Playback session info with available media sources
+    func getPlaybackInfo(
+        itemId: String,
+        startTimeTicks: Int64?,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?
+    ) async throws -> PlaybackSessionInfo
+
+    /// Build an HLS stream URL for an item
+    /// - Parameter parameters: Item and stream selection parameters
+    /// - Returns: The stream URL
+    /// - Throws: `APIError.notAuthenticated` if there is no access token
+    func hlsStreamURL(parameters: StreamParameters, eTag: String?) throws -> URL
+
+    /// Report that playback has started
+    func reportPlaybackStart(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int64,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?
+    ) async throws
+
+    /// Report playback progress
+    func reportPlaybackProgress(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int64,
+        isPaused: Bool
+    ) async throws
+
+    /// Report that playback has stopped
+    func reportPlaybackStopped(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int64
+    ) async throws
+
+    // MARK: - Episodes
+
+    /// Fetch the episode immediately following the given episode
+    /// - Parameter episode: The current episode
+    /// - Returns: The next episode, or nil if this is the last one (or not an episode)
+    func getNextEpisode(after episode: MediaItem) async throws -> MediaItem?
 }
 
 /// Image types available from Jellyfin
@@ -137,6 +193,9 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     public let serverURL: URL
 
+    /// The client configuration (kept for device identity in stream URLs)
+    private let configuration: JellyfinClientConfiguration
+
     /// The underlying SDK client
     private let sdkClient: JellyfinAPI.JellyfinClient
 
@@ -145,6 +204,9 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     /// Cached user ID for API calls
     private var _userId: String?
+
+    /// Cached access token for URLs that authenticate via query parameter
+    private var _accessToken: String?
 
     public var currentUser: User? { _currentUser }
     public var isAuthenticated: Bool { _currentUser != nil }
@@ -155,6 +217,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// - Parameter configuration: The client configuration
     public init(configuration: JellyfinClientConfiguration) {
         self.serverURL = configuration.serverURL
+        self.configuration = configuration
 
         let sdkConfiguration = JellyfinAPI.JellyfinClient.Configuration(
             url: configuration.serverURL,
@@ -181,6 +244,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             let user = User(from: userDto)
             _currentUser = user
             _userId = userDto.id
+            _accessToken = response.accessToken
 
             return user
         } catch let error as APIError {
@@ -194,6 +258,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         try? await sdkClient.signOut()
         _currentUser = nil
         _userId = nil
+        _accessToken = nil
     }
 
     // MARK: - Libraries
@@ -329,6 +394,186 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             return response.value.compactMap { MediaItem(from: $0) }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Playback
+
+    public func getPlaybackInfo(
+        itemId: String,
+        startTimeTicks: Int64?,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?
+    ) async throws -> PlaybackSessionInfo {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            let body = JellyfinAPI.PlaybackInfoDto(
+                audioStreamIndex: audioStreamIndex,
+                isAutoOpenLiveStream: true,
+                deviceProfile: Self.deviceProfile,
+                enableDirectPlay: true,
+                enableDirectStream: true,
+                enableTranscoding: true,
+                startTimeTicks: startTimeTicks.map(Int.init),
+                subtitleStreamIndex: subtitleStreamIndex,
+                userID: userId
+            )
+
+            let response = try await sdkClient.send(
+                Paths.getPostedPlaybackInfo(itemID: itemId, body)
+            )
+
+            if let errorCode = response.value.errorCode {
+                throw APIError.generic("Playback not possible: \(errorCode.rawValue)")
+            }
+
+            let sessionInfo = PlaybackSessionInfo(from: response.value)
+
+            guard !sessionInfo.mediaSources.isEmpty else {
+                throw APIError.generic("No playable media sources for this item")
+            }
+
+            return sessionInfo
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+    }
+
+    public func hlsStreamURL(parameters: StreamParameters, eTag: String?) throws -> URL {
+        guard let accessToken = _accessToken else {
+            throw APIError.notAuthenticated
+        }
+
+        guard let url = StreamURLBuilder.hlsURL(
+            serverURL: serverURL,
+            accessToken: accessToken,
+            deviceId: configuration.deviceID,
+            parameters: parameters,
+            eTag: eTag
+        ) else {
+            throw APIError.invalidURL
+        }
+
+        return url
+    }
+
+    public func reportPlaybackStart(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int64,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?
+    ) async throws {
+        do {
+            let info = JellyfinAPI.PlaybackStartInfo(
+                audioStreamIndex: audioStreamIndex,
+                canSeek: true,
+                isPaused: false,
+                itemID: itemId,
+                mediaSourceID: mediaSourceId,
+                playMethod: .transcode,
+                playSessionID: playSessionId,
+                positionTicks: Int(positionTicks),
+                subtitleStreamIndex: subtitleStreamIndex
+            )
+
+            _ = try await sdkClient.send(Paths.reportPlaybackStart(info))
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+    }
+
+    public func reportPlaybackProgress(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int64,
+        isPaused: Bool
+    ) async throws {
+        do {
+            let info = JellyfinAPI.PlaybackProgressInfo(
+                canSeek: true,
+                isPaused: isPaused,
+                itemID: itemId,
+                mediaSourceID: mediaSourceId,
+                playMethod: .transcode,
+                playSessionID: playSessionId,
+                positionTicks: Int(positionTicks)
+            )
+
+            _ = try await sdkClient.send(Paths.reportPlaybackProgress(info))
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+    }
+
+    public func reportPlaybackStopped(
+        itemId: String,
+        mediaSourceId: String?,
+        playSessionId: String?,
+        positionTicks: Int64
+    ) async throws {
+        do {
+            let info = JellyfinAPI.PlaybackStopInfo(
+                itemID: itemId,
+                mediaSourceID: mediaSourceId,
+                playSessionID: playSessionId,
+                positionTicks: Int(positionTicks)
+            )
+
+            _ = try await sdkClient.send(Paths.reportPlaybackStopped(info))
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw APIError.networkError(error.localizedDescription)
+        }
+    }
+
+    // MARK: - Episodes
+
+    public func getNextEpisode(after episode: MediaItem) async throws -> MediaItem? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        guard episode.type == .episode, let seriesId = episode.seriesId else {
+            return nil
+        }
+
+        do {
+            let parameters = Paths.GetEpisodesParameters(
+                userID: userId,
+                fields: [.overview, .mediaSources],
+                startItemID: episode.id,
+                limit: 2
+            )
+
+            let response = try await sdkClient.send(
+                Paths.getEpisodes(seriesID: seriesId, parameters: parameters)
+            )
+
+            let items = response.value.items ?? []
+
+            // The first item is the current episode; the next one follows it
+            guard items.count >= 2, items[0].id == episode.id else {
+                return nil
+            }
+
+            return MediaItem(from: items[1])
         } catch let error as APIError {
             throw error
         } catch {

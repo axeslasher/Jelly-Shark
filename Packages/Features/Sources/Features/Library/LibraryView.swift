@@ -6,6 +6,7 @@ import DesignSystem
 /// Shows all libraries and their contents
 public struct LibraryView: View {
     @Environment(\.theme) private var theme
+    @Environment(ServerConnectionViewModel.self) private var connection
 
     public init() {}
 
@@ -20,8 +21,30 @@ public struct LibraryView: View {
                         ],
                         spacing: SpacingTokens.cardGap
                     ) {
-                        ForEach(LibraryType.allCases, id: \.self) { type in
-                            libraryCard(for: type)
+                        if connection.state == .connected {
+                            ForEach(connection.libraries) { library in
+                                NavigationLink {
+                                    LibraryItemsView(library: library)
+                                } label: {
+                                    libraryCard(for: library)
+                                }
+                                #if os(tvOS)
+                                .buttonStyle(.card)
+                                #else
+                                .buttonStyle(.plain)
+                                #endif
+                            }
+                        } else {
+                            ForEach(LibraryType.allCases, id: \.self) { type in
+                                Button(action: {}) {
+                                    placeholderCard(for: type)
+                                }
+                                #if os(tvOS)
+                                .buttonStyle(.card)
+                                #else
+                                .buttonStyle(.plain)
+                                #endif
+                            }
                         }
                     }
                 }
@@ -33,7 +56,30 @@ public struct LibraryView: View {
         }
     }
 
-    private func libraryCard(for type: LibraryType) -> some View {
+    private func libraryCard(for library: Library) -> some View {
+        RoundedRectangle(cornerRadius: theme.cornerRadiusLarge)
+            .fill(theme.surface)
+            .frame(height: 180)
+            .overlay {
+                VStack(spacing: SpacingTokens.md) {
+                    Image(systemName: library.systemImageName)
+                        .font(.system(size: 48))
+                        .foregroundStyle(theme.accent)
+
+                    Text(library.name)
+                        .font(.jsTitle)
+                        .foregroundStyle(theme.primary)
+
+                    if let count = library.childCount {
+                        Text("\(count) items")
+                            .font(.jsCaption)
+                            .foregroundStyle(theme.tertiary)
+                    }
+                }
+            }
+    }
+
+    private func placeholderCard(for type: LibraryType) -> some View {
         RoundedRectangle(cornerRadius: theme.cornerRadiusLarge)
             .fill(theme.surface)
             .frame(height: 180)
@@ -87,4 +133,6 @@ extension LibraryView {
 #Preview {
     LibraryView()
         .withThemeEnvironment()
+        .environment(AppSession())
+        .environment(ServerConnectionViewModel())
 }
