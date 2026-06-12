@@ -43,7 +43,7 @@ extension MediaItem {
             communityRating: dto.communityRating.map(Double.init),
             officialRating: dto.officialRating,
             genres: dto.genres,
-            imageTags: ImageTags(from: dto.imageTags),
+            imageTags: ImageTags(from: dto.imageTags, backdropTags: dto.backdropImageTags),
             userData: dto.userData.map { UserData(from: $0) },
             seriesId: dto.seriesID,
             seriesName: dto.seriesName,
@@ -98,15 +98,20 @@ extension MediaType {
 
 extension ImageTags {
     /// Create ImageTags from the SDK's image tags dictionary
-    init?(from tags: [String: String]?) {
-        guard let tags = tags else { return nil }
+    ///
+    /// The server reports backdrops in the separate `BackdropImageTags` array
+    /// rather than the `ImageTags` dictionary, so the first backdrop tag is
+    /// taken from there when the dictionary has none.
+    init?(from tags: [String: String]?, backdropTags: [String]? = nil) {
+        let backdrop = tags?["Backdrop"] ?? backdropTags?.first
+        guard tags != nil || backdrop != nil else { return nil }
 
         self.init(
-            primary: tags["Primary"],
-            backdrop: tags["Backdrop"],
-            banner: tags["Banner"],
-            thumb: tags["Thumb"],
-            logo: tags["Logo"]
+            primary: tags?["Primary"],
+            backdrop: backdrop,
+            banner: tags?["Banner"],
+            thumb: tags?["Thumb"],
+            logo: tags?["Logo"]
         )
     }
 }

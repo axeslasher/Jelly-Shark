@@ -149,9 +149,15 @@ public struct ServerConnectionView: View {
             Section {
                 if let user = viewModel.connectedUser {
                     HStack(spacing: SpacingTokens.md) {
-                        Image(systemName: "person.circle.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(theme.accent)
+                        if let client = session.client, user.primaryImageTag != nil {
+                            ArtworkImage(url: client.getUserImageURL(userId: user.id, maxWidth: 120))
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                        } else {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 40))
+                                .foregroundStyle(theme.accent)
+                        }
 
                         VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                             Text(user.name)
