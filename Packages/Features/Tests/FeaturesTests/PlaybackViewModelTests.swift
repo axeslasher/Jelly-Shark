@@ -10,6 +10,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     let serverURL = URL(string: "https://example.com")!
     var currentUser: User?
     var isAuthenticated: Bool { currentUser != nil }
+    var accessToken: String?
 
     // Recorded calls
     var playbackInfoRequests: [(itemId: String, startTimeTicks: Int64?, audioStreamIndex: Int?, subtitleStreamIndex: Int?)] = []
@@ -17,6 +18,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var progressReports: [(itemId: String, positionTicks: Int64, isPaused: Bool)] = []
     var stopReports: [(itemId: String, positionTicks: Int64)] = []
     var nextEpisodeRequests: [String] = []
+    var fetchCurrentUserCallCount = 0
 
     // Stubbed responses
     var playbackInfoResult: Result<PlaybackSessionInfo, Error> = .success(
@@ -26,18 +28,29 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         )
     )
     var nextEpisodeResult: MediaItem?
+    var fetchCurrentUserResult: Result<User, Error> = .success(User(id: "user-1", name: "demo"))
+    var librariesResult: Result<[Library], Error> = .success([])
 
     func authenticate(username: String, password: String) async throws -> User {
         let user = User(id: "user-1", name: username)
         currentUser = user
+        accessToken = "token-1"
         return user
     }
 
     func signOut() async {
         currentUser = nil
+        accessToken = nil
     }
 
-    func getLibraries() async throws -> [Library] { [] }
+    func fetchCurrentUser() async throws -> User {
+        fetchCurrentUserCallCount += 1
+        let user = try fetchCurrentUserResult.get()
+        currentUser = user
+        return user
+    }
+
+    func getLibraries() async throws -> [Library] { try librariesResult.get() }
 
     func getLibraryItems(libraryId: String, limit: Int?, startIndex: Int?) async throws -> [MediaItem] { [] }
 

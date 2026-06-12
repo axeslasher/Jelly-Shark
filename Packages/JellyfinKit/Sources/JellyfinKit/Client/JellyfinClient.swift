@@ -1,4 +1,5 @@
 import Foundation
+import Get
 import JellyfinAPI
 
 /// Protocol defining the Jellyfin API client interface
@@ -13,6 +14,9 @@ public protocol JellyfinClientProtocol: Sendable {
     /// Whether the client is currently authenticated
     var isAuthenticated: Bool { get }
 
+    /// The current access token, if authenticated
+    var accessToken: String? { get }
+
     // MARK: - Authentication
 
     /// Authenticate with the Jellyfin server
@@ -24,6 +28,13 @@ public protocol JellyfinClientProtocol: Sendable {
 
     /// Sign out and clear credentials
     func signOut() async
+
+    /// Fetch the current user's profile from the server (GET /Users/{userId})
+    ///
+    /// Used to validate a restored session before treating it as authenticated.
+    /// - Returns: The current user
+    /// - Throws: `APIError.unauthorized` if the token is no longer valid
+    func fetchCurrentUser() async throws -> User
 
     // MARK: - Libraries
 
@@ -210,18 +221,30 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     public var currentUser: User? { _currentUser }
     public var isAuthenticated: Bool { _currentUser != nil }
+    public var accessToken: String? { _accessToken }
 
     // MARK: - Initialization
 
-    /// Create a new JellyfinClient with the given configuration
-    /// - Parameter configuration: The client configuration
-    public init(configuration: JellyfinClientConfiguration) {
+    /// Create a new JellyfinClient, optionally restoring a previously saved session
+    ///
+    /// When a saved token and user ID are provided the client can make
+    /// authenticated requests immediately, but `isAuthenticated` stays false
+    /// until `fetchCurrentUser()` validates the token against the server.
+    /// - Parameters:
+    ///   - configuration: The client configuration
+    ///   - accessToken: A saved access token to restore, if any
+    ///   - userID: The saved user ID belonging to the token, if any
+    public init(
+        configuration: JellyfinClientConfiguration,
+        accessToken: String? = nil,
+        userID: String? = nil
+    ) {
         self.serverURL = configuration.serverURL
         self.configuration = configuration
 
         let sdkConfiguration = JellyfinAPI.JellyfinClient.Configuration(
             url: configuration.serverURL,
-            accessToken: nil,
+            accessToken: accessToken,
             client: configuration.clientName,
             deviceName: configuration.deviceName,
             deviceID: configuration.deviceID,
@@ -229,6 +252,8 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         )
 
         self.sdkClient = JellyfinAPI.JellyfinClient(configuration: sdkConfiguration)
+        self._accessToken = accessToken
+        self._userId = userID
     }
 
     // MARK: - Authentication
@@ -250,7 +275,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -259,6 +284,46 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         _currentUser = nil
         _userId = nil
         _accessToken = nil
+    }
+
+    public func fetchCurrentUser() async throws -> User {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            let response = try await sdkClient.send(Paths.getUserByID(userID: userId))
+
+            let user = User(from: response.value)
+            _currentUser = user
+
+            return user
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    /// Map SDK/transport errors to APIError, surfacing HTTP status codes
+    private static func mapTransportError(_ error: Error) -> APIError {
+        if let apiError = error as? Get.APIError,
+           case .unacceptableStatusCode(let statusCode) = apiError {
+            switch statusCode {
+            case 401:
+                return .unauthorized
+            case 403:
+                return .forbidden
+            case 404:
+                return .notFound
+            case 500...:
+                return .serverError(statusCode: statusCode)
+            default:
+                return .httpError(statusCode: statusCode)
+            }
+        }
+
+        return .networkError(error.localizedDescription)
     }
 
     // MARK: - Libraries
@@ -280,7 +345,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -306,7 +371,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -326,7 +391,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -380,7 +445,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -406,7 +471,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -453,7 +518,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -500,7 +565,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -526,7 +591,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -548,7 +613,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -586,7 +651,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 }
