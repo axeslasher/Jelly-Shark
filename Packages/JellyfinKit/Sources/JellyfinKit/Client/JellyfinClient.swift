@@ -331,8 +331,17 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     public func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int? = nil, maxHeight: Int? = nil) -> URL {
-        var components = URLComponents(url: serverURL, resolvingAgainstBaseURL: false)!
-        components.path = "/Items/\(itemId)/Images/\(imageType.rawValue)"
+        // Append to the server URL rather than overwriting the path,
+        // so servers hosted under a path prefix (e.g. /jellyfin) keep working
+        let endpoint = serverURL
+            .appendingPathComponent("Items")
+            .appendingPathComponent(itemId)
+            .appendingPathComponent("Images")
+            .appendingPathComponent(imageType.rawValue)
+
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return serverURL
+        }
 
         var queryItems: [URLQueryItem] = []
         if let maxWidth = maxWidth {
@@ -588,5 +597,28 @@ public extension JellyfinClientProtocol {
     /// Get the image URL with default parameters
     func getImageURL(itemId: String, imageType: ImageType) -> URL {
         getImageURL(itemId: itemId, imageType: imageType, maxWidth: nil, maxHeight: nil)
+    }
+
+    /// Get the URL for a user's profile image: `/Users/{userId}/Images/Primary`
+    /// - Parameters:
+    ///   - userId: The user ID
+    ///   - maxWidth: Optional maximum width for the image
+    /// - Returns: The user image URL
+    func getUserImageURL(userId: String, maxWidth: Int? = nil) -> URL {
+        let endpoint = serverURL
+            .appendingPathComponent("Users")
+            .appendingPathComponent(userId)
+            .appendingPathComponent("Images")
+            .appendingPathComponent("Primary")
+
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return serverURL
+        }
+
+        if let maxWidth = maxWidth {
+            components.queryItems = [URLQueryItem(name: "maxWidth", value: String(maxWidth))]
+        }
+
+        return components.url ?? serverURL
     }
 }

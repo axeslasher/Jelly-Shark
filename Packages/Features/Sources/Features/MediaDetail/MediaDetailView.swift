@@ -51,20 +51,19 @@ public struct MediaDetailView: View {
     }
 
     private var heroSection: some View {
-        RoundedRectangle(cornerRadius: theme.cornerRadiusLarge)
-            .fill(theme.surface)
+        ArtworkImage(url: session.client?.backdropURL(for: item))
+            .frame(maxWidth: .infinity)
             .frame(height: 500)
             .overlay {
+                // Scrim so the title and button keep contrast over any backdrop
+                theme.background.opacity(0.55)
+            }
+            .overlay {
                 VStack(spacing: SpacingTokens.lg) {
-                    // Placeholder poster
-                    RoundedRectangle(cornerRadius: theme.cornerRadius)
-                        .fill(theme.surfaceElevated)
+                    // Poster
+                    ArtworkImage(url: session.client?.posterURL(for: item))
                         .frame(width: 200, height: 300)
-                        .overlay {
-                            Image(systemName: "photo")
-                                .font(.system(size: 48))
-                                .foregroundStyle(theme.tertiary)
-                        }
+                        .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
 
                     // Title
                     Text(item.name)
@@ -90,6 +89,7 @@ public struct MediaDetailView: View {
                     .disabled(session.client == nil)
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadiusLarge))
     }
 
     private var metadataSection: some View {

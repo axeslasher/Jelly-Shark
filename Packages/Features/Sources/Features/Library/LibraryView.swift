@@ -6,6 +6,7 @@ import DesignSystem
 /// Shows all libraries and their contents
 public struct LibraryView: View {
     @Environment(\.theme) private var theme
+    @Environment(AppSession.self) private var session
     @Environment(ServerConnectionViewModel.self) private var connection
 
     public init() {}
@@ -56,27 +57,58 @@ public struct LibraryView: View {
         }
     }
 
+    @ViewBuilder
     private func libraryCard(for library: Library) -> some View {
-        RoundedRectangle(cornerRadius: theme.cornerRadiusLarge)
-            .fill(theme.surface)
-            .frame(height: 180)
-            .overlay {
-                VStack(spacing: SpacingTokens.md) {
-                    Image(systemName: library.systemImageName)
-                        .font(.system(size: 48))
-                        .foregroundStyle(theme.accent)
+        if let url = session.client?.imageURL(for: library) {
+            ArtworkImage(url: url)
+                .frame(height: 180)
+                .overlay {
+                    LinearGradient(
+                        stops: [
+                            .init(color: theme.background.opacity(0.85), location: 0),
+                            .init(color: .clear, location: 0.6),
+                        ],
+                        startPoint: .bottom,
+                        endPoint: .top
+                    )
+                }
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                        Text(library.name)
+                            .font(.jsTitle)
+                            .foregroundStyle(theme.primary)
 
-                    Text(library.name)
-                        .font(.jsTitle)
-                        .foregroundStyle(theme.primary)
+                        if let count = library.childCount {
+                            Text("\(count) items")
+                                .font(.jsCaption)
+                                .foregroundStyle(theme.secondary)
+                        }
+                    }
+                    .padding(SpacingTokens.md)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadiusLarge))
+        } else {
+            RoundedRectangle(cornerRadius: theme.cornerRadiusLarge)
+                .fill(theme.surface)
+                .frame(height: 180)
+                .overlay {
+                    VStack(spacing: SpacingTokens.md) {
+                        Image(systemName: library.systemImageName)
+                            .font(.system(size: 48))
+                            .foregroundStyle(theme.accent)
 
-                    if let count = library.childCount {
-                        Text("\(count) items")
-                            .font(.jsCaption)
-                            .foregroundStyle(theme.tertiary)
+                        Text(library.name)
+                            .font(.jsTitle)
+                            .foregroundStyle(theme.primary)
+
+                        if let count = library.childCount {
+                            Text("\(count) items")
+                                .font(.jsCaption)
+                                .foregroundStyle(theme.tertiary)
+                        }
                     }
                 }
-            }
+        }
     }
 
     private func placeholderCard(for type: LibraryType) -> some View {

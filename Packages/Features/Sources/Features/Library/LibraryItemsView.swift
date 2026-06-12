@@ -67,29 +67,23 @@ struct LibraryItemsView: View {
     }
 
     private func itemCard(for item: MediaItem) -> some View {
-        RoundedRectangle(cornerRadius: theme.cornerRadius)
-            .fill(theme.surface)
-            .frame(height: 300)
-            .overlay {
-                VStack(spacing: SpacingTokens.sm) {
-                    Image(systemName: "film.fill")
-                        .font(.system(size: 32))
-                        .foregroundStyle(theme.tertiary)
+        VStack(spacing: SpacingTokens.sm) {
+            ArtworkImage(url: session.client?.posterURL(for: item), placeholderIcon: "film.fill")
+                .aspectRatio(2 / 3, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
 
-                    Text(item.name)
-                        .font(.jsCaption)
-                        .foregroundStyle(theme.primary)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
+            Text(item.name)
+                .font(.jsCaption)
+                .foregroundStyle(theme.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
 
-                    if let year = item.productionYear {
-                        Text(String(year))
-                            .font(.jsCaption)
-                            .foregroundStyle(theme.secondary)
-                    }
-                }
-                .padding(SpacingTokens.md)
+            if let year = item.productionYear {
+                Text(String(year))
+                    .font(.jsCaption)
+                    .foregroundStyle(theme.secondary)
             }
+        }
     }
 
     private func loadItems() async {

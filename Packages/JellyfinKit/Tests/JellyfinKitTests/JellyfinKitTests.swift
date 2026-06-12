@@ -149,6 +149,65 @@ struct JellyfinKitTests {
         }
     }
 
+    @Suite("ImageTags Adapter")
+    struct ImageTagsAdapterTests {
+        @Test("Backdrop falls back to the backdrop tags array")
+        func backdropFallsBackToArray() {
+            let tags = ImageTags(from: ["Primary": "abc"], backdropTags: ["bd1", "bd2"])
+            #expect(tags?.primary == "abc")
+            #expect(tags?.backdrop == "bd1")
+        }
+
+        @Test("Backdrop dictionary entry wins over the array")
+        func backdropDictionaryPrecedence() {
+            let tags = ImageTags(from: ["Backdrop": "dict"], backdropTags: ["array"])
+            #expect(tags?.backdrop == "dict")
+        }
+
+        @Test("Items with only backdrop tags still produce ImageTags")
+        func backdropOnly() {
+            let tags = ImageTags(from: nil, backdropTags: ["bd1"])
+            #expect(tags?.backdrop == "bd1")
+            #expect(tags?.primary == nil)
+        }
+
+        @Test("Nil when there are no tags at all")
+        func nilWhenEmpty() {
+            #expect(ImageTags(from: nil, backdropTags: nil) == nil)
+            #expect(ImageTags(from: nil, backdropTags: []) == nil)
+        }
+    }
+
+    @Suite("Image URLs")
+    struct ImageURLTests {
+        private func makeClient(serverURL: String) -> JellyfinClient {
+            JellyfinClient(
+                configuration: JellyfinClientConfiguration(serverURL: URL(string: serverURL)!)
+            )
+        }
+
+        @Test("Item image URL preserves a server path prefix")
+        func itemImageURLPreservesPathPrefix() {
+            let client = makeClient(serverURL: "https://demo.jellyfin.org/stable")
+            let url = client.getImageURL(itemId: "abc", imageType: .primary, maxWidth: 600, maxHeight: nil)
+            #expect(url.absoluteString == "https://demo.jellyfin.org/stable/Items/abc/Images/Primary?maxWidth=600")
+        }
+
+        @Test("Item image URL without size parameters")
+        func itemImageURLWithoutSize() {
+            let client = makeClient(serverURL: "https://jellyfin.example.com")
+            let url = client.getImageURL(itemId: "abc", imageType: .backdrop, maxWidth: nil, maxHeight: nil)
+            #expect(url.absoluteString == "https://jellyfin.example.com/Items/abc/Images/Backdrop")
+        }
+
+        @Test("User image URL")
+        func userImageURL() {
+            let client = makeClient(serverURL: "https://jellyfin.example.com")
+            let url = client.getUserImageURL(userId: "u1", maxWidth: 120)
+            #expect(url.absoluteString == "https://jellyfin.example.com/Users/u1/Images/Primary?maxWidth=120")
+        }
+    }
+
     @Suite("API Error")
     struct APIErrorTests {
         @Test("Error descriptions")
