@@ -148,11 +148,12 @@ struct HomeView: View {
                     .foregroundStyle(theme.primary)
             }
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
                     content()
                 }
             }
+            .scrollIndicators(.hidden)
         }
     }
 
