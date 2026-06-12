@@ -40,6 +40,12 @@ public struct RootView: View {
         .withThemeEnvironment(themeManager)
         .environment(session)
         .environment(connectionViewModel)
+        .task {
+            // Attach here (not just in Settings) so a restored client is
+            // published app-wide even if the user never opens Settings
+            connectionViewModel.attach(session: session)
+            await connectionViewModel.restoreSession()
+        }
     }
 }
 

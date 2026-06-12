@@ -44,14 +44,32 @@ public final class ServerConnectionViewModel {
     // MARK: - Private
 
     /// The Jellyfin client instance
-    private var client: JellyfinClient?
+    private var client: (any JellyfinClientProtocol)?
 
     /// Shared session to publish the client into after connecting
     private weak var session: AppSession?
 
+    /// Persisted session storage (Keychain-backed in production)
+    private let sessionStore: any SessionStoring
+
+    /// Factory for building clients (injectable for tests)
+    private let makeClient: @MainActor (
+        JellyfinClientConfiguration, _ accessToken: String?, _ userID: String?
+    ) -> any JellyfinClientProtocol
+
     // MARK: - Initialization
 
-    public init() {}
+    public init(
+        sessionStore: any SessionStoring = SessionStore(),
+        makeClient: @escaping @MainActor (
+            JellyfinClientConfiguration, String?, String?
+        ) -> any JellyfinClientProtocol = { configuration, accessToken, userID in
+            JellyfinClient(configuration: configuration, accessToken: accessToken, userID: userID)
+        }
+    ) {
+        self.sessionStore = sessionStore
+        self.makeClient = makeClient
+    }
 
     /// Attach the shared session so the connected client can be published app-wide
     public func attach(session: AppSession) {
@@ -84,7 +102,7 @@ public final class ServerConnectionViewModel {
         )
 
         // Create client
-        let newClient = JellyfinClient(configuration: configuration)
+        let newClient = makeClient(configuration, nil, nil)
         self.client = newClient
 
         // Authenticate
@@ -99,6 +117,7 @@ public final class ServerConnectionViewModel {
 
             state = .connected
             session?.setClient(newClient)
+            persistSession(for: newClient, serverURL: url, user: user)
         } catch let error as APIError {
             errorMessage = error.localizedDescription
             state = .disconnected
@@ -110,11 +129,60 @@ public final class ServerConnectionViewModel {
         }
     }
 
+    /// Restore a previously saved session from the Keychain, if any
+    public func restoreSession() async {
+        guard state == .disconnected else { return }
+        guard let saved = sessionStore.load() else { return }
+
+        errorMessage = nil
+        state = .connecting
+
+        // Reflect the restored server in the form
+        serverURL = saved.serverURL.absoluteString
+
+        let configuration = JellyfinClientConfiguration(
+            serverURL: saved.serverURL,
+            clientName: "Jelly Shark",
+            clientVersion: "0.0.1",
+            deviceName: deviceName,
+            deviceID: deviceID
+        )
+
+        let restoredClient = makeClient(configuration, saved.accessToken, saved.userID)
+        self.client = restoredClient
+
+        do {
+            // Validate the saved token before treating the session as live
+            let user = try await restoredClient.fetchCurrentUser()
+            connectedUser = user
+            username = user.name
+
+            libraries = try await restoredClient.getLibraries()
+
+            state = .connected
+            session?.setClient(restoredClient)
+        } catch APIError.unauthorized {
+            // The token is no longer valid: clear it and fall back to the form
+            try? sessionStore.clearSession()
+            errorMessage = "Your session has expired. Please sign in again."
+            state = .disconnected
+            client = nil
+        } catch {
+            // Transient failure (network, server down): keep the saved session
+            errorMessage = error.localizedDescription
+            state = .disconnected
+            client = nil
+        }
+    }
+
     /// Disconnect from the server
     public func disconnect() async {
         if let client = client {
             await client.signOut()
         }
+
+        // Remove the saved session; the device ID is intentionally preserved
+        try? sessionStore.clearSession()
 
         client = nil
         connectedUser = nil
@@ -158,9 +226,19 @@ public final class ServerConnectionViewModel {
         #endif
     }
 
-    /// Persistent device ID (for now just use a generated UUID)
+    /// Persistent device ID, generated once and stored in the Keychain
     private var deviceID: String {
-        // TODO: Store in Keychain for persistence
-        UUID().uuidString
+        sessionStore.deviceID()
+    }
+
+    /// Save the session to the Keychain so it can be restored on next launch
+    private func persistSession(for client: any JellyfinClientProtocol, serverURL: URL, user: User) {
+        guard let accessToken = client.accessToken else { return }
+
+        // A failed Keychain write should not fail a live connection; the
+        // session simply won't be restored on the next launch
+        try? sessionStore.save(
+            SavedSession(serverURL: serverURL, userID: user.id, accessToken: accessToken)
+        )
     }
 }
