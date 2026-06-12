@@ -275,7 +275,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -345,7 +345,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -371,7 +371,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -391,7 +391,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -436,7 +436,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -462,7 +462,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -509,7 +509,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -556,7 +556,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -582,7 +582,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -604,7 +604,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 
@@ -642,7 +642,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch let error as APIError {
             throw error
         } catch {
-            throw APIError.networkError(error.localizedDescription)
+            throw Self.mapTransportError(error)
         }
     }
 }

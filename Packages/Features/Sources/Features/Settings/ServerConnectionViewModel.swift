@@ -52,9 +52,10 @@ public final class ServerConnectionViewModel {
     /// Persisted session storage (Keychain-backed in production)
     private let sessionStore: any SessionStoring
 
-    /// Factory for building clients (injectable for tests)
+    /// Factory for building clients (injectable for tests); the saved session
+    /// is non-nil when restoring rather than authenticating fresh
     private let makeClient: @MainActor (
-        JellyfinClientConfiguration, _ accessToken: String?, _ userID: String?
+        JellyfinClientConfiguration, _ restoredSession: SavedSession?
     ) -> any JellyfinClientProtocol
 
     // MARK: - Initialization
@@ -62,9 +63,13 @@ public final class ServerConnectionViewModel {
     public init(
         sessionStore: any SessionStoring = SessionStore(),
         makeClient: @escaping @MainActor (
-            JellyfinClientConfiguration, String?, String?
-        ) -> any JellyfinClientProtocol = { configuration, accessToken, userID in
-            JellyfinClient(configuration: configuration, accessToken: accessToken, userID: userID)
+            JellyfinClientConfiguration, SavedSession?
+        ) -> any JellyfinClientProtocol = { configuration, restored in
+            JellyfinClient(
+                configuration: configuration,
+                accessToken: restored?.accessToken,
+                userID: restored?.userID
+            )
         }
     ) {
         self.sessionStore = sessionStore
@@ -80,6 +85,9 @@ public final class ServerConnectionViewModel {
 
     /// Connect to the server and authenticate
     public func connect() async {
+        // Ignore re-entrant taps while a connection attempt is in flight
+        guard state != .connecting && state != .authenticating else { return }
+
         // Clear previous error
         errorMessage = nil
 
@@ -92,17 +100,8 @@ public final class ServerConnectionViewModel {
         // Start connecting
         state = .connecting
 
-        // Create client configuration
-        let configuration = JellyfinClientConfiguration(
-            serverURL: url,
-            clientName: "Jelly Shark",
-            clientVersion: "0.0.1",
-            deviceName: deviceName,
-            deviceID: deviceID
-        )
-
         // Create client
-        let newClient = makeClient(configuration, nil, nil)
+        let newClient = makeClient(makeConfiguration(serverURL: url), nil)
         self.client = newClient
 
         // Authenticate
@@ -110,18 +109,8 @@ public final class ServerConnectionViewModel {
 
         do {
             let user = try await newClient.authenticate(username: username, password: password)
-            connectedUser = user
-
-            // Fetch libraries to prove we're connected
-            libraries = try await newClient.getLibraries()
-
-            state = .connected
-            session?.setClient(newClient)
+            try await completeConnection(client: newClient, user: user)
             persistSession(for: newClient, serverURL: url, user: user)
-        } catch let error as APIError {
-            errorMessage = error.localizedDescription
-            state = .disconnected
-            client = nil
         } catch {
             errorMessage = error.localizedDescription
             state = .disconnected
@@ -140,27 +129,14 @@ public final class ServerConnectionViewModel {
         // Reflect the restored server in the form
         serverURL = saved.serverURL.absoluteString
 
-        let configuration = JellyfinClientConfiguration(
-            serverURL: saved.serverURL,
-            clientName: "Jelly Shark",
-            clientVersion: "0.0.1",
-            deviceName: deviceName,
-            deviceID: deviceID
-        )
-
-        let restoredClient = makeClient(configuration, saved.accessToken, saved.userID)
+        let restoredClient = makeClient(makeConfiguration(serverURL: saved.serverURL), saved)
         self.client = restoredClient
 
         do {
             // Validate the saved token before treating the session as live
             let user = try await restoredClient.fetchCurrentUser()
-            connectedUser = user
+            try await completeConnection(client: restoredClient, user: user)
             username = user.name
-
-            libraries = try await restoredClient.getLibraries()
-
-            state = .connected
-            session?.setClient(restoredClient)
         } catch APIError.unauthorized {
             // The token is no longer valid: clear it and fall back to the form
             try? sessionStore.clearSession()
@@ -229,6 +205,25 @@ public final class ServerConnectionViewModel {
     /// Persistent device ID, generated once and stored in the Keychain
     private var deviceID: String {
         sessionStore.deviceID()
+    }
+
+    /// Build a client configuration for this device; client name and version
+    /// come from JellyfinClientConfiguration's defaults
+    private func makeConfiguration(serverURL: URL) -> JellyfinClientConfiguration {
+        JellyfinClientConfiguration(
+            serverURL: serverURL,
+            deviceName: deviceName,
+            deviceID: deviceID
+        )
+    }
+
+    /// Finish a successful authentication: prove the connection by fetching
+    /// libraries, then surface the connected state and publish the client
+    private func completeConnection(client: any JellyfinClientProtocol, user: User) async throws {
+        libraries = try await client.getLibraries()
+        connectedUser = user
+        state = .connected
+        session?.setClient(client)
     }
 
     /// Save the session to the Keychain so it can be restored on next launch

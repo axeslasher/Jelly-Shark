@@ -42,7 +42,7 @@ struct ServerConnectionViewModelTests {
     /// Captures the arguments passed to the view model's client factory
     final class FactoryRecorder {
         var configurations: [JellyfinClientConfiguration] = []
-        var restoredCredentials: [(accessToken: String?, userID: String?)] = []
+        var restoredSessions: [SavedSession?] = []
     }
 
     private func makeSavedSession() -> SavedSession {
@@ -58,9 +58,9 @@ struct ServerConnectionViewModelTests {
         client: MockJellyfinClient,
         recorder: FactoryRecorder
     ) -> ServerConnectionViewModel {
-        ServerConnectionViewModel(sessionStore: store) { configuration, accessToken, userID in
+        ServerConnectionViewModel(sessionStore: store) { configuration, restored in
             recorder.configurations.append(configuration)
-            recorder.restoredCredentials.append((accessToken, userID))
+            recorder.restoredSessions.append(restored)
             return client
         }
     }
@@ -70,7 +70,7 @@ struct ServerConnectionViewModelTests {
         let store = InMemorySessionStore()
         store.session = makeSavedSession()
         let client = MockJellyfinClient()
-        client.librariesResult = [Library(id: "lib-1", name: "Movies")]
+        client.librariesResult = .success([Library(id: "lib-1", name: "Movies")])
         let recorder = FactoryRecorder()
         let appSession = AppSession()
 
@@ -85,9 +85,7 @@ struct ServerConnectionViewModelTests {
         #expect(viewModel.errorMessage == nil)
         #expect(appSession.client != nil)
         #expect(client.fetchCurrentUserCallCount == 1)
-        #expect(recorder.restoredCredentials.count == 1)
-        #expect(recorder.restoredCredentials[0].accessToken == "token-1")
-        #expect(recorder.restoredCredentials[0].userID == "user-1")
+        #expect(recorder.restoredSessions == [makeSavedSession()])
         #expect(recorder.configurations[0].serverURL.absoluteString == "https://demo.jellyfin.org/stable")
         #expect(recorder.configurations[0].deviceID == store.deviceID())
     }
@@ -127,6 +125,23 @@ struct ServerConnectionViewModelTests {
         #expect(appSession.client == nil)
     }
 
+    @Test("restoreSession clears the saved session when the library fetch is unauthorized")
+    func restoreClearsSessionOnUnauthorizedLibraryFetch() async {
+        let store = InMemorySessionStore()
+        store.session = makeSavedSession()
+        let client = MockJellyfinClient()
+        client.librariesResult = .failure(APIError.unauthorized)
+
+        let viewModel = makeViewModel(store: store, client: client, recorder: FactoryRecorder())
+
+        await viewModel.restoreSession()
+
+        #expect(store.session == nil)
+        #expect(viewModel.state == .disconnected)
+        #expect(viewModel.connectedUser == nil)
+        #expect(viewModel.errorMessage != nil)
+    }
+
     @Test("restoreSession keeps the saved session on a network failure")
     func restoreKeepsSessionOnNetworkFailure() async {
         let store = InMemorySessionStore()
@@ -141,6 +156,7 @@ struct ServerConnectionViewModelTests {
         #expect(store.session != nil)
         #expect(store.clearSessionCallCount == 0)
         #expect(viewModel.state == .disconnected)
+        #expect(viewModel.connectedUser == nil)
         #expect(viewModel.errorMessage?.contains("offline") == true)
     }
 

@@ -29,7 +29,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     )
     var nextEpisodeResult: MediaItem?
     var fetchCurrentUserResult: Result<User, Error> = .success(User(id: "user-1", name: "demo"))
-    var librariesResult: [Library] = []
+    var librariesResult: Result<[Library], Error> = .success([])
 
     func authenticate(username: String, password: String) async throws -> User {
         let user = User(id: "user-1", name: username)
@@ -50,7 +50,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return user
     }
 
-    func getLibraries() async throws -> [Library] { librariesResult }
+    func getLibraries() async throws -> [Library] { try librariesResult.get() }
 
     func getLibraryItems(libraryId: String, limit: Int?, startIndex: Int?) async throws -> [MediaItem] { [] }
 
