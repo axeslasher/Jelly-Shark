@@ -1,0 +1,18 @@
+{
+  "images" : [
+    {
+      "filename" : "tvOS_middle_400x240.png",
+      "idiom" : "tv",
+      "scale" : "1x"
+    },
+    {
+      "filename" : "tvOS_middle_400x240@2x.png",
+      "idiom" : "tv",
+      "scale" : "2x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
