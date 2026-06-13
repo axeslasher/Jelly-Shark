@@ -23,9 +23,9 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 - Data model definitions (Media, User, Library, etc.)
 - Media streaming coordination
 
-**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift)
+**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (2.1.6, used to inspect HTTP status codes for error mapping)
 
-**Platform support**: Fully shared (iOS, tvOS, visionOS)
+**Platform support**: Fully shared (macOS for tests, tvOS, visionOS)
 
 #### SDK Integration Architecture
 
@@ -99,14 +99,16 @@ This adapter pattern keeps mapping logic centralized and testable.
 - Platform-specific adaptations (focus states, spatial layout)
 - Accessibility support
 
-**Dependencies**: SwiftUI
+**Dependencies**: SwiftUI (no external dependencies)
 
 **Platform support**: Shared with platform-specific variants
 
 **Key concepts**:
-- Themes as data, not hard-coded styles
-- Component variants for density, layout, interaction patterns
-- Multi-modal theming (light/dark, color schemes, density modes)
+- Themes as data via a `Theme` protocol, switched at runtime by `ThemeManager` (`@Observable` singleton, persisted to `UserDefaults`)
+- Design tokens: `ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`
+- Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ComponentPlaceholder`
+
+**Current state**: Only `StandardTheme` is implemented. The Horror, Action, and Video Store identifiers exist (with color/motion tokens defined) but currently resolve to `StandardTheme`. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
 
 ---
 
@@ -121,35 +123,35 @@ This adapter pattern keeps mapping logic centralized and testable.
 
 **Dependencies**: JellyfinKit, DesignSystem, SwiftUI
 
-**Platform support**: Some shared, some platform-specific
+**Platform support**: Some shared, some platform-specific (`#if os(tvOS)` guards for button styles, keyboard types, and the player view)
 
-**Structure** (potential):
+**Structure** (as implemented):
 ```
 Features/
-├── Authentication/
-├── Library/
-├── MediaDetail/
-├── Playback/
-├── Search/
-└── Settings/
+├── RootView.swift          (TabView: Home / Library / Search / Settings)
+├── HomeView.swift
+├── SearchView.swift        (stub — no search logic yet)
+├── AppSession.swift        (app-level session/client state)
+├── Artwork/                (MediaArtwork: image-URL helpers)
+├── Library/                (LibraryView, LibraryItemsView)
+├── MediaDetail/            (MediaDetailView)
+├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, UpNextOverlayView)
+└── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)
 ```
+Authentication is not a separate folder — server connection lives under `Settings/`.
 
 ---
 
-### App Targets
-**Purpose**: Platform-specific entry points and configurations
+### App Target
+**Purpose**: Shared SwiftUI entry point and configuration
 
-**Jelly Shark (tvOS)**:
-- App entry point and lifecycle
-- Focus-driven navigation
-- Remote control handling
-- Top Shelf extension (future)
+`Jelly Shark` is a **single app target** (`Jelly_SharkApp.swift`) that builds for both tvOS and visionOS. It configures `URLCache.shared` (64MB memory / 256MB disk) for artwork in `init()` and presents `RootView` in a `WindowGroup`. The template `Item` SwiftData model and `ContentView` have been removed — there is no `ModelContainer`.
 
-**Jelly Shark (visionOS)**:
-- App entry point and lifecycle  
-- Spatial navigation and immersive experiences
-- Hand/eye tracking integration
-- Window/volume management
+**Current state**:
+- tvOS: focus-driven `TabView` navigation, remote-friendly controls, AVPlayer transport-bar menus for audio/subtitle selection
+- visionOS: runs via the shared SwiftUI views; no spatial/immersive-specific code yet (`#if os(visionOS)` only appears for a device-name string)
+
+**Planned**: Top Shelf extension, Siri integration, visionOS spatial layouts and immersive playback.
 
 ---
 
@@ -160,22 +162,24 @@ User Interaction
     ↓
 Feature Views (SwiftUI)
     ↓
-View Models (Observable)
+View Models (@Observable @MainActor)
     ↓
-JellyfinKit (API Client)
+JellyfinKit (JellyfinClientProtocol)
+    ↓
+jellyfin-sdk-swift
     ↓
 Jellyfin Server
-    ↓
-SwiftData (Local Cache)
 ```
 
 ### Persistence Strategy
 
-**SwiftData** for local caching:
-- Watch history and progress
-- Favorites and collections
-- Downloaded metadata and images
-- User preferences and settings
+**Current (implemented)**:
+- **Keychain** (`SessionStore` / `KeychainStore`): the access token, server URL, and user ID are persisted as a `SavedSession`, plus a stable per-install device ID. This is the only persistent state today. Sessions are restored and re-validated on launch.
+- **UserDefaults**: the selected theme identifier (via `ThemeManager`).
+- **URLCache**: artwork images (configured on `URLCache.shared` in the app's `init()`).
+
+**Planned (not yet adopted)**:
+- **SwiftData** for local caching of watch history/progress, favorites/collections, media metadata, and library structure. The tech stack lists SwiftData as the intended persistence layer, but no `import SwiftData` exists in the codebase yet.
 
 **CloudKit**: Not currently planned. Server is source of truth. May add for cross-device preference sync later.
 
@@ -211,15 +215,17 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 
 ## Tech Stack
 
-**Language**: Swift 6.0+  
+**Language**: Swift 6.2+  
 **UI Framework**: SwiftUI  
-**Networking**: URLSession (evaluate Alamofire if complexity warrants)  
-**Persistence**: SwiftData  
+**Networking**: jellyfin-sdk-swift (0.6.0), built on Get/URLSession  
+**Playback**: AVKit / AVPlayer (HLS transcode streaming)  
+**Persistence**: Keychain (session) + URLCache (artwork) today; SwiftData planned  
 **Testing**: Swift Testing  
 **Dependency Management**: Swift Package Manager  
 **Minimum Deployments**: 
 - tvOS 26.0+
 - visionOS 26.0+
+- (packages also declare macOS 15 to enable test runs)
 
 ---
 
@@ -234,7 +240,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 
 ## Build & Release
 
-**Development**: Xcode 16.0+  
+**Development**: Xcode 26.0+  
 **CI/CD**: TBD (GitHub Actions likely)  
 **Distribution**: TestFlight, then App Store  
 **Open Source**: Apache 2.0 license (TBD)
@@ -266,8 +272,10 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 ## Open Questions
 
 1. ~~**Networking layer**: Native URLSession vs Alamofire?~~ → Resolved: Using official `jellyfin-sdk-swift` SDK
-2. **Navigation architecture**: Coordinator pattern or SwiftUI native?
-3. **State management**: Observable macros vs manual publishers?
+2. ~~**Navigation architecture**: Coordinator pattern or SwiftUI native?~~ → Resolved: SwiftUI-native `TabView` + per-tab `NavigationStack`
+3. ~~**State management**: Observable macros vs manual publishers?~~ → Resolved: `@Observable` macro (`AppSession`, `ServerConnectionViewModel`, `PlaybackViewModel`, `ThemeManager`)
+4. **Video player**: stick with AVPlayer or add VLCKit for broader codec support? → Currently AVPlayer + HLS transcode only
+5. **Persistence**: when to adopt SwiftData, and what to cache first (metadata vs. user state)?
 
 ---
 
@@ -283,3 +291,8 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 | 2025-01-07 | Start with established video player libs | Don't reinvent playback; focus on UI/UX differentiation |
 | 2025-01-07 | Runtime theme switching | User control is core to customization philosophy |
 | 2025-01-08 | Adopt jellyfin-sdk-swift with wrapper | Official SDK provides API coverage; wrapper pattern gives clean app-facing types |
+| 2025-01 | SwiftUI-native navigation (`TabView` + `NavigationStack`) | Avoid coordinator overhead for a small, tab-based app |
+| 2025-01 | `@Observable` for all view models and session state | Modern Observation framework integrates cleanly with SwiftUI |
+| 2025-01 | AVPlayer + HLS transcode for playback | Native, no third-party player dependency; server handles transcoding |
+| 2025-01 | Keychain-only persistence for now | Ship the core loop first; defer SwiftData metadata caching |
+| 2025-01 | Single shared app target for tvOS + visionOS | Maximize shared SwiftUI; add platform-specific code via `#if os(...)` as needed |

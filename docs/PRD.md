@@ -137,14 +137,14 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 ## Core Features (v1.0)
 
 ### Must Have
-- Authentication with Jellyfin server
-- Library browsing (movies, TV, music)
-- Media detail views with metadata
-- Playback with progress tracking
-- Search functionality
-- User profile switching
-- Theme customization UI
-- Settings management
+- ✅ Authentication with Jellyfin server (with Keychain session persistence)
+- ✅ Library browsing (movies, TV, music)
+- ✅ Media detail views with metadata
+- ✅ Playback with progress tracking (HLS, resume, audio/subtitle tracks, episode autoplay)
+- ⏳ Search functionality (UI stub only)
+- ⏳ User profile switching (not started)
+- ⏳ Theme customization UI (UI present; only Standard theme functional)
+- ✅ Settings management
 
 ### Should Have
 - Continue watching / up next
@@ -229,17 +229,18 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 
 ## Milestones
 
-### Foundation
-- Architecture and design system documentation
-- Core API integration and authentication
-- Basic playback functionality
-- Standard theme implementation (light + dark)
+### Foundation — ✅ largely complete
+- ✅ Architecture and design system documentation
+- ✅ Core API integration and authentication
+- ✅ Playback functionality (HLS streaming, progress, resume, track switching)
+- ✅ Standard theme implementation
+- ✅ Core browsing loop: home, libraries, media detail
 
-### Theming & Components
-- Remaining launch themes (Horror, Action, Video Store)
-- Component variant system
-- Theme switching UI and runtime implementation
-- Base component library
+### Theming & Components — ⏳ in progress
+- ⏳ Remaining launch themes (Horror, Action, Video Store) — tokens defined, themes fall back to Standard
+- ⏳ Component variant system — not started
+- ✅ Theme switching UI and runtime implementation
+- ⏳ Base component library — `ArtworkImage` + `ComponentPlaceholder` only so far
 
 ### Platform Polish
 - tvOS-specific optimizations (focus engine, remote handling)

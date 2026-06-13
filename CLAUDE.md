@@ -49,44 +49,50 @@ xcodebuild clean -scheme "Jelly Shark"
 ## Architecture
 
 ### Modular Design Philosophy
-The app follows a modular architecture with clear separation of concerns:
+The app follows a modular architecture with clear separation of concerns. All three packages live under `Packages/` and are wired together via local Swift Package Manager dependencies:
 
-1. **JellyfinKit** (Planned): API client, networking, and data models
-   - Jellyfin server integration and authentication
-   - Network request handling and response parsing
-   - Media streaming coordination
-   - Platform support: Fully shared across iOS, tvOS, visionOS
+1. **JellyfinKit** (`Packages/JellyfinKit`): API client, networking, and data models
+   - Wraps the official [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0) behind a `JellyfinClientProtocol` facade
+   - Authentication, library/item fetching, image URL building, playback info, and HLS stream URL construction
+   - Playback reporting (start/progress/stopped), resume items, latest items, next-episode lookup
+   - Domain models (`User`, `MediaItem`, `Library`, `ServerInfo`, `PlaybackSessionInfo`) + SDK adapters
+   - Session persistence via Keychain (`SessionStore`, `KeychainStore`)
+   - Platform support: Fully shared (macOS for tests, tvOS, visionOS)
 
-2. **DesignSystem** (Planned): Theming engine, design tokens, and base UI components
-   - Theme management with runtime switching (Standard, Horror, Action, Video Store)
-   - Design token definitions (color, typography, spacing, motion)
-   - Base SwiftUI components with variant support
-   - Platform-specific adaptations for focus states and spatial layouts
+2. **DesignSystem** (`Packages/DesignSystem`): Theming engine, design tokens, and base UI components
+   - `Theme` protocol with `ThemeManager` (`@Observable` singleton) for runtime switching, persisted in `UserDefaults`
+   - Design tokens: `ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`
+   - Base components: `ArtworkImage`, `ComponentPlaceholder`
+   - **Current state**: Only `StandardTheme` is implemented; Horror/Action/Video Store identifiers exist but fall back to Standard. No component-variant system yet.
 
-3. **Features** (Planned): Application features, screens, and user flows
-   - View implementations (library browsing, media detail, playback, search, settings)
-   - View models and state management
-   - Navigation coordination
-   - Structure: Authentication/, Library/, MediaDetail/, Playback/, Search/, Settings/
+3. **Features** (`Packages/Features`): Application features, screens, and user flows
+   - View implementations: `RootView`, `HomeView`, `LibraryView`/`LibraryItemsView`, `MediaDetailView`, `SearchView` (stub), `SettingsView`, `ServerConnectionView`, playback views
+   - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `PlaybackViewModel`; app-level `AppSession`
+   - Navigation: `TabView` with Home / Library / Search / Settings, each in its own `NavigationStack`
+   - Depends on JellyfinKit and DesignSystem
+   - Structure: Artwork/, Library/, MediaDetail/, Playback/, Settings/ (no separate Authentication/ — connection lives under Settings/)
 
-4. **App Targets**: Platform-specific entry points
-   - tvOS: Focus-driven navigation, remote control handling, Top Shelf integration
-   - visionOS: Spatial navigation, immersive experiences, window/volume management
+4. **App Target** (`Jelly Shark/`): Single SwiftUI entry point
+   - `Jelly_SharkApp.swift` configures `URLCache` for artwork and presents `RootView` in a `WindowGroup`
+   - Shared across tvOS and visionOS; platform divergence is handled with `#if os(tvOS)` guards in views
+   - No SwiftData `ModelContainer` (template boilerplate has been removed)
 
 ### Data Flow
 ```
 User Interaction → Feature Views (SwiftUI) → View Models (Observable) →
-JellyfinKit (API Client) → Jellyfin Server → SwiftData (Local Cache)
+JellyfinKit (JellyfinClientProtocol) → jellyfin-sdk-swift → Jellyfin Server
 ```
+Session tokens are persisted to the Keychain; artwork is cached via `URLCache`. SwiftData is not currently used (planned for metadata/state caching).
 
 ### Tech Stack
 - Language: Swift 6.2+
 - UI Framework: SwiftUI
-- Networking: URLSession (or Alamofire if complexity warrants)
-- Persistence: SwiftData
+- Networking: jellyfin-sdk-swift (0.6.0), built on Get/URLSession
+- Playback: AVKit / AVPlayer (HLS transcode streaming)
+- Persistence: Keychain (session tokens), URLCache (artwork); SwiftData planned but not yet adopted
 - Testing: Swift Testing
 - Dependency Management: Swift Package Manager
-- Min Deployment: tvOS 26.0+, visionOS 26.0+
+- Min Deployment: tvOS 26.0+, visionOS 26.0+ (packages also build for macOS 15 to support testing)
 
 ## Theming System
 
@@ -114,38 +120,51 @@ Users can switch themes globally and customize component variants individually, 
 - Server is the source of truth for all media, metadata, and user state
 - Local storage (SwiftData) is for caching and performance only
 
-### Authentication Flow
-1. User enters server URL (auto-detect via mDNS/Bonjour on local network)
-2. App validates server accessibility and version compatibility
-3. User provides credentials (username/password)
-4. App authenticates via `/Users/authenticatebyname`
-5. Token stored securely in Keychain (NEVER in UserDefaults)
-6. User profile cached in SwiftData
+### Authentication Flow (as implemented)
+1. User enters server URL, username, and password in `ServerConnectionView` (mDNS/Bonjour auto-detect is planned, not yet built)
+2. `ServerConnectionViewModel` creates a `JellyfinClient` and authenticates via the SDK's `signIn(username:password:)`
+3. On success it fetches the user's libraries and publishes connection state
+4. The access token + server URL + user ID are persisted to the Keychain as a `SavedSession` (NEVER in UserDefaults)
+5. On next launch, `restoreSession()` reloads the saved session and validates the token via `fetchCurrentUser()` (clears the Keychain on 401, keeps it on transient network errors)
 
-### Core API Endpoints
-- Authentication: `POST /Users/authenticatebyname`, `GET /Users/{userId}`
+### Core API Endpoints (wrapped via jellyfin-sdk-swift)
+- Authentication: SDK `signIn` (authenticate by name), `GET /Users/{userId}` (fetch current user)
 - Libraries: `GET /Users/{userId}/Views`, `GET /Users/{userId}/Items`, `GET /Items/{itemId}`
-- Images: `GET /Items/{itemId}/Images/{imageType}`
-- Playback: `POST /Sessions/Playing`, `POST /Sessions/Playing/Progress`, `POST /Sessions/Playing/Stopped`
-- User Data: `POST /Users/{userId}/PlayedItems/{itemId}`, `GET /Users/{userId}/Items/Resume`
+- Discovery: `GET /Users/{userId}/Items/Resume`, `GET /Users/{userId}/Items/Latest`, episodes lookup for next-up
+- Images: `GET /Items/{itemId}/Images/{imageType}` (URL building only)
+- Playback: `GET /Items/{itemId}/PlaybackInfo`, HLS `GET /Videos/{itemId}/main.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
+- Not yet implemented: search, mark played/unplayed, favorites
 
-### Caching Strategy
-- Cache: Server config, user profiles, media metadata, user state, library structure
+### Caching Strategy (current vs. planned)
+- **Current**: Session tokens in Keychain only; artwork via `URLCache` (64MB memory / 256MB disk). No persistent metadata cache.
+- **Planned**: SwiftData caching for server config, user profiles, media metadata, user state, and library structure
 - Don't cache: Auth tokens (Keychain only), video streams, transcoding decisions
-- Invalidation: On app launch, after playback, background refresh, manual pull-to-refresh
 
 ## Current Project State
 
-This is a **new project** initialized with Xcode template boilerplate. The current code contains:
-- Basic SwiftUI app structure with SwiftData persistence
-- Template `Item` model and `ContentView` (to be replaced)
-- Xcode project configured for tvOS and visionOS (26.0+ minimum deployment)
+The foundation and core loop are in place. The app can connect to a Jellyfin server, browse libraries with artwork and metadata, and play items end to end.
 
-**Next Steps** (from docs):
-1. Foundation: Architecture setup, core API integration, basic playback, Standard theme
-2. Theming & Components: Remaining themes, component variant system, base component library
-3. Platform Polish: tvOS/visionOS-specific optimizations, accessibility compliance
-4. Beta & Refinement: Testing, bug fixes, performance tuning
+**Implemented**:
+- Modular SPM architecture (JellyfinKit, DesignSystem, Features) wired into the app target
+- Server connection + authentication with Keychain-backed session persistence and restore-on-launch
+- Home screen (Continue Watching, Recently Added), library browsing, media detail
+- AVPlayer HLS playback: progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
+- Standard theme and design-token system applied throughout
+- Real unit tests for `ServerConnectionViewModel` and `PlaybackViewModel` (Swift Testing) plus JellyfinKit unit tests
+
+**Not yet implemented**:
+- Search (UI placeholder only)
+- Horror / Action / Video Store themes (identifiers exist but resolve to Standard)
+- Component variant system
+- SwiftData metadata/state caching
+- Top Shelf, Siri, and visionOS-specific spatial experiences
+
+**Next Steps**:
+1. Theming & Components: Implement remaining themes, build the component variant system
+2. Search: Wire up the search endpoint and UI
+3. Caching: Adopt SwiftData for metadata and user-state caching
+4. Platform Polish: tvOS/visionOS-specific optimizations, accessibility compliance
+5. Beta & Refinement: Expand app-target test coverage, bug fixes, performance tuning
 
 ## Important Design Decisions
 
