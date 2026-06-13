@@ -33,7 +33,21 @@ Designed specifically for the lean-back, living room experience—not adapted fr
 
 ## Status
 
-**In Active Development** — This is a new project. The foundation is being built with a modular architecture to support the planned feature set.
+**In Active Development** — The core loop works end to end: connect to a Jellyfin server, browse libraries with artwork and metadata, and play items with progress tracking and resume.
+
+**Working today:**
+- Server connection and authentication with session persistence (Keychain-backed, auto-restored on launch)
+- Home screen with live "Continue Watching" and "Recently Added" rows
+- Library browsing with drill-down to item grids
+- Media detail views with artwork, metadata, and play/resume
+- AVPlayer-based HLS playback: progress reporting, resume, audio/subtitle track switching, and episode autoplay with an "Up Next" countdown
+- Design system with theming wired throughout the app
+
+**Not yet implemented:**
+- Search (UI placeholder only)
+- Themes beyond Standard — Horror, Action, and Video Store are scaffolded but currently fall back to Standard
+- Component variant system
+- Local metadata/image caching (only session tokens are persisted today; artwork uses `URLCache`)
 
 ## Platform Support
 
@@ -42,10 +56,12 @@ Designed specifically for the lean-back, living room experience—not adapted fr
 
 ## Tech Stack
 
-- Swift 6.0+
+- Swift 6.2+
 - SwiftUI
-- SwiftData
-- Jellyfin API integration
+- AVKit / AVPlayer for HLS playback
+- [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) for the Jellyfin API
+- Keychain for secure session storage
+- Swift Package Manager (modular: JellyfinKit, DesignSystem, Features)
 
 ## Contributing
 

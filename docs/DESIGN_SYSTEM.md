@@ -10,6 +10,8 @@ The system has two layers:
 
 Users can switch themes globally while customizing individual components to their preference - all adhering to the chosen theme's design language.
 
+> **Implementation status**: This document is the design spec — most of it describes the intended system. **Currently only the Standard theme is implemented.** The Horror, Action, and Video Store identifiers exist in `ThemeIdentifier` (and their color/motion tokens are defined in `ColorTokens`/`MotionTokens`), but they resolve to `StandardTheme` at runtime via `TODO` fallbacks in `ThemeManager`. The **component variant system is not yet built** — the only base components are `ArtworkImage` and `ComponentPlaceholder`. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
+
 ---
 
 ## Core Themes (v1.0)
@@ -164,48 +166,63 @@ Dark Mode (After Hours):
 ## Theme Architecture
 
 ### Design Tokens
-All themes inherit from a base token structure:
-(WIP - not final)
+Themes conform to the `Theme` protocol (`Packages/DesignSystem/Sources/DesignSystem/Theming/Theme.swift`). The protocol provides default implementations for typography, spacing, motion, and geometry, so a conforming theme only has to supply identity + colors. Actual shape as implemented:
 ```swift
-protocol Theme {
+public protocol Theme: Sendable {
+    // Identity
+    var id: String { get }
+    var name: String { get }
+    var description: String { get }
+
     // Colors
     var background: Color { get }
     var surface: Color { get }
+    var surfaceElevated: Color { get }
     var primary: Color { get }
+    var secondary: Color { get }
+    var tertiary: Color { get }
     var accent: Color { get }
-    var text: Color { get }
-    var textSecondary: Color { get }
-    
-    // Typography
-    var fontFamily: String { get }
+    var accentSecondary: Color { get }
+    var success: Color { get }
+    var warning: Color { get }
+    var error: Color { get }
+    var focusRing: Color { get }
+
+    // Typography (have protocol defaults)
+    var fontFamily: String? { get }          // nil = SF Pro system font
     var fontWeightDisplay: Font.Weight { get }
     var fontWeightBody: Font.Weight { get }
     var letterSpacing: CGFloat { get }
-    
-    // Spacing
+
+    // Spacing (defaults)
     var spacingUnit: CGFloat { get }
     var cardPadding: CGFloat { get }
     var sectionSpacing: CGFloat { get }
-    
-    // Motion
+
+    // Motion (defaults)
     var transitionDuration: TimeInterval { get }
-    var animationCurve: Animation { get }
-    
-    // Geometry
+    var animation: Animation { get }
+    var focusScale: CGFloat { get }
+
+    // Geometry (defaults)
     var cornerRadius: CGFloat { get }
+    var cornerRadiusLarge: CGFloat { get }
     var borderWidth: CGFloat { get }
 }
 ```
+A `public typealias AppTheme = Theme` is exported from `DesignSystem.swift`. Themes are surfaced to views through the SwiftUI environment via `\.theme` (default `StandardTheme()`) and `View.withThemeEnvironment(_:)`.
 
-### Theme Switching
-- **Runtime switching**: No app restart required
-- **Animated transitions**: Smooth crossfade between themes (500ms)
-- **Persistence**: User choice saved in SwiftData
+### Theme Switching (as implemented)
+- **Runtime switching**: No app restart required, via `ThemeManager.shared.switchTheme(to:)` (`@MainActor @Observable` singleton)
+- **Animated transitions**: Wrapped in `withAnimation(.easeInOut(duration: 0.5))` (`MotionTokens.durationThemeTransition`)
+- **Persistence**: User choice saved in **`UserDefaults`** under key `"selectedTheme"` (not SwiftData)
 - **Per-library override**: Future feature (global theme + per-library exceptions)
 
 ---
 
-## Component Variants (WIP - not final)
+## Component Variants (⏳ not yet implemented — design spec)
+
+> None of the variants below are built yet. The only components in DesignSystem today are `ArtworkImage` and `ComponentPlaceholder`. Feature views currently use fixed layouts (e.g. `HomeView`'s landscape Continue-Watching cards and poster Recently-Added cards) rather than a configurable variant system.
 
 Component variants are **layout and presentation options** that work within any theme. They adapt to the active theme's visual language while offering structural flexibility.
 
@@ -391,19 +408,19 @@ All themes must maintain:
 
 ## Implementation Strategy
 
-### Phase 1: Foundation
-1. Define base `Theme` protocol
-2. Implement Standard theme (light + dark)
-3. Build token system and theme provider
-4. Create theme switching UI
+### Phase 1: Foundation — ✅ done
+1. ✅ Define base `Theme` protocol
+2. ✅ Implement Standard theme (currently dark palette via `ColorTokens.Standard`)
+3. ✅ Build token system (`ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`) and theme provider (`ThemeManager` + environment)
+4. ✅ Create theme switching UI (Settings → Appearance)
 
-### Phase 2: Variants
-5. Implement Horror theme
-6. Implement Action theme  
-7. Implement Video Store theme
-8. Add component variant system
+### Phase 2: Variants — ⏳ in progress / not started
+5. ⏳ Implement Horror theme (tokens defined; theme struct not built — falls back to Standard)
+6. ⏳ Implement Action theme (same)
+7. ⏳ Implement Video Store theme (same)
+8. ⏳ Add component variant system (not started)
 
-### Phase 3: Customization
+### Phase 3: Customization — planned
 9. Per-component variant settings UI
 10. Theme preview system
 11. Import/export themes (future)
