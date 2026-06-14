@@ -84,42 +84,18 @@ struct SearchView: View {
         ScrollView {
             LazyVGrid(
                 columns: [
-                    GridItem(.adaptive(minimum: 220), spacing: SpacingTokens.cardGap)
+                    GridItem(.adaptive(minimum: 340), spacing: SpacingTokens.cardGap)
                 ],
                 spacing: SpacingTokens.cardGap
             ) {
                 ForEach(viewModel.results) { item in
-                    NavigationLink {
-                        MediaDetailView(item: item)
-                    } label: {
-                        resultCard(for: item)
-                    }
-                    .buttonStyle(.borderless)
-                    
+                    item.landscapeShelfItem(client: session.client)
                 }
             }
             .padding(.horizontal, SpacingTokens.screenPadding)
             .padding(.vertical, SpacingTokens.lg)
         }
-    }
-
-    private func resultCard(for item: MediaItem) -> some View {
-        VStack(spacing: SpacingTokens.sm) {
-            ArtworkImage(url: session.client?.landscapeURL(for: item), placeholderIcon: "film.fill")
-                .aspectRatio(16 / 9, contentMode: .fit)
-
-            Text(item.episodeDisplayTitle ?? item.name)
-                .font(.jsBody)
-                .foregroundStyle(theme.primary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-
-            if let year = item.productionYear {
-                Text(String(year))
-                    .font(.jsCaption)
-                    .foregroundStyle(theme.secondary)
-            }
-        }
+        .scrollClipDisabled()
     }
 }
 

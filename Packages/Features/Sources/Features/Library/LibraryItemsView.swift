@@ -49,41 +49,13 @@ struct LibraryItemsView: View {
                 spacing: SpacingTokens.cardGap
             ) {
                 ForEach(items) { item in
-                    NavigationLink {
-                        MediaDetailView(item: item)
-                    } label: {
-                        itemCard(for: item)
-                    }
-                    #if os(tvOS)
-                    .buttonStyle(.borderless)
-                    #else
-                    .buttonStyle(.plain)
-                    #endif
+                    item.posterShelfItem(client: session.client)
                 }
             }
             .padding(.horizontal, SpacingTokens.screenPadding)
             .padding(.vertical, SpacingTokens.lg)
         }
-    }
-
-    private func itemCard(for item: MediaItem) -> some View {
-        VStack(spacing: SpacingTokens.sm) {
-            ArtworkImage(url: session.client?.posterURL(for: item), placeholderIcon: "film.fill")
-                .aspectRatio(2 / 3, contentMode: .fit)
-                .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
-
-            Text(item.name)
-                .font(.jsCaption)
-                .foregroundStyle(theme.primary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-
-            if let year = item.productionYear {
-                Text(String(year))
-                    .font(.jsCaption)
-                    .foregroundStyle(theme.secondary)
-            }
-        }
+        .scrollClipDisabled()
     }
 
     private func loadItems() async {

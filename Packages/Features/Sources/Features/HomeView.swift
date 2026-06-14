@@ -11,39 +11,42 @@ struct HomeView: View {
 
     @State private var resumeItems: [MediaItem] = []
     @State private var latestItems: [MediaItem] = []
+    @State private var belowFold = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                     // Hero Section
                     heroSection
+                        .onScrollVisibilityChange { visible in
+                            withAnimation(theme.animation) {
+                                belowFold = !visible
+                            }
+                        }
 
                     // Continue Watching
                     if !resumeItems.isEmpty {
-                        section(title: "Continue Watching", icon: "play.circle.fill") {
+                        ContentShelf("Continue Watching", icon: "play.circle.fill") {
                             ForEach(resumeItems) { item in
-                                itemLink(for: item) {
-                                    landscapeCard(for: item)
-                                }
+                                item.landscapeShelfItem(client: session.client)
                             }
                         }
                     }
 
                     // Recently Added
                     if !latestItems.isEmpty {
-                        section(title: "Recently Added", icon: "sparkles") {
+                        ContentShelf("Recently Added", icon: "sparkles") {
                             ForEach(latestItems) { item in
-                                itemLink(for: item) {
-                                    posterCard(for: item)
-                                }
+                                item.posterShelfItem(client: session.client)
                             }
                         }
                     }
                 }
-                .padding(.horizontal, SpacingTokens.screenPadding)
                 .padding(.vertical, SpacingTokens.lg)
             }
+            .scrollClipDisabled()
+            .background(alignment: .top) { heroBackground }
             .background(theme.background)
             .navigationTitle("Home")
             .task(id: session.isConnected) {
@@ -59,48 +62,59 @@ struct HomeView: View {
         return (resumeItems + latestItems).first { client.backdropURL(for: $0) != nil }
     }
 
+    /// Full-bleed backdrop behind the above-the-fold content. Masked with a
+    /// gradient so it melts into the background, and faded out once the hero
+    /// scrolls away (`belowFold`).
+    @ViewBuilder
+    private var heroBackground: some View {
+        if let client = session.client, let item = heroItem, !belowFold {
+            ArtworkImage(url: client.backdropURL(for: item))
+                .frame(height: 1080)
+                .frame(maxWidth: .infinity)
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0.0),
+                            .init(color: .black, location: 0.4),
+                            .init(color: .clear, location: 0.9),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .ignoresSafeArea()
+                .transition(.opacity)
+        }
+    }
+
     @ViewBuilder
     private var heroSection: some View {
-        if let client = session.client, let item = heroItem {
-            NavigationLink {
-                MediaDetailView(item: item)
-            } label: {
-                ArtworkImage(url: client.backdropURL(for: item))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 400)
-                    .overlay {
-                        LinearGradient(
-                            stops: [
-                                .init(color: theme.background.opacity(0.85), location: 0),
-                                .init(color: .clear, location: 0.5),
-                            ],
-                            startPoint: .bottom,
-                            endPoint: .top
-                        )
-                    }
-                    .overlay(alignment: .bottomLeading) {
-                        VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                            Text(item.name)
-                                .font(.jsHeadline)
-                                .foregroundStyle(theme.primary)
+        if let item = heroItem {
+            VStack(alignment: .leading, spacing: SpacingTokens.md) {
+                Spacer(minLength: 280)
 
-                            if let year = item.productionYear {
-                                Text(String(year))
-                                    .font(.jsBody)
-                                    .foregroundStyle(theme.secondary)
-                            }
-                        }
-                        .padding(SpacingTokens.lg)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadiusLarge))
+                Text(item.name)
+                    .font(.jsDisplay)
+                    .foregroundStyle(theme.primary)
+
+                if let year = item.productionYear {
+                    Text(String(year))
+                        .font(.jsTitle)
+                        .foregroundStyle(theme.secondary)
+                }
+
+                NavigationLink {
+                    MediaDetailView(item: item)
+                } label: {
+                    Label("View Details", systemImage: "info.circle")
+                }
+                .padding(.top, SpacingTokens.sm)
             }
-            #if os(tvOS)
-            .buttonStyle(.borderless)
-            #else
-            .buttonStyle(.plain)
-            #endif
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, SpacingTokens.screenPadding)
         } else {
             placeholderHero
+                .padding(.horizontal, SpacingTokens.screenPadding)
         }
     }
 
@@ -132,79 +146,6 @@ struct HomeView: View {
             return "Signed in as \(user.name)"
         }
         return "Connect to a Jellyfin server to see your media"
-    }
-
-    // MARK: - Sections
-
-    private func section(title: String, icon: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: SpacingTokens.headerSpacing) {
-            // Section Header
-            HStack(spacing: SpacingTokens.sm) {
-                Image(systemName: icon)
-                    .foregroundStyle(theme.accent)
-
-                Text(title)
-                    .font(.jsHeadline)
-                    .foregroundStyle(theme.primary)
-            }
-
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
-                    content()
-                }
-            }
-            .scrollIndicators(.hidden)
-        }
-    }
-
-    private func itemLink(for item: MediaItem, @ViewBuilder label: () -> some View) -> some View {
-        NavigationLink {
-            MediaDetailView(item: item)
-        } label: {
-            label()
-        }
-        #if os(tvOS)
-        .buttonStyle(.borderless)
-        #else
-        .buttonStyle(.plain)
-        #endif
-    }
-
-    // MARK: - Cards
-
-    private func posterCard(for item: MediaItem) -> some View {
-        VStack(spacing: SpacingTokens.xs) {
-            ArtworkImage(url: session.client?.posterURL(for: item))
-                .frame(width: 200, height: 300)
-                .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
-
-            Text(item.name)
-                .font(.jsCaption)
-                .foregroundStyle(theme.secondary)
-                .lineLimit(1)
-                .frame(width: 200)
-        }
-    }
-
-    private func landscapeCard(for item: MediaItem) -> some View {
-        VStack(spacing: SpacingTokens.xs) {
-            ArtworkImage(url: session.client?.landscapeURL(for: item))
-                .frame(width: 320, height: 180)
-                .overlay(alignment: .bottomLeading) {
-                    if let progress = item.progressPercentage {
-                        Rectangle()
-                            .fill(theme.accent)
-                            .frame(width: 320 * progress, height: 4)
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
-
-            Text(item.episodeDisplayTitle ?? item.name)
-                .font(.jsCaption)
-                .foregroundStyle(theme.secondary)
-                .lineLimit(1)
-                .frame(width: 320)
-        }
     }
 
     // MARK: - Data
