@@ -34,7 +34,6 @@ public struct MediaDetailView: View {
             .padding(.vertical, SpacingTokens.lg)
         }
         .background(theme.background)
-        .navigationTitle(item.name)
         #if os(macOS)
         .sheet(isPresented: $isPresentingPlayer) {
             if let client = session.client {

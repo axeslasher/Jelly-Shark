@@ -53,7 +53,6 @@ public struct LibraryView: View {
                 .padding(.vertical, SpacingTokens.lg)
             }
             .background(theme.background)
-            .navigationTitle("Library")
         }
     }
 

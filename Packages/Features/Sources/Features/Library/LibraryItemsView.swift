@@ -34,7 +34,6 @@ struct LibraryItemsView: View {
             }
         }
         .background(theme.background)
-        .navigationTitle(library.name)
         .task {
             await loadItems()
         }

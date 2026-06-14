@@ -12,7 +12,6 @@ struct SearchView: View {
         NavigationStack {
             content
                 .background(theme.background)
-                .navigationTitle("Search")
         }
         .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
         .searchSuggestions {
