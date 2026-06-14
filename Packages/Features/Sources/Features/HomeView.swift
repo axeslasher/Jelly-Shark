@@ -69,7 +69,7 @@ struct HomeView: View {
     private var heroBackground: some View {
         if let client = session.client, let item = heroItem, !belowFold {
             ArtworkImage(url: client.backdropURL(for: item))
-                .frame(height: 800)
+                .frame(height: 1080)
                 .frame(maxWidth: .infinity)
                 .mask {
                     LinearGradient(

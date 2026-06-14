@@ -59,7 +59,7 @@ extension JellyfinClientProtocol {
 /// the detail-screen destination.
 extension MediaItem {
     /// Portrait poster card (2:3). Title is the item name; subtitle is the year.
-    @ViewBuilder
+    @MainActor @ViewBuilder
     func posterShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 200) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
@@ -75,7 +75,7 @@ extension MediaItem {
 
     /// Landscape card (16:9). Episodes show the episode title over the series
     /// name; everything else shows the name over the year.
-    @ViewBuilder
+    @MainActor @ViewBuilder
     func landscapeShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 320) -> some View {
         ArtworkShelfItem(
             url: client?.landscapeURL(for: self),
