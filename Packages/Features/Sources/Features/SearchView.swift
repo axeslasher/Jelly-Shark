@@ -1,32 +1,124 @@
 import SwiftUI
+import JellyfinKit
 import DesignSystem
 
-/// Search screen for finding media
+/// Search screen for finding media across the user's libraries
 struct SearchView: View {
     @Environment(\.theme) private var theme
-    @State private var searchText = ""
+    @Environment(AppSession.self) private var session
+    @State private var viewModel = SearchViewModel()
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: SpacingTokens.lg) {
-                // Search placeholder
-                VStack(spacing: SpacingTokens.md) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 64))
-                        .foregroundStyle(theme.secondary)
-
-                    Text("Search Your Library")
-                        .font(.jsHeadline)
-                        .foregroundStyle(theme.primary)
-
-                    Text("Find movies, shows, and more")
-                        .font(.jsBody)
-                        .foregroundStyle(theme.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            content
+                .background(theme.background)
+                .navigationTitle("Search")
+        }
+        .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
+        .searchSuggestions {
+            ForEach(viewModel.suggestions, id: \.self) { suggestion in
+                Text(suggestion)
+                    .searchCompletion(suggestion)
             }
-            .background(theme.background)
-            .navigationTitle("Search")
+        }
+        .onChange(of: viewModel.query) { _, newValue in
+            viewModel.updateQuery(newValue)
+        }
+        .task(id: session.isConnected) {
+            viewModel.attach(client: session.client)
+        }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch viewModel.state {
+        case .idle:
+            prompt
+        case .searching:
+            ProgressView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .empty:
+            message(
+                icon: "magnifyingglass",
+                text: "No results for \"\(viewModel.query)\""
+            )
+        case .failed(let errorMessage):
+            message(icon: "exclamationmark.triangle.fill", text: errorMessage)
+        case .results:
+            resultsGrid
+        }
+    }
+
+    private var prompt: some View {
+        VStack(spacing: SpacingTokens.md) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 64))
+                .foregroundStyle(theme.secondary)
+
+            Text("Search Your Library")
+                .font(.jsHeadline)
+                .foregroundStyle(theme.primary)
+
+            Text("Find movies, shows, and more")
+                .font(.jsBody)
+                .foregroundStyle(theme.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func message(icon: String, text: String) -> some View {
+        VStack(spacing: SpacingTokens.md) {
+            Image(systemName: icon)
+                .font(.system(size: 48))
+                .foregroundStyle(theme.secondary)
+
+            Text(text)
+                .font(.jsBody)
+                .foregroundStyle(theme.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var resultsGrid: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 220), spacing: SpacingTokens.cardGap)
+                ],
+                spacing: SpacingTokens.cardGap
+            ) {
+                ForEach(viewModel.results) { item in
+                    NavigationLink {
+                        MediaDetailView(item: item)
+                    } label: {
+                        resultCard(for: item)
+                    }
+                    .buttonStyle(.borderless)
+                    
+                }
+            }
+            .padding(.horizontal, SpacingTokens.screenPadding)
+            .padding(.vertical, SpacingTokens.lg)
+        }
+    }
+
+    private func resultCard(for item: MediaItem) -> some View {
+        VStack(spacing: SpacingTokens.sm) {
+            ArtworkImage(url: session.client?.landscapeURL(for: item), placeholderIcon: "film.fill")
+                .aspectRatio(16 / 9, contentMode: .fit)
+
+            Text(item.episodeDisplayTitle ?? item.name)
+                .font(.jsBody)
+                .foregroundStyle(theme.primary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+
+            if let year = item.productionYear {
+                Text(String(year))
+                    .font(.jsCaption)
+                    .foregroundStyle(theme.secondary)
+            }
         }
     }
 }
@@ -34,4 +126,5 @@ struct SearchView: View {
 #Preview {
     SearchView()
         .withThemeEnvironment()
+        .environment(AppSession())
 }

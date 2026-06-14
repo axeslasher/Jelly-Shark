@@ -55,7 +55,7 @@ struct LibraryItemsView: View {
                         itemCard(for: item)
                     }
                     #if os(tvOS)
-                    .buttonStyle(.card)
+                    .buttonStyle(.borderless)
                     #else
                     .buttonStyle(.plain)
                     #endif

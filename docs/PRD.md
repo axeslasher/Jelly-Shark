@@ -141,7 +141,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ✅ Library browsing (movies, TV, music)
 - ✅ Media detail views with metadata
 - ✅ Playback with progress tracking (HLS, resume, audio/subtitle tracks, episode autoplay)
-- ⏳ Search functionality (UI stub only)
+- ✅ Search functionality (debounced live search with suggestions)
 - ⏳ User profile switching (not started)
 - ⏳ Theme customization UI (UI present; only Standard theme functional)
 - ✅ Settings management

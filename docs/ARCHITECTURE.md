@@ -130,10 +130,11 @@ This adapter pattern keeps mapping logic centralized and testable.
 Features/
 ├── RootView.swift          (TabView: Home / Library / Search / Settings)
 ├── HomeView.swift
-├── SearchView.swift        (stub — no search logic yet)
+├── SearchView.swift        (debounced search UI)
 ├── AppSession.swift        (app-level session/client state)
 ├── Artwork/                (MediaArtwork: image-URL helpers)
 ├── Library/                (LibraryView, LibraryItemsView)
+├── Search/                 (SearchViewModel)
 ├── MediaDetail/            (MediaDetailView)
 ├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, UpNextOverlayView)
 └── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)

@@ -57,6 +57,13 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: The media item details
     func getMediaItem(itemId: String) async throws -> MediaItem
 
+    /// Search the user's libraries by name
+    /// - Parameters:
+    ///   - query: The search term
+    ///   - limit: Maximum number of items to return
+    /// - Returns: Matching media items (movies, series, episodes)
+    func searchItems(query: String, limit: Int?) async throws -> [MediaItem]
+
     /// Get the image URL for a media item
     /// - Parameters:
     ///   - itemId: The item ID
@@ -388,6 +395,32 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             return MediaItem(from: response.value)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func searchItems(query: String, limit: Int? = 40) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.searchTerm = query
+            parameters.limit = limit
+            parameters.isRecursive = true
+            parameters.includeItemTypes = [.movie, .series, .episode]
+            parameters.fields = [.overview, .genres, .dateCreated]
+            parameters.sortBy = [.sortName]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
         } catch let error as APIError {
             throw error
         } catch {

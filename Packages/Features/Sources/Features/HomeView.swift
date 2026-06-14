@@ -95,7 +95,7 @@ struct HomeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadiusLarge))
             }
             #if os(tvOS)
-            .buttonStyle(.card)
+            .buttonStyle(.borderless)
             #else
             .buttonStyle(.plain)
             #endif
@@ -164,7 +164,7 @@ struct HomeView: View {
             label()
         }
         #if os(tvOS)
-        .buttonStyle(.card)
+        .buttonStyle(.borderless)
         #else
         .buttonStyle(.plain)
         #endif
