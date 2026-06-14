@@ -52,41 +52,63 @@ public struct ArtworkShelfItem<Destination: View>: View {
         NavigationLink {
             destination
         } label: {
-            // Artwork and caption are intentionally siblings, not nested in a
-            // VStack — see the type doc for why.
-            ArtworkImage(url: url, placeholderIcon: placeholderIcon)
-                .aspectRatio(aspectRatio, contentMode: .fit)
-                .frame(width: width)
-                .overlay(alignment: .bottomLeading) {
-                    if let progress {
-                        Rectangle()
-                            .fill(theme.accent)
-                            .frame(width: width * progress, height: 4)
-                    }
-                }
-                .artworkCornerRadius(theme.cornerRadius)
-                .artworkHighlightOnFocus()
-
-            Text(title)
-                .font(.jsCaption)
-                .foregroundStyle(theme.primary)
-                .lineLimit(1)
-                .frame(width: width)
-
-            // Reserve the second line even when empty so cards with one vs. two
-            // caption lines stay aligned across a row.
-            Text(subtitle ?? " ")
-                .font(.jsCaption)
-                .foregroundStyle(theme.secondary)
-                .lineLimit(1)
-                .frame(width: width)
-                .opacity(subtitle == nil ? 0 : 1)
+            #if os(tvOS)
+            // Artwork and captions are intentionally flat siblings, not nested in
+            // a stack — the borderless style arranges them into a vertical lockup
+            // and moves the captions out of the way as the artwork lifts.
+            artwork
+            titleText
+            subtitleText
+            #else
+            // Other platforms don't apply the borderless lockup, so multiple
+            // direct label children lay out horizontally. Stack them explicitly
+            // to keep the captions below the artwork.
+            VStack(spacing: SpacingTokens.xs) {
+                artwork
+                titleText
+                subtitleText
+            }
+            #endif
         }
         #if os(tvOS)
         .buttonStyle(.borderless)
         #else
         .buttonStyle(.plain)
         #endif
+    }
+
+    private var artwork: some View {
+        ArtworkImage(url: url, placeholderIcon: placeholderIcon)
+            .aspectRatio(aspectRatio, contentMode: .fit)
+            .frame(width: width)
+            .overlay(alignment: .bottomLeading) {
+                if let progress {
+                    Rectangle()
+                        .fill(theme.accent)
+                        .frame(width: width * progress, height: 4)
+                }
+            }
+            .artworkCornerRadius(theme.cornerRadius)
+            .artworkHighlightOnFocus()
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(.jsCaption)
+            .foregroundStyle(theme.primary)
+            .lineLimit(1)
+            .frame(width: width)
+    }
+
+    private var subtitleText: some View {
+        // Reserve the second line even when empty so cards with one vs. two
+        // caption lines stay aligned across a row.
+        Text(subtitle ?? " ")
+            .font(.jsCaption)
+            .foregroundStyle(theme.secondary)
+            .lineLimit(1)
+            .frame(width: width)
+            .opacity(subtitle == nil ? 0 : 1)
     }
 }
 
