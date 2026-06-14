@@ -2,12 +2,18 @@ import SwiftUI
 import JellyfinKit
 import DesignSystem
 
-/// Detail view for a media item
-/// Shows full information, play button, and related content
+/// Detail view for a media item.
+///
+/// Mirrors `HomeView`'s hero treatment: a full-bleed backdrop that melts into the
+/// background behind a left-aligned title, metadata row, and Play button, followed
+/// by the overview and Cast & Crew / More Like This shelves.
 public struct MediaDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
 
+    @State private var detailedItem: MediaItem?
+    @State private var similarItems: [MediaItem] = []
+    @State private var belowFold = false
     @State private var isPresentingPlayer = false
 
     let item: MediaItem
@@ -16,24 +22,51 @@ public struct MediaDetailView: View {
         self.item = item
     }
 
+    /// The passed-in stub renders instantly; the detailed fetch (which carries
+    /// cast & crew) upgrades it once it lands.
+    private var displayItem: MediaItem { detailedItem ?? item }
+
     public var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                // Hero Section
+            LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 heroSection
+                    .onScrollVisibilityChange { visible in
+                        withAnimation(theme.animation) {
+                            belowFold = !visible
+                        }
+                    }
 
-                // Metadata
-                metadataSection
+                
 
-                // Overview
-                if let overview = item.overview {
-                    overviewSection(overview)
+                if let client = session.client,
+                   let people = displayItem.people, !people.isEmpty {
+                    ContentShelf("Cast & Crew", icon: "person.2.fill") {
+                        ForEach(people) { member in
+                            CastCard(
+                                url: client.headshotURL(for: member),
+                                name: member.name,
+                                role: member.role ?? member.kind
+                            )
+                        }
+                    }
+                }
+
+                if !similarItems.isEmpty {
+                    ContentShelf("More Like This", icon: "rectangle.stack.fill") {
+                        ForEach(similarItems) { item in
+                            item.posterShelfItem(client: session.client)
+                        }
+                    }
                 }
             }
-            .padding(.horizontal, SpacingTokens.screenPadding)
             .padding(.vertical, SpacingTokens.lg)
         }
+        .scrollClipDisabled()
+        .background(alignment: .top) { heroBackground }
         .background(theme.background)
+        .task(id: item.id) {
+            await loadContent()
+        }
         #if os(macOS)
         .sheet(isPresented: $isPresentingPlayer) {
             if let client = session.client {
@@ -49,95 +82,141 @@ public struct MediaDetailView: View {
         #endif
     }
 
+    // MARK: - Hero
+
+    /// Full-bleed backdrop behind the above-the-fold content. Masked with a
+    /// gradient so it melts into the background, and faded out once the hero
+    /// scrolls away (`belowFold`).
+    @ViewBuilder
+    private var heroBackground: some View {
+        if let client = session.client,
+           let url = client.backdropURL(for: displayItem), !belowFold {
+            ArtworkImage(url: url)
+                .frame(height: 1080)
+                .frame(maxWidth: .infinity)
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0.0),
+                            .init(color: .black, location: 0.6),
+                            .init(color: .clear, location: 0.9),
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+                .ignoresSafeArea()
+                .transition(.opacity)
+        }
+    }
+
     private var heroSection: some View {
-        ArtworkImage(url: session.client?.backdropURL(for: item))
-            .frame(maxWidth: .infinity)
-            .frame(height: 500)
-            .overlay {
-                // Scrim so the title and button keep contrast over any backdrop
-                theme.background.opacity(0.55)
+        VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+            Spacer(minLength: 320)
+
+            titleTreatment
+
+            if !metadataLine.isEmpty {
+                Text(metadataLine)
+                    .font(.jsTitle)
+                    .foregroundStyle(theme.secondary)
             }
-            .overlay {
-                VStack(spacing: SpacingTokens.lg) {
-                    // Poster
-                    ArtworkImage(url: session.client?.posterURL(for: item))
-                        .frame(width: 200, height: 300)
-                        .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
+            if let overview = displayItem.overview {
+                overviewSection(overview)
+                    .padding(.top, SpacingTokens.md)
+                    //.frame(idealWidth: 380, maxWidth: 500)
+            }
+            
+            
+            playButton
+                .padding(.top, SpacingTokens.lg)
+                .padding(.bottom, SpacingTokens.lg)
+                
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, SpacingTokens.screenPadding)
+        
+    }
 
-                    // Title
-                    Text(item.name)
-                        .font(.jsDisplay)
-                        .foregroundStyle(theme.primary)
-
-                    // Play Button
-                    Button {
-                        isPresentingPlayer = true
-                    } label: {
-                        HStack(spacing: SpacingTokens.sm) {
-                            Image(systemName: "play.fill")
-                            Text(item.hasProgress ? "Resume" : "Play")
-                        }
-                        .font(.jsTitle)
-                        .foregroundStyle(theme.background)
-                        .padding(.horizontal, SpacingTokens.xl)
-                        .padding(.vertical, SpacingTokens.md)
-                        .background(theme.accent)
-                        .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(session.client == nil)
+    /// The item's logo if one exists, falling back to the title text. Rendered
+    /// with `AsyncImage` (not `ArtworkImage`) so the logo's transparency is
+    /// preserved instead of being boxed in by a surface-colored base.
+    @ViewBuilder
+    private var titleTreatment: some View {
+        if let client = session.client, let url = client.logoURL(for: displayItem) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image {
+                    image
+                        .resizable()
+                        .scaledToFit()
+                        // Size the logo into its box, then pin that box to the
+                        // leading edge so logos of any width stay left-aligned.
+                        .frame(maxWidth: 500, maxHeight: 160, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    titleText
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadiusLarge))
-    }
-
-    private var metadataSection: some View {
-        HStack(spacing: SpacingTokens.lg) {
-            if let year = item.productionYear {
-                metadataItem(value: String(year), label: "Year")
-            }
-
-            if let runtime = item.formattedRuntime {
-                metadataItem(value: runtime, label: "Runtime")
-            }
-
-            if let rating = item.communityRating {
-                metadataItem(value: String(format: "%.1f", rating), label: "Rating")
-            }
-
-            if let officialRating = item.officialRating {
-                metadataItem(value: officialRating, label: "Rated")
-            }
+        } else {
+            titleText
         }
     }
 
-    private func metadataItem(value: String, label: String) -> some View {
-        VStack(spacing: SpacingTokens.xs) {
-            Text(value)
-                .font(.jsTitle)
-                .foregroundStyle(theme.primary)
+    private var titleText: some View {
+        Text(displayItem.name)
+            .font(.jsDisplay)
+            .foregroundStyle(theme.primary)
+    }
 
-            Text(label)
-                .font(.jsCaption)
-                .foregroundStyle(theme.secondary)
+    /// Inline "year · runtime · rating · rated" row, omitting any missing field.
+    private var metadataLine: String {
+        var parts: [String] = []
+        if let year = displayItem.productionYear { parts.append(String(year)) }
+        if let runtime = displayItem.formattedRuntime { parts.append(runtime) }
+        if let rating = displayItem.communityRating { parts.append(String(format: "%.1f", rating)) }
+        if let officialRating = displayItem.officialRating { parts.append(officialRating) }
+        return parts.joined(separator: " · ")
+    }
+
+    private var playButton: some View {
+        Button {
+            isPresentingPlayer = true
+        } label: {
+            HStack(spacing: SpacingTokens.sm) {
+                Image(systemName: "play.fill")
+                Text(displayItem.hasProgress ? "Resume" : "Play")
+            }
+            .font(.jsTitle)
+            .buttonStyle(.glass(.clear))
+            .controlSize(.extraLarge)
+            .buttonBorderShape(.capsule)
         }
-        .padding(.horizontal, SpacingTokens.md)
-        .padding(.vertical, SpacingTokens.sm)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadius))
+        .buttonStyle(.glass)
+        .disabled(session.client == nil)
     }
 
     private func overviewSection(_ overview: String) -> some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
-            Text("Overview")
-                .font(.jsHeadline)
-                .foregroundStyle(theme.primary)
+            //Text("Overview")
+            //    .font(.jsHeadline)
+            //    .foregroundStyle(theme.primary)
 
             Text(overview)
                 .font(.jsBody)
-                .foregroundStyle(theme.secondary)
+                .foregroundStyle(theme.primary)
                 .lineSpacing(4)
         }
+        //.padding(.horizontal, SpacingTokens.screenPadding)
+    }
+
+    // MARK: - Data
+
+    private func loadContent() async {
+        guard let client = session.client else { return }
+
+        // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
+        detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
+        similarItems = (try? await client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
     }
 }
 

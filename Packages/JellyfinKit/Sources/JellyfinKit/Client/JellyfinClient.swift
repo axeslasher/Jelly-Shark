@@ -57,6 +57,13 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: The media item details
     func getMediaItem(itemId: String) async throws -> MediaItem
 
+    /// Fetch items similar to the given item ("More Like This")
+    /// - Parameters:
+    ///   - itemId: The item ID to find similar items for
+    ///   - limit: Maximum number of items to return
+    /// - Returns: Similar media items
+    func getSimilarItems(itemId: String, limit: Int?) async throws -> [MediaItem]
+
     /// Search the user's libraries by name
     /// - Parameters:
     ///   - query: The search term
@@ -395,6 +402,29 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             return MediaItem(from: response.value)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getSimilarItems(itemId: String, limit: Int? = 12) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetSimilarItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.fields = [.overview, .genres, .dateCreated]
+
+            let response = try await sdkClient.send(
+                Paths.getSimilarItems(itemID: itemId, parameters: parameters)
+            )
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
         } catch let error as APIError {
             throw error
         } catch {

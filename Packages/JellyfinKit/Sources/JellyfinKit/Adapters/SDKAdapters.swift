@@ -50,7 +50,16 @@ extension MediaItem {
             seasonId: dto.seasonID,
             seasonName: dto.seasonName,
             indexNumber: dto.indexNumber,
-            parentIndexNumber: dto.parentIndexNumber
+            parentIndexNumber: dto.parentIndexNumber,
+            people: dto.people?.map { person in
+                CastMember(
+                    id: person.id ?? "",
+                    name: person.name ?? "",
+                    role: person.role,
+                    kind: (person.type ?? .unknown).rawValue,
+                    primaryImageTag: person.primaryImageTag
+                )
+            }
         )
     }
 }

@@ -60,6 +60,8 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         MediaItem(id: itemId, name: "Item", type: .movie)
     }
 
+    func getSimilarItems(itemId: String, limit: Int?) async throws -> [MediaItem] { [] }
+
     func searchItems(query: String, limit: Int?) async throws -> [MediaItem] {
         searchQueries.append(query)
         return try searchResult.get()

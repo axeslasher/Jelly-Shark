@@ -49,6 +49,9 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     public let indexNumber: Int?       // Episode number
     public let parentIndexNumber: Int? // Season number
 
+    /// Cast and crew credited on this item (populated on detail fetches)
+    public let people: [CastMember]?
+
     public init(
         id: String,
         name: String,
@@ -67,7 +70,8 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         seasonId: String? = nil,
         seasonName: String? = nil,
         indexNumber: Int? = nil,
-        parentIndexNumber: Int? = nil
+        parentIndexNumber: Int? = nil,
+        people: [CastMember]? = nil
     ) {
         self.id = id
         self.name = name
@@ -87,6 +91,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.seasonName = seasonName
         self.indexNumber = indexNumber
         self.parentIndexNumber = parentIndexNumber
+        self.people = people
     }
 }
 
