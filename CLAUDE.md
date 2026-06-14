@@ -66,7 +66,7 @@ The app follows a modular architecture with clear separation of concerns. All th
    - **Current state**: Only `StandardTheme` is implemented; Horror/Action/Video Store identifiers exist but fall back to Standard. No component-variant system yet.
 
 3. **Features** (`Packages/Features`): Application features, screens, and user flows
-   - View implementations: `RootView`, `HomeView`, `LibraryView`/`LibraryItemsView`, `MediaDetailView`, `SearchView` (stub), `SettingsView`, `ServerConnectionView`, playback views
+   - View implementations: `RootView`, `HomeView`, `LibraryView`/`LibraryItemsView`, `MediaDetailView`, `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
    - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `PlaybackViewModel`; app-level `AppSession`
    - Navigation: `TabView` with Home / Library / Search / Settings, each in its own `NavigationStack`
    - Depends on JellyfinKit and DesignSystem
@@ -133,7 +133,8 @@ Users can switch themes globally and customize component variants individually, 
 - Discovery: `GET /Users/{userId}/Items/Resume`, `GET /Users/{userId}/Items/Latest`, episodes lookup for next-up
 - Images: `GET /Items/{itemId}/Images/{imageType}` (URL building only)
 - Playback: `GET /Items/{itemId}/PlaybackInfo`, HLS `GET /Videos/{itemId}/main.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
-- Not yet implemented: search, mark played/unplayed, favorites
+- Search: `GET /Users/{userId}/Items` with `searchTerm` (movies/series/episodes), wired via `searchItems(query:limit:)`
+- Not yet implemented: mark played/unplayed, favorites
 
 ### Caching Strategy (current vs. planned)
 - **Current**: Session tokens in Keychain only; artwork via `URLCache` (64MB memory / 256MB disk). No persistent metadata cache.
@@ -148,12 +149,12 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 - Modular SPM architecture (JellyfinKit, DesignSystem, Features) wired into the app target
 - Server connection + authentication with Keychain-backed session persistence and restore-on-launch
 - Home screen (Continue Watching, Recently Added), library browsing, media detail
+- Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
 - AVPlayer HLS playback: progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
 - Standard theme and design-token system applied throughout
-- Real unit tests for `ServerConnectionViewModel` and `PlaybackViewModel` (Swift Testing) plus JellyfinKit unit tests
+- Real unit tests for `ServerConnectionViewModel`, `PlaybackViewModel`, and `SearchViewModel` (Swift Testing) plus JellyfinKit unit tests
 
 **Not yet implemented**:
-- Search (UI placeholder only)
 - Horror / Action / Video Store themes (identifiers exist but resolve to Standard)
 - Component variant system
 - SwiftData metadata/state caching
@@ -161,10 +162,9 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 
 **Next Steps**:
 1. Theming & Components: Implement remaining themes, build the component variant system
-2. Search: Wire up the search endpoint and UI
-3. Caching: Adopt SwiftData for metadata and user-state caching
-4. Platform Polish: tvOS/visionOS-specific optimizations, accessibility compliance
-5. Beta & Refinement: Expand app-target test coverage, bug fixes, performance tuning
+2. Caching: Adopt SwiftData for metadata and user-state caching
+3. Platform Polish: tvOS/visionOS-specific optimizations, accessibility compliance
+4. Beta & Refinement: Expand app-target test coverage, bug fixes, performance tuning
 
 ## Important Design Decisions
 

@@ -30,6 +30,8 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var nextEpisodeResult: MediaItem?
     var fetchCurrentUserResult: Result<User, Error> = .success(User(id: "user-1", name: "demo"))
     var librariesResult: Result<[Library], Error> = .success([])
+    var searchQueries: [String] = []
+    var searchResult: Result<[MediaItem], Error> = .success([])
 
     func authenticate(username: String, password: String) async throws -> User {
         let user = User(id: "user-1", name: username)
@@ -56,6 +58,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getMediaItem(itemId: String) async throws -> MediaItem {
         MediaItem(id: itemId, name: "Item", type: .movie)
+    }
+
+    func searchItems(query: String, limit: Int?) async throws -> [MediaItem] {
+        searchQueries.append(query)
+        return try searchResult.get()
     }
 
     func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL {

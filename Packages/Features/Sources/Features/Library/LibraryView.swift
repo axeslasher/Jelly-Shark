@@ -30,7 +30,7 @@ public struct LibraryView: View {
                                     libraryCard(for: library)
                                 }
                                 #if os(tvOS)
-                                .buttonStyle(.card)
+                                .buttonStyle(.borderless)
                                 #else
                                 .buttonStyle(.plain)
                                 #endif
@@ -41,7 +41,7 @@ public struct LibraryView: View {
                                     placeholderCard(for: type)
                                 }
                                 #if os(tvOS)
-                                .buttonStyle(.card)
+                                .buttonStyle(.borderless)
                                 #else
                                 .buttonStyle(.plain)
                                 #endif

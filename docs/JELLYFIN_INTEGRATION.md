@@ -4,7 +4,7 @@
 
 Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (0.6.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
 
-> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, library/item browsing, image URLs, resume/latest discovery, playback info + HLS streaming, and playback reporting. **Search, "mark played/unplayed", and "favorites" endpoints are not yet implemented.** SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
+> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, library/item browsing, search, image URLs, resume/latest discovery, playback info + HLS streaming, and playback reporting. **"Mark played/unplayed" and "favorites" endpoints are not yet implemented.** SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
 
 ---
 
@@ -116,11 +116,11 @@ POST   /Users/{userId}/FavoriteItems/{itemId}   — add to favorites
 ```
 Played/favorite state is read today (via item `UserData`) but cannot yet be changed from the app.
 
-### Search — ⏳ planned (not yet implemented)
+### Search — ✅ implemented
 ```
 GET /Users/{userId}/Items with SearchTerm
 ```
-The Search tab is currently a UI placeholder; no client method exists yet.
+Exposed as `searchItems(query:limit:)` on `JellyfinClientProtocol`. It sends a recursive `GetItems` request with `searchTerm`, restricted to `includeItemTypes` of movie/series/episode and sorted by name. `SearchView` drives it through `SearchViewModel`, which debounces input (~300ms), cancels in-flight requests, and derives term-completion suggestions from the result titles.
 
 ---
 
@@ -296,7 +296,8 @@ There is no `Cache/` module yet (no SwiftData/metadata cache).
 - Async/await for all API calls
 - Pagination params supported (`Limit`/`StartIndex`); library items currently fetched with `limit: 100`
 - Image loading via SwiftUI `AsyncImage` (`ArtworkImage`), cached by `URLCache`
-- _(planned)_ Search debouncing, retry logic for transient failures, predictive prefetching
+- Search input is debounced (~300ms) with in-flight cancellation in `SearchViewModel`
+- _(planned)_ Retry logic for transient failures, predictive prefetching
 
 ---
 
