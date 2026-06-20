@@ -42,6 +42,7 @@ public struct CastCard: View {
         }
         #if os(tvOS)
         .buttonStyle(.borderless)
+        .buttonBorderShape(.circle)
         #else
         .buttonStyle(.plain)
         #endif
