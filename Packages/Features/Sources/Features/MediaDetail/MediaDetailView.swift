@@ -85,12 +85,13 @@ public struct MediaDetailView: View {
     // MARK: - Hero
 
     /// Full-bleed backdrop behind the above-the-fold content. Masked with a
-    /// gradient so it melts into the background, and faded out once the hero
-    /// scrolls away (`belowFold`).
+    /// gradient so it melts into the background. Rather than disappearing once the
+    /// hero scrolls away (`belowFold`), it stays mounted and dims + blurs into a
+    /// faint atmospheric wash behind the shelves.
     @ViewBuilder
     private var heroBackground: some View {
         if let client = session.client,
-           let url = client.backdropURL(for: displayItem), !belowFold {
+           let url = client.backdropURL(for: displayItem) {
             ArtworkImage(url: url)
                 .overlay {
                         // Build the gradient material by filling an area with a material, and
@@ -108,8 +109,9 @@ public struct MediaDetailView: View {
                                 )
                             }
                 }
+                .opacity(belowFold ? 0.3 : 1)
+                .blur(radius: belowFold ? 20 : 0)
                 .ignoresSafeArea()
-                .transition(.opacity)
         }
     }
 
@@ -189,7 +191,7 @@ public struct MediaDetailView: View {
                 Image(systemName: "play.fill")
                 Text(displayItem.hasProgress ? "Resume" : "Play")
             }
-            .font(.jsTitle)
+            .font(.jsHeadline)
             .buttonStyle(.glass(.clear))
             .controlSize(.extraLarge)
             .buttonBorderShape(.capsule)
