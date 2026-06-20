@@ -57,7 +57,7 @@ public struct CastCard: View {
 
     private var nameText: some View {
         Text(name)
-            .font(.jsCaption)
+            .font(.jsTitle)
             .foregroundStyle(theme.primary)
             .lineLimit(1)
             .frame(width: width)
@@ -66,7 +66,7 @@ public struct CastCard: View {
     private var roleText: some View {
         // Reserve the second line even when empty so cards stay aligned across a row.
         Text(role ?? " ")
-            .font(.jsCaption)
+            .font(.jsBody)
             .foregroundStyle(theme.secondary)
             .lineLimit(1)
             .frame(width: width)

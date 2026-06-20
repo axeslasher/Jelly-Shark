@@ -12,9 +12,13 @@ public enum TypographyTokens {
 
         /// Title - 24pt (card titles)
         public static let title: CGFloat = 24
+        
+        /// Overview - 24pt (long text descriptions)
+        public static let overview: CGFloat = 24
 
-        /// Body - 18pt (descriptions)
-        public static let body: CGFloat = 18
+        /// Body - 22pt
+        public static let body: CGFloat = 22
+        
 
         /// Caption - 14pt (metadata)
         public static let caption: CGFloat = 14
@@ -28,6 +32,7 @@ public enum TypographyTokens {
         public static let display: Font.Weight = .bold
         public static let headline: Font.Weight = .semibold
         public static let title: Font.Weight = .medium
+        public static let overview: Font.Weight = .medium
         public static let body: Font.Weight = .regular
         public static let caption: Font.Weight = .regular
     }
@@ -72,6 +77,11 @@ public extension Font {
     /// Title font for card titles (24pt medium)
     static var jsTitle: Font {
         .system(size: TypographyTokens.Size.title, weight: TypographyTokens.Weight.title)
+    }
+    
+    /// Overivew font
+    static var jsOverview: Font {
+        .system(size: TypographyTokens.Size.overview, weight: TypographyTokens.Weight.overview)
     }
 
     /// Body font for descriptions (18pt regular)

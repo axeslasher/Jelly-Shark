@@ -92,18 +92,21 @@ public struct MediaDetailView: View {
         if let client = session.client,
            let url = client.backdropURL(for: displayItem), !belowFold {
             ArtworkImage(url: url)
-                .frame(height: 1080)
-                .frame(maxWidth: .infinity)
-                .mask {
-                    LinearGradient(
-                        stops: [
-                            .init(color: .black, location: 0.0),
-                            .init(color: .black, location: 0.6),
-                            .init(color: .clear, location: 0.9),
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+                .overlay {
+                        // Build the gradient material by filling an area with a material, and
+                        // then masking that area using a linear gradient.
+                        Rectangle()
+                            .fill(.regularMaterial)
+                            .mask {
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .black, location: 0.25),
+                                        .init(color: .black.opacity(belowFold ? 1 : 0.3), location: 0.375),
+                                        .init(color: .black.opacity(belowFold ? 1 : 0), location: 0.5)
+                                    ],
+                                    startPoint: .bottom, endPoint: .top
+                                )
+                            }
                 }
                 .ignoresSafeArea()
                 .transition(.opacity)
@@ -197,16 +200,11 @@ public struct MediaDetailView: View {
 
     private func overviewSection(_ overview: String) -> some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
-            //Text("Overview")
-            //    .font(.jsHeadline)
-            //    .foregroundStyle(theme.primary)
-
             Text(overview)
-                .font(.jsBody)
+                .font(.jsOverview)
                 .foregroundStyle(theme.primary)
                 .lineSpacing(4)
         }
-        //.padding(.horizontal, SpacingTokens.screenPadding)
     }
 
     // MARK: - Data
