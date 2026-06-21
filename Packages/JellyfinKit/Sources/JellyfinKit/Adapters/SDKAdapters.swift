@@ -42,6 +42,7 @@ extension MediaItem {
             runTimeTicks: dto.runTimeTicks.map(Int64.init),
             communityRating: dto.communityRating.map(Double.init),
             officialRating: dto.officialRating,
+            tagline: dto.taglines?.first,
             genres: dto.genres,
             imageTags: ImageTags(from: dto.imageTags, backdropTags: dto.backdropImageTags),
             userData: dto.userData.map { UserData(from: $0) },

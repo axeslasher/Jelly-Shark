@@ -151,6 +151,20 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameter episode: The current episode
     /// - Returns: The next episode, or nil if this is the last one (or not an episode)
     func getNextEpisode(after episode: MediaItem) async throws -> MediaItem?
+
+    // MARK: - User Data
+
+    /// Mark an item as played for the current user
+    func markPlayed(itemId: String) async throws
+
+    /// Mark an item as unplayed for the current user
+    func markUnplayed(itemId: String) async throws
+
+    /// Add an item to the current user's favorites
+    func markFavorite(itemId: String) async throws
+
+    /// Remove an item from the current user's favorites
+    func unmarkFavorite(itemId: String) async throws
 }
 
 /// Image types available from Jellyfin
@@ -711,6 +725,48 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             }
 
             return MediaItem(from: items[1])
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    // MARK: - User Data
+
+    public func markPlayed(itemId: String) async throws {
+        do {
+            _ = try await sdkClient.send(Paths.markPlayedItem(itemID: itemId, userID: _userId))
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func markUnplayed(itemId: String) async throws {
+        do {
+            _ = try await sdkClient.send(Paths.markUnplayedItem(itemID: itemId, userID: _userId))
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func markFavorite(itemId: String) async throws {
+        do {
+            _ = try await sdkClient.send(Paths.markFavoriteItem(itemID: itemId, userID: _userId))
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func unmarkFavorite(itemId: String) async throws {
+        do {
+            _ = try await sdkClient.send(Paths.unmarkFavoriteItem(itemID: itemId, userID: _userId))
         } catch let error as APIError {
             throw error
         } catch {

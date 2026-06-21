@@ -15,6 +15,25 @@ public struct MediaDetailView: View {
     @State private var similarItems: [MediaItem] = []
     @State private var belowFold = false
     @State private var isPresentingPlayer = false
+    @State private var isPresentingOverview = false
+
+    /// Optimistic local overrides for the watched / favorite toggles. While `nil`,
+    /// the buttons reflect Jellyfin's fetched `userData`; a tap sets the override
+    /// immediately and is cleared/reverted based on the server response.
+    @State private var playedOverride: Bool?
+    @State private var favoriteOverride: Bool?
+
+    /// Watched state shown by the button: the pending optimistic value if any,
+    /// otherwise Jellyfin's stored status for this item.
+    private var isPlayed: Bool {
+        playedOverride ?? displayItem.userData?.played ?? false
+    }
+
+    /// Favorite state shown by the button: optimistic value if any, otherwise
+    /// Jellyfin's stored status.
+    private var isFavorite: Bool {
+        favoriteOverride ?? displayItem.userData?.isFavorite ?? false
+    }
 
     let item: MediaItem
 
@@ -80,6 +99,15 @@ public struct MediaDetailView: View {
             }
         }
         #endif
+        #if os(macOS)
+        .sheet(isPresented: $isPresentingOverview) {
+            overviewOverlay
+        }
+        #else
+        .fullScreenCover(isPresented: $isPresentingOverview) {
+            overviewOverlay
+        }
+        #endif
     }
 
     // MARK: - Hero
@@ -94,20 +122,24 @@ public struct MediaDetailView: View {
            let url = client.backdropURL(for: displayItem) {
             ArtworkImage(url: url)
                 .overlay {
-                        // Build the gradient material by filling an area with a material, and
-                        // then masking that area using a linear gradient.
+                        // Bottom-edge "melt": a material masked by a gradient so the
+                        // hero text reads against the backdrop. This is only needed
+                        // above the fold — it fades out entirely once scrolled, so
+                        // the below-fold state is purely the dim + blur wash, exactly
+                        // matching `overviewOverlay`.
                         Rectangle()
                             .fill(.regularMaterial)
                             .mask {
                                 LinearGradient(
                                     stops: [
                                         .init(color: .black, location: 0.25),
-                                        .init(color: .black.opacity(belowFold ? 1 : 0.3), location: 0.375),
-                                        .init(color: .black.opacity(belowFold ? 1 : 0), location: 0.5)
+                                        .init(color: .black.opacity(0.3), location: 0.375),
+                                        .init(color: .black.opacity(0), location: 0.5)
                                     ],
                                     startPoint: .bottom, endPoint: .top
                                 )
                             }
+                            .opacity(belowFold ? 0 : 1)
                 }
                 .opacity(belowFold ? 0.3 : 1)
                 .blur(radius: belowFold ? 20 : 0)
@@ -124,17 +156,20 @@ public struct MediaDetailView: View {
             if hasMetadata {
                 metadataRow
             }
-            if let overview = displayItem.overview {
-                overviewSection(overview)
-                    .padding(.top, SpacingTokens.md)
-                    //.frame(idealWidth: 380, maxWidth: 500)
+
+            HStack(alignment: .top, spacing: SpacingTokens.xl) {
+                VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+                    playButton
+                    secondaryActions
+                }
+
+                if displayItem.overview != nil || displayItem.tagline != nil {
+                    overviewSection
+                }
             }
-            
-            
-            playButton
-                .padding(.top, SpacingTokens.lg)
-                .padding(.bottom, SpacingTokens.lg)
-                
+            .padding(.top, SpacingTokens.lg)
+            .padding(.bottom, SpacingTokens.lg)
+
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SpacingTokens.screenPadding)
@@ -226,13 +261,95 @@ public struct MediaDetailView: View {
         .disabled(session.client == nil)
     }
 
-    private func overviewSection(_ overview: String) -> some View {
-        VStack(alignment: .leading, spacing: SpacingTokens.md) {
-            Text(overview)
-                .font(.jsOverview)
-                .foregroundStyle(theme.primary)
-                .lineSpacing(4)
+    /// Secondary actions beneath Play: toggle watched state and favorite. Both
+    /// flip optimistically and revert if the server call fails.
+    private var secondaryActions: some View {
+        HStack(spacing: SpacingTokens.md) {
+            Button {
+                Task { await togglePlayed() }
+            } label: {
+                HStack(spacing: SpacingTokens.sm) {
+                    Image(systemName: isPlayed ? "checkmark.circle.fill" : "checkmark.circle")
+                    Text(isPlayed ? "Watched" : "Mark Watched")
+                }
+                .font(.jsHeadline)
+                .controlSize(.large)
+                .buttonBorderShape(.capsule)
+            }
+            .buttonStyle(.glass)
+            .disabled(session.client == nil)
+
+            Button {
+                Task { await toggleFavorite() }
+            } label: {
+                HStack(spacing: SpacingTokens.sm) {
+                    Image(systemName: isFavorite ? "heart.fill" : "heart")
+                        .foregroundStyle(isFavorite ? theme.accent : theme.primary)
+                    Text(isFavorite ? "Favorited" : "Favorite")
+                }
+                .font(.jsHeadline)
+                .controlSize(.large)
+                .buttonBorderShape(.capsule)
+            }
+            .buttonStyle(.glass)
+            .disabled(session.client == nil)
         }
+    }
+
+    /// Truncated overview. The description truncates on
+    /// the page and lives in a `.plain` Button that reveals the full text in a
+    /// full-screen overlay.
+    private var overviewSection: some View {
+        Button {
+            isPresentingOverview = true
+        } label: {
+            VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+                if let tagline = displayItem.tagline, !tagline.isEmpty {
+                    Text(tagline)
+                        .font(.jsHeadline)
+                        .foregroundStyle(theme.primary)
+                }
+                if let overview = displayItem.overview {
+                    Text(overview)
+                        .font(.jsOverview)
+                        .foregroundStyle(theme.primary)
+                        .lineSpacing(4)
+                        .lineLimit(4)
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Full-screen reading view for the overview, layered over the same dimmed,
+    /// blurred backdrop used by the hero once it scrolls below the fold.
+    private var overviewOverlay: some View {
+        ZStack {
+            theme.background
+            if let client = session.client,
+               let url = client.backdropURL(for: displayItem) {
+                ArtworkImage(url: url)
+                    .opacity(0.3)
+                    .blur(radius: 20)
+            }
+            VStack(alignment: .center, spacing: SpacingTokens.md) {
+                if let tagline = displayItem.tagline, !tagline.isEmpty {
+                    Text(tagline)
+                        .font(.jsHeadline)
+                        .foregroundStyle(theme.primary)
+                }
+                if let overview = displayItem.overview {
+                    Text(overview)
+                        .font(.jsTitle)
+                        .foregroundStyle(theme.primary)
+                        .lineSpacing(4)
+                }
+            }
+            .frame(maxWidth: 800)
+        }
+        .ignoresSafeArea()
     }
 
     // MARK: - Data
@@ -243,6 +360,38 @@ public struct MediaDetailView: View {
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
         detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
         similarItems = (try? await client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
+    }
+
+    /// Optimistically flip the watched state, then persist; revert on failure.
+    private func togglePlayed() async {
+        guard let client = session.client else { return }
+        let target = !isPlayed
+        withAnimation(theme.animation) { playedOverride = target }
+        do {
+            if target {
+                try await client.markPlayed(itemId: displayItem.id)
+            } else {
+                try await client.markUnplayed(itemId: displayItem.id)
+            }
+        } catch {
+            withAnimation(theme.animation) { playedOverride = !target }
+        }
+    }
+
+    /// Optimistically flip the favorite state, then persist; revert on failure.
+    private func toggleFavorite() async {
+        guard let client = session.client else { return }
+        let target = !isFavorite
+        withAnimation(theme.animation) { favoriteOverride = target }
+        do {
+            if target {
+                try await client.markFavorite(itemId: displayItem.id)
+            } else {
+                try await client.unmarkFavorite(itemId: displayItem.id)
+            }
+        } catch {
+            withAnimation(theme.animation) { favoriteOverride = !target }
+        }
     }
 }
 

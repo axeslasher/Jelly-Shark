@@ -32,6 +32,9 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// Official rating (e.g., PG-13, R)
     public let officialRating: String?
 
+    /// Marketing tagline (movies). Often absent for episodes.
+    public let tagline: String?
+
     /// Genres associated with this item
     public let genres: [String]?
 
@@ -62,6 +65,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         runTimeTicks: Int64? = nil,
         communityRating: Double? = nil,
         officialRating: String? = nil,
+        tagline: String? = nil,
         genres: [String]? = nil,
         imageTags: ImageTags? = nil,
         userData: UserData? = nil,
@@ -82,6 +86,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.runTimeTicks = runTimeTicks
         self.communityRating = communityRating
         self.officialRating = officialRating
+        self.tagline = tagline
         self.genres = genres
         self.imageTags = imageTags
         self.userData = userData

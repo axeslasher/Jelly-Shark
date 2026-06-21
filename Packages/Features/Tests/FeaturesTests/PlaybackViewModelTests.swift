@@ -123,6 +123,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         nextEpisodeRequests.append(episode.id)
         return nextEpisodeResult
     }
+
+    func markPlayed(itemId: String) async throws {}
+    func markUnplayed(itemId: String) async throws {}
+    func markFavorite(itemId: String) async throws {}
+    func unmarkFavorite(itemId: String) async throws {}
 }
 
 // MARK: - Tests
