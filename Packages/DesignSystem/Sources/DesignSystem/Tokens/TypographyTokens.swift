@@ -61,41 +61,77 @@ public enum TypographyTokens {
 }
 
 // MARK: - Font Styles
+//
+// These resolve through the ACTIVE THEME's font scheme (`AppFontConfig.scheme`),
+// so call sites never change — `.font(.jsTitle)` automatically picks up whatever
+// typeface the current theme assigns to that role. To swap fonts, edit the
+// theme's `fonts` scheme (see `StandardTheme.fonts`), not these accessors.
+//
+// Sizes/weights still come from `TypographyTokens.Size` / `.Weight` below, so a
+// theme only chooses the typeface per role; the scale stays consistent.
 
 /// Pre-configured font styles for the app
 public extension Font {
     /// Display font for hero titles (52pt bold)
     static var jsDisplay: Font {
-        .system(size: TypographyTokens.Size.display, weight: TypographyTokens.Weight.display)
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.display,
+            size: TypographyTokens.Size.display,
+            weight: TypographyTokens.Weight.display
+        )
     }
 
     /// Headline font for section headers (32pt semibold)
     static var jsHeadline: Font {
-        .system(size: TypographyTokens.Size.headline, weight: TypographyTokens.Weight.headline)
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.headline,
+            size: TypographyTokens.Size.headline,
+            weight: TypographyTokens.Weight.headline
+        )
     }
 
     /// Title font for card titles (24pt medium)
     static var jsTitle: Font {
-        .system(size: TypographyTokens.Size.title, weight: TypographyTokens.Weight.title)
-    }
-    
-    /// Overivew font
-    static var jsOverview: Font {
-        .system(size: TypographyTokens.Size.overview, weight: TypographyTokens.Weight.overview)
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.title,
+            size: TypographyTokens.Size.title,
+            weight: TypographyTokens.Weight.title
+        )
     }
 
-    /// Body font for descriptions (18pt regular)
+    /// Overview font for long text descriptions (24pt medium)
+    static var jsOverview: Font {
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.overview,
+            size: TypographyTokens.Size.overview,
+            weight: TypographyTokens.Weight.overview
+        )
+    }
+
+    /// Body font for descriptions (22pt regular)
     static var jsBody: Font {
-        .system(size: TypographyTokens.Size.body, weight: TypographyTokens.Weight.body)
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.body,
+            size: TypographyTokens.Size.body,
+            weight: TypographyTokens.Weight.body
+        )
     }
 
     /// Caption font for metadata (14pt regular)
     static var jsCaption: Font {
-        .system(size: TypographyTokens.Size.caption, weight: TypographyTokens.Weight.caption)
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.caption,
+            size: TypographyTokens.Size.caption,
+            weight: TypographyTokens.Weight.caption
+        )
     }
 
     /// Small font for badges (12pt regular)
     static var jsSmall: Font {
-        .system(size: TypographyTokens.Size.small, weight: .regular)
+        AppFontConfig.scheme.font(
+            named: AppFontConfig.scheme.small,
+            size: TypographyTokens.Size.small,
+            weight: .regular
+        )
     }
 }

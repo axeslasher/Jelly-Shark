@@ -18,6 +18,8 @@ public final class ThemeManager {
     public var currentThemeId: ThemeIdentifier {
         didSet {
             currentTheme = theme(for: currentThemeId)
+            // Keep the active font scheme in sync so `Font.js*` follow the theme.
+            AppFontConfig.scheme = currentTheme.fonts
             saveThemePreference()
         }
     }
@@ -37,7 +39,13 @@ public final class ThemeManager {
             .flatMap { ThemeIdentifier(rawValue: $0) } ?? .standard
 
         self.currentThemeId = savedId
-        self.currentTheme = ThemeManager.createTheme(for: savedId)
+        let theme = ThemeManager.createTheme(for: savedId)
+        self.currentTheme = theme
+
+        // Register the bundled fonts once, then publish the active theme's
+        // scheme so `Font.js*` resolve to the right typeface from first render.
+        DesignSystemFonts.registerAll()
+        AppFontConfig.scheme = theme.fonts
     }
 
     // MARK: - Public Methods
