@@ -58,7 +58,11 @@ public struct MediaDetailView: View {
 
     public var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            // A plain VStack (not LazyVStack): there are only ever three sections,
+            // and on tvOS the focus engine can't move focus into — and therefore
+            // can't scroll to — a section that a lazy stack hasn't built yet. The
+            // per-shelf horizontal scrolls remain lazy on their own.
+            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 heroSection
 
                 if let client = session.client,
@@ -83,9 +87,24 @@ public struct MediaDetailView: View {
                     }
                 }
             }
+            // Each section (hero, Cast & Crew, More Like This) becomes a snap
+            // target so the scroll settles aligned to a section boundary rather
+            // than mid-content. Paired with the viewport-tall hero, this gives a
+            // clean hero → shelves snap.
+            //
+            // tvOS is excluded: there scrolling is driven by the focus engine, and
+            // `.scrollTargetBehavior` re-aligns the scroll out from under it — which
+            // traps focus in the hero. The viewport-tall hero already produces the
+            // snap-like jump there. Snapping applies on visionOS / iOS only.
+            #if !os(tvOS)
+            .scrollTargetLayout()
+            #endif
             .padding(.vertical, SpacingTokens.md)
         }
         .scrollClipDisabled()
+        #if !os(tvOS)
+        .scrollTargetBehavior(.viewAligned)
+        #endif
         // Map the live scroll offset to 0...1 so the hero treatment animates with
         // the scroll. `contentOffset.y + contentInsets.top` is 0 at rest and grows
         // as the content scrolls up; no `withAnimation` here — the scroll itself
@@ -192,8 +211,7 @@ public struct MediaDetailView: View {
     }
 
     private var heroSection: some View {
-        VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-            Spacer(minLength: 280)
+        VStack(alignment: .leading, spacing: SpacingTokens.lg) {
             titleTreatment
 
             HStack(alignment: .top, spacing: SpacingTokens.xl) {
@@ -224,6 +242,7 @@ public struct MediaDetailView: View {
                                 .font(.jsBody)
                                 .foregroundStyle(theme.secondary)
                                 .fontWeight(.semibold)
+                                .lineLimit(2)
                         }
                     }
                     if !topCast.isEmpty {
@@ -238,16 +257,24 @@ public struct MediaDetailView: View {
                                 .font(.jsBody)
                                 .foregroundStyle(theme.secondary)
                                 .fontWeight(.semibold)
+                                .lineLimit(2)
                         }
                     }
                 }
                 .frame(width: 250)
             }
-            .padding(.top, SpacingTokens.lg)
-            
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SpacingTokens.screenPadding)
+        .padding(.bottom, SpacingTokens.md)
+        // Reserve a full viewport-height hero and pin the content to the bottom.
+        // Anchoring (rather than pushing down with a Spacer) keeps the action row /
+        // overview / credits on the same baseline for every item — the logo or
+        // title fallback grows upward into the backdrop instead of shoving the rest
+        // of the lockup around. Tuning: drop `.vertical` to a fraction via the
+        // closure form (e.g. `.containerRelativeFrame(.vertical) { h, _ in h * 0.85 }`)
+        // for a shorter hero, or change `.bottom` padding above to lift the lockup.
+        .containerRelativeFrame(.vertical, alignment: .bottomLeading)
     }
 
     /// The item's logo if one exists, falling back to the title text. Rendered
