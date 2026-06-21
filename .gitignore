@@ -25,3 +25,7 @@ Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.ttf
 Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.otf
 Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.woff
 Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.woff2
+
+# Exception: Atkinson Hyperlegible Next is OFL-licensed (redistribution allowed),
+# so it IS committed to the repo.
+!Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/AtkinsonHyperlegibleNext-*.ttf

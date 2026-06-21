@@ -33,6 +33,11 @@ public enum FontFamily {
 
     /// Geometric/technical sans — Space Grotesk. (Upright only; no italic file.)
     public static let spaceGrotesk = "Space Grotesk Variable"
+
+    /// High-legibility sans — Atkinson Hyperlegible Next (Braille Institute).
+    /// OFL-licensed and committed to the repo. Intended for a future
+    /// accessibility setting that swaps the whole UI to this face.
+    public static let atkinson = "Atkinson Hyperlegible Next"
 }
 
 // MARK: - Font scheme

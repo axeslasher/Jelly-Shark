@@ -1,11 +1,16 @@
 # Fonts
 
-Jelly Shark uses three free Fontshare families. **The `.ttf` binaries are NOT
-committed** — the Fontshare EULA forbids redistributing the font files (no
-uploading to a public server, no passing them on). Only this instructions file
-is tracked; the font files are git-ignored. You must download them yourself.
+Jelly Shark uses several variable fonts. Two licensing situations:
 
-If the files are missing the app still builds and runs — every text style falls
+- **Fontshare families (General Sans, Zodiak, Satoshi)** — the EULA forbids
+  redistributing the font files, so these are **git-ignored** and you must
+  download them yourself (steps below).
+- **OFL families (Space Grotesk, Atkinson Hyperlegible Next)** — the Open Font
+  License permits redistribution. Atkinson **is committed** to the repo (it's
+  earmarked for a future accessibility setting). Space Grotesk is currently
+  git-ignored too, but you may commit it if you like.
+
+If a font file is missing the app still builds and runs — every text style falls
 back to the system font (San Francisco). See `FontScheme.swift`.
 
 ## Download
@@ -31,8 +36,15 @@ back to the system font (San Francisco). See `FontScheme.swift`.
    SpaceGrotesk-Variable.ttf
    ```
 
-   If your downloads have different filenames, either rename them to match, or
-   update the filename constants in `FontScheme.swift`.
+   Already committed (no download needed):
+
+   ```
+   AtkinsonHyperlegibleNext-VariableFont_wght.ttf
+   AtkinsonHyperlegibleNext-Italic-VariableFont_wght.ttf
+   ```
+
+   `Font.custom(_:)` resolves these by family NAME, not filename, so the exact
+   file names above don't have to match — but keep them consistent for clarity.
 
 ## Verifying the PostScript / family names
 
@@ -50,5 +62,7 @@ isn't applying, check that console output and fix the name constants.
 - **Space Grotesk** — SIL Open Font License (OFL), which *does* permit
   redistribution. It's git-ignored anyway for consistency; you may commit it if
   you prefer (loosen the `.gitignore`).
+- **Atkinson Hyperlegible Next** — SIL Open Font License (OFL), Braille
+  Institute. Committed to the repo (a `!` exception in `.gitignore`).
 
 Keep this file in sync if the families change.
