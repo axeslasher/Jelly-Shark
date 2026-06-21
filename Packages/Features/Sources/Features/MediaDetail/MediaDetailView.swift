@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Detail view for a media item.
 ///
@@ -43,7 +43,9 @@ public struct MediaDetailView: View {
 
     /// The passed-in stub renders instantly; the detailed fetch (which carries
     /// cast & crew) upgrades it once it lands.
-    private var displayItem: MediaItem { detailedItem ?? item }
+    private var displayItem: MediaItem {
+        detailedItem ?? item
+    }
 
     public var body: some View {
         ScrollView {
@@ -55,10 +57,9 @@ public struct MediaDetailView: View {
                         }
                     }
 
-                
-
                 if let client = session.client,
-                   let people = displayItem.people, !people.isEmpty {
+                   let people = displayItem.people, !people.isEmpty
+                {
                     ContentShelf("Cast & Crew", icon: "person.2.fill") {
                         ForEach(people) { member in
                             CastCard(
@@ -78,7 +79,7 @@ public struct MediaDetailView: View {
                     }
                 }
             }
-            .padding(.vertical, SpacingTokens.lg)
+            .padding(.vertical, SpacingTokens.md)
         }
         .scrollClipDisabled()
         .background(alignment: .top) { heroBackground }
@@ -119,27 +120,28 @@ public struct MediaDetailView: View {
     @ViewBuilder
     private var heroBackground: some View {
         if let client = session.client,
-           let url = client.backdropURL(for: displayItem) {
+           let url = client.backdropURL(for: displayItem)
+        {
             ArtworkImage(url: url)
                 .overlay {
-                        // Bottom-edge "melt": a material masked by a gradient so the
-                        // hero text reads against the backdrop. This is only needed
-                        // above the fold — it fades out entirely once scrolled, so
-                        // the below-fold state is purely the dim + blur wash, exactly
-                        // matching `overviewOverlay`.
-                        Rectangle()
-                            .fill(.regularMaterial)
-                            .mask {
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: .black, location: 0.25),
-                                        .init(color: .black.opacity(0.3), location: 0.375),
-                                        .init(color: .black.opacity(0), location: 0.5)
-                                    ],
-                                    startPoint: .bottom, endPoint: .top
-                                )
-                            }
-                            .opacity(belowFold ? 0 : 1)
+                    // Bottom-edge "melt": a material masked by a gradient so the
+                    // hero text reads against the backdrop. This is only needed
+                    // above the fold — it fades out entirely once scrolled, so
+                    // the below-fold state is purely the dim + blur wash, exactly
+                    // matching `overviewOverlay`.
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .mask {
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .black, location: 0.25),
+                                    .init(color: .black.opacity(0.3), location: 0.375),
+                                    .init(color: .black.opacity(0), location: 0.5)
+                                ],
+                                startPoint: .bottom, endPoint: .top
+                            )
+                        }
+                        .opacity(belowFold ? 0 : 1)
                 }
                 .opacity(belowFold ? 0.3 : 1)
                 .blur(radius: belowFold ? 20 : 0)
@@ -149,18 +151,20 @@ public struct MediaDetailView: View {
 
     private var heroSection: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-            Spacer(minLength: 320)
-
+            Spacer(minLength: 280)
             titleTreatment
 
-            if hasMetadata {
-                metadataRow
-            }
-
             HStack(alignment: .top, spacing: SpacingTokens.xl) {
-                VStack(alignment: .leading, spacing: SpacingTokens.sm) {
-                    playButton
-                    secondaryActions
+                VStack(alignment: .leading, spacing: SpacingTokens.md) {
+                    if hasMetadata {
+                        metadataRow
+                    }
+
+                    HStack(alignment: .top, spacing: SpacingTokens.sm) {
+                        playButton
+                        secondaryActions
+                    }
+                    
                 }
 
                 if displayItem.overview != nil || displayItem.tagline != nil {
@@ -168,12 +172,10 @@ public struct MediaDetailView: View {
                 }
             }
             .padding(.top, SpacingTokens.lg)
-            .padding(.bottom, SpacingTokens.lg)
-
+            // .padding(.bottom, SpacingTokens.sm)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SpacingTokens.screenPadding)
-        
     }
 
     /// The item's logo if one exists, falling back to the title text. Rendered
@@ -187,10 +189,11 @@ public struct MediaDetailView: View {
                     image
                         .resizable()
                         .scaledToFit()
-                        // Size the logo into its box, then pin that box to the
-                        // leading edge so logos of any width stay left-aligned.
-                        .frame(maxWidth: 500, maxHeight: 300, alignment: .leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // Fixed box reserves a consistent logo footprint for every
+                        // item; scaledToFit letterboxes the logo inside it and
+                        // bottomLeading pins it so the content below never shifts.
+                        .frame(width: 480, height: 280, alignment: .bottomLeading)
+                        .frame(maxWidth: .infinity, alignment: .bottomLeading)
                 } else {
                     titleText
                 }
@@ -230,18 +233,17 @@ public struct MediaDetailView: View {
             }
             if let officialRating = displayItem.officialRating {
                 Text(officialRating)
-                    .padding(.horizontal, SpacingTokens.sm)
-                    .padding(.vertical, SpacingTokens.xs)
+                    .padding(.horizontal, SpacingTokens.xs)
+                    .padding(.vertical, SpacingTokens.xxs)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
                             .stroke(theme.secondary, lineWidth: 2)
                     )
             }
         }
-        .font(.jsTitle)
+        .font(.jsBody)
         .foregroundStyle(theme.secondary)
         .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
-        
     }
 
     private var playButton: some View {
@@ -257,42 +259,32 @@ public struct MediaDetailView: View {
             .controlSize(.extraLarge)
             .buttonBorderShape(.capsule)
         }
-        .buttonStyle(.glass)
+        .buttonStyle(.glass(.clear))
         .disabled(session.client == nil)
     }
 
-    /// Secondary actions beneath Play: toggle watched state and favorite. Both
-    /// flip optimistically and revert if the server call fails.
+    /// Secondary actions beneath Play: icon-only circular toggles for watched
+    /// state and favorite. Each reveals its label beneath the circle while
+    /// focused. Both flip optimistically and revert if the server call fails.
     private var secondaryActions: some View {
-        HStack(spacing: SpacingTokens.md) {
-            Button {
+        HStack(alignment: .top, spacing: SpacingTokens.sm) {
+            CircleActionButton(
+                systemImage: isPlayed ? "checkmark.circle.fill" : "checkmark.circle",
+                title: isPlayed ? "Watched" : "Mark Watched",
+                tint: theme.primary,
+                isEnabled: session.client != nil
+            ) {
                 Task { await togglePlayed() }
-            } label: {
-                HStack(spacing: SpacingTokens.sm) {
-                    Image(systemName: isPlayed ? "checkmark.circle.fill" : "checkmark.circle")
-                    Text(isPlayed ? "Watched" : "Mark Watched")
-                }
-                .font(.jsHeadline)
-                .controlSize(.large)
-                .buttonBorderShape(.capsule)
             }
-            .buttonStyle(.glass)
-            .disabled(session.client == nil)
 
-            Button {
+            CircleActionButton(
+                systemImage: isFavorite ? "heart.fill" : "heart",
+                title: isFavorite ? "Favorited" : "Favorite",
+                tint: isFavorite ? theme.accent : theme.primary,
+                isEnabled: session.client != nil
+            ) {
                 Task { await toggleFavorite() }
-            } label: {
-                HStack(spacing: SpacingTokens.sm) {
-                    Image(systemName: isFavorite ? "heart.fill" : "heart")
-                        .foregroundStyle(isFavorite ? theme.accent : theme.primary)
-                    Text(isFavorite ? "Favorited" : "Favorite")
-                }
-                .font(.jsHeadline)
-                .controlSize(.large)
-                .buttonBorderShape(.capsule)
             }
-            .buttonStyle(.glass)
-            .disabled(session.client == nil)
         }
     }
 
@@ -308,13 +300,15 @@ public struct MediaDetailView: View {
                     Text(tagline)
                         .font(.jsHeadline)
                         .foregroundStyle(theme.primary)
+                        .lineLimit(2)
+                        
                 }
                 if let overview = displayItem.overview {
                     Text(overview)
                         .font(.jsOverview)
-                        .foregroundStyle(theme.primary)
+                        .foregroundStyle(theme.secondary)
                         .lineSpacing(4)
-                        .lineLimit(4)
+                        .lineLimit(2)
                 }
             }
             .multilineTextAlignment(.leading)
@@ -329,7 +323,8 @@ public struct MediaDetailView: View {
         ZStack {
             theme.background
             if let client = session.client,
-               let url = client.backdropURL(for: displayItem) {
+               let url = client.backdropURL(for: displayItem)
+            {
                 ArtworkImage(url: url)
                     .opacity(0.3)
                     .blur(radius: 20)
@@ -392,6 +387,44 @@ public struct MediaDetailView: View {
         } catch {
             withAnimation(theme.animation) { favoriteOverride = !target }
         }
+    }
+}
+
+/// An icon-only, circular action button that reveals its text label beneath the
+/// circle while focused — keeping the action lockup compact when idle (tvOS).
+private struct CircleActionButton: View {
+    @Environment(\.theme) private var theme
+
+    let systemImage: String
+    let title: String
+    var tint: Color
+    var isEnabled: Bool = true
+    let action: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        VStack(spacing: SpacingTokens.sm) {
+            Button(action: action) {
+                Image(systemName: systemImage)
+                    .font(.jsHeadline)
+                    .foregroundStyle(tint)
+            }
+            .buttonStyle(.glass(.clear))
+            .buttonBorderShape(.circle)
+            .controlSize(.regular)
+            .focused($isFocused)
+            .disabled(!isEnabled)
+
+            // Reserve the label's space at all times (opacity, not conditional
+            // insertion) so gaining focus doesn't shift the layout and unsettle
+            // the focus engine.
+            Text(title)
+                .font(.jsCaption)
+                .foregroundStyle(theme.secondary)
+                .opacity(isFocused ? 1 : 0)
+        }
+        .animation(theme.animation, value: isFocused)
     }
 }
 
