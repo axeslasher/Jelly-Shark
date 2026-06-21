@@ -13,8 +13,8 @@ public enum ColorTokens {
 
         // Content
         public static let primary = Color(hex: "fafafa")
-        public static let secondary = Color(hex: "e5e7eb")
-        public static let tertiary = Color(hex: "d1d5db")
+        public static let secondary = Color(hex: "d4d4d8")
+        public static let tertiary = Color(hex: "a1a1aa")
 
         // Accent
         public static let accent = Color(hex: "f97316")
