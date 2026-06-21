@@ -121,10 +121,8 @@ public struct MediaDetailView: View {
 
             titleTreatment
 
-            if !metadataLine.isEmpty {
-                Text(metadataLine)
-                    .font(.jsTitle)
-                    .foregroundStyle(theme.secondary)
+            if hasMetadata {
+                metadataRow
             }
             if let overview = displayItem.overview {
                 overviewSection(overview)
@@ -156,7 +154,7 @@ public struct MediaDetailView: View {
                         .scaledToFit()
                         // Size the logo into its box, then pin that box to the
                         // leading edge so logos of any width stay left-aligned.
-                        .frame(maxWidth: 500, maxHeight: 160, alignment: .leading)
+                        .frame(maxWidth: 500, maxHeight: 300, alignment: .leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     titleText
@@ -173,14 +171,42 @@ public struct MediaDetailView: View {
             .foregroundStyle(theme.primary)
     }
 
-    /// Inline "year · runtime · rating · rated" row, omitting any missing field.
-    private var metadataLine: String {
-        var parts: [String] = []
-        if let year = displayItem.productionYear { parts.append(String(year)) }
-        if let runtime = displayItem.formattedRuntime { parts.append(runtime) }
-        if let rating = displayItem.communityRating { parts.append(String(format: "%.1f", rating)) }
-        if let officialRating = displayItem.officialRating { parts.append(officialRating) }
-        return parts.joined(separator: " · ")
+    /// Whether any metadata field is present, so the hero can skip the row entirely
+    /// rather than rendering an empty stack.
+    private var hasMetadata: Bool {
+        displayItem.productionYear != nil
+            || displayItem.formattedRuntime != nil
+            || displayItem.communityRating != nil
+            || displayItem.officialRating != nil
+    }
+
+    /// Inline year · runtime · rating · rated row, each with an SF Symbol, omitting
+    /// any missing field. The official rating renders as a bordered certificate badge.
+    private var metadataRow: some View {
+        HStack(alignment: .center, spacing: SpacingTokens.md) {
+            if let year = displayItem.productionYear {
+                Label(String(year), systemImage: "calendar")
+            }
+            if let runtime = displayItem.formattedRuntime {
+                Label(runtime, systemImage: "clock")
+            }
+            if let rating = displayItem.communityRating {
+                Label(String(format: "%.1f", rating), systemImage: "star.fill")
+            }
+            if let officialRating = displayItem.officialRating {
+                Text(officialRating)
+                    .padding(.horizontal, SpacingTokens.sm)
+                    .padding(.vertical, SpacingTokens.xs)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(theme.secondary, lineWidth: 2)
+                    )
+            }
+        }
+        .font(.jsTitle)
+        .foregroundStyle(theme.secondary)
+        .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
+        
     }
 
     private var playButton: some View {
@@ -217,6 +243,18 @@ public struct MediaDetailView: View {
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
         detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
         similarItems = (try? await client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
+    }
+}
+
+/// A `Label` layout with explicit icon↔title spacing, since `Label` exposes none.
+private struct MetadataLabelStyle: LabelStyle {
+    var spacing: CGFloat
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: spacing) {
+            configuration.icon
+            configuration.title
+        }
     }
 }
 
