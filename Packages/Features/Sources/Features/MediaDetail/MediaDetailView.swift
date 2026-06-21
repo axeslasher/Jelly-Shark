@@ -23,6 +23,11 @@ public struct MediaDetailView: View {
     /// Points of scrolling over which the hero fully transitions to its dimmed,
     /// blurred wash. Smaller = snappier; larger = more gradual.
     private static let heroFadeDistance: CGFloat = 350
+
+    /// How far (points) the hero lockup drifts as it fades on scroll. Negative =
+    /// drifts up (leaves faster); positive = drifts down (lags the scroll and
+    /// lingers). Set to 0 for a pure cross-fade with no movement.
+    private static let heroScrollDrift: CGFloat = -290
     @State private var isPresentingPlayer = false
     @State private var isPresentingOverview = false
 
@@ -204,7 +209,7 @@ public struct MediaDetailView: View {
                 //   • Blur: `20` is the max blur radius at full scroll. Higher =
                 //     softer/foggier wash; 0 disables the blur entirely.
                 // ─────────────────────────────────────────────────────────────
-                .opacity(1 - 0.7 * scrollProgress)
+                .opacity(1 - 0.85 * scrollProgress)
                 .blur(radius: 20 * scrollProgress)
                 .ignoresSafeArea()
         }
@@ -275,6 +280,12 @@ public struct MediaDetailView: View {
         // closure form (e.g. `.containerRelativeFrame(.vertical) { h, _ in h * 0.85 }`)
         // for a shorter hero, or change `.bottom` padding above to lift the lockup.
         .containerRelativeFrame(.vertical, alignment: .bottomLeading)
+        // Drift the whole hero lockup as it scrolls, in lockstep with the
+        // backdrop's melt/dim/blur. Offset only — no opacity fade: fading the hero
+        // to opacity 0 makes its controls unfocusable on tvOS (scrolling is focus
+        // movement there), which strands the scroll. Offset is focus-safe on every
+        // platform. Tune the movement with `heroScrollDrift` above (0 = no motion).
+        .offset(y: scrollProgress * Self.heroScrollDrift)
     }
 
     /// The item's logo if one exists, falling back to the title text. Rendered
