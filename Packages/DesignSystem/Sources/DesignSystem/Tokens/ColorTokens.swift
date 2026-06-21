@@ -7,23 +7,23 @@ public enum ColorTokens {
 
     public enum Standard {
         // Backgrounds
-        public static let background = Color(hex: "000000")
-        public static let surface = Color(hex: "1C1C1E")
-        public static let surfaceElevated = Color(hex: "2C2C2E")
+        public static let background = Color(hex: "09090b")
+        public static let surface = Color(hex: "18181b")
+        public static let surfaceElevated = Color(hex: "27272a")
 
         // Content
-        public static let primary = Color(hex: "F5F5F7")
-        public static let secondary = Color(hex: "8E8E93")
-        public static let tertiary = Color(hex: "636366")
+        public static let primary = Color(hex: "fafafa")
+        public static let secondary = Color(hex: "e5e7eb")
+        public static let tertiary = Color(hex: "d1d5db")
 
         // Accent
-        public static let accent = Color(hex: "0A84FF")
-        public static let accentSecondary = Color(hex: "5E5CE6")
+        public static let accent = Color(hex: "f97316")
+        public static let accentSecondary = Color(hex: "ea580c")
 
         // Semantic
-        public static let success = Color(hex: "30D158")
-        public static let warning = Color(hex: "FFD60A")
-        public static let error = Color(hex: "FF453A")
+        public static let success = Color(hex: "22c55e")
+        public static let warning = Color(hex: "eab308")
+        public static let error = Color(hex: "ef4444")
 
         // Focus
         public static let focusRing = Color.white.opacity(0.8)
