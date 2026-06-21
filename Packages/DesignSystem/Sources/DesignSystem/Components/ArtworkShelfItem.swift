@@ -106,6 +106,7 @@ public struct ArtworkShelfItem<Destination: View>: View {
         // caption lines stay aligned across a row.
         Text(subtitle ?? " ")
             .font(.jsBody)
+            .fontWeight(.semibold)
             .foregroundStyle(theme.secondary)
             .lineLimit(1)
             .frame(width: width)

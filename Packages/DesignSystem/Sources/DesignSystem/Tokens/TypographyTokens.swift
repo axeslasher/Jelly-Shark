@@ -21,7 +21,7 @@ public enum TypographyTokens {
         
 
         /// Caption - 14pt (metadata)
-        public static let caption: CGFloat = 14
+        public static let caption: CGFloat = 18
 
         /// Small - 12pt (badges, labels)
         public static let small: CGFloat = 12
@@ -31,7 +31,7 @@ public enum TypographyTokens {
     public enum Weight {
         public static let display: Font.Weight = .bold
         public static let headline: Font.Weight = .semibold
-        public static let title: Font.Weight = .medium
+        public static let title: Font.Weight = .semibold
         public static let overview: Font.Weight = .medium
         public static let body: Font.Weight = .regular
         public static let caption: Font.Weight = .regular

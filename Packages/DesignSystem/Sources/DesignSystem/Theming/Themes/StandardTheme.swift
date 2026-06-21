@@ -43,7 +43,7 @@ public struct StandardTheme: Theme, Sendable {
     public let fonts = FontScheme(
         display: FontFamily.generalSans,
         headline: FontFamily.generalSans,
-        title: FontFamily.satoshi,
+        title: FontFamily.generalSans,
         overview: FontFamily.satoshi,
         body: FontFamily.satoshi,
         caption: FontFamily.satoshi,

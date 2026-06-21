@@ -13,7 +13,16 @@ public struct MediaDetailView: View {
 
     @State private var detailedItem: MediaItem?
     @State private var similarItems: [MediaItem] = []
-    @State private var belowFold = false
+
+    /// Continuous scroll progress for the hero treatment: 0 at the top, ramping to
+    /// 1 once the backdrop has scrolled `Self.heroFadeDistance` points. Drives the
+    /// melt/dim/blur so the transition tracks the scroll instead of snapping after
+    /// the hero leaves the screen.
+    @State private var scrollProgress: CGFloat = 0
+
+    /// Points of scrolling over which the hero fully transitions to its dimmed,
+    /// blurred wash. Smaller = snappier; larger = more gradual.
+    private static let heroFadeDistance: CGFloat = 350
     @State private var isPresentingPlayer = false
     @State private var isPresentingOverview = false
 
@@ -51,11 +60,6 @@ public struct MediaDetailView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 heroSection
-                    .onScrollVisibilityChange { visible in
-                        withAnimation(theme.animation) {
-                            belowFold = !visible
-                        }
-                    }
 
                 if let client = session.client,
                    let people = displayItem.people, !people.isEmpty
@@ -82,6 +86,15 @@ public struct MediaDetailView: View {
             .padding(.vertical, SpacingTokens.md)
         }
         .scrollClipDisabled()
+        // Map the live scroll offset to 0...1 so the hero treatment animates with
+        // the scroll. `contentOffset.y + contentInsets.top` is 0 at rest and grows
+        // as the content scrolls up; no `withAnimation` here — the scroll itself
+        // provides the continuity.
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top
+        } action: { _, offset in
+            scrollProgress = min(max(offset / Self.heroFadeDistance, 0), 1)
+        }
         .background(alignment: .top) { heroBackground }
         .background(theme.background)
         .task(id: item.id) {
@@ -124,27 +137,56 @@ public struct MediaDetailView: View {
         {
             ArtworkImage(url: url)
                 .overlay {
-                    // Bottom-edge "melt": a material masked by a gradient so the
-                    // hero text reads against the backdrop. This is only needed
-                    // above the fold — it fades out entirely once scrolled, so
-                    // the below-fold state is purely the dim + blur wash, exactly
-                    // matching `overviewOverlay`.
-                    Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .mask {
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .black, location: 0.25),
-                                    .init(color: .black.opacity(0.3), location: 0.375),
-                                    .init(color: .black.opacity(0), location: 0.5)
-                                ],
-                                startPoint: .bottom, endPoint: .top
-                            )
-                        }
-                        .opacity(belowFold ? 0 : 1)
+                    // Bottom-edge "melt", above the fold only (fades out on scroll
+                    // so the below-fold state is purely the dim + blur wash that
+                    // matches `overviewOverlay`):
+                    //   1. a frosted `.ultraThinMaterial`, masked by a gradient so
+                    //      it only frosts the lower portion of the backdrop;
+                    //   2. a gradient of the page background color on top, so the
+                    //      backdrop fades cleanly into the surface beneath the hero
+                    //      text — solid at the bottom edge, clearing toward the
+                    //      middle.
+                    ZStack {
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .mask {
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .black, location: 0.0),
+                                        .init(color: .black.opacity(0.3), location: 0.3),
+                                        .init(color: .black.opacity(0), location: 0.6)
+                                    ],
+                                    startPoint: .bottom, endPoint: .top
+                                )
+                            }
+                        LinearGradient(
+                            stops: [
+                                .init(color: theme.background, location: 0.0),
+                                .init(color: theme.background.opacity(0.6), location: 0.3),
+                                .init(color: theme.background.opacity(0), location: 0.6)
+                            ],
+                            startPoint: .bottom, endPoint: .top
+                        )
+                    }
+                    .opacity(1 - scrollProgress)
                 }
-                .opacity(belowFold ? 0.3 : 1)
-                .blur(radius: belowFold ? 20 : 0)
+                // ── Scroll-transition tuning ─────────────────────────────────
+                // All three effects are driven by `scrollProgress` (0 at top → 1
+                // after scrolling `heroFadeDistance` pts). Adjust the speed of the
+                // whole transition with `heroFadeDistance` (declared up top); tune
+                // the *destination* look of each effect here:
+                //
+                //   • Melt overlay: `1 - scrollProgress` fades the above-fold
+                //     gradient/frost out completely. Multiply by < 1 to leave some
+                //     melt behind even when fully scrolled.
+                //   • Backdrop dim: `0.7` is how much it dims — final opacity is
+                //     1 − 0.7 = 0.3. Larger factor = darker wash (e.g. 0.85 → 0.15
+                //     remaining); smaller = brighter backdrop while scrolled.
+                //   • Blur: `20` is the max blur radius at full scroll. Higher =
+                //     softer/foggier wash; 0 disables the blur entirely.
+                // ─────────────────────────────────────────────────────────────
+                .opacity(1 - 0.7 * scrollProgress)
+                .blur(radius: 20 * scrollProgress)
                 .ignoresSafeArea()
         }
     }
@@ -156,23 +198,53 @@ public struct MediaDetailView: View {
 
             HStack(alignment: .top, spacing: SpacingTokens.xl) {
                 VStack(alignment: .leading, spacing: SpacingTokens.md) {
-                    if hasMetadata {
-                        metadataRow
-                    }
-
                     HStack(alignment: .top, spacing: SpacingTokens.sm) {
                         playButton
                         secondaryActions
                     }
-                    
                 }
-
-                if displayItem.overview != nil || displayItem.tagline != nil {
-                    overviewSection
+                VStack(alignment: .leading, spacing: SpacingTokens.md) {
+                    if displayItem.overview != nil || displayItem.tagline != nil {
+                        overviewSection
+                        if hasMetadata {
+                            metadataRow
+                        }
+                    }
                 }
+                VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+                    if !directors.isEmpty {
+                        VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                            Text(directors.count > 1 ? "Directed by" : "Director")
+                                .font(.jsCaption)
+                                .foregroundStyle(theme.tertiary)
+                                .fontWeight(.bold)
+                                .textCase(.uppercase)
+                                .tracking(TypographyTokens.Tracking.wide)
+                            Text(directors.map(\.name).joined(separator: ", "))
+                                .font(.jsBody)
+                                .foregroundStyle(theme.secondary)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                    if !topCast.isEmpty {
+                        VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                            Text("Starring")
+                                .font(.jsCaption)
+                                .foregroundStyle(theme.tertiary)
+                                .fontWeight(.bold)
+                                .textCase(.uppercase)
+                                .tracking(TypographyTokens.Tracking.wide)
+                            Text(topCast.map(\.name).joined(separator: ", "))
+                                .font(.jsBody)
+                                .foregroundStyle(theme.secondary)
+                                .fontWeight(.semibold)
+                        }
+                    }
+                }
+                .frame(width: 250)
             }
             .padding(.top, SpacingTokens.lg)
-            // .padding(.bottom, SpacingTokens.sm)
+            
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SpacingTokens.screenPadding)
@@ -209,6 +281,30 @@ public struct MediaDetailView: View {
             .foregroundStyle(theme.primary)
     }
 
+    /// Crew functions that some servers stuff into a person's `role` while still
+    /// tagging `kind` as "Actor". Used to recognize crew (and exclude them from
+    /// the billed-cast list) regardless of which field carries the credit.
+    private static let crewRoles: Set<String> = [
+        "Director", "Writer", "Producer",
+        "Executive Producer", "Co-Producer", "Co-Executive Producer"
+    ]
+
+    /// All credited directors, handling both standard data (`kind == "Director"`)
+    /// and servers that report everyone as `kind == "Actor"` with the function in
+    /// `role`.
+    private var directors: [CastMember] {
+        (displayItem.people ?? []).filter { $0.kind == "Director" || $0.role == "Director" }
+    }
+
+    /// Top 3 billed cast members, in Jellyfin's listed billing order. Excludes
+    /// crew that some servers mislabel as `kind == "Actor"` (via their `role`).
+    private var topCast: [CastMember] {
+        (displayItem.people ?? [])
+            .filter { $0.kind == "Actor" && !(($0.role).map(Self.crewRoles.contains) ?? false) }
+            .prefix(3)
+            .map { $0 }
+    }
+
     /// Whether any metadata field is present, so the hero can skip the row entirely
     /// rather than rendering an empty stack.
     private var hasMetadata: Bool {
@@ -233,16 +329,22 @@ public struct MediaDetailView: View {
             }
             if let officialRating = displayItem.officialRating {
                 Text(officialRating)
+                    // Ratings badge always uses Zodiak, regardless of the active
+                    // theme's font scheme. Falls back to the system font if Zodiak
+                    // isn't installed (same behavior as the scheme resolver).
+                    .font(.custom(FontFamily.zodiak, fixedSize: TypographyTokens.Size.caption))
+                    .fontWeight(.bold)
                     .padding(.horizontal, SpacingTokens.xs)
                     .padding(.vertical, SpacingTokens.xxs)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(theme.secondary, lineWidth: 2)
+                            .stroke(theme.tertiary, lineWidth: 2)
                     )
             }
         }
         .font(.jsBody)
-        .foregroundStyle(theme.secondary)
+        .foregroundStyle(theme.tertiary)
+        .fontWeight(.bold)
         .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
     }
 
@@ -301,7 +403,6 @@ public struct MediaDetailView: View {
                         .font(.jsHeadline)
                         .foregroundStyle(theme.primary)
                         .lineLimit(2)
-                        
                 }
                 if let overview = displayItem.overview {
                     Text(overview)
