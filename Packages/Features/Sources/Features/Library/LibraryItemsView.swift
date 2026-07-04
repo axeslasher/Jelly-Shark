@@ -25,7 +25,7 @@ struct LibraryItemsView: View {
                         .foregroundStyle(theme.secondary)
 
                     Text(errorMessage)
-                        .font(.jsBody)
+                        .font(theme.jsBody)
                         .foregroundStyle(theme.secondary)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

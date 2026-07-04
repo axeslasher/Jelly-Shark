@@ -12,8 +12,8 @@ import CoreText
 // │ name the OS actually registered — then correct the strings below.          │
 // │                                                                            │
 // │ To change which typeface a role uses, edit the theme's `fonts` scheme      │
-// │ (see `StandardTheme.fonts`), NOT the call sites. Every `.font(.jsTitle)`   │
-// │ etc. resolves through the active theme's scheme automatically.             │
+// │ (see `StandardTheme.fonts`), NOT the call sites. Every `.font(theme.jsTitle)`│
+// │ etc. resolves through that view's theme environment automatically.         │
 // └──────────────────────────────────────────────────────────────────────────┘
 public enum FontFamily {
     // These are the registered FAMILY names (not filenames / PostScript names).
@@ -90,19 +90,6 @@ extension FontScheme {
         }
         return .custom(name, fixedSize: size).weight(weight)
     }
-}
-
-// MARK: - Active scheme
-
-/// The font scheme currently in effect. `Font.js*` read this so the whole app
-/// follows the active theme's typography without touching call sites.
-///
-/// Updated on the main thread by `ThemeManager` whenever the theme changes;
-/// reads happen from SwiftUI view bodies. `nonisolated(unsafe)` keeps the
-/// `Font.js*` accessors free of actor isolation; the access pattern (main-thread
-/// writes, main-thread reads) makes it safe in practice.
-public enum AppFontConfig {
-    nonisolated(unsafe) public static var scheme: FontScheme = .system
 }
 
 // MARK: - Registration

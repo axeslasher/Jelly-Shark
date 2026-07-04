@@ -85,17 +85,17 @@ public struct SettingsView: View {
     private func settingsRow(icon: String, title: String, subtitle: String) -> some View {
         HStack(spacing: SpacingTokens.md) {
             Image(systemName: icon)
-                .font(.jsTitle)
+                .font(theme.jsTitle)
                 .foregroundStyle(theme.accent)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                 Text(title)
-                    .font(.jsBody)
+                    .font(theme.jsBody)
                     .foregroundStyle(theme.primary)
 
                 Text(subtitle)
-                    .font(.jsCaption)
+                    .font(theme.jsCaption)
                     .foregroundStyle(theme.secondary)
             }
         }
@@ -111,11 +111,11 @@ public struct SettingsView: View {
                     HStack {
                         VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                             Text(themeId.displayName)
-                                .font(.jsBody)
+                                .font(theme.jsBody)
                                 .foregroundStyle(theme.primary)
 
                             Text(themeDescription(for: themeId))
-                                .font(.jsCaption)
+                                .font(theme.jsCaption)
                                 .foregroundStyle(theme.secondary)
                         }
 

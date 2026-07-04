@@ -40,11 +40,11 @@ public struct ServerConnectionView: View {
                         .foregroundStyle(theme.accent)
 
                     Text("Connect to Jellyfin")
-                        .font(.jsHeadline)
+                        .font(theme.jsHeadline)
                         .foregroundStyle(theme.primary)
 
                     Text("Enter your server details to get started")
-                        .font(.jsBody)
+                        .font(theme.jsBody)
                         .foregroundStyle(theme.secondary)
                         .multilineTextAlignment(.center)
                 }
@@ -55,7 +55,7 @@ public struct ServerConnectionView: View {
                     // Server URL
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
                         Text("Server URL")
-                            .font(.jsCaption)
+                            .font(theme.jsCaption)
                             .foregroundStyle(theme.secondary)
 
                         TextField("https://demo.jellyfin.org/stable", text: $viewModel.serverURL)
@@ -71,7 +71,7 @@ public struct ServerConnectionView: View {
                     // Username
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
                         Text("Username")
-                            .font(.jsCaption)
+                            .font(theme.jsCaption)
                             .foregroundStyle(theme.secondary)
 
                         TextField("demo", text: $viewModel.username)
@@ -84,7 +84,7 @@ public struct ServerConnectionView: View {
                     // Password
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
                         Text("Password")
-                            .font(.jsCaption)
+                            .font(theme.jsCaption)
                             .foregroundStyle(theme.secondary)
 
                         SecureField("Password (leave empty for demo)", text: $viewModel.password)
@@ -98,7 +98,7 @@ public struct ServerConnectionView: View {
                 // Error Message
                 if let error = viewModel.errorMessage {
                     Text(error)
-                        .font(.jsCaption)
+                        .font(theme.jsCaption)
                         .foregroundStyle(.red)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, SpacingTokens.xl)
@@ -111,7 +111,7 @@ public struct ServerConnectionView: View {
                     }
                 } label: {
                     Text("Connect")
-                        .font(.jsBody)
+                        .font(theme.jsBody)
                         .fontWeight(.semibold)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, SpacingTokens.md)
@@ -134,7 +134,7 @@ public struct ServerConnectionView: View {
                 .scaleEffect(1.5)
 
             Text(viewModel.state == .connecting ? "Connecting to server..." : "Signing in...")
-                .font(.jsBody)
+                .font(theme.jsBody)
                 .foregroundStyle(theme.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -161,11 +161,11 @@ public struct ServerConnectionView: View {
 
                         VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                             Text(user.name)
-                                .font(.jsBody)
+                                .font(theme.jsBody)
                                 .foregroundStyle(theme.primary)
 
                             Text(user.isAdministrator ? "Administrator" : "User")
-                                .font(.jsCaption)
+                                .font(theme.jsCaption)
                                 .foregroundStyle(theme.secondary)
                         }
 
@@ -173,20 +173,20 @@ public struct ServerConnectionView: View {
 
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
-                            .font(.jsTitle)
+                            .font(theme.jsTitle)
                     }
                     .padding(.vertical, SpacingTokens.xs)
                 }
 
                 HStack {
                     Text("Server")
-                        .font(.jsBody)
+                        .font(theme.jsBody)
                         .foregroundStyle(theme.secondary)
 
                     Spacer()
 
                     Text(viewModel.serverURL)
-                        .font(.jsCaption)
+                        .font(theme.jsCaption)
                         .foregroundStyle(theme.primary)
                         .lineLimit(1)
                 }
@@ -198,24 +198,24 @@ public struct ServerConnectionView: View {
             Section {
                 if viewModel.libraries.isEmpty {
                     Text("No libraries found")
-                        .font(.jsBody)
+                        .font(theme.jsBody)
                         .foregroundStyle(theme.secondary)
                 } else {
                     ForEach(viewModel.libraries) { library in
                         HStack(spacing: SpacingTokens.md) {
                             Image(systemName: iconForLibrary(library))
-                                .font(.jsTitle)
+                                .font(theme.jsTitle)
                                 .foregroundStyle(theme.accent)
                                 .frame(width: 32)
 
                             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                                 Text(library.name)
-                                    .font(.jsBody)
+                                    .font(theme.jsBody)
                                     .foregroundStyle(theme.primary)
 
                                 if let count = library.childCount {
                                     Text("\(count) items")
-                                        .font(.jsCaption)
+                                        .font(theme.jsCaption)
                                         .foregroundStyle(theme.secondary)
                                 }
                             }
@@ -237,7 +237,7 @@ public struct ServerConnectionView: View {
                     HStack {
                         Spacer()
                         Text("Disconnect")
-                            .font(.jsBody)
+                            .font(theme.jsBody)
                         Spacer()
                     }
                 }

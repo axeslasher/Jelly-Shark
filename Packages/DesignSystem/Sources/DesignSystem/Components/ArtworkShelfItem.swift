@@ -94,7 +94,7 @@ public struct ArtworkShelfItem<Destination: View>: View {
 
     private var titleText: some View {
         Text(title)
-            .font(.jsTitle)
+            .font(theme.jsTitle)
             .fontWeight(.semibold)
             .foregroundStyle(theme.primary)
             .lineLimit(1)
@@ -105,7 +105,7 @@ public struct ArtworkShelfItem<Destination: View>: View {
         // Reserve the second line even when empty so cards with one vs. two
         // caption lines stay aligned across a row.
         Text(subtitle ?? " ")
-            .font(.jsBody)
+            .font(theme.jsBody)
             .fontWeight(.semibold)
             .foregroundStyle(theme.secondary)
             .lineLimit(1)

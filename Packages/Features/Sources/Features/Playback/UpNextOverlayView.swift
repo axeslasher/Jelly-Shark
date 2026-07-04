@@ -19,11 +19,11 @@ struct UpNextOverlayView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
             Text("Up Next")
-                .font(.jsCaption)
+                .font(theme.jsCaption)
                 .foregroundStyle(theme.secondary)
 
             Text(nextEpisode.episodeDisplayTitle ?? nextEpisode.name)
-                .font(.jsTitle)
+                .font(theme.jsTitle)
                 .foregroundStyle(theme.primary)
                 .lineLimit(2)
 
@@ -36,14 +36,14 @@ struct UpNextOverlayView: View {
                         Image(systemName: "play.fill")
                         Text("Play Now (\(secondsRemaining))")
                     }
-                    .font(.jsBody)
+                    .font(theme.jsBody)
                 }
 
                 Button("Cancel") {
                     countdownTask?.cancel()
                     onCancel()
                 }
-                .font(.jsBody)
+                .font(theme.jsBody)
             }
         }
         .padding(SpacingTokens.xl)

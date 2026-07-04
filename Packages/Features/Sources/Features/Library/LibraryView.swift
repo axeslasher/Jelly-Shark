@@ -74,12 +74,12 @@ public struct LibraryView: View {
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                         Text(library.name)
-                            .font(.jsTitle)
+                            .font(theme.jsTitle)
                             .foregroundStyle(theme.primary)
 
                         if let count = library.childCount {
                             Text("\(count) items")
-                                .font(.jsCaption)
+                                .font(theme.jsCaption)
                                 .foregroundStyle(theme.secondary)
                         }
                     }
@@ -97,12 +97,12 @@ public struct LibraryView: View {
                             .foregroundStyle(theme.accent)
 
                         Text(library.name)
-                            .font(.jsTitle)
+                            .font(theme.jsTitle)
                             .foregroundStyle(theme.primary)
 
                         if let count = library.childCount {
                             Text("\(count) items")
-                                .font(.jsCaption)
+                                .font(theme.jsCaption)
                                 .foregroundStyle(theme.tertiary)
                         }
                     }
@@ -121,11 +121,11 @@ public struct LibraryView: View {
                         .foregroundStyle(theme.accent)
 
                     Text(type.title)
-                        .font(.jsTitle)
+                        .font(theme.jsTitle)
                         .foregroundStyle(theme.primary)
 
                     Text("Connect to view")
-                        .font(.jsCaption)
+                        .font(theme.jsCaption)
                         .foregroundStyle(theme.tertiary)
                 }
             }

@@ -62,74 +62,75 @@ public enum TypographyTokens {
 
 // MARK: - Font Styles
 //
-// These resolve through the ACTIVE THEME's font scheme (`AppFontConfig.scheme`),
-// so call sites never change — `.font(.jsTitle)` automatically picks up whatever
-// typeface the current theme assigns to that role. To swap fonts, edit the
-// theme's `fonts` scheme (see `StandardTheme.fonts`), not these accessors.
+// These resolve through the theme's font scheme, so views pick up the active
+// theme's typeface via the `\.theme` environment — `.font(theme.jsTitle)`
+// re-resolves whenever the theme (and therefore the environment) changes.
+// To swap fonts, edit the theme's `fonts` scheme (see `StandardTheme.fonts`),
+// not these accessors.
 //
-// Sizes/weights still come from `TypographyTokens.Size` / `.Weight` below, so a
+// Sizes/weights still come from `TypographyTokens.Size` / `.Weight`, so a
 // theme only chooses the typeface per role; the scale stays consistent.
 
-/// Pre-configured font styles for the app
-public extension Font {
+/// Pre-configured font styles, resolved against the theme's font scheme
+public extension Theme {
     /// Display font for hero titles (52pt bold)
-    static var jsDisplay: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.display,
+    var jsDisplay: Font {
+        fonts.font(
+            named: fonts.display,
             size: TypographyTokens.Size.display,
             weight: TypographyTokens.Weight.display
         )
     }
 
     /// Headline font for section headers (32pt semibold)
-    static var jsHeadline: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.headline,
+    var jsHeadline: Font {
+        fonts.font(
+            named: fonts.headline,
             size: TypographyTokens.Size.headline,
             weight: TypographyTokens.Weight.headline
         )
     }
 
-    /// Title font for card titles (24pt medium)
-    static var jsTitle: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.title,
+    /// Title font for card titles (24pt semibold)
+    var jsTitle: Font {
+        fonts.font(
+            named: fonts.title,
             size: TypographyTokens.Size.title,
             weight: TypographyTokens.Weight.title
         )
     }
 
     /// Overview font for long text descriptions (24pt medium)
-    static var jsOverview: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.overview,
+    var jsOverview: Font {
+        fonts.font(
+            named: fonts.overview,
             size: TypographyTokens.Size.overview,
             weight: TypographyTokens.Weight.overview
         )
     }
 
     /// Body font for descriptions (22pt regular)
-    static var jsBody: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.body,
+    var jsBody: Font {
+        fonts.font(
+            named: fonts.body,
             size: TypographyTokens.Size.body,
             weight: TypographyTokens.Weight.body
         )
     }
 
-    /// Caption font for metadata (14pt regular)
-    static var jsCaption: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.caption,
+    /// Caption font for metadata (18pt regular)
+    var jsCaption: Font {
+        fonts.font(
+            named: fonts.caption,
             size: TypographyTokens.Size.caption,
             weight: TypographyTokens.Weight.caption
         )
     }
 
     /// Small font for badges (12pt regular)
-    static var jsSmall: Font {
-        AppFontConfig.scheme.font(
-            named: AppFontConfig.scheme.small,
+    var jsSmall: Font {
+        fonts.font(
+            named: fonts.small,
             size: TypographyTokens.Size.small,
             weight: .regular
         )

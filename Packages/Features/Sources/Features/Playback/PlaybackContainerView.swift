@@ -81,7 +81,7 @@ public struct PlaybackContainerView: View {
         }
         #else
         Text("Playback is not supported on this platform")
-            .font(.jsBody)
+            .font(theme.jsBody)
             .foregroundStyle(theme.secondary)
         #endif
     }
@@ -93,11 +93,11 @@ public struct PlaybackContainerView: View {
                 .foregroundStyle(theme.tertiary)
 
             Text("Playback Failed")
-                .font(.jsHeadline)
+                .font(theme.jsHeadline)
                 .foregroundStyle(theme.primary)
 
             Text(message)
-                .font(.jsBody)
+                .font(theme.jsBody)
                 .foregroundStyle(theme.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, SpacingTokens.xxl)
@@ -105,7 +105,7 @@ public struct PlaybackContainerView: View {
             Button("Close") {
                 dismiss()
             }
-            .font(.jsBody)
+            .font(theme.jsBody)
         }
     }
 }

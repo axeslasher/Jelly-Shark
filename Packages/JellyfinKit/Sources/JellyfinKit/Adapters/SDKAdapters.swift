@@ -52,9 +52,13 @@ extension MediaItem {
             seasonName: dto.seasonName,
             indexNumber: dto.indexNumber,
             parentIndexNumber: dto.parentIndexNumber,
-            people: dto.people?.map { person in
+            people: dto.people?.enumerated().map { index, person in
+                // Some servers omit person IDs. Fall back to a position-based id
+                // so `ForEach` identity stays unique — two id-less people must not
+                // both map to "". Headshot URLs are unaffected: they require
+                // `primaryImageTag`, which servers only send alongside a real id.
                 CastMember(
-                    id: person.id ?? "",
+                    id: person.id.flatMap { $0.isEmpty ? nil : $0 } ?? "person-\(index)",
                     name: person.name ?? "",
                     role: person.role,
                     kind: (person.type ?? .unknown).rawValue,

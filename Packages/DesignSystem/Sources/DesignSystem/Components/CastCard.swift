@@ -46,6 +46,11 @@ public struct CastCard: View {
         #else
         .buttonStyle(.plain)
         #endif
+        // Read the card as a single element ("Name, Role") rather than three.
+        // It stays a button to VoiceOver: activating it will open the person's
+        // cast page once that exists.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(role.map { "\(name), \($0)" } ?? name)
     }
 
     private var artwork: some View {
@@ -57,7 +62,7 @@ public struct CastCard: View {
 
     private var nameText: some View {
         Text(name)
-            .font(.jsTitle)
+            .font(theme.jsTitle)
             .foregroundStyle(theme.primary)
             .lineLimit(1)
             .frame(width: width)
@@ -66,7 +71,7 @@ public struct CastCard: View {
     private var roleText: some View {
         // Reserve the second line even when empty so cards stay aligned across a row.
         Text(role ?? " ")
-            .font(.jsBody)
+            .font(theme.jsBody)
             .foregroundStyle(theme.secondary)
             .lineLimit(1)
             .frame(width: width)
