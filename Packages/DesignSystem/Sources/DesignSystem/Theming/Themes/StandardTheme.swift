@@ -25,8 +25,32 @@ public struct StandardTheme: Theme, Sendable {
     public let focusRing = ColorTokens.Standard.focusRing
 
     // MARK: - Typography
+    //
+    // ┌────────────────────────────────────────────────────────────────────────┐
+    // │ SWAP FONTS HERE. Each role points at a `FontFamily` name (or `nil` for  │
+    // │ the system font / San Francisco). Mix and match freely, then rebuild.   │
+    // │                                                                          │
+    // │ Current mapping — "Zodiak display, sans elsewhere":                      │
+    // │   • Zodiak (serif) for the hero Display                                  │
+    // │   • Satoshi for section Headlines + Titles                               │
+    // │   • General Sans for Overview / Body / Caption / Small                   │
+    // │                                                                          │
+    // │ A few alternatives to try:                                               │
+    // │   Serif reading:  overview: FontFamily.zodiak                            │
+    // │   Satoshi hero:   display/headline: .satoshi, title/body: .generalSans   │
+    // │   All system:     set any role to `nil` (or use `.system`)               │
+    // └────────────────────────────────────────────────────────────────────────┘
+    public let fonts = FontScheme(
+        display: FontFamily.generalSans,
+        headline: FontFamily.generalSans,
+        title: FontFamily.generalSans,
+        overview: FontFamily.satoshi,
+        body: FontFamily.satoshi,
+        caption: FontFamily.satoshi,
+        small: FontFamily.satoshi
+    )
 
-    public let fontFamily: String? = nil // System font (SF Pro)
+    public let fontFamily: String? = nil // Legacy single-family hook (unused by tokens)
     public let fontWeightDisplay: Font.Weight = .bold
     public let fontWeightBody: Font.Weight = .regular
     public let letterSpacing: CGFloat = 0

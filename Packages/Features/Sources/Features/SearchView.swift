@@ -12,7 +12,6 @@ struct SearchView: View {
         NavigationStack {
             content
                 .background(theme.background)
-                .navigationTitle("Search")
         }
         .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
         .searchSuggestions {
@@ -56,11 +55,11 @@ struct SearchView: View {
                 .foregroundStyle(theme.secondary)
 
             Text("Search Your Library")
-                .font(.jsHeadline)
+                .font(theme.jsHeadline)
                 .foregroundStyle(theme.primary)
 
             Text("Find movies, shows, and more")
-                .font(.jsBody)
+                .font(theme.jsBody)
                 .foregroundStyle(theme.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -73,7 +72,7 @@ struct SearchView: View {
                 .foregroundStyle(theme.secondary)
 
             Text(text)
-                .font(.jsBody)
+                .font(theme.jsBody)
                 .foregroundStyle(theme.secondary)
                 .multilineTextAlignment(.center)
         }

@@ -28,14 +28,14 @@ public struct ContentShelf<Content: View>: View {
 
     public var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.headerSpacing) {
-            HStack(spacing: SpacingTokens.sm) {
+            HStack(spacing: SpacingTokens.xs) {
                 if let icon {
                     Image(systemName: icon)
                         .foregroundStyle(theme.accent)
                 }
 
                 Text(title)
-                    .font(.jsHeadline)
+                    .font(theme.jsHeadline)
                     .foregroundStyle(theme.primary)
             }
             .padding(.horizontal, SpacingTokens.screenPadding)

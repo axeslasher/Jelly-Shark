@@ -48,7 +48,6 @@ struct HomeView: View {
             .scrollClipDisabled()
             .background(alignment: .top) { heroBackground }
             .background(theme.background)
-            .navigationTitle("Home")
             .task(id: session.isConnected) {
                 await loadContent()
             }
@@ -75,7 +74,7 @@ struct HomeView: View {
                     LinearGradient(
                         stops: [
                             .init(color: .black, location: 0.0),
-                            .init(color: .black, location: 0.4),
+                            .init(color: .black, location: 0.6),
                             .init(color: .clear, location: 0.9),
                         ],
                         startPoint: .top,
@@ -91,15 +90,15 @@ struct HomeView: View {
     private var heroSection: some View {
         if let item = heroItem {
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
-                Spacer(minLength: 280)
+                Spacer(minLength: 420)
 
                 Text(item.name)
-                    .font(.jsDisplay)
+                    .font(theme.jsDisplay)
                     .foregroundStyle(theme.primary)
 
                 if let year = item.productionYear {
                     Text(String(year))
-                        .font(.jsTitle)
+                        .font(theme.jsTitle)
                         .foregroundStyle(theme.secondary)
                 }
 
@@ -109,6 +108,7 @@ struct HomeView: View {
                     Label("View Details", systemImage: "info.circle")
                 }
                 .padding(.top, SpacingTokens.sm)
+                .padding(.bottom, SpacingTokens.lg)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, SpacingTokens.screenPadding)
@@ -129,12 +129,12 @@ struct HomeView: View {
                         .foregroundStyle(theme.secondary)
 
                     Text("Featured Content")
-                        .font(.jsHeadline)
+                        .font(theme.jsHeadline)
                         .foregroundStyle(theme.primary)
                         .padding(.top, SpacingTokens.md)
 
                     Text(heroSubtitle)
-                        .font(.jsBody)
+                        .font(theme.jsBody)
                         .foregroundStyle(theme.secondary)
                         .padding(.top, SpacingTokens.xs)
                 }

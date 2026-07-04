@@ -32,6 +32,9 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// Official rating (e.g., PG-13, R)
     public let officialRating: String?
 
+    /// Marketing tagline (movies). Often absent for episodes.
+    public let tagline: String?
+
     /// Genres associated with this item
     public let genres: [String]?
 
@@ -49,6 +52,9 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     public let indexNumber: Int?       // Episode number
     public let parentIndexNumber: Int? // Season number
 
+    /// Cast and crew credited on this item (populated on detail fetches)
+    public let people: [CastMember]?
+
     public init(
         id: String,
         name: String,
@@ -59,6 +65,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         runTimeTicks: Int64? = nil,
         communityRating: Double? = nil,
         officialRating: String? = nil,
+        tagline: String? = nil,
         genres: [String]? = nil,
         imageTags: ImageTags? = nil,
         userData: UserData? = nil,
@@ -67,7 +74,8 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         seasonId: String? = nil,
         seasonName: String? = nil,
         indexNumber: Int? = nil,
-        parentIndexNumber: Int? = nil
+        parentIndexNumber: Int? = nil,
+        people: [CastMember]? = nil
     ) {
         self.id = id
         self.name = name
@@ -78,6 +86,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.runTimeTicks = runTimeTicks
         self.communityRating = communityRating
         self.officialRating = officialRating
+        self.tagline = tagline
         self.genres = genres
         self.imageTags = imageTags
         self.userData = userData
@@ -87,6 +96,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.seasonName = seasonName
         self.indexNumber = indexNumber
         self.parentIndexNumber = parentIndexNumber
+        self.people = people
     }
 }
 

@@ -38,6 +38,10 @@ public final class ThemeManager {
 
         self.currentThemeId = savedId
         self.currentTheme = ThemeManager.createTheme(for: savedId)
+
+        // Register the bundled fonts once so `theme.js*` styles resolve to the
+        // right typeface from first render.
+        DesignSystemFonts.registerAll()
     }
 
     // MARK: - Public Methods
@@ -79,16 +83,13 @@ public final class ThemeManager {
 
 // MARK: - Environment Key
 
-private struct ThemeKey: EnvironmentKey {
-    static let defaultValue: any Theme = StandardTheme()
-}
+/// Stable default instance for the `\.theme` entry — `@Entry` requires a
+/// default expression that returns the same value on every read.
+private let defaultTheme: any Theme = StandardTheme()
 
 public extension EnvironmentValues {
     /// The current theme
-    var theme: any Theme {
-        get { self[ThemeKey.self] }
-        set { self[ThemeKey.self] = newValue }
-    }
+    @Entry var theme: any Theme = defaultTheme
 }
 
 // MARK: - View Extension

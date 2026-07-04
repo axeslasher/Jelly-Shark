@@ -17,3 +17,15 @@ build/
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# Licensed fonts — Fontshare EULA forbids redistributing the font files.
+# Download them yourself per Resources/Fonts/FONTS.md. The instructions file
+# stays tracked; only the binaries are ignored.
+Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.ttf
+Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.otf
+Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.woff
+Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.woff2
+
+# Exception: Atkinson Hyperlegible Next is OFL-licensed (redistribution allowed),
+# so it IS committed to the repo.
+!Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/AtkinsonHyperlegibleNext-*.ttf

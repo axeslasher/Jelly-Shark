@@ -42,6 +42,7 @@ extension MediaItem {
             runTimeTicks: dto.runTimeTicks.map(Int64.init),
             communityRating: dto.communityRating.map(Double.init),
             officialRating: dto.officialRating,
+            tagline: dto.taglines?.first,
             genres: dto.genres,
             imageTags: ImageTags(from: dto.imageTags, backdropTags: dto.backdropImageTags),
             userData: dto.userData.map { UserData(from: $0) },
@@ -50,7 +51,20 @@ extension MediaItem {
             seasonId: dto.seasonID,
             seasonName: dto.seasonName,
             indexNumber: dto.indexNumber,
-            parentIndexNumber: dto.parentIndexNumber
+            parentIndexNumber: dto.parentIndexNumber,
+            people: dto.people?.enumerated().map { index, person in
+                // Some servers omit person IDs. Fall back to a position-based id
+                // so `ForEach` identity stays unique — two id-less people must not
+                // both map to "". Headshot URLs are unaffected: they require
+                // `primaryImageTag`, which servers only send alongside a real id.
+                CastMember(
+                    id: person.id.flatMap { $0.isEmpty ? nil : $0 } ?? "person-\(index)",
+                    name: person.name ?? "",
+                    role: person.role,
+                    kind: (person.type ?? .unknown).rawValue,
+                    primaryImageTag: person.primaryImageTag
+                )
+            }
         )
     }
 }

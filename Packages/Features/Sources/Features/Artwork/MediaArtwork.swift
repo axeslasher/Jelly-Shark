@@ -24,10 +24,23 @@ extension JellyfinClientProtocol {
         firstImageURL(for: item, types: [.thumb, .backdrop, .primary], maxWidth: maxWidth)
     }
 
+    /// Logo (title treatment) image, or nil when the item has no logo
+    func logoURL(for item: MediaItem, maxWidth: Int = 800) -> URL? {
+        guard item.imageTags?.logo != nil else { return nil }
+        return getImageURL(itemId: item.id, imageType: .logo, maxWidth: maxWidth, maxHeight: nil)
+    }
+
     /// Library card image
     func imageURL(for library: Library, maxWidth: Int = 960) -> URL? {
         guard library.primaryImageTag != nil else { return nil }
         return getImageURL(itemId: library.id, imageType: .primary, maxWidth: maxWidth, maxHeight: nil)
+    }
+
+    /// Headshot for a cast/crew member. Person IDs are item IDs in Jellyfin, so
+    /// the standard image endpoint applies; returns nil when there's no photo.
+    func headshotURL(for member: CastMember, maxWidth: Int = 300) -> URL? {
+        guard member.primaryImageTag != nil, !member.id.isEmpty else { return nil }
+        return getImageURL(itemId: member.id, imageType: .primary, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// URL for the first image type the item actually has a tag for

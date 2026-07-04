@@ -60,6 +60,8 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         MediaItem(id: itemId, name: "Item", type: .movie)
     }
 
+    func getSimilarItems(itemId: String, limit: Int?) async throws -> [MediaItem] { [] }
+
     func searchItems(query: String, limit: Int?) async throws -> [MediaItem] {
         searchQueries.append(query)
         return try searchResult.get()
@@ -121,6 +123,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         nextEpisodeRequests.append(episode.id)
         return nextEpisodeResult
     }
+
+    func markPlayed(itemId: String) async throws {}
+    func markUnplayed(itemId: String) async throws {}
+    func markFavorite(itemId: String) async throws {}
+    func unmarkFavorite(itemId: String) async throws {}
 }
 
 // MARK: - Tests

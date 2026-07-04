@@ -54,6 +54,11 @@ public protocol Theme: Sendable {
 
     // MARK: - Typography
 
+    /// Per-role typeface assignment for this theme. Defaults to all-system
+    /// (San Francisco). Override in a theme to give it its own fonts — see
+    /// `StandardTheme.fonts`.
+    var fonts: FontScheme { get }
+
     /// Primary font family name (nil for system font)
     var fontFamily: String? { get }
 
@@ -123,6 +128,7 @@ public enum ThemeIdentifier: String, CaseIterable, Sendable, Codable {
 
 public extension Theme {
     // Default typography (can be overridden)
+    var fonts: FontScheme { .system }
     var fontFamily: String? { nil }
     var fontWeightDisplay: Font.Weight { .bold }
     var fontWeightBody: Font.Weight { .regular }

@@ -43,13 +43,13 @@ public enum SpacingTokens {
     public static let cardGap: CGFloat = 32
 
     /// Padding at screen edges
-    public static let screenPadding: CGFloat = 48
+    public static let screenPadding: CGFloat = 28
 
     /// Space between sections
-    public static let sectionSpacing: CGFloat = 64
+    public static let sectionSpacing: CGFloat = 60
 
     /// Space between a header and its content
-    public static let headerSpacing: CGFloat = 24
+    public static let headerSpacing: CGFloat = 8
 
     // MARK: - Focus Spacing
 
