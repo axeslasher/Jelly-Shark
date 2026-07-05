@@ -65,8 +65,8 @@ public struct MediaDetailView: View {
         case shelves
     }
 
-    /// Scroll identity of the shelves region, targeted by the shelves snap.
-    private static let shelvesScrollID = "shelves"
+    /// Geometry the tvOS shelves snap needs (see `ScrollSnapMetrics`).
+    @State private var snapMetrics = ScrollSnapMetrics(containerHeight: 0, topInset: 0)
 
     @FocusState private var focusedRegion: FocusRegion?
 
@@ -168,7 +168,6 @@ public struct MediaDetailView: View {
 
                     MediaInfoSection(item: displayItem)
                 }
-                .id(Self.shelvesScrollID)
                 #if os(tvOS)
                 .focusSection()
                 .focused($focusedRegion, equals: .shelves)
@@ -179,12 +178,15 @@ public struct MediaDetailView: View {
             // Paired with the viewport-tall hero, this gives a clean hero →
             // shelves snap.
             //
-            // The layout marker is needed on every platform — the tvOS
-            // focus-region snap resolves `shelvesScrollID` through it. Only
-            // `.scrollTargetBehavior` is excluded on tvOS (below): it re-aligns
-            // the scroll out from under the focus engine, which traps focus in
-            // the hero. Behavior-driven snapping applies on visionOS / iOS only.
+            // tvOS is fully excluded from the scroll-target machinery: on
+            // hardware (Siri Remote pan gestures — a path the simulator's
+            // arrow keys never exercise) the target layout lets the pan drive
+            // the scroll view directly, blowing past focusable content with
+            // focus left behind. The tvOS focus-region snap below scrolls by
+            // geometry instead of by id, so it doesn't need the marker.
+            #if !os(tvOS)
             .scrollTargetLayout()
+            #endif
             // Bottom-only padding: a top inset would push the viewport-tall,
             // bottom-anchored hero below the fold, guaranteeing the focus engine
             // scrolls (and blurs the backdrop) the moment focus lands on Play.
@@ -218,7 +220,14 @@ public struct MediaDetailView: View {
                     if region == .hero {
                         scrollPosition.scrollTo(edge: .top)
                     } else {
-                        scrollPosition.scrollTo(id: Self.shelvesScrollID, anchor: .top)
+                        // By geometry, not id: the hero is exactly one
+                        // container tall, so the shelves start one container
+                        // plus one section gap into the content. (Id-based
+                        // scrolls need `scrollTargetLayout`, which is what
+                        // hijacks Siri Remote pans on hardware.)
+                        scrollPosition.scrollTo(
+                            y: snapMetrics.containerHeight + SpacingTokens.sectionSpacing - snapMetrics.topInset
+                        )
                     }
                 }
             }
@@ -231,6 +240,16 @@ public struct MediaDetailView: View {
         // settles so they never start the fade. Redundant writes are skipped so
         // scrolling past the fold (where the clamp pins progress at 1) stops
         // invalidating.
+        // Capture the geometry the tvOS shelves snap needs: the shelves' top
+        // sits one viewport-tall hero plus one section gap into the content.
+        .onScrollGeometryChange(for: ScrollSnapMetrics.self) { geometry in
+            ScrollSnapMetrics(
+                containerHeight: geometry.containerSize.height,
+                topInset: geometry.contentInsets.top
+            )
+        } action: { _, metrics in
+            snapMetrics = metrics
+        }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
         } action: { _, offset in
@@ -338,6 +357,14 @@ public struct MediaDetailView: View {
 
         similarItems = (try? await client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
     }
+}
+
+/// Container geometry captured for the tvOS shelves snap: the shelves' top
+/// offset is derived from these rather than an id lookup, so the snap works
+/// without `scrollTargetLayout`.
+private struct ScrollSnapMetrics: Equatable {
+    var containerHeight: CGFloat
+    var topInset: CGFloat
 }
 
 #Preview {
