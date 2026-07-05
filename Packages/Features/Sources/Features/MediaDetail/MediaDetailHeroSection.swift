@@ -34,18 +34,6 @@ struct MediaDetailHeroSection: View {
         favoriteOverride ?? item.userData?.isFavorite ?? false
     }
 
-    /// Bordered technical badges beneath the metadata facts: resolution,
-    /// dynamic range, audio format, and a CC marker when subtitles exist.
-    private var techBadges: [String] {
-        guard let tech = item.technicalInfo else { return [] }
-        return [
-            tech.resolution,
-            tech.videoRange,
-            tech.audioFormat,
-            tech.hasSubtitles ? "CC" : nil
-        ].compactMap { $0 }
-    }
-
     /// Up to three genres as a single subdued line ("Crime · Drama · Thriller")
     private var genreLine: String? {
         guard let genres = item.genres, !genres.isEmpty else { return nil }
@@ -76,7 +64,9 @@ struct MediaDetailHeroSection: View {
                         communityRating: item.communityRating,
                         criticRating: item.criticRating,
                         certificate: item.officialRating,
-                        techBadges: techBadges
+                        resolution: item.technicalInfo?.resolution,
+                        videoRange: item.technicalInfo?.videoRange,
+                        audioFormat: item.technicalInfo?.audioFormat
                     )
                     if let genreLine {
                         Text(genreLine)
