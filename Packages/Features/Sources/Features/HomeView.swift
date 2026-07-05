@@ -13,44 +13,45 @@ struct HomeView: View {
     @State private var latestItems: [MediaItem] = []
     @State private var belowFold = false
 
+    // No NavigationStack here: RootView owns each tab's stack (with a path
+    // binding) so it can pop to root before a tab switch — see RootView's
+    // `tabSelection` for the tvOS bug this works around.
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                    // Hero Section
-                    heroSection
-                        .onScrollVisibilityChange { visible in
-                            withAnimation(theme.animation) {
-                                belowFold = !visible
-                            }
-                        }
-
-                    // Continue Watching
-                    if !resumeItems.isEmpty {
-                        ContentShelf("Continue Watching", icon: "play.circle.fill") {
-                            ForEach(resumeItems) { item in
-                                item.landscapeShelfItem(client: session.client)
-                            }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                // Hero Section
+                heroSection
+                    .onScrollVisibilityChange { visible in
+                        withAnimation(theme.animation) {
+                            belowFold = !visible
                         }
                     }
 
-                    // Recently Added
-                    if !latestItems.isEmpty {
-                        ContentShelf("Recently Added", icon: "sparkles") {
-                            ForEach(latestItems) { item in
-                                item.posterShelfItem(client: session.client)
-                            }
+                // Continue Watching
+                if !resumeItems.isEmpty {
+                    ContentShelf("Continue Watching", icon: "play.circle.fill") {
+                        ForEach(resumeItems) { item in
+                            item.landscapeShelfItem(client: session.client)
                         }
                     }
                 }
-                .padding(.vertical, SpacingTokens.lg)
+
+                // Recently Added
+                if !latestItems.isEmpty {
+                    ContentShelf("Recently Added", icon: "sparkles") {
+                        ForEach(latestItems) { item in
+                            item.posterShelfItem(client: session.client)
+                        }
+                    }
+                }
             }
-            .scrollClipDisabled()
-            .background(alignment: .top) { heroBackground }
-            .background(theme.background)
-            .task(id: session.isConnected) {
-                await loadContent()
-            }
+            .padding(.vertical, SpacingTokens.lg)
+        }
+        .scrollClipDisabled()
+        .background(alignment: .top) { heroBackground }
+        .background(theme.background)
+        .task(id: session.isConnected) {
+            await loadContent()
         }
     }
 
@@ -102,9 +103,7 @@ struct HomeView: View {
                         .foregroundStyle(theme.secondary)
                 }
 
-                NavigationLink {
-                    MediaDetailView(item: item)
-                } label: {
+                NavigationLink(value: item) {
                     Label("View Details", systemImage: "info.circle")
                 }
                 .padding(.top, SpacingTokens.sm)
@@ -167,8 +166,10 @@ struct HomeView: View {
 }
 
 #Preview {
-    HomeView()
-        .withThemeEnvironment()
-        .environment(AppSession())
-        .environment(ServerConnectionViewModel())
+    NavigationStack {
+        HomeView()
+    }
+    .withThemeEnvironment()
+    .environment(AppSession())
+    .environment(ServerConnectionViewModel())
 }

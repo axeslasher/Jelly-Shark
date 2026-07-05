@@ -8,24 +8,25 @@ struct SearchView: View {
     @Environment(AppSession.self) private var session
     @State private var viewModel = SearchViewModel()
 
+    // No NavigationStack here: RootView owns each tab's stack (with a path
+    // binding) so it can pop to root before a tab switch — see RootView's
+    // `tabSelection` for the tvOS bug this works around.
     var body: some View {
-        NavigationStack {
-            content
-                .background(theme.background)
-        }
-        .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
-        .searchSuggestions {
-            ForEach(viewModel.suggestions, id: \.self) { suggestion in
-                Text(suggestion)
-                    .searchCompletion(suggestion)
+        content
+            .background(theme.background)
+            .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
+            .searchSuggestions {
+                ForEach(viewModel.suggestions, id: \.self) { suggestion in
+                    Text(suggestion)
+                        .searchCompletion(suggestion)
+                }
             }
-        }
-        .onChange(of: viewModel.query) { _, newValue in
-            viewModel.updateQuery(newValue)
-        }
-        .task(id: session.isConnected) {
-            viewModel.attach(client: session.client)
-        }
+            .onChange(of: viewModel.query) { _, newValue in
+                viewModel.updateQuery(newValue)
+            }
+            .task(id: session.isConnected) {
+                viewModel.attach(client: session.client)
+            }
     }
 
     @ViewBuilder
@@ -99,7 +100,9 @@ struct SearchView: View {
 }
 
 #Preview {
-    SearchView()
-        .withThemeEnvironment()
-        .environment(AppSession())
+    NavigationStack {
+        SearchView()
+    }
+    .withThemeEnvironment()
+    .environment(AppSession())
 }

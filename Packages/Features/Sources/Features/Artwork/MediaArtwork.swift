@@ -68,8 +68,10 @@ extension JellyfinClientProtocol {
 }
 
 /// Shelf/grid card builders that map a `MediaItem` onto the design system's
-/// `ArtworkShelfItem`, supplying the artwork URL, two-line caption, progress, and
-/// the detail-screen destination.
+/// `ArtworkShelfItem`, supplying the artwork URL, two-line caption, and progress.
+/// Navigation is value-based: the card pushes the item itself, and the enclosing
+/// stack's `navigationDestination(for: MediaItem.self)` (registered at each tab's
+/// stack root in `RootView`) resolves it to a `MediaDetailView`.
 extension MediaItem {
     /// Portrait poster card (2:3). Title is the item name; subtitle is the year.
     @MainActor @ViewBuilder
@@ -80,10 +82,9 @@ extension MediaItem {
             subtitle: productionYear.map(String.init),
             aspectRatio: 2.0 / 3.0,
             width: width,
-            progress: progressPercentage
-        ) {
-            MediaDetailView(item: self)
-        }
+            progress: progressPercentage,
+            value: self
+        )
     }
 
     /// Landscape card (16:9). Episodes show the episode title over the series
@@ -96,9 +97,8 @@ extension MediaItem {
             subtitle: type == .episode ? seriesName : productionYear.map(String.init),
             aspectRatio: 16.0 / 9.0,
             width: width,
-            progress: progressPercentage
-        ) {
-            MediaDetailView(item: self)
-        }
+            progress: progressPercentage,
+            value: self
+        )
     }
 }

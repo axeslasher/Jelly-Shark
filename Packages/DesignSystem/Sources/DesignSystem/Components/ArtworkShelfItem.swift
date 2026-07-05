@@ -14,9 +14,13 @@ import SwiftUI
 /// "image grows inside its container" bug. Attaching the effect to the card makes
 /// the whole artwork lift instead.
 ///
-/// The destination is supplied by the caller so this component stays free of any
-/// feature/model dependencies.
-public struct ArtworkShelfItem<Destination: View>: View {
+/// Navigation is value-based: the card appends `value` to the enclosing
+/// `NavigationStack`'s path, and the stack's `navigationDestination(for:)`
+/// resolves the screen. This keeps the component free of feature/model
+/// dependencies and — unlike a view-destination link — lets the app pop the
+/// stack programmatically (used to work around a tvOS `sidebarAdaptable` bug
+/// where switching tabs with a pushed view strands the pushed screen).
+public struct ArtworkShelfItem<Value: Hashable>: View {
     private let url: URL?
     private let title: String
     private let subtitle: String?
@@ -24,7 +28,7 @@ public struct ArtworkShelfItem<Destination: View>: View {
     private let aspectRatio: CGFloat
     private let width: CGFloat
     private let progress: Double?
-    private let destination: Destination
+    private let value: Value
 
     @Environment(\.theme) private var theme
 
@@ -36,7 +40,7 @@ public struct ArtworkShelfItem<Destination: View>: View {
         aspectRatio: CGFloat = 2.0 / 3.0,
         width: CGFloat = 200,
         progress: Double? = nil,
-        @ViewBuilder destination: () -> Destination
+        value: Value
     ) {
         self.url = url
         self.title = title
@@ -45,13 +49,11 @@ public struct ArtworkShelfItem<Destination: View>: View {
         self.aspectRatio = aspectRatio
         self.width = width
         self.progress = progress
-        self.destination = destination()
+        self.value = value
     }
 
     public var body: some View {
-        NavigationLink {
-            destination
-        } label: {
+        NavigationLink(value: value) {
             #if os(tvOS)
             // Artwork and captions are intentionally flat siblings, not nested in
             // a stack — the borderless style arranges them into a vertical lockup
