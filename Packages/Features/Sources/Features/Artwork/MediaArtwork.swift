@@ -9,14 +9,29 @@ import DesignSystem
 /// type (or its fallbacks), so views never request images that don't exist
 /// and fall back to the themed placeholder instead.
 extension JellyfinClientProtocol {
-    /// Poster image: Primary, falling back to Thumb (episodes often lack a Primary)
+    /// Poster image: Primary, falling back to Thumb (episodes often lack a
+    /// Primary), then to the series poster
     func posterURL(for item: MediaItem, maxWidth: Int = 600) -> URL? {
-        firstImageURL(for: item, types: [.primary, .thumb], maxWidth: maxWidth)
+        if let own = firstImageURL(for: item, types: [.primary, .thumb], maxWidth: maxWidth) {
+            return own
+        }
+        guard let seriesId = item.seriesId,
+              item.parentArtwork?.seriesPrimaryImageTag != nil
+        else { return nil }
+        return getImageURL(itemId: seriesId, imageType: .primary, maxWidth: maxWidth, maxHeight: nil)
     }
 
-    /// Hero backdrop: Backdrop, falling back to Thumb
+    /// Hero backdrop: Backdrop, falling back to Thumb, then to the nearest
+    /// ancestor backdrop (episodes rarely carry their own — without this the
+    /// episode hero renders bare)
     func backdropURL(for item: MediaItem, maxWidth: Int = 1920) -> URL? {
-        firstImageURL(for: item, types: [.backdrop, .thumb], maxWidth: maxWidth)
+        if let own = firstImageURL(for: item, types: [.backdrop, .thumb], maxWidth: maxWidth) {
+            return own
+        }
+        guard let parentId = item.parentArtwork?.backdropItemId,
+              item.parentArtwork?.backdropImageTag != nil
+        else { return nil }
+        return getImageURL(itemId: parentId, imageType: .backdrop, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// Landscape card image: Thumb, then Backdrop, then Primary
@@ -24,10 +39,16 @@ extension JellyfinClientProtocol {
         firstImageURL(for: item, types: [.thumb, .backdrop, .primary], maxWidth: maxWidth)
     }
 
-    /// Logo (title treatment) image, or nil when the item has no logo
+    /// Logo (title treatment) image: the item's own, falling back to the
+    /// nearest ancestor logo (episodes inherit the series title treatment)
     func logoURL(for item: MediaItem, maxWidth: Int = 800) -> URL? {
-        guard item.imageTags?.logo != nil else { return nil }
-        return getImageURL(itemId: item.id, imageType: .logo, maxWidth: maxWidth, maxHeight: nil)
+        if item.imageTags?.logo != nil {
+            return getImageURL(itemId: item.id, imageType: .logo, maxWidth: maxWidth, maxHeight: nil)
+        }
+        guard let parentId = item.parentArtwork?.logoItemId,
+              item.parentArtwork?.logoImageTag != nil
+        else { return nil }
+        return getImageURL(itemId: parentId, imageType: .logo, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// Library card image

@@ -173,6 +173,45 @@ struct JellyfinKitTests {
         }
     }
 
+    @Suite("ParentArtwork Adapter")
+    struct ParentArtworkAdapterTests {
+        @Test("Maps ancestor backdrop, logo, and series poster tags")
+        func mapsAncestorArt() {
+            let item = MediaItem(from: BaseItemDto(
+                id: "ep1",
+                parentBackdropImageTags: ["bd-tag"],
+                parentBackdropItemID: "series-1",
+                parentLogoImageTag: "logo-tag",
+                parentLogoItemID: "series-1",
+                seriesID: "series-1",
+                seriesPrimaryImageTag: "poster-tag",
+                type: .episode
+            ))
+
+            #expect(item.parentArtwork?.backdropItemId == "series-1")
+            #expect(item.parentArtwork?.backdropImageTag == "bd-tag")
+            #expect(item.parentArtwork?.logoItemId == "series-1")
+            #expect(item.parentArtwork?.logoImageTag == "logo-tag")
+            #expect(item.parentArtwork?.seriesPrimaryImageTag == "poster-tag")
+        }
+
+        @Test("Nil when the item inherits no ancestor artwork")
+        func nilWithoutAncestorArt() {
+            let item = MediaItem(from: BaseItemDto(id: "m1", type: .movie))
+            #expect(item.parentArtwork == nil)
+        }
+
+        @Test("A tag without its owning item id doesn't count as a fallback")
+        func tagWithoutOwnerIsIgnored() {
+            let item = MediaItem(from: BaseItemDto(
+                id: "ep1",
+                parentBackdropImageTags: ["bd-tag"],
+                type: .episode
+            ))
+            #expect(item.parentArtwork == nil)
+        }
+    }
+
     @Suite("MediaTechnicalInfo Adapter")
     struct MediaTechnicalInfoAdapterTests {
         /// Wraps bare streams in a minimal item DTO, the shape most tests need.
