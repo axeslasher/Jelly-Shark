@@ -71,6 +71,21 @@ struct JellyfinKitTests {
             #expect(shortVideo.formattedRuntime == "30m")
         }
 
+        @Test("Remaining runtime formats what's left")
+        func formattedRemainingRuntime() {
+            let item = MediaItem(
+                id: "1", name: "Movie", type: .movie,
+                runTimeTicks: 72_000_000_000, // 2h
+                userData: UserData(playbackPositionTicks: 27_000_000_000) // 45m in
+            )
+            #expect(item.formattedRemainingRuntime == "1h 15m")
+
+            let unstarted = MediaItem(
+                id: "2", name: "Movie", type: .movie, runTimeTicks: 72_000_000_000
+            )
+            #expect(unstarted.formattedRemainingRuntime == nil)
+        }
+
         @Test("Progress percentage calculation")
         func progressPercentage() {
             let item = MediaItem(

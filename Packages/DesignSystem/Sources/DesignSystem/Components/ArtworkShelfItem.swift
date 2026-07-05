@@ -20,6 +20,17 @@ import SwiftUI
 /// dependencies and — unlike a view-destination link — lets the app pop the
 /// stack programmatically (used to work around a tvOS `sidebarAdaptable` bug
 /// where switching tabs with a pushed view strands the pushed screen).
+/// Playback-state treatment rendered over the bottom quarter of a card's
+/// artwork (episode cards).
+public enum PlaybackBadge: Equatable {
+    /// Play icon + runtime
+    case unplayed(runtime: String?)
+    /// Replay icon + runtime
+    case played(runtime: String?)
+    /// Play icon + progress bar + remaining runtime
+    case inProgress(Double, remaining: String?)
+}
+
 public struct ArtworkShelfItem<Value: Hashable>: View {
     private let url: URL?
     private let blurHash: String?
@@ -32,7 +43,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private let aspectRatio: CGFloat
     private let width: CGFloat
     private let progress: Double?
-    private let isWatched: Bool
+    private let playbackBadge: PlaybackBadge?
     private let value: Value?
     private let action: (() -> Void)?
 
@@ -50,7 +61,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         aspectRatio: CGFloat = 2.0 / 3.0,
         width: CGFloat = 200,
         progress: Double? = nil,
-        isWatched: Bool = false,
+        playbackBadge: PlaybackBadge? = nil,
         value: Value
     ) {
         self.action = nil
@@ -65,7 +76,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.aspectRatio = aspectRatio
         self.width = width
         self.progress = progress
-        self.isWatched = isWatched
+        self.playbackBadge = playbackBadge
         self.value = value
     }
 
@@ -84,7 +95,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         aspectRatio: CGFloat = 2.0 / 3.0,
         width: CGFloat = 200,
         progress: Double? = nil,
-        isWatched: Bool = false,
+        playbackBadge: PlaybackBadge? = nil,
         action: @escaping () -> Void
     ) where Value == Bool {
         self.url = url
@@ -98,7 +109,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.aspectRatio = aspectRatio
         self.width = width
         self.progress = progress
-        self.isWatched = isWatched
+        self.playbackBadge = playbackBadge
         self.value = nil
         self.action = action
     }
@@ -154,19 +165,63 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                         .frame(width: width * progress, height: 4)
                 }
             }
-            // Watched marker for episode cards. Shadowed for legibility over
-            // arbitrary artwork.
-            .overlay(alignment: .topTrailing) {
-                if isWatched {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundStyle(.white)
-                        .shadow(color: .black.opacity(0.6), radius: 4)
-                        .padding(SpacingTokens.xs)
+            // Playback-state treatment across the bottom quarter of the
+            // still: play/replay + runtime, or play + progress bar. A soft
+            // scrim keeps it legible over arbitrary artwork.
+            .overlay(alignment: .bottom) {
+                if let playbackBadge {
+                    playbackBadgeContent(playbackBadge)
+                        .frame(height: width / aspectRatio / 4)
+                        .frame(maxWidth: .infinity)
+                        .background {
+                            LinearGradient(
+                                colors: [theme.background.opacity(0.55), .clear],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        }
                 }
             }
             .artworkCornerRadius(theme.cornerRadius)
             .artworkHighlightOnFocus()
+    }
+
+    @ViewBuilder
+    private func playbackBadgeContent(_ badge: PlaybackBadge) -> some View {
+        HStack(spacing: SpacingTokens.xs) {
+            switch badge {
+            case .unplayed(let runtime):
+                Image(systemName: "play.fill")
+                if let runtime {
+                    Text(runtime)
+                }
+            case .played(let runtime):
+                Image(systemName: "arrow.counterclockwise")
+                if let runtime {
+                    Text(runtime)
+                }
+            case .inProgress(let progress, let remaining):
+                Image(systemName: "play.fill")
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(theme.background.opacity(0.9))
+                        Capsule()
+                            .fill(theme.accent)
+                            .frame(width: geometry.size.width * min(max(progress, 0), 1))
+                    }
+                }
+                .frame(height: 8)
+                if let remaining {
+                    Text(remaining)
+                }
+            }
+        }
+        .font(theme.jsBody)
+        .fontWeight(.medium)
+        .foregroundStyle(theme.primary.opacity(0.9))
+        .padding(.horizontal, SpacingTokens.sm)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     /// Multi-line description beneath the captions (episode synopses).

@@ -353,7 +353,20 @@ public struct UserData: Sendable, Equatable, Hashable {
 extension MediaItem {
     /// Runtime formatted as hours and minutes
     public var formattedRuntime: String? {
-        guard let ticks = runTimeTicks else { return nil }
+        runTimeTicks.map(Self.runtimeText)
+    }
+
+    /// Time left in an in-progress item, in the same "1h 5m" style as
+    /// `formattedRuntime`; nil without both a playback position and a runtime
+    public var formattedRemainingRuntime: String? {
+        guard let position = userData?.playbackPositionTicks,
+              let total = runTimeTicks,
+              total > position
+        else { return nil }
+        return Self.runtimeText(total - position)
+    }
+
+    private static func runtimeText(_ ticks: Int64) -> String {
         let totalMinutes = Int(ticks / 10_000_000 / 60)
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60
