@@ -151,7 +151,7 @@ struct MediaDetailHeroSection: View {
             // back to the on-platter color), so "already watched/favorited"
             // stays legible while the button is lifted.
             CircleActionButton(
-                systemImage: isPlayed ? "checkmark.circle.fill" : "eye.fill",
+                systemImage: isPlayed ? "checkmark" : "eye.fill",
                 title: isPlayed ? "Watched" : "Mark Watched",
                 tint: isPlayed ? theme.accent : theme.primary,
                 focusedTint: isPlayed ? theme.accent : nil,

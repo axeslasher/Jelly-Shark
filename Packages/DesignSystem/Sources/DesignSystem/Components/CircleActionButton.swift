@@ -10,6 +10,11 @@ public struct CircleActionButton: View {
     private let isEnabled: Bool
     private let action: () -> Void
 
+    /// Side of the square the glyph is pinned into — comfortably fits the
+    /// widest SF Symbols at the headline size (32pt) so every button renders
+    /// the same circle.
+    private static let glyphBox: CGFloat = 44
+
     @Environment(\.theme) private var theme
     @FocusState private var isFocused: Bool
 
@@ -34,28 +39,39 @@ public struct CircleActionButton: View {
     }
 
     public var body: some View {
-        VStack(spacing: SpacingTokens.sm) {
-            Button(action: action) {
-                Image(systemName: systemImage)
-                    .font(theme.jsHeadline)
-                    // Focus lifts the glass circle to a light platter; the
-                    // theme's light tints wash out there, so swap to the
-                    // on-platter color (or the caller's override).
-                    .foregroundStyle(isFocused ? (focusedTint ?? theme.onPlatter) : tint)
-            }
-            .glassButtonStyle()
-            .buttonBorderShape(.circle)
-            .controlSize(.regular)
-            .focused($isFocused)
-            .disabled(!isEnabled)
-
-            // Reserve the label's space at all times (opacity, not conditional
-            // insertion) so gaining focus doesn't shift the layout and unsettle
-            // the focus engine.
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(theme.jsHeadline)
+                // Focus lifts the glass circle to a light platter; the
+                // theme's light tints wash out there, so swap to the
+                // on-platter color (or the caller's override).
+                .foregroundStyle(isFocused ? (focusedTint ?? theme.onPlatter) : tint)
+                // The circle takes its diameter from the label, and SF Symbol
+                // glyphs all have different bounding boxes — pin the glyph in
+                // a fixed square so swapping symbols ("eye.fill" ⇄
+                // "checkmark") can't resize the button.
+                .frame(width: Self.glyphBox, height: Self.glyphBox)
+        }
+        .glassButtonStyle()
+        .buttonBorderShape(.circle)
+        .controlSize(.regular)
+        .focused($isFocused)
+        .disabled(!isEnabled)
+        // The label hangs below the circle as an overlay so its width never
+        // participates in layout — the button's footprint is always just the
+        // circle, and a state change ("Mark Watched" → "Watched") can't shift
+        // the row. Faded rather than conditionally inserted so gaining focus
+        // doesn't restructure the view and unsettle the focus engine.
+        .overlay(alignment: .bottom) {
             Text(title)
                 .font(theme.jsCaption)
                 .foregroundStyle(theme.secondary)
+                .fixedSize()
                 .opacity(isFocused ? 1 : 0)
+                // Report the label's bottom as its own top minus the gap, so
+                // aligning that "bottom" with the circle's bottom hangs the
+                // label one gap below the circle.
+                .alignmentGuide(.bottom) { $0[.top] - SpacingTokens.sm }
         }
         .animation(theme.animation, value: isFocused)
     }
