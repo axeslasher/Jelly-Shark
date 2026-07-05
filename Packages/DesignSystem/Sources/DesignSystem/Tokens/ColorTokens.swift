@@ -16,6 +16,10 @@ public enum ColorTokens {
         public static let secondary = Color(hex: "d4d4d8")
         public static let tertiary = Color(hex: "a1a1aa")
 
+        // Content on light system focus platters (focused .plain buttons etc.)
+        public static let onPlatter = Color(hex: "18181b")
+        public static let onPlatterSecondary = Color(hex: "52525b")
+
         // Accent
         public static let accent = Color(hex: "f97316")
         public static let accentSecondary = Color(hex: "ea580c")
@@ -40,6 +44,9 @@ public enum ColorTokens {
         public static let secondary = Color(hex: "8B8B8B")
         public static let tertiary = Color(hex: "5A5A5A")
 
+        public static let onPlatter = Color(hex: "1A1614")
+        public static let onPlatterSecondary = Color(hex: "4A4540")
+
         public static let accent = Color(hex: "B22222")
         public static let accentSecondary = Color(hex: "660000")
 
@@ -61,6 +68,9 @@ public enum ColorTokens {
         public static let secondary = Color(hex: "8BA4BE")
         public static let tertiary = Color(hex: "5A6B7D")
 
+        public static let onPlatter = Color(hex: "0F1419")
+        public static let onPlatterSecondary = Color(hex: "3D4B5C")
+
         public static let accent = Color(hex: "00E5FF")
         public static let accentSecondary = Color(hex: "00B4D8")
 
@@ -81,6 +91,9 @@ public enum ColorTokens {
         public static let primary = Color(hex: "FAF5E8")
         public static let secondary = Color(hex: "B8B0A0")
         public static let tertiary = Color(hex: "7A7468")
+
+        public static let onPlatter = Color(hex: "001D3D")
+        public static let onPlatterSecondary = Color(hex: "3E4E66")
 
         public static let accent = Color(hex: "FFD700")
         public static let accentSecondary = Color(hex: "4A90E2")

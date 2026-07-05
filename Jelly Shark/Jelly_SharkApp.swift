@@ -21,6 +21,11 @@ struct Jelly_SharkApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
+                // The theme system is committed to dark surfaces with light
+                // type; declaring the app dark keeps system-drawn chrome
+                // (focus platters, materials, glass) in its dark variants
+                // instead of following the viewer's system appearance.
+                .preferredColorScheme(.dark)
         }
     }
 }

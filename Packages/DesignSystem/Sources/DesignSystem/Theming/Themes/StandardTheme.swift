@@ -17,6 +17,8 @@ public struct StandardTheme: Theme, Sendable {
     public let primary = ColorTokens.Standard.primary
     public let secondary = ColorTokens.Standard.secondary
     public let tertiary = ColorTokens.Standard.tertiary
+    public let onPlatter = ColorTokens.Standard.onPlatter
+    public let onPlatterSecondary = ColorTokens.Standard.onPlatterSecondary
     public let accent = ColorTokens.Standard.accent
     public let accentSecondary = ColorTokens.Standard.accentSecondary
     public let success = ColorTokens.Standard.success
