@@ -37,6 +37,7 @@ deciding which fields to incorporate into `MediaDetailView`.
 | `studios` | yes (info section, Information column) |
 | `childCount`, `recursiveItemCount` | childCount → "N Seasons" (series metadata row) |
 | `technicalInfo` (distilled from the default media source) | metadata row (resolution / video range / audio) + info section (Languages and File columns) |
+| `parentArtwork` (ancestor backdrop/logo/series-poster tags + owning ids) | artwork fallbacks: episode heroes inherit the series backdrop/logo, poster cards the series poster |
 
 `technicalInfo` intentionally does **not** expose raw `MediaStream`s or
 `MediaSourceInfo`. The adapter reduces the default media source to
@@ -64,7 +65,7 @@ Worth considering, roughly by payoff:
 | `remoteTrailers`, `trailerCount`, `localTrailerCount` | Trailer button beside Play (URLs are usually YouTube — needs a tvOS playability check) |
 | `chapters` (name, `startPositionTicks`, image tag) | Scene-selection shelf / playback entry points |
 | `imageBlurHashes` | Blurhash placeholders for all artwork — biggest available loading-polish win (`ArtworkImage`, hero backdrop) |
-| `parentBackdropImageTags`, `parentLogoImageTag`, `seriesPrimaryImageTag`, `seriesThumbImageTag` | Fallback hero art for episodes that lack their own backdrop/logo |
+| `parentThumbItemID`, `parentThumbImageTag` | Remaining ancestor-art fallback (thumb); backdrop/logo/series-poster are mapped via `parentArtwork` |
 | `indexNumberEnd` | Correct "S01E01–02" labels for multi-episode files |
 | `cumulativeRunTimeTicks` | Total runtime for series/box sets |
 | `dateCreated` | "Added on …" secondary metadata |
@@ -90,6 +91,11 @@ Worth considering, roughly by payoff:
    `studios`, season/episode counts, and distill `mediaStreams` into
    `MediaTechnicalInfo`; surface in `MediaMetadataRow` / `CreditsColumn`.
    — **done**
-3. **Feature tier** (each its own feature with UI decisions): trailer button,
-   chapter shelf, blurhash placeholders, episode parent-art fallbacks.
-   — not started
+3. **Feature tier** (each its own feature with UI decisions):
+   - episode parent-art fallbacks — **done** (`parentArtwork` +
+     `MediaArtwork` fallback chains)
+   - blurhash placeholders — next up
+   - chapter shelf — not started
+   - trailer button — descoped: `remoteTrailers` are YouTube URLs, which
+     tvOS can't play; only viable for local trailers, which most libraries
+     lack

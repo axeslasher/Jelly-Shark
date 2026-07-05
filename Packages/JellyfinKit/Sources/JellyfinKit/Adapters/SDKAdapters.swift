@@ -72,7 +72,35 @@ extension MediaItem {
                     kind: (person.type ?? .unknown).rawValue,
                     primaryImageTag: person.primaryImageTag
                 )
-            }
+            },
+            parentArtwork: ParentArtwork(from: dto)
+        )
+    }
+}
+
+// MARK: - ParentArtwork Adapter
+
+extension ParentArtwork {
+    /// Nil when the item inherits no ancestor artwork at all, so callers can
+    /// treat "has a parentArtwork" as "has at least one fallback".
+    init?(from dto: JellyfinAPI.BaseItemDto) {
+        let backdropTag = dto.parentBackdropImageTags?.first
+        let backdropId = dto.parentBackdropItemID
+        let logoTag = dto.parentLogoImageTag
+        let logoId = dto.parentLogoItemID
+        let seriesPrimary = dto.seriesPrimaryImageTag
+
+        guard (backdropTag != nil && backdropId != nil)
+            || (logoTag != nil && logoId != nil)
+            || seriesPrimary != nil
+        else { return nil }
+
+        self.init(
+            backdropItemId: backdropId,
+            backdropImageTag: backdropTag,
+            logoItemId: logoId,
+            logoImageTag: logoTag,
+            seriesPrimaryImageTag: seriesPrimary
         )
     }
 }

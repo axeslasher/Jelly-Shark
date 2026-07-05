@@ -80,6 +80,11 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// Cast and crew credited on this item (populated on detail fetches)
     public let people: [CastMember]?
 
+    /// Artwork inherited from ancestors (season/series). Episodes rarely carry
+    /// their own backdrops or logos; the server points at the nearest ancestor
+    /// that has them.
+    public let parentArtwork: ParentArtwork?
+
     public init(
         id: String,
         name: String,
@@ -108,7 +113,8 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         seasonName: String? = nil,
         indexNumber: Int? = nil,
         parentIndexNumber: Int? = nil,
-        people: [CastMember]? = nil
+        people: [CastMember]? = nil,
+        parentArtwork: ParentArtwork? = nil
     ) {
         self.id = id
         self.name = name
@@ -138,6 +144,37 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.indexNumber = indexNumber
         self.parentIndexNumber = parentIndexNumber
         self.people = people
+        self.parentArtwork = parentArtwork
+    }
+}
+
+/// Ancestor-owned artwork an item can inherit when it lacks its own. Each
+/// image pairs the tag with the id of the ancestor item that owns it, since
+/// image URLs are built against the owning item.
+public struct ParentArtwork: Sendable, Equatable, Hashable {
+    /// Item owning the nearest ancestor backdrop (usually the series)
+    public let backdropItemId: String?
+    public let backdropImageTag: String?
+
+    /// Item owning the nearest ancestor logo
+    public let logoItemId: String?
+    public let logoImageTag: String?
+
+    /// Series primary (poster) tag; its owner is the item's `seriesId`
+    public let seriesPrimaryImageTag: String?
+
+    public init(
+        backdropItemId: String? = nil,
+        backdropImageTag: String? = nil,
+        logoItemId: String? = nil,
+        logoImageTag: String? = nil,
+        seriesPrimaryImageTag: String? = nil
+    ) {
+        self.backdropItemId = backdropItemId
+        self.backdropImageTag = backdropImageTag
+        self.logoItemId = logoItemId
+        self.logoImageTag = logoImageTag
+        self.seriesPrimaryImageTag = seriesPrimaryImageTag
     }
 }
 
