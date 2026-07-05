@@ -109,6 +109,24 @@ extension MediaItem {
         )
     }
 
+    /// Episode card for a series' Episodes shelf (16:9 still): numbered title
+    /// ("1. Pilot"), runtime caption, watch progress, and a watched marker.
+    @MainActor @ViewBuilder
+    func episodeShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 320) -> some View {
+        ArtworkShelfItem(
+            url: client?.landscapeURL(for: self),
+            blurHash: landscapeBlurHash,
+            title: indexNumber.map { "\($0). \(name)" } ?? name,
+            subtitle: formattedRuntime,
+            placeholderIcon: "play.tv",
+            aspectRatio: 16.0 / 9.0,
+            width: width,
+            progress: progressPercentage,
+            isWatched: userData?.played == true,
+            value: self
+        )
+    }
+
     /// Landscape card (16:9). Episodes show the episode title over the series
     /// name; everything else shows the name over the year.
     @MainActor @ViewBuilder

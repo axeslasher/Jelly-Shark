@@ -68,7 +68,12 @@ struct LibraryItemsView: View {
         }
 
         do {
-            items = try await client.getLibraryItems(libraryId: library.id, limit: 100, startIndex: nil)
+            items = try await client.getLibraryItems(
+                libraryId: library.id,
+                itemTypes: library.collectionType?.gridItemTypes,
+                limit: 100,
+                startIndex: nil
+            )
         } catch {
             errorMessage = error.localizedDescription
         }

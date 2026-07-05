@@ -13,6 +13,11 @@ struct MediaDetailHeroSection: View {
     let item: MediaItem
     let directors: [CastMember]
     let topCast: [CastMember]
+    /// Play-button title, computed by the owner ("Play", "Resume",
+    /// "Resume S2E4" on series pages)
+    let playTitle: String
+    /// False while a series page hasn't resolved its playable episode yet
+    let isPlayEnabled: Bool
     @Binding var isPresentingPlayer: Bool
     @Binding var isPresentingOverview: Bool
 
@@ -134,12 +139,12 @@ struct MediaDetailHeroSection: View {
         } label: {
             HStack(spacing: SpacingTokens.sm) {
                 Image(systemName: "play.fill")
-                Text(item.hasProgress ? "Resume" : "Play")
+                Text(playTitle)
             }
             .font(theme.jsHeadline)
         }
         .glassButtonStyle()
-        .disabled(session.client == nil)
+        .disabled(session.client == nil || !isPlayEnabled)
     }
 
     /// Secondary actions beneath Play: icon-only circular toggles for watched

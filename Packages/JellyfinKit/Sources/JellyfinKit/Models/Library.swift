@@ -51,6 +51,22 @@ public enum CollectionType: String, Sendable, Hashable {
     case unknown
 }
 
+public extension CollectionType {
+    /// The item types a library grid should show for this collection: the
+    /// top-level titles only — a TV library shows series, not the seasons and
+    /// episodes a recursive fetch would also return. Nil applies no filter
+    /// (mixed/unknown libraries show everything).
+    var gridItemTypes: [MediaType]? {
+        switch self {
+        case .movies: return [.movie]
+        case .tvshows: return [.series]
+        case .boxsets: return [.boxSet]
+        case .music: return [.musicAlbum]
+        default: return nil
+        }
+    }
+}
+
 // MARK: - Computed Properties
 
 extension Library {

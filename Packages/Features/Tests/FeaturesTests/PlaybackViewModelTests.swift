@@ -54,7 +54,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getLibraries() async throws -> [Library] { try librariesResult.get() }
 
-    func getLibraryItems(libraryId: String, limit: Int?, startIndex: Int?) async throws -> [MediaItem] { [] }
+    func getLibraryItems(libraryId: String, itemTypes: [MediaType]?, limit: Int?, startIndex: Int?) async throws -> [MediaItem] { [] }
 
     func getMediaItem(itemId: String) async throws -> MediaItem {
         MediaItem(id: itemId, name: "Item", type: .movie)
@@ -123,6 +123,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         nextEpisodeRequests.append(episode.id)
         return nextEpisodeResult
     }
+
+    func getSeasons(seriesId: String) async throws -> [MediaItem] { [] }
+    func getEpisodes(seriesId: String, seasonId: String) async throws -> [MediaItem] { [] }
+    func getNextUpEpisode(seriesId: String) async throws -> MediaItem? { nil }
 
     func markPlayed(itemId: String) async throws {}
     func markUnplayed(itemId: String) async throws {}

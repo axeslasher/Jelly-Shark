@@ -19,6 +19,14 @@ public struct MediaDetailView: View {
     @State private var detailedItem: MediaItem?
     @State private var similarItems: [MediaItem] = []
 
+    /// Series-only state: the season list, per-season episode cache (seasons
+    /// fetch lazily as they're selected), the selected season, and the episode
+    /// the hero Play button resolves to.
+    @State private var seasons: [MediaItem] = []
+    @State private var episodesBySeason: [String: [MediaItem]] = [:]
+    @State private var selectedSeasonId: String?
+    @State private var nextUpEpisode: MediaItem?
+
     /// Credits derived once when the detailed item lands (see `loadContent`),
     /// rather than re-filtering `people` on every body evaluation.
     @State private var directors: [CastMember] = []
@@ -81,6 +89,30 @@ public struct MediaDetailView: View {
         detailedItem ?? item
     }
 
+    /// What the hero Play button actually plays: series pages resolve to the
+    /// next-up episode (falling back to the selected season's first episode);
+    /// everything else plays the page's own item. Nil while a series' target
+    /// hasn't resolved yet — Play stays disabled rather than sending the
+    /// series itself to the player.
+    private var playableItem: MediaItem? {
+        guard item.type == .series else { return item }
+        return nextUpEpisode ?? selectedSeasonId.flatMap { episodesBySeason[$0]?.first }
+    }
+
+    /// Play-button title: series pages name their target episode
+    /// ("Resume S2E4"); everything else keeps plain Play/Resume.
+    private var playButtonTitle: String {
+        guard item.type == .series else {
+            return displayItem.hasProgress ? "Resume" : "Play"
+        }
+        guard let episode = playableItem, episode.type == .episode else { return "Play" }
+        let verb = episode.hasProgress ? "Resume" : "Play"
+        if let season = episode.parentIndexNumber, let number = episode.indexNumber {
+            return "\(verb) S\(season)E\(number)"
+        }
+        return verb
+    }
+
     public var body: some View {
         ScrollView {
             // A plain VStack (not LazyVStack): there are only ever three sections,
@@ -92,6 +124,8 @@ public struct MediaDetailView: View {
                     item: displayItem,
                     directors: directors,
                     topCast: topCast,
+                    playTitle: playButtonTitle,
+                    isPlayEnabled: playableItem != nil,
                     isPresentingPlayer: $isPresentingPlayer,
                     isPresentingOverview: $isPresentingOverview
                 )
@@ -113,6 +147,14 @@ public struct MediaDetailView: View {
                 // nudging the offset per row. The info section isn't focusable;
                 // it just rides along at the bottom of the page.
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                    // Episodes lead on series pages — they're the reason the
+                    // page was opened. Renders nothing for other types.
+                    EpisodesSection(
+                        seasons: seasons,
+                        episodesBySeason: episodesBySeason,
+                        selectedSeasonId: $selectedSeasonId
+                    )
+
                     CastShelfSection(people: displayItem.people ?? [])
 
                     SimilarItemsSection(items: similarItems)
@@ -186,16 +228,26 @@ public struct MediaDetailView: View {
         .task(id: item.id) {
             await loadContent()
         }
+        // Fetch episodes lazily as seasons are selected; already-fetched
+        // seasons swap instantly from the cache.
+        .task(id: selectedSeasonId) {
+            guard let seasonId = selectedSeasonId,
+                  episodesBySeason[seasonId] == nil,
+                  let client = session.client
+            else { return }
+            episodesBySeason[seasonId] =
+                (try? await client.getEpisodes(seriesId: item.id, seasonId: seasonId)) ?? []
+        }
         #if os(macOS)
         .sheet(isPresented: $isPresentingPlayer) {
-            if let client = session.client {
-                PlaybackContainerView(client: client, item: item)
+            if let client = session.client, let playableItem {
+                PlaybackContainerView(client: client, item: playableItem)
             }
         }
         #else
         .fullScreenCover(isPresented: $isPresentingPlayer) {
-            if let client = session.client {
-                PlaybackContainerView(client: client, item: item)
+            if let client = session.client, let playableItem {
+                PlaybackContainerView(client: client, item: playableItem)
             }
         }
         #endif
@@ -248,8 +300,25 @@ public struct MediaDetailView: View {
     private func loadContent() async {
         guard let client = session.client else { return }
 
+        // Reset series state so a reused view (item.id change) doesn't show
+        // the previous series' seasons while the new ones load.
+        seasons = []
+        episodesBySeason = [:]
+        selectedSeasonId = nil
+        nextUpEpisode = nil
+
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
         detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
+
+        if item.type == .series {
+            async let seasonsFetch = client.getSeasons(seriesId: item.id)
+            async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
+            seasons = (await (try? seasonsFetch)) ?? []
+            nextUpEpisode = await (try? nextUpFetch) ?? nil
+            // Land on the season the user is actually in; the episode fetch
+            // for it kicks off via the selection task.
+            selectedSeasonId = nextUpEpisode?.seasonId ?? seasons.first?.id
+        }
 
         // Derive the credits once per fetch instead of per body evaluation.
         // Directors: handles both standard data (`kind == "Director"`) and servers

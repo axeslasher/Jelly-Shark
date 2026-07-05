@@ -29,6 +29,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private let aspectRatio: CGFloat
     private let width: CGFloat
     private let progress: Double?
+    private let isWatched: Bool
     private let value: Value
 
     @Environment(\.theme) private var theme
@@ -42,6 +43,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         aspectRatio: CGFloat = 2.0 / 3.0,
         width: CGFloat = 200,
         progress: Double? = nil,
+        isWatched: Bool = false,
         value: Value
     ) {
         self.url = url
@@ -52,6 +54,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.aspectRatio = aspectRatio
         self.width = width
         self.progress = progress
+        self.isWatched = isWatched
         self.value = value
     }
 
@@ -91,6 +94,17 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                     Rectangle()
                         .fill(theme.accent)
                         .frame(width: width * progress, height: 4)
+                }
+            }
+            // Watched marker for episode cards. Shadowed for legibility over
+            // arbitrary artwork.
+            .overlay(alignment: .topTrailing) {
+                if isWatched {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(.white)
+                        .shadow(color: .black.opacity(0.6), radius: 4)
+                        .padding(SpacingTokens.xs)
                 }
             }
             .artworkCornerRadius(theme.cornerRadius)
