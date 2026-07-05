@@ -73,7 +73,11 @@ public struct MediaDetailView: View {
     /// Handle for the two-anchor snap; only written on tvOS.
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
-    @State private var isPresentingPlayer = false
+    /// The item currently being played, driving the player cover. Set by the
+    /// hero Play button (resolved next-up episode / the movie itself) and by
+    /// episode cards, which play immediately on click.
+    @State private var playbackItem: MediaItem?
+
     @State private var isPresentingOverview = false
 
     let item: MediaItem
@@ -106,10 +110,7 @@ public struct MediaDetailView: View {
         }
         guard let episode = playableItem, episode.type == .episode else { return "Play" }
         let verb = episode.hasProgress ? "Resume" : "Play"
-        if let season = episode.parentIndexNumber, let number = episode.indexNumber {
-            return "\(verb) S\(season)E\(number)"
-        }
-        return verb
+        return episode.episodeCode.map { "\(verb) \($0)" } ?? verb
     }
 
     public var body: some View {
@@ -124,8 +125,8 @@ public struct MediaDetailView: View {
                     directors: directors,
                     topCast: topCast,
                     playTitle: playButtonTitle,
-                    isPlayEnabled: playableItem != nil,
-                    isPresentingPlayer: $isPresentingPlayer,
+                    playTarget: playableItem,
+                    playbackItem: $playbackItem,
                     isPresentingOverview: $isPresentingOverview
                 )
                 // Drift the hero lockup as it scrolls, in lockstep with the
@@ -148,7 +149,11 @@ public struct MediaDetailView: View {
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                     // Episodes lead on series pages — they're the reason the
                     // page was opened. Renders nothing for other types.
-                    EpisodesSection(seasons: seasons, episodes: episodes)
+                    EpisodesSection(
+                        seasons: seasons,
+                        episodes: episodes,
+                        playbackItem: $playbackItem
+                    )
 
                     CastShelfSection(people: displayItem.people ?? [])
 
@@ -224,15 +229,15 @@ public struct MediaDetailView: View {
             await loadContent()
         }
         #if os(macOS)
-        .sheet(isPresented: $isPresentingPlayer) {
-            if let client = session.client, let playableItem {
-                PlaybackContainerView(client: client, item: playableItem)
+        .sheet(item: $playbackItem) { target in
+            if let client = session.client {
+                PlaybackContainerView(client: client, item: target)
             }
         }
         #else
-        .fullScreenCover(isPresented: $isPresentingPlayer) {
-            if let client = session.client, let playableItem {
-                PlaybackContainerView(client: client, item: playableItem)
+        .fullScreenCover(item: $playbackItem) { target in
+            if let client = session.client {
+                PlaybackContainerView(client: client, item: target)
             }
         }
         #endif

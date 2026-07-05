@@ -109,21 +109,34 @@ extension MediaItem {
         )
     }
 
-    /// Episode card for a series' Episodes shelf (16:9 still): numbered title
-    /// ("1. Pilot"), runtime caption, watch progress, and a watched marker.
+    /// Episode card for a series' Episodes shelf (16:9 still): an "S2E4"
+    /// eyebrow over the episode name, a synopsis, watch progress, and a
+    /// watched marker — all captions ragged left. Wider than the generic
+    /// landscape card: episode stills carry the scene, and roughly
+    /// three-and-a-half cards per row reads best at 10 feet.
+    /// Unlike the navigation cards, clicking plays the episode immediately.
     @MainActor @ViewBuilder
-    func episodeShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 320) -> some View {
+    func episodeShelfItem(
+        client: JellyfinClientProtocol?,
+        width: CGFloat = 440,
+        onPlay: @escaping () -> Void
+    ) -> some View {
         ArtworkShelfItem(
-            url: client?.landscapeURL(for: self),
+            // 440pt is ~880 physical px on a 4K panel; fetch to match so the
+            // still isn't upscaled.
+            url: client?.landscapeURL(for: self, maxWidth: 1000),
             blurHash: landscapeBlurHash,
-            title: indexNumber.map { "\($0). \(name)" } ?? name,
-            subtitle: formattedRuntime,
+            title: name,
+            subtitle: episodeCode,
+            synopsis: overview ?? "",
+            captionAlignment: .leading,
+            subtitleAboveTitle: true,
             placeholderIcon: "play.tv",
             aspectRatio: 16.0 / 9.0,
             width: width,
             progress: progressPercentage,
             isWatched: userData?.played == true,
-            value: self
+            action: onPlay
         )
     }
 

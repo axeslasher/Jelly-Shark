@@ -25,12 +25,16 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private let blurHash: String?
     private let title: String
     private let subtitle: String?
+    private let synopsis: String?
+    private let captionAlignment: HorizontalAlignment
+    private let subtitleAboveTitle: Bool
     private let placeholderIcon: String
     private let aspectRatio: CGFloat
     private let width: CGFloat
     private let progress: Double?
     private let isWatched: Bool
-    private let value: Value
+    private let value: Value?
+    private let action: (() -> Void)?
 
     @Environment(\.theme) private var theme
 
@@ -39,6 +43,9 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         blurHash: String? = nil,
         title: String,
         subtitle: String? = nil,
+        synopsis: String? = nil,
+        captionAlignment: HorizontalAlignment = .center,
+        subtitleAboveTitle: Bool = false,
         placeholderIcon: String = "film.fill",
         aspectRatio: CGFloat = 2.0 / 3.0,
         width: CGFloat = 200,
@@ -46,10 +53,14 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         isWatched: Bool = false,
         value: Value
     ) {
+        self.action = nil
         self.url = url
         self.blurHash = blurHash
         self.title = title
         self.subtitle = subtitle
+        self.synopsis = synopsis
+        self.captionAlignment = captionAlignment
+        self.subtitleAboveTitle = subtitleAboveTitle
         self.placeholderIcon = placeholderIcon
         self.aspectRatio = aspectRatio
         self.width = width
@@ -58,30 +69,77 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.value = value
     }
 
+    /// Action variant: the card runs a closure instead of pushing a
+    /// navigation value (episode cards play immediately). `Value` is
+    /// meaningless here; the `Bool` constraint just pins the generic.
+    public init(
+        url: URL?,
+        blurHash: String? = nil,
+        title: String,
+        subtitle: String? = nil,
+        synopsis: String? = nil,
+        captionAlignment: HorizontalAlignment = .center,
+        subtitleAboveTitle: Bool = false,
+        placeholderIcon: String = "film.fill",
+        aspectRatio: CGFloat = 2.0 / 3.0,
+        width: CGFloat = 200,
+        progress: Double? = nil,
+        isWatched: Bool = false,
+        action: @escaping () -> Void
+    ) where Value == Bool {
+        self.url = url
+        self.blurHash = blurHash
+        self.title = title
+        self.subtitle = subtitle
+        self.synopsis = synopsis
+        self.captionAlignment = captionAlignment
+        self.subtitleAboveTitle = subtitleAboveTitle
+        self.placeholderIcon = placeholderIcon
+        self.aspectRatio = aspectRatio
+        self.width = width
+        self.progress = progress
+        self.isWatched = isWatched
+        self.value = nil
+        self.action = action
+    }
+
     public var body: some View {
-        NavigationLink(value: value) {
-            #if os(tvOS)
-            // Artwork and captions are intentionally flat siblings, not nested in
-            // a stack — the borderless style arranges them into a vertical lockup
-            // and moves the captions out of the way as the artwork lifts.
-            artwork
-            titleText
-            subtitleText
-            #else
-            // Other platforms don't apply the borderless lockup, so multiple
-            // direct label children lay out horizontally. Stack them explicitly
-            // to keep the captions below the artwork.
-            VStack(spacing: SpacingTokens.xs) {
-                artwork
-                titleText
-                subtitleText
+        Group {
+            if let action {
+                Button(action: action) {
+                    cardLabel
+                }
+            } else if let value {
+                NavigationLink(value: value) {
+                    cardLabel
+                }
             }
-            #endif
         }
         #if os(tvOS)
         .buttonStyle(.borderless)
         #else
         .buttonStyle(.plain)
+        #endif
+    }
+
+    @ViewBuilder
+    private var cardLabel: some View {
+        #if os(tvOS)
+        // Artwork and captions are intentionally flat siblings, not nested in
+        // a stack — the borderless style arranges them into a vertical lockup
+        // and moves the captions out of the way as the artwork lifts.
+        artwork
+        captions
+        synopsisText
+        #else
+        // Other platforms don't apply the borderless lockup, so multiple
+        // direct label children lay out horizontally. Stack them explicitly
+        // to keep the captions below the artwork.
+        VStack(alignment: captionAlignment, spacing: SpacingTokens.xs) {
+            artwork
+            captions
+            synopsisText
+        }
         #endif
     }
 
@@ -111,13 +169,42 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .artworkHighlightOnFocus()
     }
 
+    /// Multi-line description beneath the captions (episode synopses).
+    /// Space is reserved for the full line count whenever a synopsis is
+    /// supplied — even an empty one — so cards stay aligned across a row.
+    /// Omitted entirely (no reservation) for shelves that never pass one.
+    @ViewBuilder
+    private var synopsisText: some View {
+        if let synopsis {
+            Text(synopsis)
+                .font(theme.jsBody)
+                .foregroundStyle(theme.secondary)
+                .lineLimit(6, reservesSpace: true)
+                .multilineTextAlignment(.leading)
+                .frame(width: width, alignment: .leading)
+        }
+    }
+
+    /// Title over subtitle by default; flipped, the subtitle reads as a small
+    /// eyebrow above the title (episode cards: "S2E4" over the episode name).
+    @ViewBuilder
+    private var captions: some View {
+        if subtitleAboveTitle {
+            subtitleText
+            titleText
+        } else {
+            titleText
+            subtitleText
+        }
+    }
+
     private var titleText: some View {
         Text(title)
             .font(theme.jsTitle)
             .fontWeight(.semibold)
             .foregroundStyle(theme.primary)
             .lineLimit(1)
-            .frame(width: width)
+            .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
     }
 
     private var subtitleText: some View {
@@ -128,7 +215,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .fontWeight(.semibold)
             .foregroundStyle(theme.secondary)
             .lineLimit(1)
-            .frame(width: width)
+            .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
             .opacity(subtitle == nil ? 0 : 1)
     }
 }

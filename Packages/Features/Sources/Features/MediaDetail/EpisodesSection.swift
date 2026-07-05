@@ -20,6 +20,8 @@ struct EpisodesSection: View {
     let seasons: [MediaItem]
     /// Every episode of the series, in series order (season by season)
     let episodes: [MediaItem]
+    /// Clicking an episode card plays it immediately via the owner's player
+    @Binding var playbackItem: MediaItem?
 
     /// Which season pill owns focus; focusing one anchors the shelf to that
     /// season's first episode.
@@ -117,8 +119,10 @@ struct EpisodesSection: View {
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
                 ForEach(episodes) { episode in
-                    episode.episodeShelfItem(client: session.client)
-                        .focused($focusedEpisodeId, equals: episode.id)
+                    episode.episodeShelfItem(client: session.client) {
+                        playbackItem = episode
+                    }
+                    .focused($focusedEpisodeId, equals: episode.id)
                 }
             }
             // Required for the id-based anchor scrolls to resolve.

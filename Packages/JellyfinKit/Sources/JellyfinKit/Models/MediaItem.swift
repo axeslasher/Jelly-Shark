@@ -421,6 +421,16 @@ extension MediaItem {
         return count == 1 ? "1 Season" : "\(count) Seasons"
     }
 
+    /// Compact season/episode code (e.g., "S2E4"); nil unless the item is an
+    /// episode carrying both numbers
+    public var episodeCode: String? {
+        guard type == .episode,
+              let season = parentIndexNumber,
+              let episode = indexNumber
+        else { return nil }
+        return "S\(season)E\(episode)"
+    }
+
     /// Display title for episodes (e.g., "S01E05 - Episode Title")
     public var episodeDisplayTitle: String? {
         guard type == .episode,
