@@ -73,6 +73,9 @@ public struct MediaDetailView: View {
     /// Handle for the two-anchor snap; only written on tvOS.
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
+    /// Pending region snap (see `onChange(of: focusedRegion)`).
+    @State private var regionSnapTask: Task<Void, Never>?
+
     /// The item currently being played, driving the player cover. Set by the
     /// hero Play button (resolved next-up episode / the movie itself) and by
     /// episode cards, which play immediately on click.
@@ -152,6 +155,10 @@ public struct MediaDetailView: View {
                     EpisodesSection(
                         seasons: seasons,
                         episodes: episodes,
+                        // Same target the Play button resolves to: the shelf
+                        // pre-parks there and first focus lands on it.
+                        initialEpisodeId: (nextUpEpisode ?? episodes.first)?.id,
+                        isRegionFocused: focusedRegion == .shelves,
                         playbackItem: $playbackItem
                     )
 
@@ -198,12 +205,21 @@ public struct MediaDetailView: View {
         // focus engine still nudges further down as focus descends; this anchor
         // only defines where the page *arrives*.
         .onChange(of: focusedRegion) { _, region in
+            regionSnapTask?.cancel()
             guard let region else { return }
-            withAnimation(theme.animation) {
-                if region == .hero {
-                    scrollPosition.scrollTo(edge: .top)
-                } else {
-                    scrollPosition.scrollTo(id: Self.shelvesScrollID, anchor: .top)
+            regionSnapTask = Task {
+                // Let the focus engine finish its own reveal scroll (and any
+                // in-region focus steering) first, then assert the page
+                // anchor over it — otherwise the engine's settle wins the
+                // race and the page parks at an in-between offset.
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
+                withAnimation(theme.animation) {
+                    if region == .hero {
+                        scrollPosition.scrollTo(edge: .top)
+                    } else {
+                        scrollPosition.scrollTo(id: Self.shelvesScrollID, anchor: .top)
+                    }
                 }
             }
         }
