@@ -73,6 +73,16 @@ struct EpisodesSection: View {
     /// traversing the pill row shouldn't fire a jump per pill passed through.
     private static let anchorDebounce: Duration = .milliseconds(250)
 
+    /// Episode card width, owned here because the anchor scrolls are computed
+    /// geometrically from it (index × (width + gap)) — id-based scrolls need
+    /// `scrollTargetLayout`, which hijacks Siri Remote pans on hardware and
+    /// can't resolve cards the lazy stack hasn't built.
+    private static let episodeCardWidth: CGFloat = 440
+
+    /// Live shelf geometry for the anchor math (leading inset, and the
+    /// container width that sizes the trailing runway).
+    @State private var shelfGeometry = ShelfGeometry(containerWidth: 0, leadingInset: 0)
+
     var body: some View {
         if !seasons.isEmpty {
             // No "Episodes" title — the season anchors are the header. The
@@ -151,10 +161,10 @@ struct EpisodesSection: View {
             .task(id: initialEpisodeId) {
                 guard let initialEpisodeId,
                       focusedEpisodeId == nil, !anchorsRevealed,
-                      let episode = episodes.first(where: { $0.id == initialEpisodeId })
+                      let index = episodes.firstIndex(where: { $0.id == initialEpisodeId })
                 else { return }
-                currentSeasonId = episode.seasonId
-                shelfPosition.scrollTo(id: initialEpisodeId, anchor: .leading)
+                currentSeasonId = episodes[index].seasonId
+                parkShelf(atEpisodeIndex: index)
             }
         }
     }
@@ -214,27 +224,62 @@ struct EpisodesSection: View {
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
                 ForEach(episodes) { episode in
-                    episode.episodeShelfItem(client: session.client) {
+                    episode.episodeShelfItem(client: session.client, width: Self.episodeCardWidth) {
                         playbackItem = episode
                     }
                     .focused($focusedEpisodeId, equals: episode.id)
                 }
             }
-            // Required for the id-based anchor scrolls to resolve.
-            .scrollTargetLayout()
-            .padding(.horizontal, SpacingTokens.screenPadding)
+            .padding(.leading, SpacingTokens.screenPadding)
+            // Trailing runway: enough room past the last card that the final
+            // season's first episode can still park at the far left — without
+            // it, anchoring an ongoing season with a couple of episodes clamps
+            // short.
+            .padding(.trailing, max(
+                SpacingTokens.screenPadding,
+                shelfGeometry.containerWidth - Self.episodeCardWidth - SpacingTokens.screenPadding
+            ))
             .padding(.vertical, SpacingTokens.focusPadding)
         }
         .scrollPosition($shelfPosition)
         .scrollClipDisabled()
         .scrollIndicators(.hidden)
+        .onScrollGeometryChange(for: ShelfGeometry.self) { geometry in
+            ShelfGeometry(
+                containerWidth: geometry.containerSize.width,
+                leadingInset: geometry.contentInsets.leading
+            )
+        } action: { _, geometry in
+            shelfGeometry = geometry
+        }
     }
 
     private func scrollToSeason(_ seasonId: String) {
-        guard let first = episodes.first(where: { $0.seasonId == seasonId }) else { return }
+        guard let index = episodes.firstIndex(where: { $0.seasonId == seasonId }) else { return }
         currentSeasonId = seasonId
         withAnimation(theme.animation) {
-            shelfPosition.scrollTo(id: first.id, anchor: .leading)
+            parkShelf(atEpisodeIndex: index)
         }
     }
+
+    /// Scroll so the episode at `index` sits on the shelf's screen-padding
+    /// boundary — aligned with the cast shelf and the season pills. Pure
+    /// arithmetic — cards are fixed-width — so it's exact regardless of how
+    /// deep the target is or what the lazy stack has built.
+    ///
+    /// The offset is exactly "index cards' worth of content": scrolling that
+    /// far leaves the stack's leading padding on screen, which is what keeps
+    /// the parked card on the same margin as every other section. (Adding the
+    /// padding to the offset parks a padding too far left; subtracting the
+    /// leading safe-area inset parks an inset too far right.)
+    private func parkShelf(atEpisodeIndex index: Int) {
+        let x = CGFloat(index) * (Self.episodeCardWidth + SpacingTokens.cardGap)
+        shelfPosition.scrollTo(x: max(0, x))
+    }
+}
+
+/// Live shelf geometry captured for the anchor math.
+private struct ShelfGeometry: Equatable {
+    var containerWidth: CGFloat
+    var leadingInset: CGFloat
 }
