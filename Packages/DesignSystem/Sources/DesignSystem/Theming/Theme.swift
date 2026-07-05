@@ -34,6 +34,15 @@ public protocol Theme: Sendable {
     /// Tertiary content color
     var tertiary: Color { get }
 
+    /// Content color for text and icons sitting on the light system focus
+    /// platter (e.g. a focused `.plain` button's lift background). The regular
+    /// content colors are designed for the theme's dark surfaces and wash out
+    /// there.
+    var onPlatter: Color { get }
+
+    /// Secondary content color on the light system focus platter
+    var onPlatterSecondary: Color { get }
+
     /// Accent color for interactive elements
     var accent: Color { get }
 

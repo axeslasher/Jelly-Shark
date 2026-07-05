@@ -29,6 +29,9 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// Community rating (e.g., from TMDb)
     public let communityRating: Double?
 
+    /// Critic rating on a 0–100 scale (e.g., Rotten Tomatoes)
+    public let criticRating: Double?
+
     /// Official rating (e.g., PG-13, R)
     public let officialRating: String?
 
@@ -37,6 +40,28 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
 
     /// Genres associated with this item
     public let genres: [String]?
+
+    /// Studios / networks credited on this item
+    public let studios: [String]?
+
+    /// First air / theatrical release date
+    public let premiereDate: Date?
+
+    /// Date the series ended (series only, when ended)
+    public let endDate: Date?
+
+    /// Airing status for series (e.g., "Continuing", "Ended")
+    public let status: String?
+
+    /// Direct children count (seasons for a series, episodes for a season)
+    public let childCount: Int?
+
+    /// Recursive children count (episodes for a series)
+    public let recursiveItemCount: Int?
+
+    /// Display-ready technical facts distilled from the item's media streams
+    /// (populated on detail fetches)
+    public let technicalInfo: MediaTechnicalInfo?
 
     /// Tags for various images
     public let imageTags: ImageTags?
@@ -64,9 +89,17 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         productionYear: Int? = nil,
         runTimeTicks: Int64? = nil,
         communityRating: Double? = nil,
+        criticRating: Double? = nil,
         officialRating: String? = nil,
         tagline: String? = nil,
         genres: [String]? = nil,
+        studios: [String]? = nil,
+        premiereDate: Date? = nil,
+        endDate: Date? = nil,
+        status: String? = nil,
+        childCount: Int? = nil,
+        recursiveItemCount: Int? = nil,
+        technicalInfo: MediaTechnicalInfo? = nil,
         imageTags: ImageTags? = nil,
         userData: UserData? = nil,
         seriesId: String? = nil,
@@ -85,9 +118,17 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.productionYear = productionYear
         self.runTimeTicks = runTimeTicks
         self.communityRating = communityRating
+        self.criticRating = criticRating
         self.officialRating = officialRating
         self.tagline = tagline
         self.genres = genres
+        self.studios = studios
+        self.premiereDate = premiereDate
+        self.endDate = endDate
+        self.status = status
+        self.childCount = childCount
+        self.recursiveItemCount = recursiveItemCount
+        self.technicalInfo = technicalInfo
         self.imageTags = imageTags
         self.userData = userData
         self.seriesId = seriesId
@@ -138,6 +179,91 @@ public struct ImageTags: Sendable, Equatable, Hashable {
         self.banner = banner
         self.thumb = thumb
         self.logo = logo
+    }
+}
+
+/// Display-ready technical facts about an item's default media source.
+///
+/// Deliberately not the raw `MediaStream` list: the adapter reduces the
+/// default video/audio/subtitle streams to the handful of labels the UI can
+/// badge, keeping the SDK types behind the facade.
+public struct MediaTechnicalInfo: Sendable, Equatable, Hashable {
+    /// Video resolution class: "8K", "4K", "1080p", "720p", or "SD"
+    public let resolution: String?
+
+    /// Dynamic-range label: "Dolby Vision", "HDR10+", "HDR10", "HLG", or
+    /// "HDR". `nil` for SDR content — absence is the default, not a badge.
+    public let videoRange: String?
+
+    /// Audio format label: "Dolby Atmos", "DTS:X", or a channel layout like
+    /// "7.1", "5.1", "Stereo"
+    public let audioFormat: String?
+
+    /// Localized display name of the default audio track's language — the
+    /// closest proxy the server offers for the title's original audio
+    public let originalAudioLanguage: String?
+
+    /// Localized display names of the available audio-track languages, unique,
+    /// in stream order
+    public let audioLanguages: [String]
+
+    /// Localized display names of the available subtitle languages, unique,
+    /// in stream order
+    public let subtitleLanguages: [String]
+
+    /// Whether any subtitle track is flagged for the deaf and hard of hearing
+    public let hasSDHSubtitles: Bool
+
+    /// Name of the media file on disk (last path component)
+    public let fileName: String?
+
+    /// File size in bytes
+    public let fileSizeBytes: Int64?
+
+    /// Container format label ("MKV", "MP4")
+    public let container: String?
+
+    /// Video codec label ("HEVC", "H.264", "AV1")
+    public let videoCodec: String?
+
+    /// Overall bitrate in bits per second
+    public let bitrate: Int?
+
+    /// Video frame rate in frames per second (e.g., 23.976)
+    public let frameRate: Double?
+
+    public var hasSubtitles: Bool {
+        !subtitleLanguages.isEmpty
+    }
+
+    public init(
+        resolution: String? = nil,
+        videoRange: String? = nil,
+        audioFormat: String? = nil,
+        originalAudioLanguage: String? = nil,
+        audioLanguages: [String] = [],
+        subtitleLanguages: [String] = [],
+        hasSDHSubtitles: Bool = false,
+        fileName: String? = nil,
+        fileSizeBytes: Int64? = nil,
+        container: String? = nil,
+        videoCodec: String? = nil,
+        bitrate: Int? = nil,
+        frameRate: Double? = nil
+    ) {
+        self.resolution = resolution
+        self.videoRange = videoRange
+        self.audioFormat = audioFormat
+        self.originalAudioLanguage = originalAudioLanguage
+        self.audioLanguages = audioLanguages
+        self.subtitleLanguages = subtitleLanguages
+        self.hasSDHSubtitles = hasSDHSubtitles
+        self.fileName = fileName
+        self.fileSizeBytes = fileSizeBytes
+        self.container = container
+        self.videoCodec = videoCodec
+        self.bitrate = bitrate
+        self.frameRate = frameRate
     }
 }
 
@@ -202,6 +328,29 @@ extension MediaItem {
     public var hasProgress: Bool {
         guard let percentage = progressPercentage else { return false }
         return percentage > 0 && percentage < 1
+    }
+
+    /// Year text for display: a plain year for most items, a span for series —
+    /// "2008–2013" when ended (single year if it ended the year it started),
+    /// "2008–" while continuing.
+    public var yearSpanText: String? {
+        guard let year = productionYear else { return nil }
+        guard type == .series else { return String(year) }
+
+        if status == "Continuing" {
+            return "\(year)–"
+        }
+        let endYear = endDate.map { Calendar(identifier: .gregorian).component(.year, from: $0) }
+        if let endYear, endYear != year {
+            return "\(year)–\(endYear)"
+        }
+        return String(year)
+    }
+
+    /// Season count for series (e.g., "3 Seasons"); nil for other types
+    public var seasonCountText: String? {
+        guard type == .series, let count = childCount, count > 0 else { return nil }
+        return count == 1 ? "1 Season" : "\(count) Seasons"
     }
 
     /// Display title for episodes (e.g., "S01E05 - Episode Title")

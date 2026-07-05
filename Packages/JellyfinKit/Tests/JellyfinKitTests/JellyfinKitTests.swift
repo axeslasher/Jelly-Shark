@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import JellyfinAPI
 @testable import JellyfinKit
 
 @Suite("JellyfinKit Tests")
@@ -117,6 +118,184 @@ struct JellyfinKitTests {
             )
             #expect(episode.episodeDisplayTitle == "S01E05 - Pilot")
         }
+
+        @Test("Year span - movies show a plain year")
+        func yearSpanMovie() {
+            let movie = MediaItem(id: "1", name: "Movie", type: .movie, productionYear: 2024)
+            #expect(movie.yearSpanText == "2024")
+        }
+
+        @Test("Year span - ended series spans start to end year")
+        func yearSpanEndedSeries() {
+            let series = MediaItem(
+                id: "1", name: "Show", type: .series,
+                productionYear: 2008,
+                endDate: DateComponents(
+                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 9, day: 29
+                ).date,
+                status: "Ended"
+            )
+            #expect(series.yearSpanText == "2008–2013")
+        }
+
+        @Test("Year span - series ended in its first year shows one year")
+        func yearSpanSingleYearSeries() {
+            let series = MediaItem(
+                id: "1", name: "Show", type: .series,
+                productionYear: 2013,
+                endDate: DateComponents(
+                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 12, day: 1
+                ).date,
+                status: "Ended"
+            )
+            #expect(series.yearSpanText == "2013")
+        }
+
+        @Test("Year span - continuing series is open-ended")
+        func yearSpanContinuingSeries() {
+            let series = MediaItem(
+                id: "1", name: "Show", type: .series,
+                productionYear: 2020, status: "Continuing"
+            )
+            #expect(series.yearSpanText == "2020–")
+        }
+
+        @Test("Season count text pluralizes and skips non-series")
+        func seasonCountText() {
+            let series = MediaItem(id: "1", name: "Show", type: .series, childCount: 3)
+            #expect(series.seasonCountText == "3 Seasons")
+
+            let oneSeason = MediaItem(id: "2", name: "Show", type: .series, childCount: 1)
+            #expect(oneSeason.seasonCountText == "1 Season")
+
+            let movie = MediaItem(id: "3", name: "Movie", type: .movie, childCount: 3)
+            #expect(movie.seasonCountText == nil)
+        }
+    }
+
+    @Suite("MediaTechnicalInfo Adapter")
+    struct MediaTechnicalInfoAdapterTests {
+        /// Wraps bare streams in a minimal item DTO, the shape most tests need.
+        private func info(from streams: [MediaStream]?) -> MediaTechnicalInfo? {
+            MediaTechnicalInfo(from: BaseItemDto(mediaSources: streams.map { [MediaSourceInfo(mediaStreams: $0)] }))
+        }
+
+        @Test("Distills video, audio, and subtitle streams")
+        func distillsStreams() {
+            let info = info(from: [
+                MediaStream(height: 2160, type: .video, videoRangeType: .doviWithHDR10, width: 3840),
+                MediaStream(language: "fra", type: .audio),
+                MediaStream(audioSpatialFormat: .dolbyAtmos, channels: 8, isDefault: true, language: "eng", type: .audio),
+                MediaStream(language: "eng", type: .subtitle),
+                MediaStream(language: "ENG", type: .subtitle),
+                MediaStream(isHearingImpaired: true, language: "fra", type: .subtitle)
+            ])
+
+            #expect(info?.resolution == "4K")
+            #expect(info?.videoRange == "Dolby Vision")
+            #expect(info?.audioFormat == "Dolby Atmos")
+            // Original audio follows the *default* stream, not the first.
+            #expect(info?.originalAudioLanguage == Locale.current.localizedString(forLanguageCode: "eng"))
+            #expect(info?.audioLanguages.count == 2)
+            #expect(info?.subtitleLanguages.count == 2)
+            #expect(info?.hasSubtitles == true)
+            #expect(info?.hasSDHSubtitles == true)
+        }
+
+        @Test("No SDH flag when no subtitle is hearing-impaired")
+        func noSDHWithoutFlaggedStreams() {
+            let info = info(from: [
+                MediaStream(language: "eng", type: .subtitle)
+            ])
+            #expect(info?.hasSDHSubtitles == false)
+            #expect(info?.hasSubtitles == true)
+        }
+
+        @Test("Resolution classes from dimensions")
+        func resolutionClasses() {
+            func resolution(width: Int, height: Int) -> String? {
+                info(from: [
+                    MediaStream(height: height, type: .video, width: width)
+                ])?.resolution
+            }
+
+            #expect(resolution(width: 7680, height: 4320) == "8K")
+            #expect(resolution(width: 3840, height: 1600) == "4K")
+            #expect(resolution(width: 1920, height: 800) == "1080p")
+            #expect(resolution(width: 1280, height: 720) == "720p")
+            #expect(resolution(width: 720, height: 480) == "SD")
+        }
+
+        @Test("SDR yields no range label; coarse HDR flag is the fallback")
+        func videoRangeLabels() {
+            let sdr = info(from: [
+                MediaStream(type: .video, videoRange: .sdr, videoRangeType: .sdr, width: 1920)
+            ])
+            #expect(sdr?.videoRange == nil)
+            #expect(sdr?.resolution == "1080p")
+
+            let coarseHDR = info(from: [
+                MediaStream(type: .video, videoRange: .hdr, width: 3840)
+            ])
+            #expect(coarseHDR?.videoRange == "HDR")
+
+            let hdr10Plus = info(from: [
+                MediaStream(type: .video, videoRangeType: .hdr10Plus, width: 3840)
+            ])
+            #expect(hdr10Plus?.videoRange == "HDR10+")
+        }
+
+        @Test("Audio label prefers the default stream and falls back to channels")
+        func audioLabels() {
+            let surround = info(from: [
+                MediaStream(channels: 2, isDefault: false, type: .audio),
+                MediaStream(channels: 6, isDefault: true, type: .audio)
+            ])
+            #expect(surround?.audioFormat == "5.1")
+
+            let stereo = info(from: [
+                MediaStream(channels: 2, type: .audio)
+            ])
+            #expect(stereo?.audioFormat == "Stereo")
+        }
+
+        @Test("Nil when streams are missing or carry nothing displayable")
+        func nilWhenEmpty() {
+            #expect(info(from: nil) == nil)
+            #expect(info(from: []) == nil)
+            #expect(info(from: [MediaStream(type: .video)]) == nil)
+        }
+
+        @Test("File facts come from the media source")
+        func fileFacts() {
+            let info = MediaTechnicalInfo(from: BaseItemDto(mediaSources: [
+                MediaSourceInfo(
+                    bitrate: 24_500_000,
+                    container: "mov,mp4,m4a",
+                    mediaStreams: [
+                        MediaStream(averageFrameRate: 23.976, codec: "hevc", type: .video, width: 3840)
+                    ],
+                    path: "C:\\Media\\Movies\\Example (2024)\\Example.2024.2160p.mkv",
+                    size: 4_200_000_000
+                )
+            ]))
+
+            #expect(info?.fileName == "Example.2024.2160p.mkv")
+            #expect(info?.fileSizeBytes == 4_200_000_000)
+            #expect(info?.container == "MOV")
+            #expect(info?.videoCodec == "HEVC")
+            #expect(info?.bitrate == 24_500_000)
+            #expect(info?.frameRate.map { abs($0 - 23.976) < 0.001 } == true)
+        }
+
+        @Test("File name falls back to the item path when the source has none")
+        func fileNameFallsBackToItemPath() {
+            let info = MediaTechnicalInfo(from: BaseItemDto(
+                mediaSources: [MediaSourceInfo(mediaStreams: [MediaStream(type: .video, width: 1920)])],
+                path: "/media/movies/example.mkv"
+            ))
+            #expect(info?.fileName == "example.mkv")
+        }
     }
 
     @Suite("Library Model")
@@ -180,8 +359,10 @@ struct JellyfinKitTests {
 
     @Suite("Image URLs")
     struct ImageURLTests {
-        private func makeClient(serverURL: String) -> JellyfinClient {
-            JellyfinClient(
+        // Qualified: the file imports JellyfinAPI (for adapter tests), which
+        // has its own `JellyfinClient`.
+        private func makeClient(serverURL: String) -> JellyfinKit.JellyfinClient {
+            JellyfinKit.JellyfinClient(
                 configuration: JellyfinClientConfiguration(serverURL: URL(string: serverURL)!)
             )
         }

@@ -38,6 +38,34 @@ public struct MediaDetailView: View {
     /// drifts up (leaves faster); positive = drifts down (lags the scroll and
     /// lingers). Set to 0 for a pure cross-fade with no movement.
     private static let heroScrollDrift: CGFloat = -290
+
+    /// Scroll distance ignored before the hero transition begins. The tvOS focus
+    /// engine settles the offset by a few dozen points when focus lands on the
+    /// hero's controls (e.g. Play, as the view appears); starting the fade past
+    /// that keeps the backdrop crisp until the scroll is a deliberate move
+    /// toward the shelves.
+    private static let heroFadeThreshold: CGFloat = 60
+
+    /// Which page of the detail view owns focus on tvOS: the hero lockup or the
+    /// shelves below it. Scrolling there is focus-driven, so instead of letting
+    /// the engine settle at whatever offset barely reveals the focused element,
+    /// crossing this boundary snaps the scroll to the matching anchor — the
+    /// content top for the hero, the shelves' own top for the shelves (see the
+    /// `onChange` in `body`). Focus moves *within* a region don't change it, so
+    /// nothing re-scrolls.
+    private enum FocusRegion: Hashable {
+        case hero
+        case shelves
+    }
+
+    /// Scroll identity of the shelves region, targeted by the shelves snap.
+    private static let shelvesScrollID = "shelves"
+
+    @FocusState private var focusedRegion: FocusRegion?
+
+    /// Handle for the two-anchor snap; only written on tvOS.
+    @State private var scrollPosition = ScrollPosition(edge: .top)
+
     @State private var isPresentingPlayer = false
     @State private var isPresentingOverview = false
 
@@ -74,38 +102,81 @@ public struct MediaDetailView: View {
                 // Applied here rather than inside HeroSection so the hero's inputs
                 // stay unchanged during scroll and its body is skipped.
                 .offset(y: scrollProgress * Self.heroScrollDrift)
+                #if os(tvOS)
+                .focusSection()
+                .focused($focusedRegion, equals: .hero)
+                #endif
 
-                CastShelfSection(people: displayItem.people ?? [])
+                // Everything below the fold shares one focus region so tvOS
+                // treats it as a single page with a single scroll anchor —
+                // moving between the cast and similar rows stays put instead of
+                // nudging the offset per row. The info section isn't focusable;
+                // it just rides along at the bottom of the page.
+                VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                    CastShelfSection(people: displayItem.people ?? [])
 
-                SimilarItemsSection(items: similarItems)
+                    SimilarItemsSection(items: similarItems)
+
+                    MediaInfoSection(item: displayItem)
+                }
+                .id(Self.shelvesScrollID)
+                #if os(tvOS)
+                .focusSection()
+                .focused($focusedRegion, equals: .shelves)
+                #endif
             }
-            // Each section (hero, Cast & Crew, More Like This) becomes a snap
-            // target so the scroll settles aligned to a section boundary rather
-            // than mid-content. Paired with the viewport-tall hero, this gives a
-            // clean hero → shelves snap.
+            // Each section (hero, shelves) becomes a snap target so the scroll
+            // settles aligned to a section boundary rather than mid-content.
+            // Paired with the viewport-tall hero, this gives a clean hero →
+            // shelves snap.
             //
-            // tvOS is excluded: there scrolling is driven by the focus engine, and
-            // `.scrollTargetBehavior` re-aligns the scroll out from under it — which
-            // traps focus in the hero. The viewport-tall hero already produces the
-            // snap-like jump there. Snapping applies on visionOS / iOS only.
-            #if !os(tvOS)
+            // The layout marker is needed on every platform — the tvOS
+            // focus-region snap resolves `shelvesScrollID` through it. Only
+            // `.scrollTargetBehavior` is excluded on tvOS (below): it re-aligns
+            // the scroll out from under the focus engine, which traps focus in
+            // the hero. Behavior-driven snapping applies on visionOS / iOS only.
             .scrollTargetLayout()
-            #endif
-            .padding(.vertical, SpacingTokens.md)
+            // Bottom-only padding: a top inset would push the viewport-tall,
+            // bottom-anchored hero below the fold, guaranteeing the focus engine
+            // scrolls (and blurs the backdrop) the moment focus lands on Play.
+            .padding(.bottom, SpacingTokens.md)
         }
         .scrollClipDisabled()
         #if !os(tvOS)
         .scrollTargetBehavior(.viewAligned)
         #endif
+        #if os(tvOS)
+        .scrollPosition($scrollPosition)
+        // The tvOS counterpart of `.viewAligned`: when focus crosses the
+        // hero/shelves boundary, snap to that region's anchor instead of the
+        // focus engine's minimal-reveal offset. The page always reads as either
+        // "hero, perfectly framed" (progress 0, crisp backdrop) or "shelves from
+        // the top" (progress 1, dimmed wash) — never somewhere in between. When
+        // the shelves outgrow one viewport (info section, tall shelves), the
+        // focus engine still nudges further down as focus descends; this anchor
+        // only defines where the page *arrives*.
+        .onChange(of: focusedRegion) { _, region in
+            guard let region else { return }
+            withAnimation(theme.animation) {
+                if region == .hero {
+                    scrollPosition.scrollTo(edge: .top)
+                } else {
+                    scrollPosition.scrollTo(id: Self.shelvesScrollID, anchor: .top)
+                }
+            }
+        }
+        #endif
         // Map the live scroll offset to 0...1 so the hero treatment animates with
         // the scroll. `contentOffset.y + contentInsets.top` is 0 at rest and grows
         // as the content scrolls up; no `withAnimation` here — the scroll itself
-        // provides the continuity. Redundant writes are skipped so scrolling past
-        // the fold (where the clamp pins progress at 1) stops invalidating.
+        // provides the continuity. The threshold dead-bands small focus-engine
+        // settles so they never start the fade. Redundant writes are skipped so
+        // scrolling past the fold (where the clamp pins progress at 1) stops
+        // invalidating.
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
         } action: { _, offset in
-            let progress = min(max(offset / Self.heroFadeDistance, 0), 1)
+            let progress = min(max((offset - Self.heroFadeThreshold) / Self.heroFadeDistance, 0), 1)
             if progress != scrollProgress {
                 scrollProgress = progress
             }
@@ -203,7 +274,26 @@ public struct MediaDetailView: View {
                 productionYear: 2024,
                 runTimeTicks: 72_000_000_000,
                 communityRating: 8.5,
-                officialRating: "PG-13"
+                criticRating: 93,
+                officialRating: "PG-13",
+                genres: ["Crime", "Drama", "Thriller"],
+                studios: ["A24"],
+                premiereDate: Date(timeIntervalSince1970: 1_700_000_000),
+                technicalInfo: MediaTechnicalInfo(
+                    resolution: "4K",
+                    videoRange: "Dolby Vision",
+                    audioFormat: "Dolby Atmos",
+                    originalAudioLanguage: "English",
+                    audioLanguages: ["English", "French"],
+                    subtitleLanguages: ["English", "French", "Spanish"],
+                    hasSDHSubtitles: true,
+                    fileName: "Example.Movie.2024.2160p.DV.mkv",
+                    fileSizeBytes: 42_000_000_000,
+                    container: "MKV",
+                    videoCodec: "HEVC",
+                    bitrate: 24_500_000,
+                    frameRate: 23.976
+                )
             )
         )
     }

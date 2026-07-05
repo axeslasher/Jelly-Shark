@@ -34,6 +34,12 @@ struct MediaDetailHeroSection: View {
         favoriteOverride ?? item.userData?.isFavorite ?? false
     }
 
+    /// Up to three genres as a single subdued line ("Crime · Drama · Thriller")
+    private var genreLine: String? {
+        guard let genres = item.genres, !genres.isEmpty else { return nil }
+        return genres.prefix(3).joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.lg) {
             titleTreatment
@@ -50,11 +56,25 @@ struct MediaDetailHeroSection: View {
                         overviewSection
                     }
                     MediaMetadataRow(
-                        year: item.productionYear,
-                        runtime: item.formattedRuntime,
+                        yearText: item.yearSpanText,
+                        // Series carry a per-episode runtime; the season count
+                        // is the meaningful "how much" figure there.
+                        runtime: item.type == .series ? nil : item.formattedRuntime,
+                        seasons: item.seasonCountText,
                         communityRating: item.communityRating,
-                        certificate: item.officialRating
+                        criticRating: item.criticRating,
+                        certificate: item.officialRating,
+                        resolution: item.technicalInfo?.resolution,
+                        videoRange: item.technicalInfo?.videoRange,
+                        audioFormat: item.technicalInfo?.audioFormat
                     )
+                    if let genreLine {
+                        Text(genreLine)
+                            .font(theme.jsCaption)
+                            .foregroundStyle(theme.tertiary)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                    }
                 }
                 CreditsColumn(
                     directorNames: directors.map(\.name),
@@ -77,24 +97,25 @@ struct MediaDetailHeroSection: View {
     }
 
     /// The item's logo if one exists, falling back to the title text. Rendered
-    /// with `AsyncImage` (not `ArtworkImage`) so the logo's transparency is
-    /// preserved instead of being boxed in by a surface-colored base.
+    /// with `TrimmedLogoImage` (not `ArtworkImage`) so the logo's transparency
+    /// is preserved instead of being boxed in by a surface-colored base — and
+    /// its transparent margins are cropped away, so every logo sits flush
+    /// against the box's bottom-left corner instead of floating on whatever
+    /// padding the artwork baked in.
     @ViewBuilder
     private var titleTreatment: some View {
         if let client = session.client, let url = client.logoURL(for: item) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image {
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        // Fixed box reserves a consistent logo footprint for every
-                        // item; scaledToFit letterboxes the logo inside it and
-                        // bottomLeading pins it so the content below never shifts.
-                        .frame(width: 480, height: 280, alignment: .bottomLeading)
-                        .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                } else {
-                    titleText
-                }
+            TrimmedLogoImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFit()
+                    // Fixed box reserves a consistent logo footprint for every
+                    // item; scaledToFit letterboxes the logo inside it and
+                    // bottomLeading pins it so the content below never shifts.
+                    .frame(width: 480, height: 280, alignment: .bottomLeading)
+                    .frame(maxWidth: .infinity, alignment: .bottomLeading)
+            } fallback: {
+                titleText
             }
         } else {
             titleText
@@ -118,8 +139,6 @@ struct MediaDetailHeroSection: View {
             .font(theme.jsHeadline)
         }
         .glassButtonStyle()
-        .controlSize(.extraLarge)
-        .buttonBorderShape(.capsule)
         .disabled(session.client == nil)
     }
 
@@ -128,10 +147,14 @@ struct MediaDetailHeroSection: View {
     /// focused. Both flip optimistically and revert if the server call fails.
     private var secondaryActions: some View {
         HStack(alignment: .top, spacing: SpacingTokens.sm) {
+            // Active states keep their accent tint through focus (nil falls
+            // back to the on-platter color), so "already watched/favorited"
+            // stays legible while the button is lifted.
             CircleActionButton(
-                systemImage: isPlayed ? "checkmark.circle.fill" : "checkmark.circle",
+                systemImage: isPlayed ? "checkmark" : "eye.fill",
                 title: isPlayed ? "Watched" : "Mark Watched",
-                tint: theme.primary,
+                tint: isPlayed ? theme.accent : theme.primary,
+                focusedTint: isPlayed ? theme.accent : nil,
                 isEnabled: session.client != nil
             ) {
                 Task { await togglePlayed() }
@@ -141,6 +164,7 @@ struct MediaDetailHeroSection: View {
                 systemImage: isFavorite ? "heart.fill" : "heart",
                 title: isFavorite ? "Favorited" : "Favorite",
                 tint: isFavorite ? theme.accent : theme.primary,
+                focusedTint: isFavorite ? theme.accent : nil,
                 isEnabled: session.client != nil
             ) {
                 Task { await toggleFavorite() }
@@ -155,25 +179,46 @@ struct MediaDetailHeroSection: View {
         Button {
             isPresentingOverview = true
         } label: {
+            OverviewLabel(tagline: item.tagline, overview: item.overview)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The overview button's label, split out so it can watch its own focus.
+    ///
+    /// When the `.plain` button gains focus, tvOS lifts the label onto a light
+    /// system platter — the theme's regular content colors are designed for the
+    /// dark backdrop and disappear against it, so the text swaps to the theme's
+    /// on-platter colors. `\.isFocused` is only populated inside the focusable's
+    /// subtree, which is why this is its own view rather than inline in the
+    /// section.
+    private struct OverviewLabel: View {
+        @Environment(\.theme) private var theme
+        @Environment(\.isFocused) private var isFocused
+
+        let tagline: String?
+        let overview: String?
+
+        var body: some View {
             VStack(alignment: .leading, spacing: SpacingTokens.sm) {
-                if let tagline = item.tagline, !tagline.isEmpty {
+                if let tagline, !tagline.isEmpty {
                     Text(tagline)
                         .font(theme.jsHeadline)
-                        .foregroundStyle(theme.primary)
+                        .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
                         .lineLimit(2)
                 }
-                if let overview = item.overview {
+                if let overview {
                     Text(overview)
                         .font(theme.jsOverview)
-                        .foregroundStyle(theme.secondary)
+                        .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
                         .lineSpacing(4)
                         .lineLimit(2)
                 }
             }
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .animation(theme.animation, value: isFocused)
         }
-        .buttonStyle(.plain)
     }
 
     /// Optimistically flip the watched state, then persist; revert on failure.
