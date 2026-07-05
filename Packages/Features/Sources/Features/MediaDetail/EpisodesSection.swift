@@ -48,16 +48,8 @@ struct EpisodesSection: View {
 
     var body: some View {
         if !seasons.isEmpty {
+            // No "Episodes" title — the season anchors are the header.
             VStack(alignment: .leading, spacing: SpacingTokens.headerSpacing) {
-                HStack(spacing: SpacingTokens.xs) {
-                    Image(systemName: "play.tv.fill")
-                        .foregroundStyle(theme.accent)
-                    Text("Episodes")
-                        .font(theme.jsHeadline)
-                        .foregroundStyle(theme.primary)
-                }
-                .padding(.horizontal, SpacingTokens.screenPadding)
-
                 seasonAnchors
 
                 episodeShelf
