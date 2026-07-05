@@ -204,18 +204,30 @@ public struct ImageTags: Sendable, Equatable, Hashable {
     public let thumb: String?
     public let logo: String?
 
+    /// BlurHash placeholders for the image types the app shows through
+    /// `ArtworkImage` (logos and banners get no placeholder treatment).
+    public let primaryBlurHash: String?
+    public let backdropBlurHash: String?
+    public let thumbBlurHash: String?
+
     public init(
         primary: String? = nil,
         backdrop: String? = nil,
         banner: String? = nil,
         thumb: String? = nil,
-        logo: String? = nil
+        logo: String? = nil,
+        primaryBlurHash: String? = nil,
+        backdropBlurHash: String? = nil,
+        thumbBlurHash: String? = nil
     ) {
         self.primary = primary
         self.backdrop = backdrop
         self.banner = banner
         self.thumb = thumb
         self.logo = logo
+        self.primaryBlurHash = primaryBlurHash
+        self.backdropBlurHash = backdropBlurHash
+        self.thumbBlurHash = thumbBlurHash
     }
 }
 
@@ -382,6 +394,25 @@ extension MediaItem {
             return "\(year)–\(endYear)"
         }
         return String(year)
+    }
+
+    /// BlurHash for a poster slot, mirroring `posterURL`'s primary → thumb
+    /// resolution order. (Ancestor-art fallbacks carry no hashes; a nil here
+    /// just means the icon placeholder.)
+    public var posterBlurHash: String? {
+        imageTags?.primaryBlurHash ?? imageTags?.thumbBlurHash
+    }
+
+    /// BlurHash for a backdrop slot, mirroring `backdropURL`'s backdrop → thumb
+    /// resolution order
+    public var backdropBlurHash: String? {
+        imageTags?.backdropBlurHash ?? imageTags?.thumbBlurHash
+    }
+
+    /// BlurHash for a landscape card, mirroring `landscapeURL`'s thumb →
+    /// backdrop → primary resolution order
+    public var landscapeBlurHash: String? {
+        imageTags?.thumbBlurHash ?? imageTags?.backdropBlurHash ?? imageTags?.primaryBlurHash
     }
 
     /// Season count for series (e.g., "3 Seasons"); nil for other types

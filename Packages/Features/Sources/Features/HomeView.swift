@@ -68,7 +68,7 @@ struct HomeView: View {
     @ViewBuilder
     private var heroBackground: some View {
         if let client = session.client, let item = heroItem, !belowFold {
-            ArtworkImage(url: client.backdropURL(for: item))
+            ArtworkImage(url: client.backdropURL(for: item), blurHash: item.backdropBlurHash)
                 .frame(height: 1080)
                 .frame(maxWidth: .infinity)
                 .mask {

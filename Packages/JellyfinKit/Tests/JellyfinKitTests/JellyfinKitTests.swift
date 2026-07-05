@@ -394,6 +394,40 @@ struct JellyfinKitTests {
             #expect(ImageTags(from: nil, backdropTags: nil) == nil)
             #expect(ImageTags(from: nil, backdropTags: []) == nil)
         }
+
+        @Test("BlurHashes resolve by tag with a first-value fallback")
+        func blurHashResolution() {
+            let tags = ImageTags(
+                from: ["Primary": "p-tag", "Thumb": "t-tag"],
+                backdropTags: ["bd-tag"],
+                blurHashes: .init(
+                    backdrop: ["bd-tag": "bd-hash"],
+                    primary: ["other-key": "p-hash"],
+                    thumb: [:]
+                )
+            )
+
+            #expect(tags?.backdropBlurHash == "bd-hash")
+            // Tag lookup misses → the type's first hash still applies.
+            #expect(tags?.primaryBlurHash == "p-hash")
+            // No hashes for the type at all → nil.
+            #expect(tags?.thumbBlurHash == nil)
+        }
+
+        @Test("MediaItem blurhash conveniences mirror the URL fallback chains")
+        func blurHashConveniences() {
+            let item = MediaItem(
+                id: "1", name: "Movie", type: .movie,
+                imageTags: ImageTags(
+                    primary: "p", thumb: "t",
+                    backdropBlurHash: "bd-hash", thumbBlurHash: "t-hash"
+                )
+            )
+            // No primary hash → poster falls to thumb.
+            #expect(item.posterBlurHash == "t-hash")
+            #expect(item.backdropBlurHash == "bd-hash")
+            #expect(item.landscapeBlurHash == "t-hash")
+        }
     }
 
     @Suite("Image URLs")

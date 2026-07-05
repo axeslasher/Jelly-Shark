@@ -227,7 +227,11 @@ public struct MediaDetailView: View {
         if let client = session.client,
            let url = client.backdropURL(for: displayItem)
         {
-            MediaDetailHeroBackdrop(url: url, progress: scrollProgress)
+            MediaDetailHeroBackdrop(
+                url: url,
+                blurHash: displayItem.backdropBlurHash,
+                progress: scrollProgress
+            )
         }
     }
 

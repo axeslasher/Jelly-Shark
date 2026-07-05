@@ -99,6 +99,7 @@ extension MediaItem {
     func posterShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 200) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
+            blurHash: posterBlurHash,
             title: name,
             subtitle: productionYear.map(String.init),
             aspectRatio: 2.0 / 3.0,
@@ -114,6 +115,7 @@ extension MediaItem {
     func landscapeShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 320) -> some View {
         ArtworkShelfItem(
             url: client?.landscapeURL(for: self),
+            blurHash: landscapeBlurHash,
             title: episodeDisplayTitle ?? name,
             subtitle: type == .episode ? seriesName : productionYear.map(String.init),
             aspectRatio: 16.0 / 9.0,
