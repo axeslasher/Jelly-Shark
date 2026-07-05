@@ -155,9 +155,10 @@ public protocol JellyfinClientProtocol: Sendable {
     /// Fetch a series' seasons, in order (Specials come back as season 0)
     func getSeasons(seriesId: String) async throws -> [MediaItem]
 
-    /// Fetch a season's episodes, in episode order, with user data (watched
-    /// state, progress) for the current user
-    func getEpisodes(seriesId: String, seasonId: String) async throws -> [MediaItem]
+    /// Fetch a series' episodes in series order, with user data (watched
+    /// state, progress) for the current user. Pass a season id to limit the
+    /// fetch to one season; nil returns every episode of the series.
+    func getEpisodes(seriesId: String, seasonId: String?) async throws -> [MediaItem]
 
     /// The episode the user should watch next for a series: the in-progress or
     /// first-unwatched episode per the server's Next Up logic, or nil when the
@@ -775,7 +776,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func getEpisodes(seriesId: String, seasonId: String) async throws -> [MediaItem] {
+    public func getEpisodes(seriesId: String, seasonId: String?) async throws -> [MediaItem] {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
         }

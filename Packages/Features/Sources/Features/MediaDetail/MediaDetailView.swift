@@ -19,12 +19,11 @@ public struct MediaDetailView: View {
     @State private var detailedItem: MediaItem?
     @State private var similarItems: [MediaItem] = []
 
-    /// Series-only state: the season list, per-season episode cache (seasons
-    /// fetch lazily as they're selected), the selected season, and the episode
-    /// the hero Play button resolves to.
+    /// Series-only state: the season list, every episode in series order (one
+    /// continuous shelf spans all seasons), and the episode the hero Play
+    /// button resolves to.
     @State private var seasons: [MediaItem] = []
-    @State private var episodesBySeason: [String: [MediaItem]] = [:]
-    @State private var selectedSeasonId: String?
+    @State private var episodes: [MediaItem] = []
     @State private var nextUpEpisode: MediaItem?
 
     /// Credits derived once when the detailed item lands (see `loadContent`),
@@ -96,7 +95,7 @@ public struct MediaDetailView: View {
     /// series itself to the player.
     private var playableItem: MediaItem? {
         guard item.type == .series else { return item }
-        return nextUpEpisode ?? selectedSeasonId.flatMap { episodesBySeason[$0]?.first }
+        return nextUpEpisode ?? episodes.first
     }
 
     /// Play-button title: series pages name their target episode
@@ -149,11 +148,7 @@ public struct MediaDetailView: View {
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                     // Episodes lead on series pages — they're the reason the
                     // page was opened. Renders nothing for other types.
-                    EpisodesSection(
-                        seasons: seasons,
-                        episodesBySeason: episodesBySeason,
-                        selectedSeasonId: $selectedSeasonId
-                    )
+                    EpisodesSection(seasons: seasons, episodes: episodes)
 
                     CastShelfSection(people: displayItem.people ?? [])
 
@@ -228,16 +223,6 @@ public struct MediaDetailView: View {
         .task(id: item.id) {
             await loadContent()
         }
-        // Fetch episodes lazily as seasons are selected; already-fetched
-        // seasons swap instantly from the cache.
-        .task(id: selectedSeasonId) {
-            guard let seasonId = selectedSeasonId,
-                  episodesBySeason[seasonId] == nil,
-                  let client = session.client
-            else { return }
-            episodesBySeason[seasonId] =
-                (try? await client.getEpisodes(seriesId: item.id, seasonId: seasonId)) ?? []
-        }
         #if os(macOS)
         .sheet(isPresented: $isPresentingPlayer) {
             if let client = session.client, let playableItem {
@@ -303,8 +288,7 @@ public struct MediaDetailView: View {
         // Reset series state so a reused view (item.id change) doesn't show
         // the previous series' seasons while the new ones load.
         seasons = []
-        episodesBySeason = [:]
-        selectedSeasonId = nil
+        episodes = []
         nextUpEpisode = nil
 
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
@@ -312,12 +296,11 @@ public struct MediaDetailView: View {
 
         if item.type == .series {
             async let seasonsFetch = client.getSeasons(seriesId: item.id)
+            async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
             async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
             seasons = (await (try? seasonsFetch)) ?? []
+            episodes = (await (try? episodesFetch)) ?? []
             nextUpEpisode = await (try? nextUpFetch) ?? nil
-            // Land on the season the user is actually in; the episode fetch
-            // for it kicks off via the selection task.
-            selectedSeasonId = nextUpEpisode?.seasonId ?? seasons.first?.id
         }
 
         // Derive the credits once per fetch instead of per body evaluation.

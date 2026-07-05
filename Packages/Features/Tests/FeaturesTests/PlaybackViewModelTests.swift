@@ -125,7 +125,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     func getSeasons(seriesId: String) async throws -> [MediaItem] { [] }
-    func getEpisodes(seriesId: String, seasonId: String) async throws -> [MediaItem] { [] }
+    func getEpisodes(seriesId: String, seasonId: String?) async throws -> [MediaItem] { [] }
     func getNextUpEpisode(seriesId: String) async throws -> MediaItem? { nil }
 
     func markPlayed(itemId: String) async throws {}
