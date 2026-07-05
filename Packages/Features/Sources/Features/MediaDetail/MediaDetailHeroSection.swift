@@ -139,8 +139,6 @@ struct MediaDetailHeroSection: View {
             .font(theme.jsHeadline)
         }
         .glassButtonStyle()
-        .controlSize(.extraLarge)
-        .buttonBorderShape(.capsule)
         .disabled(session.client == nil)
     }
 
@@ -149,10 +147,14 @@ struct MediaDetailHeroSection: View {
     /// focused. Both flip optimistically and revert if the server call fails.
     private var secondaryActions: some View {
         HStack(alignment: .top, spacing: SpacingTokens.sm) {
+            // Active states keep their accent tint through focus (nil falls
+            // back to the on-platter color), so "already watched/favorited"
+            // stays legible while the button is lifted.
             CircleActionButton(
-                systemImage: isPlayed ? "checkmark.circle.fill" : "checkmark.circle",
+                systemImage: isPlayed ? "checkmark.circle.fill" : "eye.fill",
                 title: isPlayed ? "Watched" : "Mark Watched",
-                tint: theme.primary,
+                tint: isPlayed ? theme.accent : theme.primary,
+                focusedTint: isPlayed ? theme.accent : nil,
                 isEnabled: session.client != nil
             ) {
                 Task { await togglePlayed() }
@@ -162,6 +164,7 @@ struct MediaDetailHeroSection: View {
                 systemImage: isFavorite ? "heart.fill" : "heart",
                 title: isFavorite ? "Favorited" : "Favorite",
                 tint: isFavorite ? theme.accent : theme.primary,
+                focusedTint: isFavorite ? theme.accent : nil,
                 isEnabled: session.client != nil
             ) {
                 Task { await toggleFavorite() }
