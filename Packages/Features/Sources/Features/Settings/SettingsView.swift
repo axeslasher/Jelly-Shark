@@ -9,62 +9,74 @@ public struct SettingsView: View {
 
     public init() {}
 
+    /// Pushable Settings screens; value-based so RootView's pre-switch
+    /// pop-to-root covers Settings' stack too.
+    enum Destination: Hashable {
+        case serverConnection
+        case themeSelection
+    }
+
+    // No NavigationStack here: RootView owns each tab's stack (with a path
+    // binding) so it can pop to root before a tab switch — see RootView's
+    // `tabSelection` for the tvOS bug this works around.
     public var body: some View {
-        NavigationStack {
-            List {
-                // Server Section
-                Section {
-                    NavigationLink {
-                        ServerConnectionView()
-                    } label: {
-                        settingsRow(
-                            icon: "server.rack",
-                            title: "Server",
-                            subtitle: serverSubtitle
-                        )
-                    }
-                } header: {
-                    Text("Connection")
-                }
-
-                // Appearance Section
-                Section {
-                    NavigationLink {
-                        themeSelectionView
-                    } label: {
-                        settingsRow(
-                            icon: "paintpalette.fill",
-                            title: "Theme",
-                            subtitle: themeManager.currentTheme.name
-                        )
-                    }
-                } header: {
-                    Text("Appearance")
-                }
-
-                // Playback Section
-                Section {
+        List {
+            // Server Section
+            Section {
+                NavigationLink(value: Destination.serverConnection) {
                     settingsRow(
-                        icon: "play.circle.fill",
-                        title: "Playback",
-                        subtitle: "Quality, subtitles, audio"
+                        icon: "server.rack",
+                        title: "Server",
+                        subtitle: serverSubtitle
                     )
-                } header: {
-                    Text("Playback")
                 }
-
-                // About Section
-                Section {
-                    settingsRow(
-                        icon: "info.circle.fill",
-                        title: "About",
-                        subtitle: "Version 0.0.1"
-                    )
-                } header: {
-                    Text("About")
-                }
+            } header: {
+                Text("Connection")
             }
-            .navigationTitle("Settings")
+
+            // Appearance Section
+            Section {
+                NavigationLink(value: Destination.themeSelection) {
+                    settingsRow(
+                        icon: "paintpalette.fill",
+                        title: "Theme",
+                        subtitle: themeManager.currentTheme.name
+                    )
+                }
+            } header: {
+                Text("Appearance")
+            }
+
+            // Playback Section
+            Section {
+                settingsRow(
+                    icon: "play.circle.fill",
+                    title: "Playback",
+                    subtitle: "Quality, subtitles, audio"
+                )
+            } header: {
+                Text("Playback")
+            }
+
+            // About Section
+            Section {
+                settingsRow(
+                    icon: "info.circle.fill",
+                    title: "About",
+                    subtitle: "Version 0.0.1"
+                )
+            } header: {
+                Text("About")
+            }
+        }
+        .navigationTitle("Settings")
+        .navigationDestination(for: Destination.self) { destination in
+            switch destination {
+            case .serverConnection:
+                ServerConnectionView()
+            case .themeSelection:
+                themeSelectionView
+            }
         }
     }
 
@@ -149,8 +161,10 @@ public struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView()
-        .withThemeEnvironment()
-        .environment(AppSession())
-        .environment(ServerConnectionViewModel())
+    NavigationStack {
+        SettingsView()
+    }
+    .withThemeEnvironment()
+    .environment(AppSession())
+    .environment(ServerConnectionViewModel())
 }
