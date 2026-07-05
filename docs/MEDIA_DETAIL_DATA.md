@@ -33,15 +33,27 @@ deciding which fields to incorporate into `MediaDetailView`.
 | `seriesId/Name`, `seasonId/Name`, `indexNumber`, `parentIndexNumber` | shelf captions, not on detail |
 | `people` | yes (Cast & Crew shelf, credits column) |
 | `criticRating` | yes (metadata row, percent) |
-| `premiereDate`, `endDate`, `status` | endDate/status drive series year spans ("2008–2013") |
-| `studios` | yes (credits column) |
+| `premiereDate`, `endDate`, `status` | series year spans ("2008–2013"); released / first-aired + status in the info section |
+| `studios` | yes (info section, Information column) |
 | `childCount`, `recursiveItemCount` | childCount → "N Seasons" (series metadata row) |
-| `technicalInfo` (distilled from `mediaStreams`) | yes (badge row: resolution / video range / audio / CC) |
+| `technicalInfo` (distilled from the default media source) | metadata row (resolution / video range / audio) + info section (Languages and File columns) |
 
-`technicalInfo` intentionally does **not** expose raw `MediaStream`s. The
-adapter reduces the default video/audio/subtitle streams to display-ready
-labels (`resolution`, `videoRange`, `audioFormat`, `subtitleLanguages`),
-keeping the facade philosophy: only what the app needs.
+`technicalInfo` intentionally does **not** expose raw `MediaStream`s or
+`MediaSourceInfo`. The adapter reduces the default media source to
+display-ready facts, keeping the facade philosophy — only what the app needs:
+
+- Stream labels: `resolution`, `videoRange`, `audioFormat`
+- Languages: `originalAudioLanguage` (default audio track — the closest proxy
+  Jellyfin offers for original language), `audioLanguages`, `subtitleLanguages`,
+  `hasSDHSubtitles` (currently unused by the UI; kept for a future
+  accessibility treatment)
+- File facts: `fileName`, `fileSizeBytes`, `container`, `videoCodec`,
+  `bitrate`, `frameRate`
+
+The detail page shows the deep cuts in `MediaInfoSection` below the shelves:
+Information (studio, released/first aired, status, genres), Languages
+(original audio, audio tracks, subtitles), and File (name over a grid of
+size, container, codec, bitrate, frame rate).
 
 ## Available on `BaseItemDto`, not yet mapped
 
