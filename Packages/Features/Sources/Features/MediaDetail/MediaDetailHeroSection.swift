@@ -78,8 +78,7 @@ struct MediaDetailHeroSection: View {
                 }
                 CreditsColumn(
                     directorNames: directors.map(\.name),
-                    castNames: topCast.map(\.name),
-                    studioNames: item.studios ?? []
+                    castNames: topCast.map(\.name)
                 )
                 .frame(width: 250)
             }

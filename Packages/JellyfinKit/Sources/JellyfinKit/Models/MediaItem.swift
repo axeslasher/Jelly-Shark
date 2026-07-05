@@ -199,9 +199,38 @@ public struct MediaTechnicalInfo: Sendable, Equatable, Hashable {
     /// "7.1", "5.1", "Stereo"
     public let audioFormat: String?
 
+    /// Localized display name of the default audio track's language — the
+    /// closest proxy the server offers for the title's original audio
+    public let originalAudioLanguage: String?
+
+    /// Localized display names of the available audio-track languages, unique,
+    /// in stream order
+    public let audioLanguages: [String]
+
     /// Localized display names of the available subtitle languages, unique,
     /// in stream order
     public let subtitleLanguages: [String]
+
+    /// Whether any subtitle track is flagged for the deaf and hard of hearing
+    public let hasSDHSubtitles: Bool
+
+    /// Name of the media file on disk (last path component)
+    public let fileName: String?
+
+    /// File size in bytes
+    public let fileSizeBytes: Int64?
+
+    /// Container format label ("MKV", "MP4")
+    public let container: String?
+
+    /// Video codec label ("HEVC", "H.264", "AV1")
+    public let videoCodec: String?
+
+    /// Overall bitrate in bits per second
+    public let bitrate: Int?
+
+    /// Video frame rate in frames per second (e.g., 23.976)
+    public let frameRate: Double?
 
     public var hasSubtitles: Bool {
         !subtitleLanguages.isEmpty
@@ -211,12 +240,30 @@ public struct MediaTechnicalInfo: Sendable, Equatable, Hashable {
         resolution: String? = nil,
         videoRange: String? = nil,
         audioFormat: String? = nil,
-        subtitleLanguages: [String] = []
+        originalAudioLanguage: String? = nil,
+        audioLanguages: [String] = [],
+        subtitleLanguages: [String] = [],
+        hasSDHSubtitles: Bool = false,
+        fileName: String? = nil,
+        fileSizeBytes: Int64? = nil,
+        container: String? = nil,
+        videoCodec: String? = nil,
+        bitrate: Int? = nil,
+        frameRate: Double? = nil
     ) {
         self.resolution = resolution
         self.videoRange = videoRange
         self.audioFormat = audioFormat
+        self.originalAudioLanguage = originalAudioLanguage
+        self.audioLanguages = audioLanguages
         self.subtitleLanguages = subtitleLanguages
+        self.hasSDHSubtitles = hasSDHSubtitles
+        self.fileName = fileName
+        self.fileSizeBytes = fileSizeBytes
+        self.container = container
+        self.videoCodec = videoCodec
+        self.bitrate = bitrate
+        self.frameRate = frameRate
     }
 }
 

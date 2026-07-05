@@ -51,11 +51,7 @@ extension MediaItem {
             status: dto.status,
             childCount: dto.childCount,
             recursiveItemCount: dto.recursiveItemCount,
-            // Streams live on the media source; the item-level list is a
-            // convenience some responses omit, so prefer the source's.
-            technicalInfo: MediaTechnicalInfo(
-                from: dto.mediaSources?.first?.mediaStreams ?? dto.mediaStreams
-            ),
+            technicalInfo: MediaTechnicalInfo(from: dto),
             imageTags: ImageTags(from: dto.imageTags, backdropTags: dto.backdropImageTags),
             userData: dto.userData.map { UserData(from: $0) },
             seriesId: dto.seriesID,
@@ -123,24 +119,34 @@ extension MediaType {
 // MARK: - MediaTechnicalInfo Adapter
 
 extension MediaTechnicalInfo {
-    /// Distill a stream list down to display-ready labels: the (first) video
-    /// stream's resolution class and dynamic range, the default audio stream's
-    /// format, and the unique subtitle languages. Nil when the streams carry
-    /// nothing displayable.
-    init?(from streams: [JellyfinAPI.MediaStream]?) {
-        guard let streams, !streams.isEmpty else { return nil }
+    /// Distill an item's default media source down to display-ready labels:
+    /// the (first) video stream's resolution class, dynamic range, codec, and
+    /// frame rate, the default audio stream's format, the unique audio and
+    /// subtitle languages, and the source's file facts (name, size, container,
+    /// bitrate). Nil when there's nothing displayable.
+    init?(from dto: JellyfinAPI.BaseItemDto) {
+        // Streams live on the media source; the item-level list is a
+        // convenience some responses omit, so prefer the source's.
+        let source = dto.mediaSources?.first
+        let streams = source?.mediaStreams ?? dto.mediaStreams ?? []
 
         let video = streams.first { $0.type == .video }
-        let audio = streams.first { $0.type == .audio && $0.isDefault == true }
-            ?? streams.first { $0.type == .audio }
+        let audioStreams = streams.filter { $0.type == .audio }
+        let audio = audioStreams.first { $0.isDefault == true } ?? audioStreams.first
         let subtitles = streams.filter { $0.type == .subtitle }
 
         let resolution = video.flatMap(Self.resolutionLabel)
         let range = video.flatMap(Self.videoRangeLabel)
         let audioFormat = audio.flatMap(Self.audioLabel)
-        let languages = Self.subtitleLanguages(from: subtitles)
+        let audioLanguages = Self.languages(of: audioStreams)
+        let subtitleLanguages = Self.languages(of: subtitles)
+        let fileName = (source?.path ?? dto.path).flatMap(Self.fileName)
+        let fileSize = source?.size.map(Int64.init)
 
-        guard resolution != nil || range != nil || audioFormat != nil || !languages.isEmpty else {
+        guard resolution != nil || range != nil || audioFormat != nil
+            || !audioLanguages.isEmpty || !subtitleLanguages.isEmpty
+            || fileName != nil || fileSize != nil
+        else {
             return nil
         }
 
@@ -148,8 +154,44 @@ extension MediaTechnicalInfo {
             resolution: resolution,
             videoRange: range,
             audioFormat: audioFormat,
-            subtitleLanguages: languages
+            originalAudioLanguage: Self.languages(of: audio.map { [$0] } ?? []).first,
+            audioLanguages: audioLanguages,
+            subtitleLanguages: subtitleLanguages,
+            hasSDHSubtitles: subtitles.contains { $0.isHearingImpaired == true },
+            fileName: fileName,
+            fileSizeBytes: fileSize,
+            container: (source?.container ?? dto.container).flatMap(Self.containerLabel),
+            videoCodec: video.flatMap(Self.videoCodecLabel),
+            bitrate: source?.bitrate,
+            frameRate: (video?.averageFrameRate ?? video?.realFrameRate).map(Double.init)
         )
+    }
+
+    /// Last path component, handling both POSIX and Windows-style server paths.
+    private static func fileName(from path: String) -> String? {
+        let name = path.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init)
+        return name?.isEmpty == false ? name : nil
+    }
+
+    /// First container name, uppercased — servers report comma lists like
+    /// "mov,mp4,m4a" for some formats.
+    private static func containerLabel(from container: String) -> String? {
+        let first = container.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let first, !first.isEmpty else { return nil }
+        return first.uppercased()
+    }
+
+    private static func videoCodecLabel(for stream: JellyfinAPI.MediaStream) -> String? {
+        guard let codec = stream.codec?.lowercased(), !codec.isEmpty else { return nil }
+        switch codec {
+        case "hevc", "h265": return "HEVC"
+        case "h264", "avc": return "H.264"
+        case "av1": return "AV1"
+        case "vp9": return "VP9"
+        case "mpeg2video": return "MPEG-2"
+        case "vc1": return "VC-1"
+        default: return codec.uppercased()
+        }
     }
 
     /// Resolution class from pixel dimensions. Thresholds are deliberately
@@ -215,9 +257,9 @@ extension MediaTechnicalInfo {
         }
     }
 
-    /// Unique subtitle languages in stream order, localized for display
-    /// (Jellyfin reports ISO 639 codes like "eng").
-    private static func subtitleLanguages(from streams: [JellyfinAPI.MediaStream]) -> [String] {
+    /// Unique languages of the given streams in stream order, localized for
+    /// display (Jellyfin reports ISO 639 codes like "eng").
+    private static func languages(of streams: [JellyfinAPI.MediaStream]) -> [String] {
         var seen = Set<String>()
         return streams.compactMap { stream in
             guard let code = stream.language, !code.isEmpty,

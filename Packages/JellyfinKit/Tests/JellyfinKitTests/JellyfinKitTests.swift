@@ -175,27 +175,46 @@ struct JellyfinKitTests {
 
     @Suite("MediaTechnicalInfo Adapter")
     struct MediaTechnicalInfoAdapterTests {
+        /// Wraps bare streams in a minimal item DTO, the shape most tests need.
+        private func info(from streams: [MediaStream]?) -> MediaTechnicalInfo? {
+            MediaTechnicalInfo(from: BaseItemDto(mediaSources: streams.map { [MediaSourceInfo(mediaStreams: $0)] }))
+        }
+
         @Test("Distills video, audio, and subtitle streams")
         func distillsStreams() {
-            let info = MediaTechnicalInfo(from: [
+            let info = info(from: [
                 MediaStream(height: 2160, type: .video, videoRangeType: .doviWithHDR10, width: 3840),
-                MediaStream(audioSpatialFormat: .dolbyAtmos, channels: 8, isDefault: true, type: .audio),
+                MediaStream(language: "fra", type: .audio),
+                MediaStream(audioSpatialFormat: .dolbyAtmos, channels: 8, isDefault: true, language: "eng", type: .audio),
                 MediaStream(language: "eng", type: .subtitle),
                 MediaStream(language: "ENG", type: .subtitle),
-                MediaStream(language: "fra", type: .subtitle)
+                MediaStream(isHearingImpaired: true, language: "fra", type: .subtitle)
             ])
 
             #expect(info?.resolution == "4K")
             #expect(info?.videoRange == "Dolby Vision")
             #expect(info?.audioFormat == "Dolby Atmos")
+            // Original audio follows the *default* stream, not the first.
+            #expect(info?.originalAudioLanguage == Locale.current.localizedString(forLanguageCode: "eng"))
+            #expect(info?.audioLanguages.count == 2)
             #expect(info?.subtitleLanguages.count == 2)
+            #expect(info?.hasSubtitles == true)
+            #expect(info?.hasSDHSubtitles == true)
+        }
+
+        @Test("No SDH flag when no subtitle is hearing-impaired")
+        func noSDHWithoutFlaggedStreams() {
+            let info = info(from: [
+                MediaStream(language: "eng", type: .subtitle)
+            ])
+            #expect(info?.hasSDHSubtitles == false)
             #expect(info?.hasSubtitles == true)
         }
 
         @Test("Resolution classes from dimensions")
         func resolutionClasses() {
             func resolution(width: Int, height: Int) -> String? {
-                MediaTechnicalInfo(from: [
+                info(from: [
                     MediaStream(height: height, type: .video, width: width)
                 ])?.resolution
             }
@@ -209,18 +228,18 @@ struct JellyfinKitTests {
 
         @Test("SDR yields no range label; coarse HDR flag is the fallback")
         func videoRangeLabels() {
-            let sdr = MediaTechnicalInfo(from: [
+            let sdr = info(from: [
                 MediaStream(type: .video, videoRange: .sdr, videoRangeType: .sdr, width: 1920)
             ])
             #expect(sdr?.videoRange == nil)
             #expect(sdr?.resolution == "1080p")
 
-            let coarseHDR = MediaTechnicalInfo(from: [
+            let coarseHDR = info(from: [
                 MediaStream(type: .video, videoRange: .hdr, width: 3840)
             ])
             #expect(coarseHDR?.videoRange == "HDR")
 
-            let hdr10Plus = MediaTechnicalInfo(from: [
+            let hdr10Plus = info(from: [
                 MediaStream(type: .video, videoRangeType: .hdr10Plus, width: 3840)
             ])
             #expect(hdr10Plus?.videoRange == "HDR10+")
@@ -228,13 +247,13 @@ struct JellyfinKitTests {
 
         @Test("Audio label prefers the default stream and falls back to channels")
         func audioLabels() {
-            let info = MediaTechnicalInfo(from: [
+            let surround = info(from: [
                 MediaStream(channels: 2, isDefault: false, type: .audio),
                 MediaStream(channels: 6, isDefault: true, type: .audio)
             ])
-            #expect(info?.audioFormat == "5.1")
+            #expect(surround?.audioFormat == "5.1")
 
-            let stereo = MediaTechnicalInfo(from: [
+            let stereo = info(from: [
                 MediaStream(channels: 2, type: .audio)
             ])
             #expect(stereo?.audioFormat == "Stereo")
@@ -242,9 +261,40 @@ struct JellyfinKitTests {
 
         @Test("Nil when streams are missing or carry nothing displayable")
         func nilWhenEmpty() {
-            #expect(MediaTechnicalInfo(from: nil) == nil)
-            #expect(MediaTechnicalInfo(from: []) == nil)
-            #expect(MediaTechnicalInfo(from: [MediaStream(type: .video)]) == nil)
+            #expect(info(from: nil) == nil)
+            #expect(info(from: []) == nil)
+            #expect(info(from: [MediaStream(type: .video)]) == nil)
+        }
+
+        @Test("File facts come from the media source")
+        func fileFacts() {
+            let info = MediaTechnicalInfo(from: BaseItemDto(mediaSources: [
+                MediaSourceInfo(
+                    bitrate: 24_500_000,
+                    container: "mov,mp4,m4a",
+                    mediaStreams: [
+                        MediaStream(averageFrameRate: 23.976, codec: "hevc", type: .video, width: 3840)
+                    ],
+                    path: "C:\\Media\\Movies\\Example (2024)\\Example.2024.2160p.mkv",
+                    size: 4_200_000_000
+                )
+            ]))
+
+            #expect(info?.fileName == "Example.2024.2160p.mkv")
+            #expect(info?.fileSizeBytes == 4_200_000_000)
+            #expect(info?.container == "MOV")
+            #expect(info?.videoCodec == "HEVC")
+            #expect(info?.bitrate == 24_500_000)
+            #expect(info?.frameRate.map { abs($0 - 23.976) < 0.001 } == true)
+        }
+
+        @Test("File name falls back to the item path when the source has none")
+        func fileNameFallsBackToItemPath() {
+            let info = MediaTechnicalInfo(from: BaseItemDto(
+                mediaSources: [MediaSourceInfo(mediaStreams: [MediaStream(type: .video, width: 1920)])],
+                path: "/media/movies/example.mkv"
+            ))
+            #expect(info?.fileName == "example.mkv")
         }
     }
 
