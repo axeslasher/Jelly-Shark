@@ -97,24 +97,25 @@ struct MediaDetailHeroSection: View {
     }
 
     /// The item's logo if one exists, falling back to the title text. Rendered
-    /// with `AsyncImage` (not `ArtworkImage`) so the logo's transparency is
-    /// preserved instead of being boxed in by a surface-colored base.
+    /// with `TrimmedLogoImage` (not `ArtworkImage`) so the logo's transparency
+    /// is preserved instead of being boxed in by a surface-colored base — and
+    /// its transparent margins are cropped away, so every logo sits flush
+    /// against the box's bottom-left corner instead of floating on whatever
+    /// padding the artwork baked in.
     @ViewBuilder
     private var titleTreatment: some View {
         if let client = session.client, let url = client.logoURL(for: item) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image {
-                    image
-                        .resizable()
-                        .scaledToFit()
-                        // Fixed box reserves a consistent logo footprint for every
-                        // item; scaledToFit letterboxes the logo inside it and
-                        // bottomLeading pins it so the content below never shifts.
-                        .frame(width: 480, height: 280, alignment: .bottomLeading)
-                        .frame(maxWidth: .infinity, alignment: .bottomLeading)
-                } else {
-                    titleText
-                }
+            TrimmedLogoImage(url: url) { image in
+                image
+                    .resizable()
+                    .scaledToFit()
+                    // Fixed box reserves a consistent logo footprint for every
+                    // item; scaledToFit letterboxes the logo inside it and
+                    // bottomLeading pins it so the content below never shifts.
+                    .frame(width: 480, height: 280, alignment: .bottomLeading)
+                    .frame(maxWidth: .infinity, alignment: .bottomLeading)
+            } fallback: {
+                titleText
             }
         } else {
             titleText
