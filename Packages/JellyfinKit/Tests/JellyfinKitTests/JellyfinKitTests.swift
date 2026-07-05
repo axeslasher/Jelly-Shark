@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import JellyfinAPI
 @testable import JellyfinKit
 
 @Suite("JellyfinKit Tests")
@@ -117,6 +118,134 @@ struct JellyfinKitTests {
             )
             #expect(episode.episodeDisplayTitle == "S01E05 - Pilot")
         }
+
+        @Test("Year span - movies show a plain year")
+        func yearSpanMovie() {
+            let movie = MediaItem(id: "1", name: "Movie", type: .movie, productionYear: 2024)
+            #expect(movie.yearSpanText == "2024")
+        }
+
+        @Test("Year span - ended series spans start to end year")
+        func yearSpanEndedSeries() {
+            let series = MediaItem(
+                id: "1", name: "Show", type: .series,
+                productionYear: 2008,
+                endDate: DateComponents(
+                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 9, day: 29
+                ).date,
+                status: "Ended"
+            )
+            #expect(series.yearSpanText == "2008–2013")
+        }
+
+        @Test("Year span - series ended in its first year shows one year")
+        func yearSpanSingleYearSeries() {
+            let series = MediaItem(
+                id: "1", name: "Show", type: .series,
+                productionYear: 2013,
+                endDate: DateComponents(
+                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 12, day: 1
+                ).date,
+                status: "Ended"
+            )
+            #expect(series.yearSpanText == "2013")
+        }
+
+        @Test("Year span - continuing series is open-ended")
+        func yearSpanContinuingSeries() {
+            let series = MediaItem(
+                id: "1", name: "Show", type: .series,
+                productionYear: 2020, status: "Continuing"
+            )
+            #expect(series.yearSpanText == "2020–")
+        }
+
+        @Test("Season count text pluralizes and skips non-series")
+        func seasonCountText() {
+            let series = MediaItem(id: "1", name: "Show", type: .series, childCount: 3)
+            #expect(series.seasonCountText == "3 Seasons")
+
+            let oneSeason = MediaItem(id: "2", name: "Show", type: .series, childCount: 1)
+            #expect(oneSeason.seasonCountText == "1 Season")
+
+            let movie = MediaItem(id: "3", name: "Movie", type: .movie, childCount: 3)
+            #expect(movie.seasonCountText == nil)
+        }
+    }
+
+    @Suite("MediaTechnicalInfo Adapter")
+    struct MediaTechnicalInfoAdapterTests {
+        @Test("Distills video, audio, and subtitle streams")
+        func distillsStreams() {
+            let info = MediaTechnicalInfo(from: [
+                MediaStream(height: 2160, type: .video, videoRangeType: .doviWithHDR10, width: 3840),
+                MediaStream(audioSpatialFormat: .dolbyAtmos, channels: 8, isDefault: true, type: .audio),
+                MediaStream(language: "eng", type: .subtitle),
+                MediaStream(language: "ENG", type: .subtitle),
+                MediaStream(language: "fra", type: .subtitle)
+            ])
+
+            #expect(info?.resolution == "4K")
+            #expect(info?.videoRange == "Dolby Vision")
+            #expect(info?.audioFormat == "Dolby Atmos")
+            #expect(info?.subtitleLanguages.count == 2)
+            #expect(info?.hasSubtitles == true)
+        }
+
+        @Test("Resolution classes from dimensions")
+        func resolutionClasses() {
+            func resolution(width: Int, height: Int) -> String? {
+                MediaTechnicalInfo(from: [
+                    MediaStream(height: height, type: .video, width: width)
+                ])?.resolution
+            }
+
+            #expect(resolution(width: 7680, height: 4320) == "8K")
+            #expect(resolution(width: 3840, height: 1600) == "4K")
+            #expect(resolution(width: 1920, height: 800) == "1080p")
+            #expect(resolution(width: 1280, height: 720) == "720p")
+            #expect(resolution(width: 720, height: 480) == "SD")
+        }
+
+        @Test("SDR yields no range label; coarse HDR flag is the fallback")
+        func videoRangeLabels() {
+            let sdr = MediaTechnicalInfo(from: [
+                MediaStream(type: .video, videoRange: .sdr, videoRangeType: .sdr, width: 1920)
+            ])
+            #expect(sdr?.videoRange == nil)
+            #expect(sdr?.resolution == "1080p")
+
+            let coarseHDR = MediaTechnicalInfo(from: [
+                MediaStream(type: .video, videoRange: .hdr, width: 3840)
+            ])
+            #expect(coarseHDR?.videoRange == "HDR")
+
+            let hdr10Plus = MediaTechnicalInfo(from: [
+                MediaStream(type: .video, videoRangeType: .hdr10Plus, width: 3840)
+            ])
+            #expect(hdr10Plus?.videoRange == "HDR10+")
+        }
+
+        @Test("Audio label prefers the default stream and falls back to channels")
+        func audioLabels() {
+            let info = MediaTechnicalInfo(from: [
+                MediaStream(channels: 2, isDefault: false, type: .audio),
+                MediaStream(channels: 6, isDefault: true, type: .audio)
+            ])
+            #expect(info?.audioFormat == "5.1")
+
+            let stereo = MediaTechnicalInfo(from: [
+                MediaStream(channels: 2, type: .audio)
+            ])
+            #expect(stereo?.audioFormat == "Stereo")
+        }
+
+        @Test("Nil when streams are missing or carry nothing displayable")
+        func nilWhenEmpty() {
+            #expect(MediaTechnicalInfo(from: nil) == nil)
+            #expect(MediaTechnicalInfo(from: []) == nil)
+            #expect(MediaTechnicalInfo(from: [MediaStream(type: .video)]) == nil)
+        }
     }
 
     @Suite("Library Model")
@@ -180,8 +309,10 @@ struct JellyfinKitTests {
 
     @Suite("Image URLs")
     struct ImageURLTests {
-        private func makeClient(serverURL: String) -> JellyfinClient {
-            JellyfinClient(
+        // Qualified: the file imports JellyfinAPI (for adapter tests), which
+        // has its own `JellyfinClient`.
+        private func makeClient(serverURL: String) -> JellyfinKit.JellyfinClient {
+            JellyfinKit.JellyfinClient(
                 configuration: JellyfinClientConfiguration(serverURL: URL(string: serverURL)!)
             )
         }

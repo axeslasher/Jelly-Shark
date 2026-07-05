@@ -260,7 +260,16 @@ public struct MediaDetailView: View {
                 productionYear: 2024,
                 runTimeTicks: 72_000_000_000,
                 communityRating: 8.5,
-                officialRating: "PG-13"
+                criticRating: 93,
+                officialRating: "PG-13",
+                genres: ["Crime", "Drama", "Thriller"],
+                studios: ["A24"],
+                technicalInfo: MediaTechnicalInfo(
+                    resolution: "4K",
+                    videoRange: "Dolby Vision",
+                    audioFormat: "Dolby Atmos",
+                    subtitleLanguages: ["English"]
+                )
             )
         )
     }

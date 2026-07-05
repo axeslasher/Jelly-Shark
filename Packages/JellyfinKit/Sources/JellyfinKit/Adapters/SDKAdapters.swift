@@ -41,9 +41,21 @@ extension MediaItem {
             productionYear: dto.productionYear,
             runTimeTicks: dto.runTimeTicks.map(Int64.init),
             communityRating: dto.communityRating.map(Double.init),
+            criticRating: dto.criticRating.map(Double.init),
             officialRating: dto.officialRating,
             tagline: dto.taglines?.first,
             genres: dto.genres,
+            studios: dto.studios?.compactMap(\.name),
+            premiereDate: dto.premiereDate,
+            endDate: dto.endDate,
+            status: dto.status,
+            childCount: dto.childCount,
+            recursiveItemCount: dto.recursiveItemCount,
+            // Streams live on the media source; the item-level list is a
+            // convenience some responses omit, so prefer the source's.
+            technicalInfo: MediaTechnicalInfo(
+                from: dto.mediaSources?.first?.mediaStreams ?? dto.mediaStreams
+            ),
             imageTags: ImageTags(from: dto.imageTags, backdropTags: dto.backdropImageTags),
             userData: dto.userData.map { UserData(from: $0) },
             seriesId: dto.seriesID,
@@ -104,6 +116,114 @@ extension MediaType {
             self = .collectionFolder
         default:
             self = .unknown
+        }
+    }
+}
+
+// MARK: - MediaTechnicalInfo Adapter
+
+extension MediaTechnicalInfo {
+    /// Distill a stream list down to display-ready labels: the (first) video
+    /// stream's resolution class and dynamic range, the default audio stream's
+    /// format, and the unique subtitle languages. Nil when the streams carry
+    /// nothing displayable.
+    init?(from streams: [JellyfinAPI.MediaStream]?) {
+        guard let streams, !streams.isEmpty else { return nil }
+
+        let video = streams.first { $0.type == .video }
+        let audio = streams.first { $0.type == .audio && $0.isDefault == true }
+            ?? streams.first { $0.type == .audio }
+        let subtitles = streams.filter { $0.type == .subtitle }
+
+        let resolution = video.flatMap(Self.resolutionLabel)
+        let range = video.flatMap(Self.videoRangeLabel)
+        let audioFormat = audio.flatMap(Self.audioLabel)
+        let languages = Self.subtitleLanguages(from: subtitles)
+
+        guard resolution != nil || range != nil || audioFormat != nil || !languages.isEmpty else {
+            return nil
+        }
+
+        self.init(
+            resolution: resolution,
+            videoRange: range,
+            audioFormat: audioFormat,
+            subtitleLanguages: languages
+        )
+    }
+
+    /// Resolution class from pixel dimensions. Thresholds are deliberately
+    /// loose (mirroring jellyfin-web) so cropped/anamorphic encodes still
+    /// classify as their marketing resolution — a 3840×1600 scope film is "4K".
+    private static func resolutionLabel(for stream: JellyfinAPI.MediaStream) -> String? {
+        let width = stream.width ?? 0
+        let height = stream.height ?? 0
+        guard width > 0 || height > 0 else { return nil }
+
+        switch (width, height) {
+        case (7600..., _), (_, 4300...):
+            return "8K"
+        case (3800..., _), (_, 2100...):
+            return "4K"
+        case (1800..., _), (_, 1000...):
+            return "1080p"
+        case (1200..., _), (_, 700...):
+            return "720p"
+        default:
+            return "SD"
+        }
+    }
+
+    private static func videoRangeLabel(for stream: JellyfinAPI.MediaStream) -> String? {
+        switch stream.videoRangeType {
+        case .dovi, .doviWithHDR10, .doviWithHLG, .doviWithSDR,
+             .doviWithEL, .doviWithHDR10Plus, .doviWithELHDR10Plus:
+            return "Dolby Vision"
+        case .hdr10Plus:
+            return "HDR10+"
+        case .hdr10:
+            return "HDR10"
+        case .hlg:
+            return "HLG"
+        case .sdr:
+            return nil
+        default:
+            // Unknown/invalid range type: fall back to the coarse HDR flag.
+            return stream.videoRange == .hdr ? "HDR" : nil
+        }
+    }
+
+    private static func audioLabel(for stream: JellyfinAPI.MediaStream) -> String? {
+        switch stream.audioSpatialFormat {
+        case .dolbyAtmos:
+            return "Dolby Atmos"
+        case .dtsx:
+            return "DTS:X"
+        default:
+            break
+        }
+
+        // Channel count over channelLayout: layouts carry noisy variants like
+        // "5.1(side)" that don't read as badges.
+        switch stream.channels {
+        case .some(1): return "Mono"
+        case .some(2): return "Stereo"
+        case .some(6): return "5.1"
+        case .some(8): return "7.1"
+        case .some(let channels) where channels > 2: return "\(channels - 1).1"
+        default: return nil
+        }
+    }
+
+    /// Unique subtitle languages in stream order, localized for display
+    /// (Jellyfin reports ISO 639 codes like "eng").
+    private static func subtitleLanguages(from streams: [JellyfinAPI.MediaStream]) -> [String] {
+        var seen = Set<String>()
+        return streams.compactMap { stream in
+            guard let code = stream.language, !code.isEmpty,
+                  seen.insert(code.lowercased()).inserted
+            else { return nil }
+            return Locale.current.localizedString(forLanguageCode: code) ?? code
         }
     }
 }

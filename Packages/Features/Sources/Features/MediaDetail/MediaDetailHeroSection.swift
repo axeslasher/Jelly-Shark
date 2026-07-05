@@ -34,6 +34,24 @@ struct MediaDetailHeroSection: View {
         favoriteOverride ?? item.userData?.isFavorite ?? false
     }
 
+    /// Bordered technical badges beneath the metadata facts: resolution,
+    /// dynamic range, audio format, and a CC marker when subtitles exist.
+    private var techBadges: [String] {
+        guard let tech = item.technicalInfo else { return [] }
+        return [
+            tech.resolution,
+            tech.videoRange,
+            tech.audioFormat,
+            tech.hasSubtitles ? "CC" : nil
+        ].compactMap { $0 }
+    }
+
+    /// Up to three genres as a single subdued line ("Crime · Drama · Thriller")
+    private var genreLine: String? {
+        guard let genres = item.genres, !genres.isEmpty else { return nil }
+        return genres.prefix(3).joined(separator: " · ")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.lg) {
             titleTreatment
@@ -50,15 +68,28 @@ struct MediaDetailHeroSection: View {
                         overviewSection
                     }
                     MediaMetadataRow(
-                        year: item.productionYear,
-                        runtime: item.formattedRuntime,
+                        yearText: item.yearSpanText,
+                        // Series carry a per-episode runtime; the season count
+                        // is the meaningful "how much" figure there.
+                        runtime: item.type == .series ? nil : item.formattedRuntime,
+                        seasons: item.seasonCountText,
                         communityRating: item.communityRating,
-                        certificate: item.officialRating
+                        criticRating: item.criticRating,
+                        certificate: item.officialRating,
+                        techBadges: techBadges
                     )
+                    if let genreLine {
+                        Text(genreLine)
+                            .font(theme.jsCaption)
+                            .foregroundStyle(theme.tertiary)
+                            .fontWeight(.semibold)
+                            .lineLimit(1)
+                    }
                 }
                 CreditsColumn(
                     directorNames: directors.map(\.name),
-                    castNames: topCast.map(\.name)
+                    castNames: topCast.map(\.name),
+                    studioNames: item.studios ?? []
                 )
                 .frame(width: 250)
             }
