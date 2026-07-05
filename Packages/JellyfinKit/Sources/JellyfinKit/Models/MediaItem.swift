@@ -353,7 +353,20 @@ public struct UserData: Sendable, Equatable, Hashable {
 extension MediaItem {
     /// Runtime formatted as hours and minutes
     public var formattedRuntime: String? {
-        guard let ticks = runTimeTicks else { return nil }
+        runTimeTicks.map(Self.runtimeText)
+    }
+
+    /// Time left in an in-progress item, in the same "1h 5m" style as
+    /// `formattedRuntime`; nil without both a playback position and a runtime
+    public var formattedRemainingRuntime: String? {
+        guard let position = userData?.playbackPositionTicks,
+              let total = runTimeTicks,
+              total > position
+        else { return nil }
+        return Self.runtimeText(total - position)
+    }
+
+    private static func runtimeText(_ ticks: Int64) -> String {
         let totalMinutes = Int(ticks / 10_000_000 / 60)
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60
@@ -419,6 +432,16 @@ extension MediaItem {
     public var seasonCountText: String? {
         guard type == .series, let count = childCount, count > 0 else { return nil }
         return count == 1 ? "1 Season" : "\(count) Seasons"
+    }
+
+    /// Compact season/episode code (e.g., "S2E4"); nil unless the item is an
+    /// episode carrying both numbers
+    public var episodeCode: String? {
+        guard type == .episode,
+              let season = parentIndexNumber,
+              let episode = indexNumber
+        else { return nil }
+        return "S\(season)E\(episode)"
     }
 
     /// Display title for episodes (e.g., "S01E05 - Episode Title")

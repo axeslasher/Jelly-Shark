@@ -109,6 +109,49 @@ extension MediaItem {
         )
     }
 
+    /// Episode card for a series' Episodes shelf (16:9 still): an "S2E4"
+    /// eyebrow over the episode name, a synopsis, and a playback badge
+    /// (play/replay + runtime, or progress) — all captions ragged left. Wider than the generic
+    /// landscape card: episode stills carry the scene, and roughly
+    /// three-and-a-half cards per row reads best at 10 feet.
+    /// Unlike the navigation cards, clicking plays the episode immediately.
+    @MainActor @ViewBuilder
+    func episodeShelfItem(
+        client: JellyfinClientProtocol?,
+        width: CGFloat = 440,
+        onPlay: @escaping () -> Void
+    ) -> some View {
+        ArtworkShelfItem(
+            // 440pt is ~880 physical px on a 4K panel; fetch to match so the
+            // still isn't upscaled.
+            url: client?.landscapeURL(for: self, maxWidth: 1000),
+            blurHash: landscapeBlurHash,
+            title: name,
+            subtitle: episodeCode,
+            synopsis: overview ?? "",
+            captionAlignment: .leading,
+            subtitleAboveTitle: true,
+            placeholderIcon: "play.tv",
+            aspectRatio: 16.0 / 9.0,
+            width: width,
+            playbackBadge: playbackBadge,
+            action: onPlay
+        )
+    }
+
+    /// Playback state for the episode card's artwork treatment: in-progress
+    /// wins (play + progress bar), then played (replay + runtime), else
+    /// unplayed (play + runtime).
+    private var playbackBadge: PlaybackBadge {
+        if hasProgress, let progress = progressPercentage {
+            return .inProgress(progress, remaining: formattedRemainingRuntime)
+        }
+        if userData?.played == true {
+            return .played(runtime: formattedRuntime)
+        }
+        return .unplayed(runtime: formattedRuntime)
+    }
+
     /// Landscape card (16:9). Episodes show the episode title over the series
     /// name; everything else shows the name over the year.
     @MainActor @ViewBuilder

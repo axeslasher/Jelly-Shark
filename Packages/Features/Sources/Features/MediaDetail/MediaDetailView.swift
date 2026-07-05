@@ -19,6 +19,13 @@ public struct MediaDetailView: View {
     @State private var detailedItem: MediaItem?
     @State private var similarItems: [MediaItem] = []
 
+    /// Series-only state: the season list, every episode in series order (one
+    /// continuous shelf spans all seasons), and the episode the hero Play
+    /// button resolves to.
+    @State private var seasons: [MediaItem] = []
+    @State private var episodes: [MediaItem] = []
+    @State private var nextUpEpisode: MediaItem?
+
     /// Credits derived once when the detailed item lands (see `loadContent`),
     /// rather than re-filtering `people` on every body evaluation.
     @State private var directors: [CastMember] = []
@@ -58,15 +65,22 @@ public struct MediaDetailView: View {
         case shelves
     }
 
-    /// Scroll identity of the shelves region, targeted by the shelves snap.
-    private static let shelvesScrollID = "shelves"
+    /// Geometry the tvOS shelves snap needs (see `ScrollSnapMetrics`).
+    @State private var snapMetrics = ScrollSnapMetrics(containerHeight: 0, topInset: 0)
 
     @FocusState private var focusedRegion: FocusRegion?
 
     /// Handle for the two-anchor snap; only written on tvOS.
     @State private var scrollPosition = ScrollPosition(edge: .top)
 
-    @State private var isPresentingPlayer = false
+    /// Pending region snap (see `onChange(of: focusedRegion)`).
+    @State private var regionSnapTask: Task<Void, Never>?
+
+    /// The item currently being played, driving the player cover. Set by the
+    /// hero Play button (resolved next-up episode / the movie itself) and by
+    /// episode cards, which play immediately on click.
+    @State private var playbackItem: MediaItem?
+
     @State private var isPresentingOverview = false
 
     let item: MediaItem
@@ -81,6 +95,27 @@ public struct MediaDetailView: View {
         detailedItem ?? item
     }
 
+    /// What the hero Play button actually plays: series pages resolve to the
+    /// next-up episode (falling back to the selected season's first episode);
+    /// everything else plays the page's own item. Nil while a series' target
+    /// hasn't resolved yet — Play stays disabled rather than sending the
+    /// series itself to the player.
+    private var playableItem: MediaItem? {
+        guard item.type == .series else { return item }
+        return nextUpEpisode ?? episodes.first
+    }
+
+    /// Play-button title: series pages name their target episode
+    /// ("Resume S2E4"); everything else keeps plain Play/Resume.
+    private var playButtonTitle: String {
+        guard item.type == .series else {
+            return displayItem.hasProgress ? "Resume" : "Play"
+        }
+        guard let episode = playableItem, episode.type == .episode else { return "Play" }
+        let verb = episode.hasProgress ? "Resume" : "Play"
+        return episode.episodeCode.map { "\(verb) \($0)" } ?? verb
+    }
+
     public var body: some View {
         ScrollView {
             // A plain VStack (not LazyVStack): there are only ever three sections,
@@ -92,7 +127,9 @@ public struct MediaDetailView: View {
                     item: displayItem,
                     directors: directors,
                     topCast: topCast,
-                    isPresentingPlayer: $isPresentingPlayer,
+                    playTitle: playButtonTitle,
+                    playTarget: playableItem,
+                    playbackItem: $playbackItem,
                     isPresentingOverview: $isPresentingOverview
                 )
                 // Drift the hero lockup as it scrolls, in lockstep with the
@@ -113,13 +150,24 @@ public struct MediaDetailView: View {
                 // nudging the offset per row. The info section isn't focusable;
                 // it just rides along at the bottom of the page.
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                    // Episodes lead on series pages — they're the reason the
+                    // page was opened. Renders nothing for other types.
+                    EpisodesSection(
+                        seasons: seasons,
+                        episodes: episodes,
+                        // Same target the Play button resolves to: the shelf
+                        // pre-parks there and first focus lands on it.
+                        initialEpisodeId: (nextUpEpisode ?? episodes.first)?.id,
+                        isRegionFocused: focusedRegion == .shelves,
+                        playbackItem: $playbackItem
+                    )
+
                     CastShelfSection(people: displayItem.people ?? [])
 
                     SimilarItemsSection(items: similarItems)
 
                     MediaInfoSection(item: displayItem)
                 }
-                .id(Self.shelvesScrollID)
                 #if os(tvOS)
                 .focusSection()
                 .focused($focusedRegion, equals: .shelves)
@@ -130,12 +178,15 @@ public struct MediaDetailView: View {
             // Paired with the viewport-tall hero, this gives a clean hero →
             // shelves snap.
             //
-            // The layout marker is needed on every platform — the tvOS
-            // focus-region snap resolves `shelvesScrollID` through it. Only
-            // `.scrollTargetBehavior` is excluded on tvOS (below): it re-aligns
-            // the scroll out from under the focus engine, which traps focus in
-            // the hero. Behavior-driven snapping applies on visionOS / iOS only.
+            // tvOS is fully excluded from the scroll-target machinery: on
+            // hardware (Siri Remote pan gestures — a path the simulator's
+            // arrow keys never exercise) the target layout lets the pan drive
+            // the scroll view directly, blowing past focusable content with
+            // focus left behind. The tvOS focus-region snap below scrolls by
+            // geometry instead of by id, so it doesn't need the marker.
+            #if !os(tvOS)
             .scrollTargetLayout()
+            #endif
             // Bottom-only padding: a top inset would push the viewport-tall,
             // bottom-anchored hero below the fold, guaranteeing the focus engine
             // scrolls (and blurs the backdrop) the moment focus lands on Play.
@@ -156,12 +207,28 @@ public struct MediaDetailView: View {
         // focus engine still nudges further down as focus descends; this anchor
         // only defines where the page *arrives*.
         .onChange(of: focusedRegion) { _, region in
+            regionSnapTask?.cancel()
             guard let region else { return }
-            withAnimation(theme.animation) {
-                if region == .hero {
-                    scrollPosition.scrollTo(edge: .top)
-                } else {
-                    scrollPosition.scrollTo(id: Self.shelvesScrollID, anchor: .top)
+            regionSnapTask = Task {
+                // Let the focus engine finish its own reveal scroll (and any
+                // in-region focus steering) first, then assert the page
+                // anchor over it — otherwise the engine's settle wins the
+                // race and the page parks at an in-between offset.
+                try? await Task.sleep(for: .milliseconds(80))
+                guard !Task.isCancelled else { return }
+                withAnimation(theme.animation) {
+                    if region == .hero {
+                        scrollPosition.scrollTo(edge: .top)
+                    } else {
+                        // By geometry, not id: the hero is exactly one
+                        // container tall, so the shelves start one container
+                        // plus one section gap into the content. (Id-based
+                        // scrolls need `scrollTargetLayout`, which is what
+                        // hijacks Siri Remote pans on hardware.)
+                        scrollPosition.scrollTo(
+                            y: snapMetrics.containerHeight + SpacingTokens.sectionSpacing - snapMetrics.topInset
+                        )
+                    }
                 }
             }
         }
@@ -173,6 +240,16 @@ public struct MediaDetailView: View {
         // settles so they never start the fade. Redundant writes are skipped so
         // scrolling past the fold (where the clamp pins progress at 1) stops
         // invalidating.
+        // Capture the geometry the tvOS shelves snap needs: the shelves' top
+        // sits one viewport-tall hero plus one section gap into the content.
+        .onScrollGeometryChange(for: ScrollSnapMetrics.self) { geometry in
+            ScrollSnapMetrics(
+                containerHeight: geometry.containerSize.height,
+                topInset: geometry.contentInsets.top
+            )
+        } action: { _, metrics in
+            snapMetrics = metrics
+        }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
         } action: { _, offset in
@@ -187,15 +264,15 @@ public struct MediaDetailView: View {
             await loadContent()
         }
         #if os(macOS)
-        .sheet(isPresented: $isPresentingPlayer) {
+        .sheet(item: $playbackItem) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: item)
+                PlaybackContainerView(client: client, item: target)
             }
         }
         #else
-        .fullScreenCover(isPresented: $isPresentingPlayer) {
+        .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: item)
+                PlaybackContainerView(client: client, item: target)
             }
         }
         #endif
@@ -248,8 +325,23 @@ public struct MediaDetailView: View {
     private func loadContent() async {
         guard let client = session.client else { return }
 
+        // Reset series state so a reused view (item.id change) doesn't show
+        // the previous series' seasons while the new ones load.
+        seasons = []
+        episodes = []
+        nextUpEpisode = nil
+
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
         detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
+
+        if item.type == .series {
+            async let seasonsFetch = client.getSeasons(seriesId: item.id)
+            async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
+            async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
+            seasons = (await (try? seasonsFetch)) ?? []
+            episodes = (await (try? episodesFetch)) ?? []
+            nextUpEpisode = await (try? nextUpFetch) ?? nil
+        }
 
         // Derive the credits once per fetch instead of per body evaluation.
         // Directors: handles both standard data (`kind == "Director"`) and servers
@@ -265,6 +357,14 @@ public struct MediaDetailView: View {
 
         similarItems = (try? await client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
     }
+}
+
+/// Container geometry captured for the tvOS shelves snap: the shelves' top
+/// offset is derived from these rather than an id lookup, so the snap works
+/// without `scrollTargetLayout`.
+private struct ScrollSnapMetrics: Equatable {
+    var containerHeight: CGFloat
+    var topInset: CGFloat
 }
 
 #Preview {

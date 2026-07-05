@@ -48,7 +48,7 @@ public protocol JellyfinClientProtocol: Sendable {
     ///   - limit: Maximum number of items to return
     ///   - startIndex: Starting index for pagination
     /// - Returns: Array of media items
-    func getLibraryItems(libraryId: String, limit: Int?, startIndex: Int?) async throws -> [MediaItem]
+    func getLibraryItems(libraryId: String, itemTypes: [MediaType]?, limit: Int?, startIndex: Int?) async throws -> [MediaItem]
 
     // MARK: - Media
 
@@ -151,6 +151,20 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameter episode: The current episode
     /// - Returns: The next episode, or nil if this is the last one (or not an episode)
     func getNextEpisode(after episode: MediaItem) async throws -> MediaItem?
+
+    /// Fetch a series' seasons, in order (Specials come back as season 0)
+    func getSeasons(seriesId: String) async throws -> [MediaItem]
+
+    /// Fetch a series' episodes in series order, with user data (watched
+    /// state, progress) for the current user. Pass a season id to limit the
+    /// fetch to one season; nil returns every episode of the series.
+    func getEpisodes(seriesId: String, seasonId: String?) async throws -> [MediaItem]
+
+    /// The episode the user should watch next for a series: the in-progress or
+    /// first-unwatched episode per the server's Next Up logic, or nil when the
+    /// server has no suggestion (e.g., fully watched, or never started —
+    /// callers can fall back to the first episode)
+    func getNextUpEpisode(seriesId: String) async throws -> MediaItem?
 
     // MARK: - User Data
 
@@ -377,7 +391,12 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func getLibraryItems(libraryId: String, limit: Int?, startIndex: Int?) async throws -> [MediaItem] {
+    public func getLibraryItems(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        limit: Int?,
+        startIndex: Int?
+    ) async throws -> [MediaItem] {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
         }
@@ -389,6 +408,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.limit = limit
             parameters.startIndex = startIndex
             parameters.isRecursive = true
+            // Recursive fetches return a library's entire tree (a TV library
+            // yields series + seasons + episodes); the type filter keeps the
+            // grid to top-level titles.
+            parameters.includeItemTypes = itemTypes.map { $0.compactMap(\.baseItemKind) }
             parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
             parameters.sortBy = [.sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
@@ -725,6 +748,79 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             }
 
             return MediaItem(from: items[1])
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getSeasons(seriesId: String) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetSeasonsParameters()
+            parameters.userID = userId
+
+            let response = try await sdkClient.send(
+                Paths.getSeasons(seriesID: seriesId, parameters: parameters)
+            )
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getEpisodes(seriesId: String, seasonId: String?) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetEpisodesParameters()
+            parameters.userID = userId
+            parameters.seasonID = seasonId
+            // Overview feeds a future synopsis treatment on the cards; user
+            // data (watched/progress) rides along by default.
+            parameters.fields = [.overview]
+
+            let response = try await sdkClient.send(
+                Paths.getEpisodes(seriesID: seriesId, parameters: parameters)
+            )
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getNextUpEpisode(seriesId: String) async throws -> MediaItem? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetNextUpParameters()
+            parameters.userID = userId
+            parameters.seriesID = seriesId
+            parameters.limit = 1
+            // Surface the first episode for never-started series too, so the
+            // hero Play button always has a target.
+            parameters.isDisableFirstEpisode = false
+            parameters.enableResumable = true
+
+            let response = try await sdkClient.send(
+                Paths.getNextUp(parameters: parameters)
+            )
+
+            return response.value.items?.first.map { MediaItem(from: $0) }
         } catch let error as APIError {
             throw error
         } catch {

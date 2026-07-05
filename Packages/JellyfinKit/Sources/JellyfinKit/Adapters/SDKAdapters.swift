@@ -302,6 +302,26 @@ extension MediaTechnicalInfo {
     }
 }
 
+extension MediaType {
+    /// Reverse of `MediaType(from:)`, for request filters
+    var baseItemKind: JellyfinAPI.BaseItemKind? {
+        switch self {
+        case .movie: return .movie
+        case .series: return .series
+        case .season: return .season
+        case .episode: return .episode
+        case .boxSet: return .boxSet
+        case .musicAlbum: return .musicAlbum
+        case .musicArtist: return .musicArtist
+        case .audio: return .audio
+        case .video: return .video
+        case .folder: return .folder
+        case .collectionFolder: return .collectionFolder
+        case .unknown: return nil
+        }
+    }
+}
+
 // MARK: - ImageTags Adapter
 
 extension ImageTags {
