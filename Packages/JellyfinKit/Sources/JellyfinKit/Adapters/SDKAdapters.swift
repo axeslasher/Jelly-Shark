@@ -52,7 +52,11 @@ extension MediaItem {
             childCount: dto.childCount,
             recursiveItemCount: dto.recursiveItemCount,
             technicalInfo: MediaTechnicalInfo(from: dto),
-            imageTags: ImageTags(from: dto.imageTags, backdropTags: dto.backdropImageTags),
+            imageTags: ImageTags(
+                from: dto.imageTags,
+                backdropTags: dto.backdropImageTags,
+                blurHashes: dto.imageBlurHashes
+            ),
             userData: dto.userData.map { UserData(from: $0) },
             seriesId: dto.seriesID,
             seriesName: dto.seriesName,
@@ -306,16 +310,32 @@ extension ImageTags {
     /// The server reports backdrops in the separate `BackdropImageTags` array
     /// rather than the `ImageTags` dictionary, so the first backdrop tag is
     /// taken from there when the dictionary has none.
-    init?(from tags: [String: String]?, backdropTags: [String]? = nil) {
+    ///
+    /// BlurHashes arrive keyed by image tag; each is resolved against the tag
+    /// selected above, falling back to the type's first hash when the keying
+    /// doesn't line up (there's typically exactly one per type anyway).
+    init?(
+        from tags: [String: String]?,
+        backdropTags: [String]? = nil,
+        blurHashes: JellyfinAPI.BaseItemDto.ImageBlurHashes? = nil
+    ) {
         let backdrop = tags?["Backdrop"] ?? backdropTags?.first
         guard tags != nil || backdrop != nil else { return nil }
+
+        func hash(in dictionary: [String: String]?, for tag: String?) -> String? {
+            guard let dictionary else { return nil }
+            return tag.flatMap { dictionary[$0] } ?? dictionary.first?.value
+        }
 
         self.init(
             primary: tags?["Primary"],
             backdrop: backdrop,
             banner: tags?["Banner"],
             thumb: tags?["Thumb"],
-            logo: tags?["Logo"]
+            logo: tags?["Logo"],
+            primaryBlurHash: hash(in: blurHashes?.primary, for: tags?["Primary"]),
+            backdropBlurHash: hash(in: blurHashes?.backdrop, for: backdrop),
+            thumbBlurHash: hash(in: blurHashes?.thumb, for: tags?["Thumb"])
         )
     }
 }

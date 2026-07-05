@@ -22,6 +22,7 @@ import SwiftUI
 /// where switching tabs with a pushed view strands the pushed screen).
 public struct ArtworkShelfItem<Value: Hashable>: View {
     private let url: URL?
+    private let blurHash: String?
     private let title: String
     private let subtitle: String?
     private let placeholderIcon: String
@@ -34,6 +35,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
 
     public init(
         url: URL?,
+        blurHash: String? = nil,
         title: String,
         subtitle: String? = nil,
         placeholderIcon: String = "film.fill",
@@ -43,6 +45,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         value: Value
     ) {
         self.url = url
+        self.blurHash = blurHash
         self.title = title
         self.subtitle = subtitle
         self.placeholderIcon = placeholderIcon
@@ -80,7 +83,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     }
 
     private var artwork: some View {
-        ArtworkImage(url: url, placeholderIcon: placeholderIcon)
+        ArtworkImage(url: url, blurHash: blurHash, placeholderIcon: placeholderIcon)
             .aspectRatio(aspectRatio, contentMode: .fit)
             .frame(width: width)
             .overlay(alignment: .bottomLeading) {

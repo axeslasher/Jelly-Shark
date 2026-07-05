@@ -9,12 +9,15 @@ struct MediaDetailHeroBackdrop: View {
     @Environment(\.theme) private var theme
 
     let url: URL
+    /// BlurHash placeholder shown while the backdrop loads — a full-bleed
+    /// color-accurate wash instead of a flat surface
+    let blurHash: String?
     /// Continuous scroll progress: 0 at the top, 1 once the hero has fully
     /// transitioned to its dimmed, blurred wash. Already clamped by the caller.
     let progress: CGFloat
 
     var body: some View {
-        ArtworkImage(url: url)
+        ArtworkImage(url: url, blurHash: blurHash)
             .overlay {
                 // Bottom-edge "melt", above the fold only (fades out on scroll
                 // so the below-fold state is purely the dim + blur wash that

@@ -38,6 +38,7 @@ deciding which fields to incorporate into `MediaDetailView`.
 | `childCount`, `recursiveItemCount` | childCount → "N Seasons" (series metadata row) |
 | `technicalInfo` (distilled from the default media source) | metadata row (resolution / video range / audio) + info section (Languages and File columns) |
 | `parentArtwork` (ancestor backdrop/logo/series-poster tags + owning ids) | artwork fallbacks: episode heroes inherit the series backdrop/logo, poster cards the series poster |
+| `imageBlurHashes` → `ImageTags.*BlurHash` (primary/backdrop/thumb) | loading placeholders: `ArtworkImage` decodes and shows the blurhash while artwork loads (shelf cards, home hero, detail backdrop) |
 
 `technicalInfo` intentionally does **not** expose raw `MediaStream`s or
 `MediaSourceInfo`. The adapter reduces the default media source to
@@ -64,8 +65,8 @@ Worth considering, roughly by payoff:
 |---|---|
 | `remoteTrailers`, `trailerCount`, `localTrailerCount` | Trailer button beside Play (URLs are usually YouTube — needs a tvOS playability check) |
 | `chapters` (name, `startPositionTicks`, image tag) | Scene-selection shelf / playback entry points |
-| `imageBlurHashes` | Blurhash placeholders for all artwork — biggest available loading-polish win (`ArtworkImage`, hero backdrop) |
 | `parentThumbItemID`, `parentThumbImageTag` | Remaining ancestor-art fallback (thumb); backdrop/logo/series-poster are mapped via `parentArtwork` |
+| people `imageBlurHashes` | Blurhash placeholders for cast headshots (`CastCard`) — item images are done; people not yet |
 | `indexNumberEnd` | Correct "S01E01–02" labels for multi-episode files |
 | `cumulativeRunTimeTicks` | Total runtime for series/box sets |
 | `dateCreated` | "Added on …" secondary metadata |
@@ -94,7 +95,9 @@ Worth considering, roughly by payoff:
 3. **Feature tier** (each its own feature with UI decisions):
    - episode parent-art fallbacks — **done** (`parentArtwork` +
      `MediaArtwork` fallback chains)
-   - blurhash placeholders — next up
+   - blurhash placeholders — **done** for item artwork (`BlurHash` decoder in
+     DesignSystem, `ArtworkImage` placeholder, shelf cards + heroes); cast
+     headshots not yet
    - chapter shelf — not started
    - trailer button — descoped: `remoteTrailers` are YouTube URLs, which
      tvOS can't play; only viable for local trailers, which most libraries
