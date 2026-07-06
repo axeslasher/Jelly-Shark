@@ -28,6 +28,9 @@ public struct PersonDetailView: View {
     /// The episode currently being played, driving the player cover.
     @State private var playbackItem: MediaItem?
 
+    /// Whether the full biography is presented in its reading overlay.
+    @State private var isPresentingBiography = false
+
     /// Items fetched per shelf: a few pages of horizontal scrolling without
     /// pagination, and three light queries per page load.
     private static let shelfLimit = 25
@@ -39,11 +42,15 @@ public struct PersonDetailView: View {
     public var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                PersonDetailHeader(member: member, person: person)
-                    .padding(.horizontal, SpacingTokens.screenPadding)
-                    // The header isn't a viewport-tall hero; inset it from the
-                    // top edge so the lockup breathes.
-                    .padding(.top, SpacingTokens.xxl)
+                PersonDetailHeader(
+                    member: member,
+                    person: person,
+                    isPresentingBiography: $isPresentingBiography
+                )
+                .padding(.horizontal, SpacingTokens.screenPadding)
+                // The header isn't a viewport-tall hero; inset it from the
+                // top edge so the lockup breathes.
+                .padding(.top, SpacingTokens.xxl)
 
                 // One focus region for all shelves so tvOS treats them as a
                 // single page — moving between rows doesn't nudge the offset
@@ -82,13 +89,29 @@ public struct PersonDetailView: View {
                 PlaybackContainerView(client: client, item: target)
             }
         }
+        .sheet(isPresented: $isPresentingBiography) {
+            biographyOverlay
+        }
         #else
         .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
                 PlaybackContainerView(client: client, item: target)
             }
         }
+        .fullScreenCover(isPresented: $isPresentingBiography) {
+            biographyOverlay
+        }
         #endif
+    }
+
+    /// The biography's full-screen reading view — the same overlay the media
+    /// detail uses for its overview, over the borrowed filmography backdrop.
+    private var biographyOverlay: OverviewOverlay {
+        OverviewOverlay(
+            tagline: nil,
+            overview: person?.biography,
+            backdropURL: backdropItem.flatMap { session.client?.backdropURL(for: $0) }
+        )
     }
 
     /// The borrowed backdrop, pinned at `progress: 1` — the media detail's

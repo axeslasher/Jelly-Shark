@@ -190,43 +190,6 @@ struct MediaDetailHeroSection: View {
         .buttonStyle(.plain)
     }
 
-    /// The overview button's label, split out so it can watch its own focus.
-    ///
-    /// When the `.plain` button gains focus, tvOS lifts the label onto a light
-    /// system platter — the theme's regular content colors are designed for the
-    /// dark backdrop and disappear against it, so the text swaps to the theme's
-    /// on-platter colors. `\.isFocused` is only populated inside the focusable's
-    /// subtree, which is why this is its own view rather than inline in the
-    /// section.
-    private struct OverviewLabel: View {
-        @Environment(\.theme) private var theme
-        @Environment(\.isFocused) private var isFocused
-
-        let tagline: String?
-        let overview: String?
-
-        var body: some View {
-            VStack(alignment: .leading, spacing: SpacingTokens.sm) {
-                if let tagline, !tagline.isEmpty {
-                    Text(tagline)
-                        .font(theme.jsHeadline)
-                        .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
-                        .lineLimit(2)
-                }
-                if let overview {
-                    Text(overview)
-                        .font(theme.jsOverview)
-                        .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
-                        .lineSpacing(4)
-                        .lineLimit(2)
-                }
-            }
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .animation(theme.animation, value: isFocused)
-        }
-    }
-
     /// Optimistically flip the watched state, then persist; revert on failure.
     private func togglePlayed() async {
         guard let client = session.client else { return }

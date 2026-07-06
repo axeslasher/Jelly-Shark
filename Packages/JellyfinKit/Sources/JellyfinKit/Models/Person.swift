@@ -31,6 +31,9 @@ public struct Person: Identifiable, Sendable, Equatable, Hashable {
     /// BlurHash for the primary image, when the server provides one
     public let primaryBlurHash: String?
 
+    /// Whether the current user has favorited this person
+    public let isFavorite: Bool
+
     public init(
         id: String,
         name: String,
@@ -39,7 +42,8 @@ public struct Person: Identifiable, Sendable, Equatable, Hashable {
         deathDate: Date? = nil,
         birthPlace: String? = nil,
         primaryImageTag: String? = nil,
-        primaryBlurHash: String? = nil
+        primaryBlurHash: String? = nil,
+        isFavorite: Bool = false
     ) {
         self.id = id
         self.name = name
@@ -49,6 +53,7 @@ public struct Person: Identifiable, Sendable, Equatable, Hashable {
         self.birthPlace = birthPlace
         self.primaryImageTag = primaryImageTag
         self.primaryBlurHash = primaryBlurHash
+        self.isFavorite = isFavorite
     }
 }
 

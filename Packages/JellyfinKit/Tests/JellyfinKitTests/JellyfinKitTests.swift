@@ -242,7 +242,8 @@ struct JellyfinKitTests {
                 overview: "An English actor.",
                 premiereDate: birth,
                 productionLocations: ["London, England, UK", "Elsewhere"],
-                type: .person
+                type: .person,
+                userData: UserItemDataDto(isFavorite: true)
             ))
 
             #expect(person.id == "person-guid")
@@ -253,6 +254,7 @@ struct JellyfinKitTests {
             #expect(person.birthPlace == "London, England, UK")
             #expect(person.primaryImageTag == "head-tag")
             #expect(person.primaryBlurHash == "hash-1")
+            #expect(person.isFavorite)
         }
 
         @Test("Falls back for missing id, name, and optional fields")
@@ -267,6 +269,7 @@ struct JellyfinKitTests {
             #expect(person.birthPlace == nil)
             #expect(person.primaryImageTag == nil)
             #expect(person.primaryBlurHash == nil)
+            #expect(!person.isFavorite)
         }
     }
 

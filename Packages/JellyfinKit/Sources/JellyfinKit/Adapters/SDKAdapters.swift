@@ -102,7 +102,8 @@ extension Person {
             deathDate: dto.endDate,
             birthPlace: dto.productionLocations?.first,
             primaryImageTag: primaryTag,
-            primaryBlurHash: primaryTag.flatMap { dto.imageBlurHashes?.primary?[$0] }
+            primaryBlurHash: primaryTag.flatMap { dto.imageBlurHashes?.primary?[$0] },
+            isFavorite: dto.userData?.isFavorite ?? false
         )
     }
 }
