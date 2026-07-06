@@ -115,10 +115,13 @@ extension MediaItem {
     /// landscape card: episode stills carry the scene, and roughly
     /// three-and-a-half cards per row reads best at 10 feet.
     /// Unlike the navigation cards, clicking plays the episode immediately.
+    /// `showsSeriesName` prefixes the eyebrow with the series name — for
+    /// shelves outside a series page, where the episode needs that context.
     @MainActor @ViewBuilder
     func episodeShelfItem(
         client: JellyfinClientProtocol?,
         width: CGFloat = 440,
+        showsSeriesName: Bool = false,
         onPlay: @escaping () -> Void
     ) -> some View {
         ArtworkShelfItem(
@@ -127,7 +130,9 @@ extension MediaItem {
             url: client?.landscapeURL(for: self, maxWidth: 1000),
             blurHash: landscapeBlurHash,
             title: name,
-            subtitle: episodeCode,
+            subtitle: showsSeriesName
+                ? [seriesName, episodeCode].compactMap(\.self).joined(separator: " · ")
+                : episodeCode,
             synopsis: overview ?? "",
             captionAlignment: .leading,
             subtitleAboveTitle: true,

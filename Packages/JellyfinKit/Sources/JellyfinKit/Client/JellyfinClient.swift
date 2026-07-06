@@ -71,6 +71,28 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Matching media items (movies, series, episodes)
     func searchItems(query: String, limit: Int?) async throws -> [MediaItem]
 
+    // MARK: - People
+
+    /// Fetch a person's details. Persons are items on the server, so the ID
+    /// is a regular item ID (headshots use the standard image endpoint).
+    /// - Parameter personId: The person's item ID
+    /// - Returns: The person's details
+    func getPerson(personId: String) async throws -> Person
+
+    /// Fetch items featuring a person, newest first
+    /// - Parameters:
+    ///   - personId: The person's item ID
+    ///   - itemTypes: Which item kinds to return (e.g., `[.movie]`)
+    ///   - personTypes: Credit-kind filter (e.g., `["Actor"]`); nil for any credit
+    ///   - limit: Maximum number of items to return
+    /// - Returns: Media items the person is credited on
+    func getItemsFeaturingPerson(
+        personId: String,
+        itemTypes: [MediaType],
+        personTypes: [String]?,
+        limit: Int?
+    ) async throws -> [MediaItem]
+
     /// Get the image URL for a media item
     /// - Parameters:
     ///   - itemId: The item ID
@@ -484,6 +506,59 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.fields = [.overview, .genres, .dateCreated]
             parameters.sortBy = [.sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    // MARK: - People
+
+    public func getPerson(personId: String) async throws -> Person {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            let response = try await sdkClient.send(
+                Paths.getItem(itemID: personId, userID: userId)
+            )
+
+            return Person(from: response.value)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getItemsFeaturingPerson(
+        personId: String,
+        itemTypes: [MediaType],
+        personTypes: [String]?,
+        limit: Int?
+    ) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.isRecursive = true
+            parameters.personIDs = [personId]
+            parameters.personTypes = personTypes
+            parameters.includeItemTypes = itemTypes.compactMap(\.baseItemKind)
+            parameters.fields = [.overview, .genres, .dateCreated]
+            // Newest work first: recency is the natural read of a filmography.
+            parameters.sortBy = [.premiereDate, .productionYear, .sortName]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.descending]
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
