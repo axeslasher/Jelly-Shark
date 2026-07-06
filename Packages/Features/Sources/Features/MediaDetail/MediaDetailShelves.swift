@@ -12,11 +12,22 @@ struct CastShelfSection: View {
         if let client = session.client, !people.isEmpty {
             ContentShelf("Cast & Crew", icon: "person.2.fill") {
                 ForEach(people) { member in
-                    CastCard(
-                        url: client.headshotURL(for: member),
-                        name: member.name,
-                        role: member.role ?? member.kind
-                    )
+                    // People without a real server id can't be fetched, so
+                    // their cards keep the focus lift but don't navigate.
+                    if member.hasServerId {
+                        CastCard(
+                            url: client.headshotURL(for: member),
+                            name: member.name,
+                            role: member.role ?? member.kind,
+                            value: member
+                        )
+                    } else {
+                        CastCard(
+                            url: client.headshotURL(for: member),
+                            name: member.name,
+                            role: member.role ?? member.kind
+                        )
+                    }
                 }
             }
         }

@@ -126,8 +126,9 @@ public struct RootView: View {
     }
 
     /// The per-tab `NavigationStack`, bound to this tab's path, with the
-    /// media-detail destination registered at the root so every shelf/grid
-    /// card (and details pushed from other details) resolves through it.
+    /// media-detail and person-detail destinations registered at the root so
+    /// every shelf/grid card (and details pushed from other details) resolves
+    /// through it.
     private func navigationRoot(
         for tab: AppTab,
         @ViewBuilder content: () -> some View
@@ -136,6 +137,9 @@ public struct RootView: View {
             content()
                 .navigationDestination(for: MediaItem.self) { item in
                     MediaDetailView(item: item)
+                }
+                .navigationDestination(for: CastMember.self) { member in
+                    PersonDetailView(member: member)
                 }
         }
     }

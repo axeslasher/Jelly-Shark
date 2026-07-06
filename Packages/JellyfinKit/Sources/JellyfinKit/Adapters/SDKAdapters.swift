@@ -69,6 +69,8 @@ extension MediaItem {
                 // so `ForEach` identity stays unique — two id-less people must not
                 // both map to "". Headshot URLs are unaffected: they require
                 // `primaryImageTag`, which servers only send alongside a real id.
+                // `CastMember.hasServerId` detects this fallback, so keep the
+                // "person-" prefix and that check in sync.
                 CastMember(
                     id: person.id.flatMap { $0.isEmpty ? nil : $0 } ?? "person-\(index)",
                     name: person.name ?? "",
@@ -78,6 +80,30 @@ extension MediaItem {
                 )
             },
             parentArtwork: ParentArtwork(from: dto)
+        )
+    }
+}
+
+// MARK: - Person Adapter
+
+extension Person {
+    /// Create a Person from the SDK's BaseItemDto.
+    ///
+    /// Person items overload generic dto fields: `PremiereDate` is the birth
+    /// date, `EndDate` the death date, `ProductionLocations` the birthplace,
+    /// and `Overview` the biography.
+    init(from dto: JellyfinAPI.BaseItemDto) {
+        let primaryTag = dto.imageTags?["Primary"]
+        self.init(
+            id: dto.id ?? "",
+            name: dto.name ?? "Unknown",
+            biography: dto.overview,
+            birthDate: dto.premiereDate,
+            deathDate: dto.endDate,
+            birthPlace: dto.productionLocations?.first,
+            primaryImageTag: primaryTag,
+            primaryBlurHash: primaryTag.flatMap { dto.imageBlurHashes?.primary?[$0] },
+            isFavorite: dto.userData?.isFavorite ?? false
         )
     }
 }

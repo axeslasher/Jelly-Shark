@@ -35,3 +35,12 @@ public struct CastMember: Identifiable, Sendable, Equatable, Hashable {
         self.primaryImageTag = primaryImageTag
     }
 }
+
+extension CastMember {
+    /// Whether `id` is a real server ID (fetchable, navigable) rather than the
+    /// adapter's position-based "person-N" fallback for servers that omit
+    /// person IDs. Real Jellyfin IDs are GUIDs, so the prefix can't collide.
+    public var hasServerId: Bool {
+        !id.isEmpty && !id.hasPrefix("person-")
+    }
+}

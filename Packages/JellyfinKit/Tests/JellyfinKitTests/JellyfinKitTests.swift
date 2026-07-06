@@ -227,6 +227,94 @@ struct JellyfinKitTests {
         }
     }
 
+    @Suite("Person Adapter")
+    struct PersonAdapterTests {
+        @Test("Maps person items' overloaded dto fields to biographical names")
+        func mapsBiographicalFields() {
+            let birth = Date(timeIntervalSince1970: 0)
+            let death = Date(timeIntervalSince1970: 1_000_000_000)
+            let person = Person(from: BaseItemDto(
+                endDate: death,
+                id: "person-guid",
+                imageBlurHashes: BaseItemDto.ImageBlurHashes(primary: ["head-tag": "hash-1"]),
+                imageTags: ["Primary": "head-tag"],
+                name: "Boris Karloff",
+                overview: "An English actor.",
+                premiereDate: birth,
+                productionLocations: ["London, England, UK", "Elsewhere"],
+                type: .person,
+                userData: UserItemDataDto(isFavorite: true)
+            ))
+
+            #expect(person.id == "person-guid")
+            #expect(person.name == "Boris Karloff")
+            #expect(person.biography == "An English actor.")
+            #expect(person.birthDate == birth)
+            #expect(person.deathDate == death)
+            #expect(person.birthPlace == "London, England, UK")
+            #expect(person.primaryImageTag == "head-tag")
+            #expect(person.primaryBlurHash == "hash-1")
+            #expect(person.isFavorite)
+        }
+
+        @Test("Falls back for missing id, name, and optional fields")
+        func fallsBackWhenFieldsMissing() {
+            let person = Person(from: BaseItemDto(type: .person))
+
+            #expect(person.id == "")
+            #expect(person.name == "Unknown")
+            #expect(person.biography == nil)
+            #expect(person.birthDate == nil)
+            #expect(person.deathDate == nil)
+            #expect(person.birthPlace == nil)
+            #expect(person.primaryImageTag == nil)
+            #expect(person.primaryBlurHash == nil)
+            #expect(!person.isFavorite)
+        }
+    }
+
+    @Suite("Person Model")
+    struct PersonModelTests {
+        private func date(_ year: Int, _ month: Int, _ day: Int) -> Date {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "UTC")!
+            return calendar.date(from: DateComponents(year: year, month: month, day: day))!
+        }
+
+        @Test("Age at death when a death date is set")
+        func ageAtDeath() {
+            let person = Person(
+                id: "1", name: "P",
+                birthDate: date(1887, 11, 23),
+                deathDate: date(1969, 2, 2)
+            )
+            #expect(person.age == 81)
+        }
+
+        @Test("Age is nil without a birth date")
+        func ageNilWithoutBirthDate() {
+            let person = Person(id: "1", name: "P", deathDate: date(1969, 2, 2))
+            #expect(person.age == nil)
+        }
+
+        @Test("Formatted dates propagate nil")
+        func formattedDatesNilPropagation() {
+            let person = Person(id: "1", name: "P")
+            #expect(person.formattedBirthDate == nil)
+            #expect(person.formattedDeathDate == nil)
+        }
+    }
+
+    @Suite("CastMember Model")
+    struct CastMemberModelTests {
+        @Test("hasServerId rejects empty and position-fallback ids")
+        func hasServerIdDetectsFallbacks() {
+            #expect(!CastMember(id: "", name: "A", kind: "Actor").hasServerId)
+            #expect(!CastMember(id: "person-3", name: "B", kind: "Actor").hasServerId)
+            #expect(CastMember(id: "f4b2c8a1d9e34567", name: "C", kind: "Actor").hasServerId)
+        }
+    }
+
     @Suite("MediaTechnicalInfo Adapter")
     struct MediaTechnicalInfoAdapterTests {
         /// Wraps bare streams in a minimal item DTO, the shape most tests need.

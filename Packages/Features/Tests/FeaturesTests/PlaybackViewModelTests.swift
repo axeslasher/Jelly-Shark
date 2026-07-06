@@ -32,6 +32,8 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var librariesResult: Result<[Library], Error> = .success([])
     var searchQueries: [String] = []
     var searchResult: Result<[MediaItem], Error> = .success([])
+    var personResult: Result<Person, Error> = .success(Person(id: "person-id", name: "Person"))
+    var itemsFeaturingPersonRequests: [(personId: String, itemTypes: [MediaType])] = []
 
     func authenticate(username: String, password: String) async throws -> User {
         let user = User(id: "user-1", name: username)
@@ -69,6 +71,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL {
         serverURL
+    }
+
+    func getPerson(personId: String) async throws -> Person { try personResult.get() }
+
+    func getItemsFeaturingPerson(
+        personId: String,
+        itemTypes: [MediaType],
+        personTypes: [String]?,
+        limit: Int?
+    ) async throws -> [MediaItem] {
+        itemsFeaturingPersonRequests.append((personId, itemTypes))
+        return []
     }
 
     func getResumeItems(limit: Int?) async throws -> [MediaItem] { [] }
