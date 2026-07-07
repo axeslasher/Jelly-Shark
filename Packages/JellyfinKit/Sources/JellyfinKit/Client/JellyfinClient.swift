@@ -62,6 +62,16 @@ public protocol JellyfinClientProtocol: Sendable {
     /// official ratings, years), for building filter menus
     func getLibraryFilterOptions(libraryId: String, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions
 
+    /// Compute the filter values still available under the given query by
+    /// scanning the matching items, so menus can hide dead-end options
+    /// - Returns: The narrowed options, or nil when the result set is too
+    ///   large to scan (callers should fall back to the full options)
+    func getLibraryFilterOptions(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        matching query: LibraryQuery
+    ) async throws -> LibraryFilterOptions?
+
     // MARK: - Media
 
     /// Fetch details for a specific media item
@@ -450,11 +460,8 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
             parameters.sortBy = query.sort.sdkSortBy
             parameters.sortOrder = [query.direction.sdkSortOrder]
-            parameters.genres = query.genres.isEmpty ? nil : query.genres.sorted()
-            parameters.years = query.expandedYears
-            parameters.officialRatings = query.officialRatings.isEmpty ? nil : query.officialRatings.sorted()
-            parameters.filters = query.sdkFilters
             parameters.enableTotalRecordCount = true
+            Self.apply(query, to: &parameters)
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
@@ -464,6 +471,57 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 startIndex: value.startIndex ?? startIndex,
                 totalRecordCount: value.totalRecordCount
             )
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    /// Translate a query's filter selections onto an items request
+    private static func apply(_ query: LibraryQuery, to parameters: inout Paths.GetItemsParameters) {
+        parameters.genres = query.genres.isEmpty ? nil : query.genres.sorted()
+        parameters.years = query.expandedYears
+        parameters.officialRatings = query.officialRatings.isEmpty ? nil : query.officialRatings.sorted()
+        parameters.filters = query.sdkFilters
+    }
+
+    /// Largest result set the narrowing scan will fetch in one request;
+    /// beyond this the scan reports nil and menus fall back to full options
+    private static let narrowingScanLimit = 2000
+
+    public func getLibraryFilterOptions(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        matching query: LibraryQuery
+    ) async throws -> LibraryFilterOptions? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.parentID = libraryId
+            parameters.isRecursive = true
+            parameters.includeItemTypes = itemTypes.map { $0.compactMap(\.baseItemKind) }
+            // A slim scan: just enough of each matching item to aggregate
+            // the filter values still in play
+            parameters.fields = [.genres]
+            parameters.enableImages = false
+            parameters.enableUserData = false
+            parameters.limit = Self.narrowingScanLimit
+            parameters.enableTotalRecordCount = true
+            Self.apply(query, to: &parameters)
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+
+            let value = response.value
+            let items = value.items ?? []
+            if let total = value.totalRecordCount, total > items.count {
+                return nil
+            }
+            return LibraryFilterOptions(aggregating: items)
         } catch let error as APIError {
             throw error
         } catch {

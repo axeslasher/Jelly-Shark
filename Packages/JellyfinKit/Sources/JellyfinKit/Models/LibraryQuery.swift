@@ -30,7 +30,7 @@ public enum WatchedFilter: String, CaseIterable, Sendable, Hashable {
 /// Everything the user can dial in on a library grid: sort plus filters.
 /// Multi-select filters are ORed within a field and ANDed across fields,
 /// matching the server's semantics.
-public struct LibraryQuery: Sendable, Equatable {
+public struct LibraryQuery: Sendable, Hashable {
     public var sort: LibrarySort
     public var direction: LibrarySortDirection
     public var genres: Set<String>
@@ -135,6 +135,28 @@ extension LibrarySortDirection {
         case .ascending: return .ascending
         case .descending: return .descending
         }
+    }
+}
+
+extension LibraryFilterOptions {
+    /// Aggregate the distinct filter values present in a set of items,
+    /// for narrowing menus to options that still yield results
+    init(aggregating dtos: [BaseItemDto]) {
+        var genres = Set<String>()
+        var years = Set<Int>()
+        var ratings = Set<String>()
+
+        for dto in dtos {
+            genres.formUnion(dto.genres ?? [])
+            if let year = dto.productionYear {
+                years.insert(year)
+            }
+            if let rating = dto.officialRating {
+                ratings.insert(rating)
+            }
+        }
+
+        self.init(genres: genres.sorted(), officialRatings: ratings.sorted(), years: years.sorted())
     }
 }
 

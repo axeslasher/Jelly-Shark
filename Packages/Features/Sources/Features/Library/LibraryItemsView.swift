@@ -11,6 +11,7 @@ struct LibraryItemsView: View {
     let library: Library
 
     @State private var viewModel = LibraryItemsViewModel()
+    @State private var gridWidth: CGFloat = 0
 
     var body: some View {
         ScrollView {
@@ -18,7 +19,7 @@ struct LibraryItemsView: View {
                 header
 
                 LibraryFilterBar(
-                    options: viewModel.filterOptions,
+                    options: viewModel.visibleFilterOptions,
                     query: viewModel.query,
                     onChange: { viewModel.update(query: $0) }
                 )
@@ -38,7 +39,7 @@ struct LibraryItemsView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: SpacingTokens.sm) {
-            Text(library.name)
+            Text(viewModel.displayTitle ?? "All \(library.name)")
                 .font(theme.jsHeadline)
                 .foregroundStyle(theme.primary)
 
@@ -71,7 +72,7 @@ struct LibraryItemsView: View {
 
         case .empty:
             VStack(spacing: SpacingTokens.md) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
+                Image(systemName: "slider.vertical.3")
                     .font(.system(size: 48))
                     .foregroundStyle(theme.secondary)
 
@@ -82,19 +83,37 @@ struct LibraryItemsView: View {
             .frame(maxWidth: .infinity, minHeight: 400)
 
         case .loaded:
+            // The previous results stay up (dimmed) while a new query loads,
+            // so menu dismissal has a stable grid to return focus through
             itemGrid
+                .opacity(viewModel.isReloading ? 0.5 : 1)
         }
     }
 
+    /// Poster cards need an explicit width, so the grid can't rely on
+    /// adaptive columns (cards would float centered inside stretched
+    /// columns, insetting the edges). Instead, measure the available width
+    /// and size cards to exactly fill their columns, flush both edges.
+    private var columnLayout: (count: Int, width: CGFloat) {
+        let gap = SpacingTokens.cardGap
+        let minimumCardWidth: CGFloat = 220
+        guard gridWidth > minimumCardWidth else { return (1, minimumCardWidth) }
+        let count = max(1, Int((gridWidth + gap) / (minimumCardWidth + gap)))
+        let width = (gridWidth - gap * CGFloat(count - 1)) / CGFloat(count)
+        return (count, width)
+    }
+
     private var itemGrid: some View {
-        LazyVGrid(
-            columns: [
-                GridItem(.adaptive(minimum: 220), spacing: SpacingTokens.cardGap)
-            ],
+        let layout = columnLayout
+        return LazyVGrid(
+            columns: Array(
+                repeating: GridItem(.flexible(), spacing: SpacingTokens.cardGap),
+                count: layout.count
+            ),
             spacing: SpacingTokens.cardGap
         ) {
             ForEach(viewModel.items) { item in
-                item.posterShelfItem(client: session.client)
+                item.posterShelfItem(client: session.client, width: layout.width)
                     .onAppear {
                         viewModel.loadMoreIfNeeded(currentItem: item)
                     }
@@ -105,6 +124,11 @@ struct LibraryItemsView: View {
                     .frame(maxWidth: .infinity)
                     .gridCellColumns(1)
             }
+        }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            gridWidth = width
         }
     }
 }

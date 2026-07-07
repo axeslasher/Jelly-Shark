@@ -8,6 +8,13 @@ import DesignSystem
 /// a copy of the query and hands it back via `onChange`. The controls keep
 /// the platform's default button chrome — on tvOS that is what makes them
 /// focusable with the standard lift-and-highlight treatment.
+///
+/// TODO: Replace the system `Menu`s with a custom dropdown overlay. tvOS
+/// menu dismissal leaves focus in limbo for ~1.5s before it returns to the
+/// bar (inherent to the system presentation — it is not load- or
+/// re-render-related). Owning the presentation gives us instant focus
+/// restore, plus full row styling: trailing accent checkmarks and themed
+/// typography inside the dropdown.
 struct LibraryFilterBar: View {
     @Environment(\.theme) private var theme
 
@@ -16,66 +23,78 @@ struct LibraryFilterBar: View {
     let onChange: (LibraryQuery) -> Void
 
     var body: some View {
+        // On tvOS the pills sit in a plain HStack: nesting them in a
+        // horizontal ScrollView slowed the focus engine's return to the bar
+        // after a menu dismissal, and the pills fit on screen anyway
+        #if os(tvOS)
+        pillRow
+            // Make the whole bar a focus target so it is reachable when
+            // moving up from any column of the grid below
+            .focusSection()
+        #else
         ScrollView(.horizontal) {
-            HStack(spacing: SpacingTokens.sm) {
-                sortMenu
-
-                if !options.genres.isEmpty {
-                    multiSelectMenu(
-                        title: "Genres",
-                        values: options.genres,
-                        selection: query.genres,
-                        label: { $0 }
-                    ) { updated in
-                        var next = query
-                        next.genres = updated
-                        onChange(next)
-                    }
-                }
-
-                if !options.decades.isEmpty {
-                    multiSelectMenu(
-                        title: "Decades",
-                        values: options.decades,
-                        selection: query.decades,
-                        label: { "\($0.formatted(.number.grouping(.never)))s" }
-                    ) { updated in
-                        var next = query
-                        next.decades = updated
-                        onChange(next)
-                    }
-                }
-
-                watchedMenu
-
-                favoritesToggle
-
-                if !options.officialRatings.isEmpty {
-                    multiSelectMenu(
-                        title: "Ratings",
-                        values: options.officialRatings,
-                        selection: query.officialRatings,
-                        label: { $0 }
-                    ) { updated in
-                        var next = query
-                        next.officialRatings = updated
-                        onChange(next)
-                    }
-                }
-
-                if query.isFiltering {
-                    resetButton
-                }
-            }
-            // Room for the tvOS focus effect to lift without clipping
-            .padding(.vertical, SpacingTokens.xs)
+            pillRow
         }
         .scrollClipDisabled()
-        #if os(tvOS)
-        // Make the whole bar a focus target so it is reachable when moving
-        // up from any column of the grid below
-        .focusSection()
         #endif
+    }
+
+    private var pillRow: some View {
+        HStack(spacing: SpacingTokens.sm) {
+            sortMenu
+
+            if !options.genres.isEmpty {
+                multiSelectMenu(
+                    title: "Genres",
+                    values: options.genres,
+                    selection: query.genres,
+                    label: { $0 }
+                ) { updated in
+                    var next = query
+                    next.genres = updated
+                    onChange(next)
+                }
+            }
+
+            if !options.decades.isEmpty {
+                multiSelectMenu(
+                    title: "Decades",
+                    values: options.decades,
+                    selection: query.decades,
+                    label: { "\($0.formatted(.number.grouping(.never)))s" }
+                ) { updated in
+                    var next = query
+                    next.decades = updated
+                    onChange(next)
+                }
+            }
+
+            watchedMenu
+
+            favoritesToggle
+
+            if !options.officialRatings.isEmpty {
+                multiSelectMenu(
+                    title: "Ratings",
+                    values: options.officialRatings,
+                    selection: query.officialRatings,
+                    label: { $0 }
+                ) { updated in
+                    var next = query
+                    next.officialRatings = updated
+                    onChange(next)
+                }
+            }
+
+            if query.isFiltering {
+                clearButton
+            }
+        }
+        // Room for the tvOS focus effect to lift without clipping
+        .padding(.vertical, SpacingTokens.xs)
+        // NOTE: no .tint here — on tvOS it repaints the button chrome
+        // itself, drowning the pill labels in accent color
+        .font(theme.jsTitle)
     }
 
     // MARK: - Sort
@@ -83,31 +102,31 @@ struct LibraryFilterBar: View {
     private var sortMenu: some View {
         Menu {
             ForEach(LibrarySort.allCases, id: \.self) { sort in
-                Button {
-                    var next = query
-                    if sort == query.sort {
-                        next.direction = query.direction == .ascending ? .descending : .ascending
-                    } else {
-                        next.sort = sort
-                        next.direction = sort.defaultDirection
-                    }
-                    onChange(next)
-                } label: {
-                    if sort == query.sort {
-                        Label(
-                            sort.displayName,
-                            systemImage: query.direction == .ascending ? "chevron.up" : "chevron.down"
-                        )
-                    } else {
-                        Text(sort.displayName)
-                    }
-                }
+                let isActive = sort == query.sort
+                // Toggles render the system selection checkmark; "turning
+                // off" the active sort reads as flipping its direction
+                Toggle(
+                    sort.phrase(for: isActive ? query.direction : sort.defaultDirection),
+                    isOn: Binding(
+                        get: { isActive },
+                        set: { _ in
+                            var next = query
+                            if isActive {
+                                next.direction = query.direction == .ascending ? .descending : .ascending
+                            } else {
+                                next.sort = sort
+                                next.direction = sort.defaultDirection
+                            }
+                            onChange(next)
+                        }
+                    )
+                )
+                // Scoped to the dropdown row, where tint only colors the
+                // selection indicator
+                .tint(theme.accent)
             }
         } label: {
-            Label(
-                "\(query.sort.displayName) \(query.direction == .ascending ? "↑" : "↓")",
-                systemImage: "arrow.up.arrow.down"
-            )
+            Label(query.sort.phrase(for: query.direction), systemImage: "arrow.up.arrow.down")
         }
     }
 
@@ -122,42 +141,47 @@ struct LibraryFilterBar: View {
     ) -> some View {
         Menu {
             ForEach(values, id: \.self) { value in
-                Button {
-                    var updated = selection
-                    if !updated.insert(value).inserted {
-                        updated.remove(value)
-                    }
-                    onSelect(updated)
-                } label: {
-                    if selection.contains(value) {
-                        Label(label(value), systemImage: "checkmark")
-                    } else {
-                        Text(label(value))
-                    }
-                }
+                // Toggles get the system selection checkmark, which is the
+                // only selected-state treatment tvOS menus render reliably
+                Toggle(
+                    label(value),
+                    isOn: Binding(
+                        get: { selection.contains(value) },
+                        set: { isOn in
+                            var updated = selection
+                            if isOn {
+                                updated.insert(value)
+                            } else {
+                                updated.remove(value)
+                            }
+                            onSelect(updated)
+                        }
+                    )
+                )
+                .tint(theme.accent)
             }
         } label: {
-            Text(selection.isEmpty ? title : "\(title) · \(selection.count)")
+            countedPillLabel(title, count: selection.count)
         }
     }
 
     private var watchedMenu: some View {
         Menu {
-            ForEach(WatchedFilter.allCases, id: \.self) { filter in
-                Button {
+            Picker("Status", selection: Binding(
+                get: { query.watched },
+                set: { selected in
                     var next = query
-                    next.watched = filter
+                    next.watched = selected
                     onChange(next)
-                } label: {
-                    if filter == query.watched {
-                        Label(filter.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(filter.displayName)
-                    }
+                }
+            )) {
+                ForEach(WatchedFilter.allCases, id: \.self) { filter in
+                    Text(filter.displayName).tag(filter)
                 }
             }
+            .tint(theme.accent)
         } label: {
-            Text(query.watched == .any ? "Watched" : query.watched.displayName)
+            Text(query.watched == .any ? "Status" : query.watched.displayName)
         }
     }
 
@@ -171,40 +195,29 @@ struct LibraryFilterBar: View {
         }
     }
 
-    private var resetButton: some View {
+    private var clearButton: some View {
         Button {
             onChange(query.withFiltersCleared)
         } label: {
-            Label("Reset", systemImage: "xmark")
-        }
-    }
-}
-
-// MARK: - Display Names
-
-extension LibrarySort {
-    var displayName: String {
-        switch self {
-        case .name: return "Alphabetical"
-        case .releaseDate: return "Release Date"
-        case .dateAdded: return "Date Added"
-        case .communityRating: return "Community Rating"
-        case .criticRating: return "Critic Rating"
+            Label("Clear", systemImage: "x.circle.fill")
         }
     }
 
-    /// The direction people expect when first picking this sort
-    var defaultDirection: LibrarySortDirection {
-        self == .name ? .ascending : .descending
-    }
-}
+    // MARK: - Shared Labels
 
-extension WatchedFilter {
-    var displayName: String {
-        switch self {
-        case .any: return "Any"
-        case .unplayed: return "Unwatched"
-        case .played: return "Watched"
+    /// A pill title with an accent-colored badge counting active selections
+    private func countedPillLabel(_ title: String, count: Int) -> some View {
+        HStack(spacing: SpacingTokens.xs) {
+            Text(title)
+            if count > 0 {
+                Text("\(count)")
+                    .font(theme.jsCaption)
+                    .bold()
+                    .foregroundStyle(theme.primary)
+                    .padding(SpacingTokens.xxs)
+                    .frame(minWidth: 32, minHeight: 32)
+                    .background(Circle().fill(theme.accent))
+            }
         }
     }
 }

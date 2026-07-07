@@ -84,6 +84,25 @@ struct LibraryQueryTests {
         }
     }
 
+    @Suite("Aggregated filter options")
+    struct AggregationTests {
+        @Test("Distinct values are collected and sorted; gaps are skipped")
+        func aggregation() {
+            let dtos: [BaseItemDto] = [
+                BaseItemDto(genres: ["Western", "Drama"], officialRating: "R", productionYear: 1969),
+                BaseItemDto(genres: ["Western"], officialRating: "PG", productionYear: 1992),
+                BaseItemDto(genres: nil, officialRating: nil, productionYear: nil),
+            ]
+
+            let options = LibraryFilterOptions(aggregating: dtos)
+
+            #expect(options.genres == ["Drama", "Western"])
+            #expect(options.officialRatings == ["PG", "R"])
+            #expect(options.years == [1969, 1992])
+            #expect(options.decades == [1990, 1960])
+        }
+    }
+
     @Suite("MediaItemPage")
     struct MediaItemPageTests {
         private func makeItems(_ count: Int) -> [MediaItem] {
