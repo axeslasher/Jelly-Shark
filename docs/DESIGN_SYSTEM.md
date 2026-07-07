@@ -10,7 +10,7 @@ The system has two layers:
 
 Users can switch themes globally while customizing individual components to their preference - all adhering to the chosen theme's design language.
 
-> **Implementation status**: This document is the design spec — most of it describes the intended system. **Currently only the Standard theme is implemented.** The Horror, Action, and Video Store identifiers exist in `ThemeIdentifier` (and their color/motion tokens are defined in `ColorTokens`/`MotionTokens`), but they resolve to `StandardTheme` at runtime via `TODO` fallbacks in `ThemeManager`. The **component variant system is not yet built** — the only base components are `ArtworkImage` and `ComponentPlaceholder`. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
+> **Implementation status**: This document is the design spec — most of it describes the intended system. **Currently only the Standard theme is implemented.** The Horror, Action, and Video Store identifiers exist in `ThemeIdentifier` (and their color/motion tokens are defined in `ColorTokens`/`MotionTokens`), but they resolve to `StandardTheme` at runtime via `TODO` fallbacks in `ThemeManager`. The **component variant system is not yet built**: a reusable component set exists (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`), but these are fixed layouts — there is no configurable poster-dominant/landscape/minimal/… variant selection yet. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
 
 ---
 
@@ -228,7 +228,7 @@ A `public typealias AppTheme = Theme` is exported from `DesignSystem.swift`. The
 
 ## Component Variants (⏳ not yet implemented — design spec)
 
-> None of the variants below are built yet. The only components in DesignSystem today are `ArtworkImage` and `ComponentPlaceholder`. Feature views currently use fixed layouts (e.g. `HomeView`'s landscape Continue-Watching cards and poster Recently-Added cards) rather than a configurable variant system.
+> None of the variants below are built yet. DesignSystem does ship a reusable component set today (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, `glassButtonStyle()`, `BlurHash`, `ComponentPlaceholder`), but each is a single fixed layout — feature views compose these directly (e.g. `HomeView`'s landscape Continue-Watching cards and poster Recently-Added cards) rather than choosing between the configurable variants described below.
 
 Component variants are **layout and presentation options** that work within any theme. They adapt to the active theme's visual language while offering structural flexibility.
 

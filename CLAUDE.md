@@ -63,7 +63,7 @@ The app follows a modular architecture with clear separation of concerns. All th
 2. **DesignSystem** (`Packages/DesignSystem`): Theming engine, design tokens, and base UI components
    - `Theme` protocol with `ThemeManager` (`@Observable` singleton) for runtime switching, persisted in `UserDefaults`
    - Design tokens: `ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`
-   - Base components: `ArtworkImage`, `ComponentPlaceholder`
+   - Base components: `ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`
    - **Current state**: Only `StandardTheme` is implemented; Horror/Action/Video Store identifiers exist but fall back to Standard. No component-variant system yet.
 
 3. **Features** (`Packages/Features`): Application features, screens, and user flows
@@ -156,7 +156,7 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 - Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
 - AVPlayer HLS playback: progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
 - Standard theme and design-token system applied throughout
-- Real unit tests for `ServerConnectionViewModel`, `PlaybackViewModel`, and `SearchViewModel` (Swift Testing) plus JellyfinKit unit tests
+- Real unit tests for `ServerConnectionViewModel`, `PlaybackViewModel`, `SearchViewModel`, `LibraryItemsViewModel`, and `LibraryQueryDisplay` (Swift Testing) plus JellyfinKit unit tests
 
 **Not yet implemented**:
 - Horror / Action / Video Store themes (identifiers exist but resolve to Standard)

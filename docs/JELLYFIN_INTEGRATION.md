@@ -60,11 +60,14 @@ All endpoints are accessed through `jellyfin-sdk-swift` (`Paths.*`) rather than 
 
 ### Authentication — ✅ implemented
 ```
-SDK signIn(username:password:)   (authenticate-by-name)
+authenticate(username:password:) — facade method; wraps the SDK's
+  signIn(username:password:) (authenticate-by-name)
 - Returns: AccessToken, User object
 
 GET /Users/{userId}              (fetchCurrentUser)
 - Retrieve user profile; used to validate a restored token
+
+signOut()                        — facade method; clears the session
 ```
 
 ### Libraries & Media — ✅ implemented
@@ -78,10 +81,12 @@ GET /Users/{userId}/Items        (getLibraryItems)
   Limit/StartIndex; Fields=overview,genres,dateCreated,mediaSources
 - Returns: a MediaItemPage (items + startIndex + totalRecordCount)
 
-GET /Users/{userId}/Items        (getLibraryFilterOptions)
+GET /Items/Filters               (getLibraryFilterOptions, unfiltered overload)
+GET /Users/{userId}/Items        (getLibraryFilterOptions, matching: overload)
 - Derives the available genres / decades / official ratings for a
-  library (two overloads: unfiltered, and one narrowed by a LibraryQuery
-  that returns nil when the result set is too large to scan)
+  library. The unfiltered overload uses the server's Filters endpoint;
+  the `matching query:` overload scans items and returns nil when the
+  result set is too large to scan
 
 GET /Items/{itemId}              (getMediaItem)
 - Returns: full metadata for one item
@@ -176,20 +181,33 @@ struct MediaItem: Identifiable {
     let productionYear: Int?
     let runTimeTicks: Int64?       // Jellyfin ticks (10,000,000 per second)
     let communityRating: Double?
+    let criticRating: Double?
     let officialRating: String?    // MPAA-style rating
+    let tagline: String?           // marketing tagline (movies)
     let genres: [String]?
+    let studios: [String]?
+    let premiereDate, endDate: Date?
+    let status: String?            // e.g. "Continuing", "Ended" (series)
+    let childCount, recursiveItemCount: Int?
     let imageTags: ImageTags?      // tags, not URLs — URLs are built on demand
     let userData: UserData?
+    let technicalInfo: MediaTechnicalInfo?   // resolution/HDR/codec/audio badges
+    let people: [CastMember]?      // cast & crew credits
+    let parentArtwork: ParentArtwork?        // fallback art from series/season
     let seriesId, seriesName, seasonId, seasonName: String?
     let indexNumber, parentIndexNumber: Int?
-    // Computed: formattedRuntime, progressPercentage, hasProgress, episodeDisplayTitle
+    // Computed (sample): formattedRuntime, progressPercentage, hasProgress,
+    //   episodeDisplayTitle, seasonCountText, episodeCode, *BlurHash
 }
 ```
-Note: artwork is referenced by **image tags** (`ImageTags`), not pre-built URLs. URLs are constructed via `getImageURL(...)` / the `MediaArtwork` helpers. Cast/crew are modeled as lightweight `CastMember` credits embedded on the item and as a full `Person` for the person-detail screen; `studios` are not modeled yet.
+Note: artwork is referenced by **image tags** (`ImageTags`), not pre-built URLs. URLs are constructed via `getImageURL(...)` / the `MediaArtwork` helpers. Cast/crew are modeled both as lightweight `CastMember` credits embedded on the item (`people`) and as a full `Person` for the person-detail screen; `studios` are modeled. Two supporting types live in the same file: `MediaTechnicalInfo` (backs the resolution/HDR/audio/codec badges) and `ParentArtwork` (series/season art used when an item has none of its own).
 
 **ImageTags** (in `MediaItem.swift`)
 ```swift
-struct ImageTags { var primary, backdrop, banner, thumb, logo: String? }
+struct ImageTags {
+    let primary, backdrop, banner, thumb, logo: String?
+    let primaryBlurHash, backdropBlurHash, thumbBlurHash: String?  // placeholder hashes
+}
 ```
 
 **UserData** (in `MediaItem.swift`)

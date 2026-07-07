@@ -243,7 +243,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ⏳ Remaining launch themes (Horror, Action, Video Store) — tokens defined, themes fall back to Standard
 - ⏳ Component variant system — not started
 - ✅ Theme switching UI and runtime implementation
-- ⏳ Base component library — `ArtworkImage` + `ComponentPlaceholder` only so far
+- ⏳ Component *variant* system — a reusable component set ships (artwork images, content shelves, cast cards, action buttons, etc.), but the configurable variant selection is not built yet
 
 ### Platform Polish
 - tvOS-specific optimizations (focus engine, remote handling)

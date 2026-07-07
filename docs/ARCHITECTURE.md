@@ -23,7 +23,7 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 - Data model definitions (Media, User, Library, etc.)
 - Media streaming coordination
 
-**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (2.1.6, used to inspect HTTP status codes for error mapping)
+**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (declared `from: 2.1.6`, resolves to 2.2.1; used to inspect HTTP status codes for error mapping)
 
 **Platform support**: Fully shared (macOS for tests, tvOS, visionOS)
 
@@ -68,7 +68,7 @@ JellyfinKit wraps the official `jellyfin-sdk-swift` package using a **Facade/Wra
 
 #### Adapter Layer
 
-The `Adapters/SDKAdapters.swift` file contains extensions that map SDK types to our domain types:
+The `Adapters/` folder maps SDK types to our domain types. `SDKAdapters.swift` holds most of the mappings — not just the three shown below but also `Person`, `CastMember` (via `people`), `ImageTags`, `UserData`, `MediaTechnicalInfo`, `ParentArtwork`, `MediaType`, and `CollectionType`; `PlaybackAdapters.swift` maps the playback-info/media-source DTOs. Representative example:
 
 ```swift
 // SDK type → Our type
@@ -106,7 +106,7 @@ This adapter pattern keeps mapping logic centralized and testable.
 **Key concepts**:
 - Themes as data via a `Theme` protocol, switched at runtime by `ThemeManager` (`@Observable` singleton, persisted to `UserDefaults`)
 - Design tokens: `ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`
-- Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ComponentPlaceholder`
+- Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`. (A reusable component library exists; the configurable *variant* system in DESIGN_SYSTEM.md does not yet.)
 
 **Current state**: Only `StandardTheme` is implemented. The Horror, Action, and Video Store identifiers exist (with color/motion tokens defined) but currently resolve to `StandardTheme`. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
 
@@ -132,8 +132,8 @@ Features/
 ├── HomeView.swift
 ├── SearchView.swift        (debounced search UI)
 ├── AppSession.swift        (app-level session/client state)
-├── Artwork/                (MediaArtwork: image-URL helpers)
-├── Library/                (LibraryItemsView, LibraryItemsViewModel, LibraryFilterBar)
+├── Artwork/                (MediaArtwork image-URL helpers, TrimmedLogoImage)
+├── Library/                (LibraryItemsView, LibraryItemsViewModel, LibraryFilterBar, LibraryQueryDisplay)
 ├── Search/                 (SearchViewModel)
 ├── MediaDetail/            (MediaDetailView + hero/episodes/shelves/credits sections — no view model yet)
 ├── PersonDetail/           (PersonDetailView, PersonDetailHeader, PersonDetailShelves — no view model yet)
