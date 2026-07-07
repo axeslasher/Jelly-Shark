@@ -10,7 +10,7 @@ The system has two layers:
 
 Users can switch themes globally while customizing individual components to their preference - all adhering to the chosen theme's design language.
 
-> **Implementation status**: This document is the design spec — most of it describes the intended system. **Currently only the Standard theme is implemented.** The Horror, Action, and Video Store identifiers exist in `ThemeIdentifier` (and their color/motion tokens are defined in `ColorTokens`/`MotionTokens`), but they resolve to `StandardTheme` at runtime via `TODO` fallbacks in `ThemeManager`. The **component variant system is not yet built** — the only base components are `ArtworkImage` and `ComponentPlaceholder`. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
+> **Implementation status**: This document is the design spec — most of it describes the intended system. **Currently only the Standard theme is implemented.** The Horror, Action, and Video Store identifiers exist in `ThemeIdentifier` (and their color/motion tokens are defined in `ColorTokens`/`MotionTokens`), but they resolve to `StandardTheme` at runtime via `TODO` fallbacks in `ThemeManager`. The **component variant system is not yet built**: a reusable component set exists (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`), but these are fixed layouts — there is no configurable poster-dominant/landscape/minimal/… variant selection yet. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
 
 ---
 
@@ -20,8 +20,8 @@ Users can switch themes globally while customizing individual components to thei
 **Concept**: Elegant, timeless, Apple-quality baseline
 
 **Visual Language**:
-- Clean sans-serif typography (SF Pro Display)
-- Neutral color palette with subtle accent
+- Clean sans-serif typography (General Sans for headings, Satoshi for body — Fontshare variable fonts; SF Pro is the fallback only)
+- Neutral dark palette with a warm orange accent
 - Smooth, refined animations
 - High contrast for readability
 - Generous whitespace and breathing room
@@ -30,21 +30,22 @@ Users can switch themes globally while customizing individual components to thei
 
 **Use Case**: Default experience, broad appeal, content-agnostic
 
-**Color Palette** (light/dark): (WIP - not final)
+**Color Palette** — as implemented in `ColorTokens.Standard` (dark; a light mode is not yet defined):
 ```
-Light Mode:
-- Background: Off-white (#F5F5F7)
-- Surface: White (#FFFFFF)
-- Primary: Deep Blue (#1D1D1F)
-- Accent: Vibrant Blue (#007AFF)
-- Text: Charcoal (#1D1D1F)
-
-Dark Mode:
-- Background: True Black (#000000) 
-- Surface: Dark Gray (#1C1C1E)
-- Primary: Off-White (#F5F5F7)
-- Accent: Bright Blue (#0A84FF)
-- Text: Off-White (#F5F5F7)
+- Background:        #09090b   (near-black)
+- Surface:           #18181b
+- Surface Elevated:  #27272a
+- Primary (text):    #fafafa
+- Secondary:         #d4d4d8
+- Tertiary:          #a1a1aa
+- On Platter:        #18181b   (content on the light tvOS focus platter)
+- On Platter Sec.:   #52525b
+- Accent:            #f97316   (orange)
+- Accent Secondary:  #ea580c
+- Success:           #22c55e
+- Warning:           #eab308
+- Error:             #ef4444
+- Focus Ring:        white @ 80% opacity
 ```
 
 ---
@@ -181,6 +182,8 @@ public protocol Theme: Sendable {
     var primary: Color { get }
     var secondary: Color { get }
     var tertiary: Color { get }
+    var onPlatter: Color { get }             // content color on the light tvOS focus platter
+    var onPlatterSecondary: Color { get }
     var accent: Color { get }
     var accentSecondary: Color { get }
     var success: Color { get }
@@ -189,7 +192,8 @@ public protocol Theme: Sendable {
     var focusRing: Color { get }
 
     // Typography (have protocol defaults)
-    var fontFamily: String? { get }          // nil = SF Pro system font
+    var fonts: FontScheme { get }            // per-role font families (default .system)
+    var fontFamily: String? { get }          // legacy; nil = SF Pro system font
     var fontWeightDisplay: Font.Weight { get }
     var fontWeightBody: Font.Weight { get }
     var letterSpacing: CGFloat { get }
@@ -212,6 +216,8 @@ public protocol Theme: Sendable {
 ```
 A `public typealias AppTheme = Theme` is exported from `DesignSystem.swift`. Themes are surfaced to views through the SwiftUI environment via `\.theme` (default `StandardTheme()`) and `View.withThemeEnvironment(_:)`.
 
+`FontScheme` (`Theming/FontScheme.swift`) maps the seven type roles — `display`, `headline`, `title`, `overview`, `body`, `caption`, `small` — to font-family names (each `String?`, `nil` = system/SF fallback). `StandardTheme.fonts` sets display/headline/title to General Sans and overview/body/caption/small to Satoshi. Registered variable families live in `FontFamily` (General Sans, Zodiak, Satoshi, Space Grotesk, plus Atkinson Hyperlegible); `DesignSystemFonts.registerAll()` loads the bundled `.ttf`s and falls back to the system font when none are present.
+
 ### Theme Switching (as implemented)
 - **Runtime switching**: No app restart required, via `ThemeManager.shared.switchTheme(to:)` (`@MainActor @Observable` singleton)
 - **Animated transitions**: Wrapped in `withAnimation(.easeInOut(duration: 0.5))` (`MotionTokens.durationThemeTransition`)
@@ -222,7 +228,7 @@ A `public typealias AppTheme = Theme` is exported from `DesignSystem.swift`. The
 
 ## Component Variants (⏳ not yet implemented — design spec)
 
-> None of the variants below are built yet. The only components in DesignSystem today are `ArtworkImage` and `ComponentPlaceholder`. Feature views currently use fixed layouts (e.g. `HomeView`'s landscape Continue-Watching cards and poster Recently-Added cards) rather than a configurable variant system.
+> None of the variants below are built yet. DesignSystem does ship a reusable component set today (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, `glassButtonStyle()`, `BlurHash`, `ComponentPlaceholder`), but each is a single fixed layout — feature views compose these directly (e.g. `HomeView`'s landscape Continue-Watching cards and poster Recently-Added cards) rather than choosing between the configurable variants described below.
 
 Component variants are **layout and presentation options** that work within any theme. They adapt to the active theme's visual language while offering structural flexibility.
 
@@ -333,14 +339,17 @@ Component variants are **layout and presentation options** that work within any 
 
 ## Typography Scale
 
-### Standard Theme (WIP - not final)
+### Standard Theme — as implemented (`TypographyTokens` + `StandardTheme.fonts`)
 ```
-Display: SF Pro Display, 52pt, Bold
-Headline: SF Pro Display, 32pt, Semibold
-Title: SF Pro Display, 24pt, Medium
-Body: SF Pro Text, 18pt, Regular
-Caption: SF Pro Text, 14pt, Regular
+Display:  General Sans, 52pt, Bold
+Headline: General Sans, 32pt, Semibold
+Title:    General Sans, 24pt, Semibold
+Overview: Satoshi, 24pt, Medium
+Body:     Satoshi, 22pt, Regular
+Caption:  Satoshi, 18pt, Regular
+Small:    Satoshi, 12pt
 ```
+Sizes and weights are theme-independent (defined once in `TypographyTokens`); each theme only chooses the typeface per role via its `FontScheme`. SF Pro is used only as a fallback when the bundled fonts aren't registered.
  
 ### Horror Theme (WIP - not final)
 ```

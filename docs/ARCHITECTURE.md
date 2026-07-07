@@ -23,7 +23,7 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 - Data model definitions (Media, User, Library, etc.)
 - Media streaming coordination
 
-**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (2.1.6, used to inspect HTTP status codes for error mapping)
+**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (declared `from: 2.1.6`, resolves to 2.2.1; used to inspect HTTP status codes for error mapping)
 
 **Platform support**: Fully shared (macOS for tests, tvOS, visionOS)
 
@@ -68,7 +68,7 @@ JellyfinKit wraps the official `jellyfin-sdk-swift` package using a **Facade/Wra
 
 #### Adapter Layer
 
-The `Adapters/SDKAdapters.swift` file contains extensions that map SDK types to our domain types:
+The `Adapters/` folder maps SDK types to our domain types. `SDKAdapters.swift` holds most of the mappings — not just the three shown below but also `Person`, `CastMember` (via `people`), `ImageTags`, `UserData`, `MediaTechnicalInfo`, `ParentArtwork`, `MediaType`, and `CollectionType`; `PlaybackAdapters.swift` maps the playback-info/media-source DTOs. Representative example:
 
 ```swift
 // SDK type → Our type
@@ -106,7 +106,7 @@ This adapter pattern keeps mapping logic centralized and testable.
 **Key concepts**:
 - Themes as data via a `Theme` protocol, switched at runtime by `ThemeManager` (`@Observable` singleton, persisted to `UserDefaults`)
 - Design tokens: `ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`
-- Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ComponentPlaceholder`
+- Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`. (A reusable component library exists; the configurable *variant* system in DESIGN_SYSTEM.md does not yet.)
 
 **Current state**: Only `StandardTheme` is implemented. The Horror, Action, and Video Store identifiers exist (with color/motion tokens defined) but currently resolve to `StandardTheme`. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
 
@@ -128,18 +128,19 @@ This adapter pattern keeps mapping logic centralized and testable.
 **Structure** (as implemented):
 ```
 Features/
-├── RootView.swift          (TabView: Home / Library / Search / Settings)
+├── RootView.swift          (.sidebarAdaptable TabView: Home, a tab per library, Search, Settings)
 ├── HomeView.swift
 ├── SearchView.swift        (debounced search UI)
 ├── AppSession.swift        (app-level session/client state)
-├── Artwork/                (MediaArtwork: image-URL helpers)
-├── Library/                (LibraryView, LibraryItemsView)
+├── Artwork/                (MediaArtwork image-URL helpers, TrimmedLogoImage)
+├── Library/                (LibraryItemsView, LibraryItemsViewModel, LibraryFilterBar, LibraryQueryDisplay)
 ├── Search/                 (SearchViewModel)
-├── MediaDetail/            (MediaDetailView)
+├── MediaDetail/            (MediaDetailView + hero/episodes/shelves/credits sections — no view model yet)
+├── PersonDetail/           (PersonDetailView, PersonDetailHeader, PersonDetailShelves — no view model yet)
 ├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, UpNextOverlayView)
 └── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)
 ```
-Authentication is not a separate folder — server connection lives under `Settings/`.
+Authentication is not a separate folder — server connection lives under `Settings/`. `HomeView` also has no dedicated view model (see the Data Flow note above).
 
 ---
 
@@ -171,6 +172,8 @@ jellyfin-sdk-swift
     ↓
 Jellyfin Server
 ```
+
+**View models are not universal yet.** The `@Observable @MainActor` view-model layer above is fully applied on four screens — `ServerConnectionViewModel`, `LibraryItemsViewModel`, `SearchViewModel`, and `PlaybackViewModel` (each with Swift Testing coverage via `MockJellyfinClient`) — plus the app-level `AppSession`. `HomeView`, `MediaDetailView`, and `PersonDetailView` currently hold their load/selection logic (and the optimistic played/favorite toggles) inline in the views, largely untested. Extracting view models for those three is tracked as test debt in issue #26.
 
 ### Persistence Strategy
 
@@ -273,7 +276,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 ## Open Questions
 
 1. ~~**Networking layer**: Native URLSession vs Alamofire?~~ → Resolved: Using official `jellyfin-sdk-swift` SDK
-2. ~~**Navigation architecture**: Coordinator pattern or SwiftUI native?~~ → Resolved: SwiftUI-native `TabView` + per-tab `NavigationStack`
+2. ~~**Navigation architecture**: Coordinator pattern or SwiftUI native?~~ → Resolved: SwiftUI-native `.sidebarAdaptable` `TabView` with a dynamic tab per library; `RootView` owns one value-based `NavigationPath` per tab and registers `MediaItem`/`CastMember` destinations at each root
 3. ~~**State management**: Observable macros vs manual publishers?~~ → Resolved: `@Observable` macro (`AppSession`, `ServerConnectionViewModel`, `PlaybackViewModel`, `ThemeManager`)
 4. **Video player**: stick with AVPlayer or add VLCKit for broader codec support? → Currently AVPlayer + HLS transcode only
 5. **Persistence**: when to adopt SwiftData, and what to cache first (metadata vs. user state)?
@@ -292,7 +295,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 | 2025-01-07 | Start with established video player libs | Don't reinvent playback; focus on UI/UX differentiation |
 | 2025-01-07 | Runtime theme switching | User control is core to customization philosophy |
 | 2025-01-08 | Adopt jellyfin-sdk-swift with wrapper | Official SDK provides API coverage; wrapper pattern gives clean app-facing types |
-| 2025-01 | SwiftUI-native navigation (`TabView` + `NavigationStack`) | Avoid coordinator overhead for a small, tab-based app |
+| 2025-01 | SwiftUI-native navigation (`.sidebarAdaptable` `TabView` + per-tab `NavigationPath`) | Avoid coordinator overhead for a small, tab-based app |
 | 2025-01 | `@Observable` for all view models and session state | Modern Observation framework integrates cleanly with SwiftUI |
 | 2025-01 | AVPlayer + HLS transcode for playback | Native, no third-party player dependency; server handles transcoding |
 | 2025-01 | Keychain-only persistence for now | Ship the core loop first; defer SwiftData metadata caching |
