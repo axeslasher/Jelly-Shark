@@ -7,6 +7,10 @@ import JellyfinKit
 
 /// Mock Jellyfin client that records playback calls for assertions
 final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
+    /// Guards the recording arrays: the view model fans narrowing scans out
+    /// concurrently, so unsynchronized appends would race
+    private let lock = NSLock()
+
     let serverURL = URL(string: "https://example.com")!
     var currentUser: User?
     var isAuthenticated: Bool { currentUser != nil }
@@ -34,6 +38,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var searchResult: Result<[MediaItem], Error> = .success([])
     var personResult: Result<Person, Error> = .success(Person(id: "person-id", name: "Person"))
     var itemsFeaturingPersonRequests: [(personId: String, itemTypes: [MediaType])] = []
+    var libraryItemsRequests: [(libraryId: String, query: LibraryQuery, limit: Int, startIndex: Int)] = []
+    /// Pages served in request order; the last page repeats once exhausted
+    var libraryItemsPages: [Result<MediaItemPage, Error>] = [
+        .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0))
+    ]
+    /// Optional gate awaited before serving a library page, for in-flight tests
+    var libraryItemsDelay: (() async -> Void)?
+    var filterOptionsResult: Result<LibraryFilterOptions, Error> = .success(.empty)
+    var narrowedOptionsRequests: [LibraryQuery] = []
+    var narrowedOptionsResult: Result<LibraryFilterOptions?, Error> = .success(nil)
+    /// Per-scan-query results; falls back to narrowedOptionsResult when nil
+    var narrowedOptionsHandler: ((LibraryQuery) -> Result<LibraryFilterOptions?, Error>)?
 
     func authenticate(username: String, password: String) async throws -> User {
         let user = User(id: "user-1", name: username)
@@ -56,7 +72,37 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getLibraries() async throws -> [Library] { try librariesResult.get() }
 
-    func getLibraryItems(libraryId: String, itemTypes: [MediaType]?, limit: Int?, startIndex: Int?) async throws -> [MediaItem] { [] }
+    func getLibraryItems(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        query: LibraryQuery,
+        limit: Int,
+        startIndex: Int
+    ) async throws -> MediaItemPage {
+        let result: Result<MediaItemPage, Error> = lock.withLock {
+            libraryItemsRequests.append((libraryId, query, limit, startIndex))
+            let index = min(libraryItemsRequests.count - 1, libraryItemsPages.count - 1)
+            return libraryItemsPages[index]
+        }
+        await libraryItemsDelay?()
+        return try result.get()
+    }
+
+    func getLibraryFilterOptions(libraryId: String, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions {
+        try filterOptionsResult.get()
+    }
+
+    func getLibraryFilterOptions(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        matching query: LibraryQuery
+    ) async throws -> LibraryFilterOptions? {
+        let result: Result<LibraryFilterOptions?, Error> = lock.withLock {
+            narrowedOptionsRequests.append(query)
+            return narrowedOptionsHandler?(query) ?? narrowedOptionsResult
+        }
+        return try result.get()
+    }
 
     func getMediaItem(itemId: String) async throws -> MediaItem {
         MediaItem(id: itemId, name: "Item", type: .movie)

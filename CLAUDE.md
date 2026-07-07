@@ -66,7 +66,7 @@ The app follows a modular architecture with clear separation of concerns. All th
    - **Current state**: Only `StandardTheme` is implemented; Horror/Action/Video Store identifiers exist but fall back to Standard. No component-variant system yet.
 
 3. **Features** (`Packages/Features`): Application features, screens, and user flows
-   - View implementations: `RootView`, `HomeView`, `LibraryView`/`LibraryItemsView`, `MediaDetailView`, `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
+   - View implementations: `RootView`, `HomeView`, `LibraryItemsView` (+ `LibraryItemsViewModel`, `LibraryFilterBar`), `MediaDetailView`, `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
    - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `PlaybackViewModel`; app-level `AppSession`
    - Navigation: `TabView` with Home / Library / Search / Settings, each in its own `NavigationStack`
    - Depends on JellyfinKit and DesignSystem
