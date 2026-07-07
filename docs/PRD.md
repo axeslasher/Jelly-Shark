@@ -147,19 +147,19 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ✅ Settings management
 
 ### Should Have
-- Continue watching / up next
-- Recently added
-- Favorites/collections
-- Subtitle support
-- Audio track selection
-- Parental controls
+- ✅ Continue watching / up next
+- ✅ Recently added
+- ✅ Favorites (mark/unmark toggle on media + person detail); collections not yet
+- ✅ Subtitle support
+- ✅ Audio track selection
+- ⏳ Parental controls
 - Downloads for offline (future)
 
 ### Nice to Have
 - Top Shelf extension (tvOS)
 - Immersive viewing modes (visionOS)
 - Custom artwork/backgrounds
-- Advanced filtering/sorting
+- ✅ Advanced filtering/sorting (library filter/sort bar: genres, decades, ratings, watched status, favorites)
 - Watch party features
 
 ---
@@ -235,6 +235,9 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ✅ Playback functionality (HLS streaming, progress, resume, track switching)
 - ✅ Standard theme implementation
 - ✅ Core browsing loop: home, libraries, media detail
+- ✅ Media-detail depth: seasons/episodes, next-up, similar items, cast & crew, person detail + filmography
+- ✅ Library filter/sort bar with pagination
+- ✅ User-data layer: optimistic mark-watched and favorite toggles
 
 ### Theming & Components — ⏳ in progress
 - ⏳ Remaining launch themes (Horror, Action, Video Store) — tokens defined, themes fall back to Standard

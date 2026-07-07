@@ -4,7 +4,7 @@
 
 Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (0.6.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
 
-> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, library/item browsing, search, image URLs, resume/latest discovery, playback info + HLS streaming, and playback reporting. **"Mark played/unplayed" and "favorites" endpoints are not yet implemented.** SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
+> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + HLS streaming, and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
 
 ---
 
@@ -73,16 +73,41 @@ GET /Users/{userId}/Views        (getLibraries)
 - Returns: user's media libraries
 
 GET /Users/{userId}/Items        (getLibraryItems)
-- Params: ParentId, SortBy=SortName, Limit, StartIndex,
-  Fields=overview,genres,dateCreated,mediaSources
-- Returns: media items for a library
+- Takes a LibraryQuery (sort field + direction, genres, decades,
+  watched status, favorites-only, official ratings); paginated via
+  Limit/StartIndex; Fields=overview,genres,dateCreated,mediaSources
+- Returns: a MediaItemPage (items + startIndex + totalRecordCount)
+
+GET /Users/{userId}/Items        (getLibraryFilterOptions)
+- Derives the available genres / decades / official ratings for a
+  library (two overloads: unfiltered, and one narrowed by a LibraryQuery
+  that returns nil when the result set is too large to scan)
 
 GET /Items/{itemId}              (getMediaItem)
 - Returns: full metadata for one item
 
 GET /Users/{userId}/Items/Resume (getResumeItems)  — Continue Watching
 GET /Users/{userId}/Items/Latest (getLatestItems)  — Recently Added
-GET /Shows/{seriesId}/Episodes   (getNextEpisode)  — next-up lookup
+```
+
+### Episodes, Seasons & Next-Up — ✅ implemented
+```
+GET /Shows/{seriesId}/Seasons    (getSeasons)
+GET /Shows/{seriesId}/Episodes   (getEpisodes)      — all episodes, optionally by season
+GET /Shows/NextUp                (getNextUpEpisode) — server Next-Up logic for a series
+GET /Shows/{seriesId}/Episodes   (getNextEpisode)   — strict next-in-order after an episode
+```
+
+### Similar Items — ✅ implemented
+```
+GET /Items/{itemId}/Similar      (getSimilarItems)  — "More Like This"
+```
+
+### People — ✅ implemented
+```
+GET /Users/{userId}/Items/{personId}  (getPerson)  — person detail (bio, life facts)
+GET /Users/{userId}/Items with PersonIds (getItemsFeaturingPerson) — filmography
+- Filmography is split into Movies, TV Series, and Episodes on PersonDetailView
 ```
 
 ### Images & Artwork — ✅ implemented (URL building)
@@ -108,13 +133,14 @@ POST /Sessions/Playing/Stopped   (reportPlaybackStopped)
 - Note: PlayMethod is currently hardcoded to Transcode
 ```
 
-### User Data — ⏳ planned (not yet implemented)
+### User Data — ✅ implemented
 ```
-POST   /Users/{userId}/PlayedItems/{itemId}     — mark played
-DELETE /Users/{userId}/PlayedItems/{itemId}     — mark unplayed
-POST   /Users/{userId}/FavoriteItems/{itemId}   — add to favorites
+POST   /Users/{userId}/PlayedItems/{itemId}     (markPlayed)
+DELETE /Users/{userId}/PlayedItems/{itemId}     (markUnplayed)
+POST   /Users/{userId}/FavoriteItems/{itemId}   (markFavorite)
+DELETE /Users/{userId}/FavoriteItems/{itemId}   (unmarkFavorite)
 ```
-Played/favorite state is read today (via item `UserData`) but cannot yet be changed from the app.
+Played/favorite state is both read (via item `UserData`) and written from the app. `MediaDetailHeroSection` exposes watched + favorite toggles; `PersonDetailHeader` exposes a favorite toggle. Both apply the change optimistically and revert on failure.
 
 ### Search — ✅ implemented
 ```
@@ -159,7 +185,7 @@ struct MediaItem: Identifiable {
     // Computed: formattedRuntime, progressPercentage, hasProgress, episodeDisplayTitle
 }
 ```
-Note: artwork is referenced by **image tags** (`ImageTags`), not pre-built URLs. URLs are constructed via `getImageURL(...)` / the `MediaArtwork` helpers. Cast/crew (`people`) and `studios` are not modeled yet.
+Note: artwork is referenced by **image tags** (`ImageTags`), not pre-built URLs. URLs are constructed via `getImageURL(...)` / the `MediaArtwork` helpers. Cast/crew are modeled as lightweight `CastMember` credits embedded on the item and as a full `Person` for the person-detail screen; `studios` are not modeled yet.
 
 **ImageTags** (in `MediaItem.swift`)
 ```swift
@@ -187,6 +213,48 @@ struct Library: Identifiable {
     let childCount: Int?
     // Computed: systemImageName (SF Symbol per collection type)
 }
+```
+
+**Person** (`Models/Person.swift`)
+```swift
+struct Person: Identifiable {
+    let id: String
+    let name: String
+    let biography: String?
+    let birthDate, deathDate: Date?
+    let birthPlace: String?
+    let primaryImageTag, primaryBlurHash: String?
+    let isFavorite: Bool
+    // Computed: formattedBirthDate, formattedDeathDate, age
+}
+```
+
+**CastMember** (`Models/CastMember.swift`) — a lightweight credit entry embedded on a `MediaItem`, distinct from `Person`
+```swift
+struct CastMember: Identifiable {
+    let id: String
+    let name: String
+    let role: String?
+    let kind: ...              // actor, director, writer, ...
+    let primaryImageTag: String?
+    // Computed: hasServerId (false for "person-N" fallback IDs, which don't navigate)
+}
+```
+
+**Library query & filter types** (`Models/LibraryQuery.swift`)
+```swift
+struct LibraryQuery {                 // drives getLibraryItems
+    var sort: LibrarySort             // name, releaseDate, dateAdded, communityRating, criticRating
+    var direction: LibrarySortDirection
+    var genres: Set<String>
+    var decades: Set<Int>
+    var watched: WatchedFilter        // any, unplayed, played
+    var favoritesOnly: Bool
+    var officialRatings: Set<String>
+    // Computed: isFiltering, expandedYears, withFiltersCleared
+}
+struct MediaItemPage { let items: [MediaItem]; let startIndex: Int; let totalRecordCount: Int?; /* hasMore */ }
+struct LibraryFilterOptions { let genres: [String]; let officialRatings: [String]; let years: [Int]; /* decades */ }
 ```
 
 **ServerInfo** (`Models/ServerInfo.swift`) — `Codable`
@@ -274,6 +342,7 @@ JellyfinKit/Sources/JellyfinKit/
 │   └── DeviceProfile+JellyShark.swift (codec/container capabilities)
 ├── Models/
 │   ├── User.swift, MediaItem.swift, Library.swift
+│   ├── Person.swift, CastMember.swift, LibraryQuery.swift
 │   ├── ServerInfo.swift, PlaybackSession.swift
 ├── Adapters/
 │   ├── SDKAdapters.swift             (DTO → domain mapping)
@@ -294,7 +363,7 @@ There is no `Cache/` module yet (no SwiftData/metadata cache).
 
 ### Request Patterns
 - Async/await for all API calls
-- Pagination params supported (`Limit`/`StartIndex`); library items currently fetched with `limit: 100`
+- Pagination params supported (`Limit`/`StartIndex`); `LibraryItemsView` pages a library in fixed-size batches and loads more on infinite scroll, tracking `MediaItemPage.totalRecordCount` to know when to stop
 - Image loading via SwiftUI `AsyncImage` (`ArtworkImage`), cached by `URLCache`
 - Search input is debounced (~300ms) with in-flight cancellation in `SearchViewModel`
 - _(planned)_ Retry logic for transient failures, predictive prefetching

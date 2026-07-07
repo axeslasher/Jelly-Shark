@@ -53,9 +53,10 @@ The app follows a modular architecture with clear separation of concerns. All th
 
 1. **JellyfinKit** (`Packages/JellyfinKit`): API client, networking, and data models
    - Wraps the official [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0) behind a `JellyfinClientProtocol` facade
-   - Authentication, library/item fetching, image URL building, playback info, and HLS stream URL construction
-   - Playback reporting (start/progress/stopped), resume items, latest items, next-episode lookup
-   - Domain models (`User`, `MediaItem`, `Library`, `ServerInfo`, `PlaybackSessionInfo`) + SDK adapters
+   - Authentication, library/item fetching (paged, with sort/filter via `LibraryQuery`), image URL building, playback info, and HLS stream URL construction
+   - Playback reporting (start/progress/stopped), resume items, latest items, seasons/episodes, next-up + next-episode lookup, similar items
+   - People (person detail + filmography) and library filter options; user-data mutations (mark played/unplayed, favorite/unfavorite)
+   - Domain models (`User`, `MediaItem`, `Library`, `Person`, `CastMember`, `ServerInfo`, `PlaybackSessionInfo`, `LibraryQuery`) + SDK adapters
    - Session persistence via Keychain (`SessionStore`, `KeychainStore`)
    - Platform support: Fully shared (macOS for tests, tvOS, visionOS)
 
@@ -66,11 +67,11 @@ The app follows a modular architecture with clear separation of concerns. All th
    - **Current state**: Only `StandardTheme` is implemented; Horror/Action/Video Store identifiers exist but fall back to Standard. No component-variant system yet.
 
 3. **Features** (`Packages/Features`): Application features, screens, and user flows
-   - View implementations: `RootView`, `HomeView`, `LibraryItemsView` (+ `LibraryItemsViewModel`, `LibraryFilterBar`), `MediaDetailView`, `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
-   - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `PlaybackViewModel`; app-level `AppSession`
-   - Navigation: `TabView` with Home / Library / Search / Settings, each in its own `NavigationStack`
+   - View implementations: `RootView`, `HomeView`, `LibraryItemsView` (+ `LibraryItemsViewModel`, `LibraryFilterBar`), `MediaDetailView` (hero + episodes/seasons shelf, similar items, cast & crew), `PersonDetailView` (+ `PersonDetailHeader`, filmography), `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
+   - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `LibraryItemsViewModel`, `SearchViewModel`, `PlaybackViewModel`; app-level `AppSession`. Not every screen has one yet — `HomeView`, `MediaDetailView`, and `PersonDetailView` keep their load logic inline (view-model extraction is tracked in issue #26)
+   - Navigation: a `.sidebarAdaptable` `TabView` in `RootView` — Home, one dynamic tab per Jellyfin library (grouped under a *Libraries* `TabSection`), Search, and Settings. `RootView` owns one `NavigationPath` per tab (so a tab switch can pop the outgoing stack to root — a tvOS `sidebarAdaptable` workaround) and pushes are value-based; the `MediaItem` → `MediaDetailView` and `CastMember` → `PersonDetailView` destinations are registered at each tab's root
    - Depends on JellyfinKit and DesignSystem
-   - Structure: Artwork/, Library/, MediaDetail/, Playback/, Settings/ (no separate Authentication/ — connection lives under Settings/)
+   - Structure: Artwork/, Library/, MediaDetail/, PersonDetail/, Playback/, Search/, Settings/ (no separate Authentication/ — connection lives under Settings/)
 
 4. **App Target** (`Jelly Shark/`): Single SwiftUI entry point
    - `Jelly_SharkApp.swift` configures `URLCache` for artwork and presents `RootView` in a `WindowGroup`
@@ -100,7 +101,7 @@ Session tokens are persisted to the Keychain; artwork is cached via `URLCache`. 
 Themes are **genre-inspired visual languages** that evoke the mood of different film genres. Each theme defines color, typography, motion, and spacing, while component variants define structure and layout.
 
 **Themes** (high-level visual language):
-- **Standard**: Elegant, timeless baseline (SF Pro, neutral palette, smooth animations)
+- **Standard**: Elegant, timeless baseline (General Sans / Satoshi typography, neutral dark palette with an orange accent, smooth animations)
 - **Horror**: Atmospheric dread (angular typography, blood reds/blacks, slower tension-building animations)
 - **Action**: Kinetic energy (geometric technical sans-serifs, electric blues, high-speed animations)
 - **Video Store**: 90s nostalgia (rounded friendly typography, Blockbuster blue/gold, playful animations)
@@ -129,12 +130,13 @@ Users can switch themes globally and customize component variants individually, 
 
 ### Core API Endpoints (wrapped via jellyfin-sdk-swift)
 - Authentication: SDK `signIn` (authenticate by name), `GET /Users/{userId}` (fetch current user)
-- Libraries: `GET /Users/{userId}/Views`, `GET /Users/{userId}/Items`, `GET /Items/{itemId}`
-- Discovery: `GET /Users/{userId}/Items/Resume`, `GET /Users/{userId}/Items/Latest`, episodes lookup for next-up
+- Libraries: `GET /Users/{userId}/Views`, `GET /Users/{userId}/Items` (paged, sort/filter via `LibraryQuery`), `GET /Items/{itemId}`, plus derived filter options (genres/decades/ratings)
+- Discovery: `GET /Users/{userId}/Items/Resume`, `GET /Users/{userId}/Items/Latest`, seasons/episodes (`GET /Shows/{seriesId}/Episodes`, `GET /Shows/{seriesId}/Seasons`), next-up (`GET /Shows/NextUp`) + next-episode lookup, similar items (`GET /Items/{itemId}/Similar`)
+- People: person detail (`GET /Users/{userId}/Items/{personId}`) + filmography (items featuring a person)
 - Images: `GET /Items/{itemId}/Images/{imageType}` (URL building only)
 - Playback: `GET /Items/{itemId}/PlaybackInfo`, HLS `GET /Videos/{itemId}/main.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
+- User data: mark played/unplayed (`/PlayedItems/{itemId}`), favorite/unfavorite (`/FavoriteItems/{itemId}`) — surfaced as optimistic toggles on media and person detail
 - Search: `GET /Users/{userId}/Items` with `searchTerm` (movies/series/episodes), wired via `searchItems(query:limit:)`
-- Not yet implemented: mark played/unplayed, favorites
 
 ### Caching Strategy (current vs. planned)
 - **Current**: Session tokens in Keychain only; artwork via `URLCache` (64MB memory / 256MB disk). No persistent metadata cache.
@@ -148,7 +150,9 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 **Implemented**:
 - Modular SPM architecture (JellyfinKit, DesignSystem, Features) wired into the app target
 - Server connection + authentication with Keychain-backed session persistence and restore-on-launch
-- Home screen (Continue Watching, Recently Added), library browsing, media detail
+- Home screen (Continue Watching, Recently Added), library browsing with pagination and a filter/sort bar (`LibraryFilterBar`), media detail
+- Media detail depth: seasons/episodes browsing, next-up, similar items ("More Like This"), cast & crew, and a person detail view with filmography
+- User-data toggles: optimistic mark-watched/unwatched and favorite/unfavorite on media and person detail
 - Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
 - AVPlayer HLS playback: progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
 - Standard theme and design-token system applied throughout
