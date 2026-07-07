@@ -42,13 +42,25 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Array of libraries
     func getLibraries() async throws -> [Library]
 
-    /// Fetch items from a library
+    /// Fetch one page of items from a library
     /// - Parameters:
     ///   - libraryId: The library ID
-    ///   - limit: Maximum number of items to return
+    ///   - itemTypes: Which item kinds to return (e.g., `[.movie]`)
+    ///   - query: Sort and filter selections
+    ///   - limit: Page size
     ///   - startIndex: Starting index for pagination
-    /// - Returns: Array of media items
-    func getLibraryItems(libraryId: String, itemTypes: [MediaType]?, limit: Int?, startIndex: Int?) async throws -> [MediaItem]
+    /// - Returns: The page of media items plus the total record count
+    func getLibraryItems(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        query: LibraryQuery,
+        limit: Int,
+        startIndex: Int
+    ) async throws -> MediaItemPage
+
+    /// Fetch the filter values actually present in a library (genres,
+    /// official ratings, years), for building filter menus
+    func getLibraryFilterOptions(libraryId: String, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions
 
     // MARK: - Media
 
@@ -416,9 +428,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     public func getLibraryItems(
         libraryId: String,
         itemTypes: [MediaType]?,
-        limit: Int?,
-        startIndex: Int?
-    ) async throws -> [MediaItem] {
+        query: LibraryQuery,
+        limit: Int,
+        startIndex: Int
+    ) async throws -> MediaItemPage {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
         }
@@ -435,12 +448,54 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             // grid to top-level titles.
             parameters.includeItemTypes = itemTypes.map { $0.compactMap(\.baseItemKind) }
             parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
-            parameters.sortBy = [.sortName]
-            parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
+            parameters.sortBy = query.sort.sdkSortBy
+            parameters.sortOrder = [query.direction.sdkSortOrder]
+            parameters.genres = query.genres.isEmpty ? nil : query.genres.sorted()
+            parameters.years = query.expandedYears
+            parameters.officialRatings = query.officialRatings.isEmpty ? nil : query.officialRatings.sorted()
+            parameters.filters = query.sdkFilters
+            parameters.enableTotalRecordCount = true
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
-            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+            let value = response.value
+            return MediaItemPage(
+                items: value.items?.compactMap { MediaItem(from: $0) } ?? [],
+                startIndex: value.startIndex ?? startIndex,
+                totalRecordCount: value.totalRecordCount
+            )
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getLibraryFilterOptions(
+        libraryId: String,
+        itemTypes: [MediaType]?
+    ) async throws -> LibraryFilterOptions {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            let parameters = Paths.GetQueryFiltersLegacyParameters(
+                userID: userId,
+                parentID: libraryId,
+                includeItemTypes: itemTypes.map { $0.compactMap(\.baseItemKind) }
+            )
+
+            let response = try await sdkClient.send(
+                Paths.getQueryFiltersLegacy(parameters: parameters)
+            )
+
+            let value = response.value
+            return LibraryFilterOptions(
+                genres: value.genres ?? [],
+                officialRatings: value.officialRatings ?? [],
+                years: value.years ?? []
+            )
         } catch let error as APIError {
             throw error
         } catch {

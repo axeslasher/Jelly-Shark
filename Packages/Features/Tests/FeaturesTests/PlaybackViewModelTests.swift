@@ -34,6 +34,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var searchResult: Result<[MediaItem], Error> = .success([])
     var personResult: Result<Person, Error> = .success(Person(id: "person-id", name: "Person"))
     var itemsFeaturingPersonRequests: [(personId: String, itemTypes: [MediaType])] = []
+    var libraryItemsRequests: [(libraryId: String, query: LibraryQuery, limit: Int, startIndex: Int)] = []
+    /// Pages served in request order; the last page repeats once exhausted
+    var libraryItemsPages: [Result<MediaItemPage, Error>] = [
+        .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0))
+    ]
+    /// Optional gate awaited before serving a library page, for in-flight tests
+    var libraryItemsDelay: (() async -> Void)?
+    var filterOptionsResult: Result<LibraryFilterOptions, Error> = .success(.empty)
 
     func authenticate(username: String, password: String) async throws -> User {
         let user = User(id: "user-1", name: username)
@@ -56,7 +64,23 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getLibraries() async throws -> [Library] { try librariesResult.get() }
 
-    func getLibraryItems(libraryId: String, itemTypes: [MediaType]?, limit: Int?, startIndex: Int?) async throws -> [MediaItem] { [] }
+    func getLibraryItems(
+        libraryId: String,
+        itemTypes: [MediaType]?,
+        query: LibraryQuery,
+        limit: Int,
+        startIndex: Int
+    ) async throws -> MediaItemPage {
+        libraryItemsRequests.append((libraryId, query, limit, startIndex))
+        let index = min(libraryItemsRequests.count - 1, libraryItemsPages.count - 1)
+        let result = libraryItemsPages[index]
+        await libraryItemsDelay?()
+        return try result.get()
+    }
+
+    func getLibraryFilterOptions(libraryId: String, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions {
+        try filterOptionsResult.get()
+    }
 
     func getMediaItem(itemId: String) async throws -> MediaItem {
         MediaItem(id: itemId, name: "Item", type: .movie)

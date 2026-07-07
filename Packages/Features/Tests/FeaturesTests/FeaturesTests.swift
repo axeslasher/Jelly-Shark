@@ -17,23 +17,6 @@ struct FeaturesTests {
         }
     }
 
-    @Suite("LibraryView Tests")
-    struct LibraryViewTests {
-        @Test("LibraryView initializes")
-        func libraryViewInit() {
-            let view = LibraryView()
-            _ = view
-        }
-
-        @Test("All library types have titles and icons")
-        func libraryTypes() {
-            for type in LibraryView.LibraryType.allCases {
-                #expect(!type.title.isEmpty)
-                #expect(!type.icon.isEmpty)
-            }
-        }
-    }
-
     @Suite("MediaDetailView Tests")
     struct MediaDetailViewTests {
         @Test("MediaDetailView displays item")
