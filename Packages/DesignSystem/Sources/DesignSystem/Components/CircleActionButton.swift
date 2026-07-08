@@ -52,7 +52,7 @@ public struct CircleActionButton: View {
                 // "checkmark") can't resize the button.
                 .frame(width: Self.glyphBox, height: Self.glyphBox)
         }
-        .glassButtonStyle(tint: theme.focusFill)
+        .glassButtonStyle(tint: theme.focusFill, circular: true)
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .focused($isFocused)
