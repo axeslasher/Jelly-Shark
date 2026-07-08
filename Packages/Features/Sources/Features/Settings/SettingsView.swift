@@ -21,6 +21,8 @@ public struct SettingsView: View {
     // `tabSelection` for the tvOS bug this works around.
     public var body: some View {
         List {
+            pageTitle("Settings")
+
             // Server Section
             Section {
                 NavigationLink(value: Destination.serverConnection) {
@@ -73,9 +75,9 @@ public struct SettingsView: View {
         // platforms need the system list background hidden first.
         #if !os(tvOS)
         .scrollContentBackground(.hidden)
+        .navigationTitle("Settings")
         #endif
         .background(theme.background)
-        .navigationTitle("Settings")
         .navigationDestination(for: Destination.self) { destination in
             switch destination {
             case .serverConnection:
@@ -98,6 +100,17 @@ public struct SettingsView: View {
         case .disconnected:
             return "Not connected"
         }
+    }
+
+    /// Page title rendered in the theme's display face — the loudest
+    /// typographic differentiator between themes. tvOS can't restyle
+    /// `navigationTitle`, so the title lives in the list instead.
+    private func pageTitle(_ title: String) -> some View {
+        Text(title)
+            .font(theme.jsDisplay)
+            .foregroundStyle(theme.primary)
+            .padding(.bottom, SpacingTokens.md)
+            .listRowBackground(Color.clear)
     }
 
     private func sectionHeader(_ title: String) -> some View {
@@ -128,6 +141,8 @@ public struct SettingsView: View {
 
     private var themeSelectionView: some View {
         List {
+            pageTitle("Theme")
+
             ForEach(themeManager.availableThemes, id: \.self) { (themeId: ThemeIdentifier) in
                 Button {
                     themeManager.switchTheme(to: themeId)
@@ -157,9 +172,9 @@ public struct SettingsView: View {
         }
         #if !os(tvOS)
         .scrollContentBackground(.hidden)
+        .navigationTitle("Theme")
         #endif
         .background(theme.background)
-        .navigationTitle("Theme")
     }
 
     private func themeDescription(for themeId: ThemeIdentifier) -> String {
