@@ -71,6 +71,10 @@ public protocol Theme: Sendable {
     /// Falls back to `onPlatter` when `focusFill` is nil (system platter).
     var onFocusFill: Color { get }
 
+    /// Secondary content color on a `focusFill`-tinted platter.
+    /// Falls back to `onPlatterSecondary` when `focusFill` is nil.
+    var onFocusFillSecondary: Color { get }
+
     // MARK: - Typography
 
     /// Per-role typeface assignment for this theme. Defaults to all-system
@@ -150,6 +154,7 @@ public extension Theme {
     // on-platter content colors
     var focusFill: Color? { nil }
     var onFocusFill: Color { onPlatter }
+    var onFocusFillSecondary: Color { onPlatterSecondary }
 
     // Default typography (can be overridden)
     var fonts: FontScheme { .system }

@@ -187,7 +187,7 @@ struct MediaDetailHeroSection: View {
         } label: {
             OverviewLabel(tagline: item.tagline, overview: item.overview)
         }
-        .buttonStyle(.plain)
+        .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
     }
 
     /// Optimistically flip the watched state, then persist; revert on failure.

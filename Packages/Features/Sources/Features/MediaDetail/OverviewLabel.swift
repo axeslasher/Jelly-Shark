@@ -25,13 +25,13 @@ struct OverviewLabel: View {
             if let tagline, !tagline.isEmpty {
                 Text(tagline)
                     .font(theme.jsHeadline)
-                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+                    .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
                     .lineLimit(2)
             }
             if let overview {
                 Text(overview)
                     .font(theme.jsOverview)
-                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+                    .foregroundStyle(isFocused ? theme.onFocusFillSecondary : theme.secondary)
                     .lineSpacing(4)
                     .lineLimit(overviewLineLimit)
             }

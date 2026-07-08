@@ -28,6 +28,7 @@ public struct ActionTheme: Theme, Sendable {
     public let focusRing = BaseColors.cyan400.opacity(0.8)
     public let focusFill: Color? = BaseColors.cyan200
     public let onFocusFill = BaseColors.slate950
+    public let onFocusFillSecondary = BaseColors.slate700
 
     // MARK: - Typography
 

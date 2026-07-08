@@ -96,7 +96,7 @@ struct PersonDetailHeader: View {
                             overviewLineLimit: 6
                         )
                     }
-                    .buttonStyle(.plain)
+                    .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: headshotColumnHeight, alignment: .topLeading)

@@ -27,6 +27,29 @@ public extension View {
     }
 }
 
+public extension View {
+    /// A `.plain`-style button whose focus platter follows the theme. Like the
+    /// glass styles, the system `.plain` highlight platter is fixed white, so
+    /// a theme with a `focusFill` switches to ``ThemedPlainButtonStyle``.
+    ///
+    /// - Parameters:
+    ///   - tint: The theme's `focusFill`; `nil` keeps the system `.plain` style.
+    ///   - cornerRadius: Corner radius of the themed platter (typically the
+    ///     theme's `cornerRadiusLarge`).
+    @ViewBuilder
+    func plainFocusButtonStyle(tint: Color?, cornerRadius: CGFloat) -> some View {
+        #if os(macOS)
+        buttonStyle(.plain)
+        #else
+        if let tint {
+            buttonStyle(ThemedPlainButtonStyle(tint: tint, cornerRadius: cornerRadius))
+        } else {
+            buttonStyle(.plain)
+        }
+        #endif
+    }
+}
+
 #if !os(macOS)
 /// Glass button that renders its own focus platter in a theme color.
 ///
@@ -75,6 +98,44 @@ public struct ThemedGlassButtonStyle: ButtonStyle {
                 .padding(.horizontal, SpacingTokens.md)
                 .padding(.vertical, SpacingTokens.sm)
         }
+    }
+}
+
+/// `.plain` button that renders its own focus platter in a theme color
+/// (the system highlight platter is fixed white, as with the glass styles).
+///
+/// The platter draws in the background and bleeds outward past the label via
+/// negative padding — mirroring how the system platter overflows content —
+/// so the resting layout is pixel-identical to `.plain` and text stays
+/// aligned with its neighbors. Content colors are left to the label
+/// (e.g. ``OverviewLabel`` swaps its own text to the on-focus tokens).
+public struct ThemedPlainButtonStyle: ButtonStyle {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    let tint: Color
+    let cornerRadius: CGFloat
+
+    public init(tint: Color, cornerRadius: CGFloat) {
+        self.tint = tint
+        self.cornerRadius = cornerRadius
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background {
+                Color.clear
+                    .glassEffect(
+                        .regular.tint(tint).interactive(),
+                        in: .rect(cornerRadius: cornerRadius)
+                    )
+                    .padding(.horizontal, -SpacingTokens.md)
+                    .padding(.vertical, -SpacingTokens.sm)
+                    .opacity(isFocused ? 1 : 0)
+            }
+            .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
+            .animation(theme.animation, value: isFocused)
+            .animation(MotionTokens.fast, value: configuration.isPressed)
     }
 }
 #endif

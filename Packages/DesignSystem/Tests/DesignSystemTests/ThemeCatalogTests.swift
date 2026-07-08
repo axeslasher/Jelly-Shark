@@ -168,8 +168,10 @@ struct ThemeCatalogTests {
             for theme in ThemeCatalogTests.allThemes {
                 guard let focusFill = theme.focusFill else { continue }
                 let content = WCAG.contrastRatio(theme.onFocusFill, on: focusFill)
+                let secondary = WCAG.contrastRatio(theme.onFocusFillSecondary, on: focusFill)
                 let lift = WCAG.contrastRatio(focusFill, on: theme.background)
                 #expect(content >= 4.5, "\(theme.id) onFocusFill/focusFill: \(content)")
+                #expect(secondary >= 4.5, "\(theme.id) onFocusFillSecondary/focusFill: \(secondary)")
                 #expect(lift >= 3.0, "\(theme.id) focusFill/background: \(lift)")
             }
         }

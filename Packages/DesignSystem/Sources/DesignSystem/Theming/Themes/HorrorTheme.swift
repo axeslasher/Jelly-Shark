@@ -28,6 +28,7 @@ public struct HorrorTheme: Theme, Sendable {
     public let focusRing = BaseColors.red500.opacity(0.8)
     public let focusFill: Color? = BaseColors.red200
     public let onFocusFill = BaseColors.red950
+    public let onFocusFillSecondary = BaseColors.red900
 
     // MARK: - Typography
 
