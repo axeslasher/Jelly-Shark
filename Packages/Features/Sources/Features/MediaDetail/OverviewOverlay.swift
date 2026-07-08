@@ -44,7 +44,7 @@ struct OverviewOverlay: View {
                     Button("Close") {
                         dismiss()
                     }
-                    .glassButtonStyle()
+                    .glassButtonStyle(tint: theme.focusFill)
                     .padding(.top, SpacingTokens.lg)
                 }
                 .frame(maxWidth: 800)

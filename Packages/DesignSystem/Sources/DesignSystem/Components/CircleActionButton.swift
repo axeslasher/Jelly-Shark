@@ -45,14 +45,14 @@ public struct CircleActionButton: View {
                 // Focus lifts the glass circle to a light platter; the
                 // theme's light tints wash out there, so swap to the
                 // on-platter color (or the caller's override).
-                .foregroundStyle(isFocused ? (focusedTint ?? theme.onPlatter) : tint)
+                .foregroundStyle(isFocused ? (focusedTint ?? theme.onFocusFill) : tint)
                 // The circle takes its diameter from the label, and SF Symbol
                 // glyphs all have different bounding boxes — pin the glyph in
                 // a fixed square so swapping symbols ("eye.fill" ⇄
                 // "checkmark") can't resize the button.
                 .frame(width: Self.glyphBox, height: Self.glyphBox)
         }
-        .glassButtonStyle()
+        .glassButtonStyle(tint: theme.focusFill)
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .focused($isFocused)

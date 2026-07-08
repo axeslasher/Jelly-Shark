@@ -187,7 +187,7 @@ struct EpisodesSection: View {
                                     ? theme.accent : theme.primary
                             )
                     }
-                    .glassButtonStyle()
+                    .glassButtonStyle(tint: theme.focusFill)
                     .buttonBorderShape(.capsule)
                     // From outside the row, only the active season's pill can
                     // take focus — entry always lands on the right pill with

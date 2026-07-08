@@ -144,7 +144,7 @@ struct MediaDetailHeroSection: View {
             }
             .font(theme.jsHeadline)
         }
-        .glassButtonStyle()
+        .glassButtonStyle(tint: theme.focusFill)
         .disabled(session.client == nil || playTarget == nil)
     }
 

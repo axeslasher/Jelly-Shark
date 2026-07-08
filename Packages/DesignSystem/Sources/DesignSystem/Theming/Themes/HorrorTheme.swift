@@ -26,6 +26,8 @@ public struct HorrorTheme: Theme, Sendable {
     public let warning = BaseColors.amber600
     public let error = BaseColors.red500
     public let focusRing = BaseColors.red500.opacity(0.8)
+    public let focusFill: Color? = BaseColors.red200
+    public let onFocusFill = BaseColors.red950
 
     // MARK: - Typography
 

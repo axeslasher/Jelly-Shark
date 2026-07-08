@@ -163,6 +163,17 @@ struct ThemeCatalogTests {
             }
         }
 
+        @Test("Themed focus platters stand out and keep their content legible")
+        func focusFillContrast() {
+            for theme in ThemeCatalogTests.allThemes {
+                guard let focusFill = theme.focusFill else { continue }
+                let content = WCAG.contrastRatio(theme.onFocusFill, on: focusFill)
+                let lift = WCAG.contrastRatio(focusFill, on: theme.background)
+                #expect(content >= 4.5, "\(theme.id) onFocusFill/focusFill: \(content)")
+                #expect(lift >= 3.0, "\(theme.id) focusFill/background: \(lift)")
+            }
+        }
+
         @Test("Focus rings meet indicator contrast (3:1) on background and surface")
         func focusRingContrast() {
             for theme in ThemeCatalogTests.allThemes {

@@ -26,6 +26,8 @@ public struct ActionTheme: Theme, Sendable {
     public let warning = BaseColors.yellow400
     public let error = BaseColors.rose500
     public let focusRing = BaseColors.cyan400.opacity(0.8)
+    public let focusFill: Color? = BaseColors.cyan200
+    public let onFocusFill = BaseColors.slate950
 
     // MARK: - Typography
 
