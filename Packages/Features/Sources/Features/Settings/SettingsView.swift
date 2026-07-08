@@ -147,25 +147,11 @@ public struct SettingsView: View {
                 Button {
                     themeManager.switchTheme(to: themeId)
                 } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
-                            Text(themeId.displayName)
-                                .font(theme.jsBody)
-                                .foregroundStyle(theme.primary)
-
-                            Text(themeDescription(for: themeId))
-                                .font(theme.jsCaption)
-                                .foregroundStyle(theme.secondary)
-                        }
-
-                        Spacer()
-
-                        if themeManager.currentThemeId == themeId {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(theme.accent)
-                        }
-                    }
-                    .padding(.vertical, SpacingTokens.xs)
+                    ThemeRowLabel(
+                        name: themeId.displayName,
+                        description: themeDescription(for: themeId),
+                        isSelected: themeManager.currentThemeId == themeId
+                    )
                 }
                 .buttonStyle(.plain)
             }
@@ -188,6 +174,43 @@ public struct SettingsView: View {
         case .videoStore:
             return "90s nostalgia, Friday night vibes"
         }
+    }
+}
+
+/// Label for a theme row in the selection list. When the `.plain` button gains
+/// focus, tvOS lifts it onto a light system platter — the theme's content
+/// colors disappear against it, so the text swaps to the on-platter tokens.
+/// `\.isFocused` only resolves inside the focusable's subtree, hence a
+/// dedicated view (same pattern as ``OverviewLabel``).
+private struct ThemeRowLabel: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    let name: String
+    let description: String
+    let isSelected: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                Text(name)
+                    .font(theme.jsBody)
+                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+
+                Text(description)
+                    .font(theme.jsCaption)
+                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+            }
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(theme.accent)
+            }
+        }
+        .padding(.vertical, SpacingTokens.xs)
+        .animation(theme.animation, value: isFocused)
     }
 }
 
