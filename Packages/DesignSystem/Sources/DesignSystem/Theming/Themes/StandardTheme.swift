@@ -11,20 +11,20 @@ public struct StandardTheme: Theme, Sendable {
 
     // MARK: - Colors
 
-    public let background = ColorTokens.Standard.background
-    public let surface = ColorTokens.Standard.surface
-    public let surfaceElevated = ColorTokens.Standard.surfaceElevated
-    public let primary = ColorTokens.Standard.primary
-    public let secondary = ColorTokens.Standard.secondary
-    public let tertiary = ColorTokens.Standard.tertiary
-    public let onPlatter = ColorTokens.Standard.onPlatter
-    public let onPlatterSecondary = ColorTokens.Standard.onPlatterSecondary
-    public let accent = ColorTokens.Standard.accent
-    public let accentSecondary = ColorTokens.Standard.accentSecondary
-    public let success = ColorTokens.Standard.success
-    public let warning = ColorTokens.Standard.warning
-    public let error = ColorTokens.Standard.error
-    public let focusRing = ColorTokens.Standard.focusRing
+    public let background = BaseColors.zinc950
+    public let surface = BaseColors.zinc900
+    public let surfaceElevated = BaseColors.zinc800
+    public let primary = BaseColors.zinc50
+    public let secondary = BaseColors.zinc300
+    public let tertiary = BaseColors.zinc400
+    public let onPlatter = BaseColors.zinc900
+    public let onPlatterSecondary = BaseColors.zinc600
+    public let accent = BaseColors.orange500
+    public let accentSecondary = BaseColors.orange600
+    public let success = BaseColors.green500
+    public let warning = BaseColors.yellow500
+    public let error = BaseColors.red500
+    public let focusRing = BaseColors.white.opacity(0.8)
 
     // MARK: - Typography
     //

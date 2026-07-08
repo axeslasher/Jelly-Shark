@@ -68,11 +68,11 @@ public final class ThemeManager {
         case .standard:
             return StandardTheme()
         case .horror:
-            return StandardTheme() // TODO: Replace with HorrorTheme
+            return HorrorTheme()
         case .action:
-            return StandardTheme() // TODO: Replace with ActionTheme
+            return ActionTheme()
         case .videoStore:
-            return StandardTheme() // TODO: Replace with VideoStoreTheme
+            return VideoStoreTheme()
         }
     }
 

@@ -45,7 +45,7 @@ Designed specifically for the lean-back, living room experience—not adapted fr
 
 **Not yet implemented:**
 - Search (UI placeholder only)
-- Themes beyond Standard — Horror, Action, and Video Store are scaffolded but currently fall back to Standard
+- Hand-curated palettes for Horror, Action, and Video Store — the themes are live, but their colors are first-pass picks from the Tailwind base palette
 - Component variant system
 - Local metadata/image caching (only session tokens are persisted today; artwork uses `URLCache`)
 

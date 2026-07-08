@@ -105,10 +105,10 @@ This adapter pattern keeps mapping logic centralized and testable.
 
 **Key concepts**:
 - Themes as data via a `Theme` protocol, switched at runtime by `ThemeManager` (`@Observable` singleton, persisted to `UserDefaults`)
-- Design tokens: `ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`
+- Design tokens: `BaseColors` (the Tailwind CSS v4 palette, oklch → extended linear sRGB via `Color(oklch:)`), `TypographyTokens`, `SpacingTokens`, `MotionTokens`
 - Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`. (A reusable component library exists; the configurable *variant* system in DESIGN_SYSTEM.md does not yet.)
 
-**Current state**: Only `StandardTheme` is implemented. The Horror, Action, and Video Store identifiers exist (with color/motion tokens defined) but currently resolve to `StandardTheme`. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
+**Current state**: All four themes are implemented (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`) with per-theme fonts and motion; the three genre palettes are first-pass `BaseColors` picks pending hand curation, guarded by WCAG contrast tests. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
 
 ---
 

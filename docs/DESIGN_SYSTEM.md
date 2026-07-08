@@ -10,7 +10,7 @@ The system has two layers:
 
 Users can switch themes globally while customizing individual components to their preference - all adhering to the chosen theme's design language.
 
-> **Implementation status**: This document is the design spec — most of it describes the intended system. **Currently only the Standard theme is implemented.** The Horror, Action, and Video Store identifiers exist in `ThemeIdentifier` (and their color/motion tokens are defined in `ColorTokens`/`MotionTokens`), but they resolve to `StandardTheme` at runtime via `TODO` fallbacks in `ThemeManager`. The **component variant system is not yet built**: a reusable component set exists (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`), but these are fixed layouts — there is no configurable poster-dominant/landscape/minimal/… variant selection yet. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
+> **Implementation status**: This document is the design spec — most of it describes the intended system. **All four themes are implemented** (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`) and switchable at runtime, but the Horror/Action/Video Store palettes are first-pass placeholders pending hand curation. Colors are drawn from `BaseColors` — the full Tailwind CSS v4 palette, referenced by name (`BaseColors.zinc950`) rather than raw hex — defined as oklch values converted to extended linear sRGB by `Color(oklch:)` so wide-gamut shades survive on P3/HDR displays. `ThemeCatalogTests` enforces WCAG floors (4.5:1 text, 3:1 accents/focus rings) on every theme, which any future curation must keep green. The **component variant system is not yet built**: a reusable component set exists (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`), but these are fixed layouts — there is no configurable poster-dominant/landscape/minimal/… variant selection yet. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
 
 ---
 
@@ -30,21 +30,21 @@ Users can switch themes globally while customizing individual components to thei
 
 **Use Case**: Default experience, broad appeal, content-agnostic
 
-**Color Palette** — as implemented in `ColorTokens.Standard` (dark; a light mode is not yet defined):
+**Color Palette** — as implemented in `StandardTheme` via `BaseColors` (Tailwind v4 names; dark, a light mode is not yet defined):
 ```
-- Background:        #09090b   (near-black)
-- Surface:           #18181b
-- Surface Elevated:  #27272a
-- Primary (text):    #fafafa
-- Secondary:         #d4d4d8
-- Tertiary:          #a1a1aa
-- On Platter:        #18181b   (content on the light tvOS focus platter)
-- On Platter Sec.:   #52525b
-- Accent:            #f97316   (orange)
-- Accent Secondary:  #ea580c
-- Success:           #22c55e
-- Warning:           #eab308
-- Error:             #ef4444
+- Background:        zinc950   (near-black)
+- Surface:           zinc900
+- Surface Elevated:  zinc800
+- Primary (text):    zinc50
+- Secondary:         zinc300
+- Tertiary:          zinc400
+- On Platter:        zinc900   (content on the light tvOS focus platter)
+- On Platter Sec.:   zinc600
+- Accent:            orange500
+- Accent Secondary:  orange600
+- Success:           green500
+- Warning:           yellow500
+- Error:             red500
 - Focus Ring:        white @ 80% opacity
 ```
 
@@ -419,14 +419,14 @@ All themes must maintain:
 
 ### Phase 1: Foundation — ✅ done
 1. ✅ Define base `Theme` protocol
-2. ✅ Implement Standard theme (currently dark palette via `ColorTokens.Standard`)
-3. ✅ Build token system (`ColorTokens`, `TypographyTokens`, `SpacingTokens`, `MotionTokens`) and theme provider (`ThemeManager` + environment)
+2. ✅ Implement Standard theme (currently dark palette via `BaseColors` zinc/orange)
+3. ✅ Build token system (`BaseColors` — the Tailwind v4 palette via `Color(oklch:)` — plus `TypographyTokens`, `SpacingTokens`, `MotionTokens`) and theme provider (`ThemeManager` + environment)
 4. ✅ Create theme switching UI (Settings → Appearance)
 
-### Phase 2: Variants — ⏳ in progress / not started
-5. ⏳ Implement Horror theme (tokens defined; theme struct not built — falls back to Standard)
-6. ⏳ Implement Action theme (same)
-7. ⏳ Implement Video Store theme (same)
+### Phase 2: Variants — ⏳ in progress
+5. ✅ Implement Horror theme (struct + fonts + motion wired; palette is a first-pass placeholder pending curation)
+6. ✅ Implement Action theme (same)
+7. ✅ Implement Video Store theme (same)
 8. ⏳ Add component variant system (not started)
 
 ### Phase 3: Customization — planned
