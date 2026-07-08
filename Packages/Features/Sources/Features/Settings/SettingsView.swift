@@ -120,23 +120,7 @@ public struct SettingsView: View {
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String) -> some View {
-        HStack(spacing: SpacingTokens.md) {
-            Image(systemName: icon)
-                .font(theme.jsTitle)
-                .foregroundStyle(theme.accent)
-                .frame(width: 32)
-
-            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
-                Text(title)
-                    .font(theme.jsBody)
-                    .foregroundStyle(theme.primary)
-
-                Text(subtitle)
-                    .font(theme.jsCaption)
-                    .foregroundStyle(theme.secondary)
-            }
-        }
-        .padding(.vertical, SpacingTokens.xs)
+        SettingsRowLabel(icon: icon, title: title, subtitle: subtitle)
     }
 
     private var themeSelectionView: some View {
@@ -174,6 +158,38 @@ public struct SettingsView: View {
         case .videoStore:
             return "90s nostalgia, Friday night vibes"
         }
+    }
+}
+
+/// Row label for the main Settings list. Focused rows sit on the light system
+/// platter, so the text swaps to the on-platter tokens (see ``ThemeRowLabel``).
+private struct SettingsRowLabel: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: SpacingTokens.md) {
+            Image(systemName: icon)
+                .font(theme.jsTitle)
+                .foregroundStyle(theme.accent)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                Text(title)
+                    .font(theme.jsBody)
+                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+
+                Text(subtitle)
+                    .font(theme.jsCaption)
+                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+            }
+        }
+        .padding(.vertical, SpacingTokens.xs)
+        .animation(theme.animation, value: isFocused)
     }
 }
 
