@@ -73,6 +73,8 @@ public final class ThemeManager {
             return ActionTheme()
         case .videoStore:
             return VideoStoreTheme()
+        case .sciFi:
+            return SciFiTheme()
         }
     }
 

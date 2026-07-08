@@ -108,7 +108,7 @@ This adapter pattern keeps mapping logic centralized and testable.
 - Design tokens: `BaseColors` (the Tailwind CSS v4 palette, oklch → extended linear sRGB via `Color(oklch:)`), `TypographyTokens`, `SpacingTokens`, `MotionTokens`
 - Base components: `ArtworkImage` (themed `AsyncImage` wrapper), `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`. (A reusable component library exists; the configurable *variant* system in DESIGN_SYSTEM.md does not yet.)
 
-**Current state**: All four themes are implemented (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`) with per-theme fonts and motion; the three genre palettes are first-pass `BaseColors` picks pending hand curation, guarded by WCAG contrast tests. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
+**Current state**: All five themes are implemented (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`, `SciFiTheme`) with per-theme fonts and motion; the three genre palettes are first-pass `BaseColors` picks pending hand curation, guarded by WCAG contrast tests. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
 
 ---
 

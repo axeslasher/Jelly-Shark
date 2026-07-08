@@ -143,7 +143,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ✅ Playback with progress tracking (HLS, resume, audio/subtitle tracks, episode autoplay)
 - ✅ Search functionality (debounced live search with suggestions)
 - ⏳ User profile switching (not started)
-- ✅ Theme customization UI (all four themes switchable; genre palettes pending hand curation)
+- ✅ Theme customization UI (all five themes switchable; genre palettes pending hand curation)
 - ✅ Settings management
 
 ### Should Have

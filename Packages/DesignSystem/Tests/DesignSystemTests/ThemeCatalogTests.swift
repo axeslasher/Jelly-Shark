@@ -35,7 +35,7 @@ private enum WCAG {
 @Suite("Theme Catalog Tests")
 struct ThemeCatalogTests {
     static let allThemes: [any Theme] = [
-        StandardTheme(), HorrorTheme(), ActionTheme(), VideoStoreTheme(),
+        StandardTheme(), HorrorTheme(), ActionTheme(), VideoStoreTheme(), SciFiTheme(),
     ]
 
     @Suite("OKLCH Conversion")
@@ -87,6 +87,7 @@ struct ThemeCatalogTests {
             #expect(HorrorTheme().id == ThemeIdentifier.horror.rawValue)
             #expect(ActionTheme().id == ThemeIdentifier.action.rawValue)
             #expect(VideoStoreTheme().id == ThemeIdentifier.videoStore.rawValue)
+            #expect(SciFiTheme().id == ThemeIdentifier.sciFi.rawValue)
         }
 
         @Test("Theme names match identifier display names")
@@ -95,6 +96,7 @@ struct ThemeCatalogTests {
             #expect(HorrorTheme().name == ThemeIdentifier.horror.displayName)
             #expect(ActionTheme().name == ThemeIdentifier.action.displayName)
             #expect(VideoStoreTheme().name == ThemeIdentifier.videoStore.displayName)
+            #expect(SciFiTheme().name == ThemeIdentifier.sciFi.displayName)
         }
 
         @Test("Every theme has a description")
@@ -111,6 +113,7 @@ struct ThemeCatalogTests {
             #expect(ThemeManager.shared.theme(for: .horror) is HorrorTheme)
             #expect(ThemeManager.shared.theme(for: .action) is ActionTheme)
             #expect(ThemeManager.shared.theme(for: .videoStore) is VideoStoreTheme)
+            #expect(ThemeManager.shared.theme(for: .sciFi) is SciFiTheme)
         }
     }
 

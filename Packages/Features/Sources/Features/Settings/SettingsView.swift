@@ -157,6 +157,8 @@ public struct SettingsView: View {
             return "Kinetic energy, technological precision"
         case .videoStore:
             return "90s nostalgia, Friday night vibes"
+        case .sciFi:
+            return "Deep-space greens, engineered precision"
         }
     }
 }

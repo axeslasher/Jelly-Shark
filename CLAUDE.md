@@ -64,7 +64,7 @@ The app follows a modular architecture with clear separation of concerns. All th
    - `Theme` protocol with `ThemeManager` (`@Observable` singleton) for runtime switching, persisted in `UserDefaults`
    - Design tokens: `BaseColors` (the full Tailwind CSS v4 palette, referenced by name — oklch values converted to extended linear sRGB via `Color(oklch:)`), `TypographyTokens`, `SpacingTokens`, `MotionTokens`
    - Base components: `ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`
-   - **Current state**: All four themes (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`) are implemented with per-theme fonts and motion; the three genre palettes are first-pass `BaseColors` picks pending hand curation, guarded by WCAG contrast tests (`ThemeCatalogTests`). No component-variant system yet.
+   - **Current state**: All five themes (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`, `SciFiTheme`) are implemented with per-theme fonts and motion; the three genre palettes are first-pass `BaseColors` picks pending hand curation, guarded by WCAG contrast tests (`ThemeCatalogTests`). No component-variant system yet.
 
 3. **Features** (`Packages/Features`): Application features, screens, and user flows
    - View implementations: `RootView`, `HomeView`, `LibraryItemsView` (+ `LibraryItemsViewModel`, `LibraryFilterBar`), `MediaDetailView` (hero + episodes/seasons shelf, similar items, cast & crew), `PersonDetailView` (+ `PersonDetailHeader`, filmography), `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
@@ -155,7 +155,7 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 - User-data toggles: optimistic mark-watched/unwatched and favorite/unfavorite on media and person detail
 - Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
 - AVPlayer HLS playback: progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
-- All four themes (Standard, Horror, Action, Video Store) switchable at runtime, on a `BaseColors` Tailwind-palette token layer; genre palettes are placeholders pending curation
+- All five themes (Standard, Horror, Action, Video Store, Sci-Fi) switchable at runtime, on a `BaseColors` Tailwind-palette token layer; genre palettes are placeholders pending curation
 - Real unit tests for `ServerConnectionViewModel`, `PlaybackViewModel`, `SearchViewModel`, `LibraryItemsViewModel`, and `LibraryQueryDisplay` (Swift Testing) plus JellyfinKit unit tests and DesignSystem theme-catalog tests (identity, distinctness, WCAG contrast)
 
 **Not yet implemented**:

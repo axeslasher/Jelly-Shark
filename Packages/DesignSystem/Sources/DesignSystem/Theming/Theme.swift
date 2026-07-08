@@ -136,6 +136,7 @@ public enum ThemeIdentifier: String, CaseIterable, Sendable, Codable {
     case horror
     case action
     case videoStore
+    case sciFi
 
     public var displayName: String {
         switch self {
@@ -143,6 +144,7 @@ public enum ThemeIdentifier: String, CaseIterable, Sendable, Codable {
         case .horror: return "Horror"
         case .action: return "Action"
         case .videoStore: return "Video Store"
+        case .sciFi: return "Sci-Fi"
         }
     }
 }
