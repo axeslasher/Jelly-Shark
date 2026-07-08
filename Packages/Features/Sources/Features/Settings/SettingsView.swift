@@ -31,7 +31,7 @@ public struct SettingsView: View {
                     )
                 }
             } header: {
-                Text("Connection")
+                sectionHeader("Connection")
             }
 
             // Appearance Section
@@ -44,7 +44,7 @@ public struct SettingsView: View {
                     )
                 }
             } header: {
-                Text("Appearance")
+                sectionHeader("Appearance")
             }
 
             // Playback Section
@@ -55,7 +55,7 @@ public struct SettingsView: View {
                     subtitle: "Quality, subtitles, audio"
                 )
             } header: {
-                Text("Playback")
+                sectionHeader("Playback")
             }
 
             // About Section
@@ -66,9 +66,15 @@ public struct SettingsView: View {
                     subtitle: "Version 0.0.1"
                 )
             } header: {
-                Text("About")
+                sectionHeader("About")
             }
         }
+        // tvOS List is already transparent (and lacks this modifier); other
+        // platforms need the system list background hidden first.
+        #if !os(tvOS)
+        .scrollContentBackground(.hidden)
+        #endif
+        .background(theme.background)
         .navigationTitle("Settings")
         .navigationDestination(for: Destination.self) { destination in
             switch destination {
@@ -92,6 +98,12 @@ public struct SettingsView: View {
         case .disconnected:
             return "Not connected"
         }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(theme.jsCaption)
+            .foregroundStyle(theme.secondary)
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String) -> some View {
@@ -143,6 +155,10 @@ public struct SettingsView: View {
                 .buttonStyle(.plain)
             }
         }
+        #if !os(tvOS)
+        .scrollContentBackground(.hidden)
+        #endif
+        .background(theme.background)
         .navigationTitle("Theme")
     }
 
