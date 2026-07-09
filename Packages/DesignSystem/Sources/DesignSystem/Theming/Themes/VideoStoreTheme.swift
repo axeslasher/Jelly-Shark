@@ -26,9 +26,9 @@ public struct VideoStoreTheme: Theme, Sendable {
     public let warning = BaseColors.orange400
     public let error = BaseColors.red400
     public let focusRing = BaseColors.yellow400.opacity(0.8)
-    public let focusFill: Color? = BaseColors.blue400.opacity(0.6)
-    public let onFocusFill = BaseColors.yellow300
-    public let onFocusFillSecondary = BaseColors.yellow400
+    public let focusFill: Color? = BaseColors.blue600.opacity(0.6)
+    public let onFocusFill = BaseColors.yellow200
+    public let onFocusFillSecondary = BaseColors.yellow300
 
     // MARK: - Typography
 

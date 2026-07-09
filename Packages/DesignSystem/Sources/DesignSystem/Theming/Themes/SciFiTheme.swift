@@ -12,29 +12,29 @@ public struct SciFiTheme: Theme, Sendable {
 
     // MARK: - Colors
 
-    public let background = BaseColors.emerald950
-    public let surface = BaseColors.emerald900
-    public let surfaceElevated = BaseColors.emerald800
-    public let primary = BaseColors.emerald50
-    public let secondary = BaseColors.emerald300
-    public let tertiary = BaseColors.emerald400
-    public let onPlatter = BaseColors.emerald900
-    public let onPlatterSecondary = BaseColors.emerald600
-    public let accent = BaseColors.emerald400
-    public let accentSecondary = BaseColors.teal500
+    public let background = BaseColors.teal950
+    public let surface = BaseColors.teal900
+    public let surfaceElevated = BaseColors.teal800
+    public let primary = BaseColors.lime200
+    public let secondary = BaseColors.lime100
+    public let tertiary = BaseColors.lime300
+    public let onPlatter = BaseColors.teal900
+    public let onPlatterSecondary = BaseColors.teal600
+    public let accent = BaseColors.lime400
+    public let accentSecondary = BaseColors.lime600
     public let success = BaseColors.green500
     public let warning = BaseColors.amber500
     public let error = BaseColors.red500
-    public let focusRing = BaseColors.emerald400.opacity(0.8)
-    public let focusFill: Color? = BaseColors.emerald200
-    public let onFocusFill = BaseColors.emerald950
-    public let onFocusFillSecondary = BaseColors.emerald900
+    public let focusRing = BaseColors.lime400.opacity(0.8)
+    public let focusFill: Color? = BaseColors.lime200
+    public let onFocusFill = BaseColors.lime950
+    public let onFocusFillSecondary = BaseColors.lime900
 
     // MARK: - Typography
 
     public let fonts = FontScheme(
-        display: FontFamily.spaceGrotesk,
-        headline: FontFamily.spaceGrotesk,
+        display: FontFamily.technor,
+        headline: FontFamily.technor,
         title: FontFamily.spaceGrotesk,
         overview: FontFamily.spaceGrotesk,
         body: FontFamily.spaceGrotesk,
