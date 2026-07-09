@@ -13,8 +13,8 @@ public struct HorrorTheme: Theme, Sendable {
     // MARK: - Colors
 
     public let background = BaseColors.stone950
-    public let surface = BaseColors.slate900
-    public let surfaceElevated = BaseColors.slate800
+    public let surface = BaseColors.stone900
+    public let surfaceElevated = BaseColors.stone800
     public let primary = BaseColors.amber50
     public let secondary = BaseColors.amber50.opacity(0.8)
     public let tertiary = BaseColors.amber50.opacity(0.5)

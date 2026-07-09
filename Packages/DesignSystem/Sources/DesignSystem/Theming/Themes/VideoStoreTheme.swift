@@ -15,9 +15,9 @@ public struct VideoStoreTheme: Theme, Sendable {
     public let background = BaseColors.blue950
     public let surface = BaseColors.blue900
     public let surfaceElevated = BaseColors.blue800
-    public let primary = BaseColors.amber50
-    public let secondary = BaseColors.stone200
-    public let tertiary = BaseColors.stone300
+    public let primary = BaseColors.yellow100
+    public let secondary = BaseColors.yellow100.opacity(0.9)
+    public let tertiary = BaseColors.yellow300.opacity(0.7)
     public let onPlatter = BaseColors.blue950
     public let onPlatterSecondary = BaseColors.blue700
     public let accent = BaseColors.yellow400
@@ -26,20 +26,20 @@ public struct VideoStoreTheme: Theme, Sendable {
     public let warning = BaseColors.orange400
     public let error = BaseColors.red400
     public let focusRing = BaseColors.yellow400.opacity(0.8)
-    public let focusFill: Color? = BaseColors.yellow200
-    public let onFocusFill = BaseColors.blue950
-    public let onFocusFillSecondary = BaseColors.blue800
+    public let focusFill: Color? = BaseColors.blue400.opacity(0.6)
+    public let onFocusFill = BaseColors.yellow300
+    public let onFocusFillSecondary = BaseColors.yellow400
 
     // MARK: - Typography
 
     public let fonts = FontScheme(
-        display: FontFamily.satoshi,
-        headline: FontFamily.satoshi,
-        title: FontFamily.satoshi,
-        overview: FontFamily.satoshi,
-        body: FontFamily.satoshi,
-        caption: FontFamily.satoshi,
-        small: FontFamily.satoshi
+        display: FontFamily.nippo,
+        headline: FontFamily.nippo,
+        title: FontFamily.generalSans,
+        overview: FontFamily.supreme,
+        body: FontFamily.supreme,
+        caption: FontFamily.supreme,
+        small: FontFamily.supreme
     )
 
     public let fontWeightDisplay: Font.Weight = .black
