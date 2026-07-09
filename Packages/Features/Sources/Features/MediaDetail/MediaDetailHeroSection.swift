@@ -76,9 +76,8 @@ struct MediaDetailHeroSection: View {
                     )
                     if let genreLine {
                         Text(genreLine)
-                            .font(theme.jsCaption)
+                            .font(theme.js(.caption, .emphasized))
                             .foregroundStyle(theme.tertiary)
-                            .fontWeight(.semibold)
                             .lineLimit(1)
                     }
                 }

@@ -217,8 +217,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                 }
             }
         }
-        .font(theme.jsBody)
-        .fontWeight(.medium)
+        .font(theme.js(.body, .subtle))
         .foregroundStyle(theme.primary.opacity(0.9))
         .padding(.horizontal, SpacingTokens.sm)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -256,7 +255,6 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private var titleText: some View {
         Text(title)
             .font(theme.jsTitle)
-            .fontWeight(.semibold)
             .foregroundStyle(theme.primary)
             .lineLimit(1)
             .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
@@ -266,8 +264,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         // Reserve the second line even when empty so cards with one vs. two
         // caption lines stay aligned across a row.
         Text(subtitle ?? " ")
-            .font(theme.jsBody)
-            .fontWeight(.semibold)
+            .font(theme.js(.body, .emphasized))
             .foregroundStyle(theme.secondary)
             .lineLimit(1)
             .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))

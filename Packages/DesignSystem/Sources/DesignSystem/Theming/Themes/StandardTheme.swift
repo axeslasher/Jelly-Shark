@@ -32,15 +32,17 @@ public struct StandardTheme: Theme, Sendable {
     // │ SWAP FONTS HERE. Each role points at a `FontFamily` name (or `nil` for  │
     // │ the system font / San Francisco). Mix and match freely, then rebuild.   │
     // │                                                                          │
-    // │ Current mapping — "Zodiak display, sans elsewhere":                      │
-    // │   • Zodiak (serif) for the hero Display                                  │
-    // │   • Satoshi for section Headlines + Titles                               │
-    // │   • General Sans for Overview / Body / Caption / Small                   │
+    // │ Sizes, weights, emphasis weights, and tracking default to the Standard  │
+    // │ scale (TypographyTokens). To tune a role beyond its family, mutate the  │
+    // │ scheme in a closure initializer:                                         │
     // │                                                                          │
-    // │ A few alternatives to try:                                               │
-    // │   Serif reading:  overview: FontFamily.zodiak                            │
-    // │   Satoshi hero:   display/headline: .satoshi, title/body: .generalSans   │
-    // │   All system:     set any role to `nil` (or use `.system`)               │
+    // │   public let fonts: FontScheme = {                                       │
+    // │       var scheme = FontScheme(display: FontFamily.generalSans, ...)      │
+    // │       scheme.display.weight = .black   // heavier hero                   │
+    // │       scheme.display.size = 56         // x-height compensation          │
+    // │       scheme.body.emphasizedWeight = .bold  // what "emphasized" means   │
+    // │       return scheme                                                      │
+    // │   }()                                                                    │
     // └────────────────────────────────────────────────────────────────────────┘
     public let fonts = FontScheme(
         display: FontFamily.generalSans,
@@ -49,13 +51,13 @@ public struct StandardTheme: Theme, Sendable {
         overview: FontFamily.satoshi,
         body: FontFamily.satoshi,
         caption: FontFamily.satoshi,
-        small: FontFamily.satoshi
+        small: FontFamily.satoshi,
+        certificate: TypeStyle(
+            family: FontFamily.zodiak,
+            size: TypographyTokens.Size.certificate,
+            weight: TypographyTokens.Weight.certificate
+        )
     )
-
-    public let fontFamily: String? = nil // Legacy single-family hook (unused by tokens)
-    public let fontWeightDisplay: Font.Weight = .bold
-    public let fontWeightBody: Font.Weight = .regular
-    public let letterSpacing: CGFloat = 0
 
     // MARK: - Motion
 

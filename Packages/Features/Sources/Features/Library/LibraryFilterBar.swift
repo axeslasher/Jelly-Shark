@@ -230,8 +230,7 @@ struct LibraryFilterBar: View {
             Text(title)
             if count > 0 {
                 Text("\(count)")
-                    .font(theme.jsCaption)
-                    .bold()
+                    .font(theme.js(.caption, .strong))
                     .foregroundStyle(theme.primary)
                     .padding(SpacingTokens.xxs)
                     .frame(minWidth: 32, minHeight: 32)

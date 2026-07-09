@@ -111,8 +111,7 @@ public struct ServerConnectionView: View {
                     }
                 } label: {
                     Text("Connect")
-                        .font(theme.jsBody)
-                        .fontWeight(.semibold)
+                        .font(theme.js(.body, .emphasized))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, SpacingTokens.md)
                 }

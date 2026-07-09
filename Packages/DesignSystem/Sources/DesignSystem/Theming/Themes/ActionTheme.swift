@@ -39,7 +39,12 @@ public struct ActionTheme: Theme, Sendable {
         overview: FontFamily.generalSans,
         body: FontFamily.generalSans,
         caption: FontFamily.generalSans,
-        small: FontFamily.generalSans
+        small: FontFamily.generalSans,
+        certificate: TypeStyle(
+            family: FontFamily.zodiak,
+            size: TypographyTokens.Size.certificate,
+            weight: TypographyTokens.Weight.certificate
+        )
     )
 
     // MARK: - Motion

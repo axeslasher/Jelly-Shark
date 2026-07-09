@@ -14,15 +14,13 @@ struct CreditEntry: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
             Text(label)
-                .font(theme.jsCaption)
+                .font(theme.jsEyebrow)
                 .foregroundStyle(theme.tertiary)
-                .fontWeight(.bold)
                 .textCase(.uppercase)
-                .tracking(TypographyTokens.Tracking.wide)
+                .tracking(theme.jsTracking(.eyebrow))
             Text(value)
-                .font(theme.jsBody)
+                .font(theme.js(.body, .emphasized))
                 .foregroundStyle(theme.secondary)
-                .fontWeight(.semibold)
                 .lineLimit(lineLimit)
         }
     }

@@ -32,17 +32,24 @@ public struct VideoStoreTheme: Theme, Sendable {
 
     // MARK: - Typography
 
-    public let fonts = FontScheme(
-        display: FontFamily.nippo,
-        headline: FontFamily.nippo,
-        title: FontFamily.generalSans,
-        overview: FontFamily.supreme,
-        body: FontFamily.supreme,
-        caption: FontFamily.supreme,
-        small: FontFamily.supreme
-    )
-
-    public let fontWeightDisplay: Font.Weight = .black
+    public let fonts: FontScheme = {
+        var scheme = FontScheme(
+            display: FontFamily.nippo,
+            headline: FontFamily.nippo,
+            title: FontFamily.generalSans,
+            overview: FontFamily.supreme,
+            body: FontFamily.supreme,
+            caption: FontFamily.supreme,
+            small: FontFamily.supreme,
+            certificate: TypeStyle(
+                family: FontFamily.zodiak,
+                size: TypographyTokens.Size.certificate,
+                weight: TypographyTokens.Weight.certificate
+            )
+        )
+        scheme.display.weight = .black
+        return scheme
+    }()
 
     // MARK: - Motion
 

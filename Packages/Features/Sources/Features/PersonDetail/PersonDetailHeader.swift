@@ -121,9 +121,8 @@ struct PersonDetailHeader: View {
                     Label(place, systemImage: "mappin.and.ellipse")
                 }
             }
-            .font(theme.jsBody)
+            .font(theme.js(.body, .strong))
             .foregroundStyle(theme.tertiary)
-            .fontWeight(.bold)
             .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
         }
     }

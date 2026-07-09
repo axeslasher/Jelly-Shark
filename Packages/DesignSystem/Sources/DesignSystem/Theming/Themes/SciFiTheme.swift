@@ -39,7 +39,12 @@ public struct SciFiTheme: Theme, Sendable {
         overview: FontFamily.spaceGrotesk,
         body: FontFamily.spaceGrotesk,
         caption: FontFamily.spaceGrotesk,
-        small: FontFamily.spaceGrotesk
+        small: FontFamily.spaceGrotesk,
+        certificate: TypeStyle(
+            family: FontFamily.zodiak,
+            size: TypographyTokens.Size.certificate,
+            weight: TypographyTokens.Weight.certificate
+        )
     )
 
     // MARK: - Motion

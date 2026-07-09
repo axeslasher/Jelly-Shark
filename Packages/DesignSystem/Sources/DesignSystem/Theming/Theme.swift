@@ -77,22 +77,11 @@ public protocol Theme: Sendable {
 
     // MARK: - Typography
 
-    /// Per-role typeface assignment for this theme. Defaults to all-system
-    /// (San Francisco). Override in a theme to give it its own fonts — see
-    /// `StandardTheme.fonts`.
+    /// Per-role typography for this theme — typeface, size, weight, emphasis
+    /// weights, and tracking per role. Defaults to the all-system scheme
+    /// (San Francisco on the Standard scale). Override in a theme to give it
+    /// its own type — see `StandardTheme.fonts`.
     var fonts: FontScheme { get }
-
-    /// Primary font family name (nil for system font)
-    var fontFamily: String? { get }
-
-    /// Display font weight
-    var fontWeightDisplay: Font.Weight { get }
-
-    /// Body font weight
-    var fontWeightBody: Font.Weight { get }
-
-    /// Default letter spacing
-    var letterSpacing: CGFloat { get }
 
     // MARK: - Spacing
 
@@ -160,10 +149,6 @@ public extension Theme {
 
     // Default typography (can be overridden)
     var fonts: FontScheme { .system }
-    var fontFamily: String? { nil }
-    var fontWeightDisplay: Font.Weight { .bold }
-    var fontWeightBody: Font.Weight { .regular }
-    var letterSpacing: CGFloat { 0 }
 
     // Default spacing
     var spacingUnit: CGFloat { SpacingTokens.unit }

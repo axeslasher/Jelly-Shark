@@ -39,7 +39,12 @@ public struct HorrorTheme: Theme, Sendable {
         overview: FontFamily.sentient,
         body: FontFamily.sentient,
         caption: FontFamily.sentient,
-        small: FontFamily.sentient
+        small: FontFamily.sentient,
+        certificate: TypeStyle(
+            family: FontFamily.zodiak,
+            size: TypographyTokens.Size.certificate,
+            weight: TypographyTokens.Weight.certificate
+        )
     )
 
     // MARK: - Motion

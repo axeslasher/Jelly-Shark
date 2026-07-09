@@ -64,11 +64,7 @@ struct MediaMetadataRow: View {
                 }
                 if let certificate {
                     Text(certificate)
-                        // Ratings badge always uses Zodiak, regardless of the active
-                        // theme's font scheme. Falls back to the system font if Zodiak
-                        // isn't installed (same behavior as the scheme resolver).
-                        .font(.custom(FontFamily.zodiak, fixedSize: TypographyTokens.Size.caption))
-                        .fontWeight(.bold)
+                        .font(theme.jsCertificate)
                         .padding(.horizontal, SpacingTokens.xs)
                         .padding(.vertical, SpacingTokens.xxs)
                         .overlay(
@@ -88,9 +84,8 @@ struct MediaMetadataRow: View {
                     Label(audioFormat, systemImage: "hifispeaker.fill")
                 }
             }
-            .font(theme.jsBody)
+            .font(theme.js(.body, .strong))
             .foregroundStyle(theme.tertiary)
-            .fontWeight(.bold)
             .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
         }
     }

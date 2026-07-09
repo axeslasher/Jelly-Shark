@@ -181,7 +181,6 @@ struct EpisodesSection: View {
                     } label: {
                         Text(season.name)
                             .font(theme.jsTitle)
-                            .fontWeight(.semibold)
                             .foregroundStyle(
                                 season.id == (currentSeasonId ?? seasons.first?.id)
                                     ? theme.accent : theme.primary

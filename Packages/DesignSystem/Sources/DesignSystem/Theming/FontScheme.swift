@@ -73,23 +73,125 @@ public enum FontFamily {
     public static let technor = "Technor Variable"
 }
 
+// MARK: - Type styles
+
+/// One typographic role's full recipe — family, size, weight, emphasis
+/// weights, and tracking. Every field is mutable so a theme can hand-tune any
+/// role (different typefaces have different x-heights, and weights don't
+/// transfer 1:1 between families).
+public struct TypeStyle: Sendable {
+    /// Registered font family name; `nil` means the system font (San
+    /// Francisco), which is also the graceful fallback whenever the named
+    /// font isn't installed.
+    public var family: String?
+
+    /// Point size (fixed; 10-foot UI does not scale with Dynamic Type).
+    public var size: CGFloat
+
+    /// Base weight for the role.
+    public var weight: Font.Weight
+
+    /// Weight for `.subtle` emphasis (Standard scale: medium).
+    public var subtleWeight: Font.Weight
+
+    /// Weight for `.emphasized` emphasis (Standard scale: semibold).
+    public var emphasizedWeight: Font.Weight
+
+    /// Weight for `.strong` emphasis (Standard scale: bold).
+    public var strongWeight: Font.Weight
+
+    /// Letter tracking for the role. `Font` can't carry tracking, so views
+    /// must apply it themselves via `.tracking(theme.jsTracking(role))` —
+    /// today only the eyebrow label (`CreditEntry`) does; tuning a role no
+    /// view applies it to is a silent no-op.
+    public var tracking: CGFloat
+
+    public init(
+        family: String? = nil,
+        size: CGFloat,
+        weight: Font.Weight = .regular,
+        subtleWeight: Font.Weight = TypographyTokens.Weight.subtle,
+        emphasizedWeight: Font.Weight = TypographyTokens.Weight.emphasized,
+        strongWeight: Font.Weight = TypographyTokens.Weight.strong,
+        tracking: CGFloat = TypographyTokens.Tracking.normal
+    ) {
+        self.family = family
+        self.size = size
+        self.weight = weight
+        self.subtleWeight = subtleWeight
+        self.emphasizedWeight = emphasizedWeight
+        self.strongWeight = strongWeight
+        self.tracking = tracking
+    }
+}
+
+/// The typographic roles a theme styles. Raw call sites should go through
+/// `theme.js(_:_:)` / the `js*` sugar accessors, never `Font.custom` directly.
+public enum TypeRole: Sendable, CaseIterable {
+    case display, headline, title, overview, body, caption, small, eyebrow, certificate
+}
+
+/// Semantic emphasis tiers components layer on a role instead of pinning
+/// `.fontWeight(...)` themselves; each theme decides what a tier means per
+/// role via `TypeStyle`'s `subtleWeight` / `emphasizedWeight` / `strongWeight`.
+public enum TypeEmphasis: Sendable {
+    case regular, subtle, emphasized, strong
+}
+
+extension TypeStyle {
+    func weight(for emphasis: TypeEmphasis) -> Font.Weight {
+        switch emphasis {
+        case .regular: return weight
+        case .subtle: return subtleWeight
+        case .emphasized: return emphasizedWeight
+        case .strong: return strongWeight
+        }
+    }
+
+    /// Resolve the style into a `Font`, falling back to the system font when
+    /// `family` is `nil` or unavailable. Custom resolution selects the
+    /// variable font's weight axis via `.weight(_:)`.
+    func font(_ emphasis: TypeEmphasis = .regular) -> Font {
+        let resolvedWeight = weight(for: emphasis)
+        guard let family else {
+            return .system(size: size, weight: resolvedWeight)
+        }
+        return .custom(family, fixedSize: size).weight(resolvedWeight)
+    }
+}
+
 // MARK: - Font scheme
 
-/// Maps each typographic role to a registered font family name. A `nil` entry
-/// means "use the system font (San Francisco)" for that role — which is also the
-/// graceful fallback whenever the named font isn't installed.
+/// Maps each typographic role to a full `TypeStyle`. The family-per-role
+/// initializer seeds sizes, weights, and tracking with the Standard scale
+/// from `TypographyTokens`, so a theme that only picks families renders on
+/// the Standard metrics; hand-tune any role by mutating it afterward:
 ///
-/// Build one of these per theme so each theme can have its own typography. See
-/// `StandardTheme.fonts` for the worked example and swap instructions.
+///     public let fonts: FontScheme = {
+///         var scheme = FontScheme(display: FontFamily.nippo, ...)
+///         scheme.display.weight = .black
+///         scheme.display.size = 56
+///         return scheme
+///     }()
+///
+/// Build one of these per theme so each theme can have its own typography.
+/// See `StandardTheme.fonts` for the worked example and swap instructions.
 public struct FontScheme: Sendable {
-    public var display: String?
-    public var headline: String?
-    public var title: String?
-    public var overview: String?
-    public var body: String?
-    public var caption: String?
-    public var small: String?
+    public var display: TypeStyle
+    public var headline: TypeStyle
+    public var title: TypeStyle
+    public var overview: TypeStyle
+    public var body: TypeStyle
+    public var caption: TypeStyle
+    public var small: TypeStyle
+    public var eyebrow: TypeStyle
+    public var certificate: TypeStyle
 
+    /// Family-per-role initializer; everything else defaults to the Standard
+    /// scale. `eyebrow` defaults to the caption family at eyebrow weight and
+    /// wide tracking; `certificate` defaults to the Zodiak ratings badge.
+    /// (Keep this the ONLY initializer — a second fully-defaulted init would
+    /// make `FontScheme()` ambiguous.)
     public init(
         display: String? = nil,
         headline: String? = nil,
@@ -97,31 +199,75 @@ public struct FontScheme: Sendable {
         overview: String? = nil,
         body: String? = nil,
         caption: String? = nil,
-        small: String? = nil
+        small: String? = nil,
+        eyebrow: TypeStyle? = nil,
+        certificate: TypeStyle = TypeStyle(
+            family: FontFamily.zodiak,
+            size: TypographyTokens.Size.certificate,
+            weight: TypographyTokens.Weight.certificate
+        )
     ) {
-        self.display = display
-        self.headline = headline
-        self.title = title
-        self.overview = overview
-        self.body = body
-        self.caption = caption
-        self.small = small
+        self.display = TypeStyle(
+            family: display,
+            size: TypographyTokens.Size.display,
+            weight: TypographyTokens.Weight.display
+        )
+        self.headline = TypeStyle(
+            family: headline,
+            size: TypographyTokens.Size.headline,
+            weight: TypographyTokens.Weight.headline
+        )
+        self.title = TypeStyle(
+            family: title,
+            size: TypographyTokens.Size.title,
+            weight: TypographyTokens.Weight.title
+        )
+        self.overview = TypeStyle(
+            family: overview,
+            size: TypographyTokens.Size.overview,
+            weight: TypographyTokens.Weight.overview
+        )
+        self.body = TypeStyle(
+            family: body,
+            size: TypographyTokens.Size.body,
+            weight: TypographyTokens.Weight.body
+        )
+        self.caption = TypeStyle(
+            family: caption,
+            size: TypographyTokens.Size.caption,
+            weight: TypographyTokens.Weight.caption
+        )
+        self.small = TypeStyle(
+            family: small,
+            size: TypographyTokens.Size.small,
+            weight: TypographyTokens.Weight.small
+        )
+        self.eyebrow = eyebrow ?? TypeStyle(
+            family: caption,
+            size: TypographyTokens.Size.eyebrow,
+            weight: TypographyTokens.Weight.eyebrow,
+            tracking: TypographyTokens.Tracking.wide
+        )
+        self.certificate = certificate
     }
 
-    /// All-system scheme: every role falls back to San Francisco. This is the
-    /// default for any theme that doesn't override `fonts`.
+    /// All-system scheme: every role falls back to San Francisco (the
+    /// certificate badge keeps its Zodiak default). This is the default for
+    /// any theme that doesn't override `fonts`.
     public static let system = FontScheme()
-}
 
-extension FontScheme {
-    /// Resolve a custom family name into a `Font` at the given size/weight,
-    /// falling back to the system font when the name is `nil` or unavailable.
-    /// Custom resolution uses the variable font's weight axis via `.weight(_:)`.
-    func font(named name: String?, size: CGFloat, weight: Font.Weight) -> Font {
-        guard let name else {
-            return .system(size: size, weight: weight)
+    public subscript(role: TypeRole) -> TypeStyle {
+        switch role {
+        case .display: return display
+        case .headline: return headline
+        case .title: return title
+        case .overview: return overview
+        case .body: return body
+        case .caption: return caption
+        case .small: return small
+        case .eyebrow: return eyebrow
+        case .certificate: return certificate
         }
-        return .custom(name, fixedSize: size).weight(weight)
     }
 }
 
