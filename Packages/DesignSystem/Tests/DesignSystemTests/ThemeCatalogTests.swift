@@ -5,30 +5,48 @@ import SwiftUI
 /// WCAG 2.x relative-luminance helpers built on `Color.resolve(in:)`.
 /// `Color.Resolved`'s linear components are exactly the WCAG-linearized sRGB
 /// channels; wide-gamut values can fall outside 0...1, so clamp before the
-/// luminance sum.
+/// luminance sum. Translucent colors are alpha-composited (`flatten`) so a
+/// tint's *effective* on-screen color over a given backdrop is what gets
+/// measured, and layers can be chained (text over a translucent platter over
+/// the theme background).
 private enum WCAG {
-    static func luminance(_ color: Color, composedOver background: Color? = nil) -> Double {
+    typealias Linear = (r: Double, g: Double, b: Double)
+
+    static func resolve(_ color: Color) -> (components: Linear, alpha: Double) {
         let resolved = color.resolve(in: EnvironmentValues())
-        var (r, g, b) = (
-            Double(resolved.linearRed),
-            Double(resolved.linearGreen),
-            Double(resolved.linearBlue)
+        let components = (
+            r: Double(resolved.linearRed),
+            g: Double(resolved.linearGreen),
+            b: Double(resolved.linearBlue)
         )
-        if let background, resolved.opacity < 1 {
-            let bg = background.resolve(in: EnvironmentValues())
-            let alpha = Double(resolved.opacity)
-            r = r * alpha + Double(bg.linearRed) * (1 - alpha)
-            g = g * alpha + Double(bg.linearGreen) * (1 - alpha)
-            b = b * alpha + Double(bg.linearBlue) * (1 - alpha)
-        }
+        return (components, Double(resolved.opacity))
+    }
+
+    /// `color` alpha-composited over an opaque backdrop. Pass `nil` to treat
+    /// the color as the bottom layer.
+    static func flatten(_ color: Color, over backdrop: Linear? = nil) -> Linear {
+        let (fg, alpha) = resolve(color)
+        guard let backdrop, alpha < 1 else { return fg }
+        return (
+            r: fg.r * alpha + backdrop.r * (1 - alpha),
+            g: fg.g * alpha + backdrop.g * (1 - alpha),
+            b: fg.b * alpha + backdrop.b * (1 - alpha)
+        )
+    }
+
+    static func luminance(_ components: Linear) -> Double {
         let clamp = { (value: Double) in min(max(value, 0), 1) }
-        return 0.2126 * clamp(r) + 0.7152 * clamp(g) + 0.0722 * clamp(b)
+        return 0.2126 * clamp(components.r) + 0.7152 * clamp(components.g) + 0.0722 * clamp(components.b)
+    }
+
+    static func contrastRatio(luminance first: Double, _ second: Double) -> Double {
+        (max(first, second) + 0.05) / (min(first, second) + 0.05)
     }
 
     static func contrastRatio(_ foreground: Color, on background: Color) -> Double {
-        let fg = luminance(foreground, composedOver: background)
-        let bg = luminance(background)
-        return (max(fg, bg) + 0.05) / (min(fg, bg) + 0.05)
+        let bg = flatten(background)
+        let fg = flatten(foreground, over: bg)
+        return contrastRatio(luminance: luminance(fg), luminance(bg))
     }
 }
 
@@ -74,7 +92,7 @@ struct ThemeCatalogTests {
                 BaseColors.red100, BaseColors.red300, BaseColors.red500,
                 BaseColors.red700, BaseColors.red900,
             ]
-            let luminances = reds.map { WCAG.luminance($0) }
+            let luminances = reds.map { WCAG.luminance(WCAG.flatten($0)) }
             #expect(luminances == luminances.sorted(by: >))
         }
     }
@@ -166,16 +184,49 @@ struct ThemeCatalogTests {
             }
         }
 
-        @Test("Themed focus platters stand out and keep their content legible")
+        @Test("Themed focus platters keep their content legible")
         func focusFillContrast() {
+            // The platter renders as a glass tint, so its on-screen color is
+            // the fill composited over whatever sits behind the button.
+            // Artwork is unbounded; the theme's own chrome is the testable
+            // backdrop set, so legibility must hold with the fill flattened
+            // over both background and surface. The 3:1 stand-out floor only
+            // applies to OPAQUE fills — a translucent glass platter gets its
+            // lift from the material (blur, brightness) and the focus scale,
+            // which color math can't see.
             for theme in ThemeCatalogTests.allThemes {
                 guard let focusFill = theme.focusFill else { continue }
-                let content = WCAG.contrastRatio(theme.onFocusFill, on: focusFill)
-                let secondary = WCAG.contrastRatio(theme.onFocusFillSecondary, on: focusFill)
-                let lift = WCAG.contrastRatio(focusFill, on: theme.background)
-                #expect(content >= 4.5, "\(theme.id) onFocusFill/focusFill: \(content)")
-                #expect(secondary >= 4.5, "\(theme.id) onFocusFillSecondary/focusFill: \(secondary)")
-                #expect(lift >= 3.0, "\(theme.id) focusFill/background: \(lift)")
+                let fillAlpha = WCAG.resolve(focusFill).alpha
+                for (backdropName, backdrop) in [
+                    ("background", theme.background),
+                    ("surface", theme.surface),
+                ] {
+                    let base = WCAG.flatten(backdrop)
+                    let platter = WCAG.flatten(focusFill, over: base)
+                    let platterLuminance = WCAG.luminance(platter)
+                    let content = WCAG.contrastRatio(
+                        luminance: WCAG.luminance(WCAG.flatten(theme.onFocusFill, over: platter)),
+                        platterLuminance
+                    )
+                    let secondary = WCAG.contrastRatio(
+                        luminance: WCAG.luminance(WCAG.flatten(theme.onFocusFillSecondary, over: platter)),
+                        platterLuminance
+                    )
+                    #expect(
+                        content >= 4.5,
+                        "\(theme.id) onFocusFill on focusFill-over-\(backdropName): \(content)"
+                    )
+                    #expect(
+                        secondary >= 4.5,
+                        "\(theme.id) onFocusFillSecondary on focusFill-over-\(backdropName): \(secondary)"
+                    )
+                    if fillAlpha >= 1 {
+                        let lift = WCAG.contrastRatio(
+                            luminance: platterLuminance, WCAG.luminance(base)
+                        )
+                        #expect(lift >= 3.0, "\(theme.id) focusFill/\(backdropName): \(lift)")
+                    }
+                }
             }
         }
 
