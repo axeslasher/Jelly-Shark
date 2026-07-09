@@ -38,6 +38,39 @@ public enum FontFamily {
     /// OFL-licensed and committed to the repo. Intended for a future
     /// accessibility setting that swaps the whole UI to this face.
     public static let atkinson = "Atkinson Hyperlegible Next"
+
+    /// High-contrast display serif — Bevellier.
+    public static let bevellier = "Bevellier Variable"
+
+    /// Sharp geometric display grotesk — Clash Grotesk. (Upright only.)
+    public static let clashGrotesk = "Clash Grotesk Variable"
+
+    /// Condensed wedge-serif — Grenze.
+    public static let grenze = "Grenze"
+
+    /// Blackletter display — Grenze Gotisch. (Upright only.)
+    public static let grenzeGotisch = "Grenze Gotisch"
+
+    /// Techy rounded sans — Nippo. (Upright only.)
+    public static let nippo = "Nippo Variable"
+
+    /// Condensed sans — Oswald. (Upright only.)
+    public static let oswald = "Oswald"
+
+    /// Friendly rounded sans — Pilcrow Rounded. (Upright only.)
+    public static let pilcrowRounded = "Pilcrow Rounded Variable"
+
+    /// Humanist old-style serif — Sentient.
+    public static let sentient = "Sentient Variable"
+
+    /// Workhorse neo-grotesque sans — Supreme.
+    public static let supreme = "Supreme Variable"
+
+    /// Swiss neo-grotesque sans — Switzer.
+    public static let switzer = "Switzer Variable"
+
+    /// Angular techno display sans — Technor. (Upright only.)
+    public static let technor = "Technor Variable"
 }
 
 // MARK: - Font scheme
