@@ -12,34 +12,34 @@ public struct ActionTheme: Theme, Sendable {
 
     // MARK: - Colors
 
-    public let background = BaseColors.slate950
-    public let surface = BaseColors.slate900
-    public let surfaceElevated = BaseColors.slate800
-    public let primary = BaseColors.sky100
-    public let secondary = BaseColors.slate300
+    public let background = BaseColors.gray950
+    public let surface = BaseColors.gray900
+    public let surfaceElevated = BaseColors.slate500
+    public let primary = BaseColors.slate50
+    public let secondary = BaseColors.gray300
     public let tertiary = BaseColors.slate400
     public let onPlatter = BaseColors.slate900
     public let onPlatterSecondary = BaseColors.slate600
-    public let accent = BaseColors.cyan400
-    public let accentSecondary = BaseColors.cyan600
+    public let accent = BaseColors.rose500
+    public let accentSecondary = BaseColors.rose600
     public let success = BaseColors.emerald400
     public let warning = BaseColors.yellow400
-    public let error = BaseColors.rose500
-    public let focusRing = BaseColors.cyan400.opacity(0.8)
-    public let focusFill: Color? = BaseColors.cyan200
-    public let onFocusFill = BaseColors.slate950
-    public let onFocusFillSecondary = BaseColors.slate700
+    public let error = BaseColors.red500
+    public let focusRing = BaseColors.rose600.opacity(0.8)
+    public let focusFill: Color? = BaseColors.slate700.opacity(0.5)
+    public let onFocusFill = BaseColors.slate100
+    public let onFocusFillSecondary = BaseColors.gray300
 
     // MARK: - Typography
 
     public let fonts = FontScheme(
-        display: FontFamily.spaceGrotesk,
-        headline: FontFamily.spaceGrotesk,
-        title: FontFamily.spaceGrotesk,
-        overview: FontFamily.satoshi,
-        body: FontFamily.satoshi,
-        caption: FontFamily.satoshi,
-        small: FontFamily.satoshi
+        display: FontFamily.supreme,
+        headline: FontFamily.supreme,
+        title: FontFamily.supreme,
+        overview: FontFamily.generalSans,
+        body: FontFamily.generalSans,
+        caption: FontFamily.generalSans,
+        small: FontFamily.generalSans
     )
 
     // MARK: - Motion
