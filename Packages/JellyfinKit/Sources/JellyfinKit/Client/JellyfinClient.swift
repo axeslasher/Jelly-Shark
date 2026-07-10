@@ -789,6 +789,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 enableDirectPlay: true,
                 enableDirectStream: true,
                 enableTranscoding: true,
+                // Without an explicit budget the server applies a low default
+                // bitrate cap and refuses direct play for most real files
+                // (observed: ~2.5 Mbps cutoff). Apple TV is a wired/strong-
+                // wifi LAN device; declare a generous ceiling.
+                maxStreamingBitrate: Self.maxStreamingBitrate,
                 startTimeTicks: startTimeTicks.map(Int.init),
                 subtitleStreamIndex: subtitleStreamIndex,
                 userID: userId

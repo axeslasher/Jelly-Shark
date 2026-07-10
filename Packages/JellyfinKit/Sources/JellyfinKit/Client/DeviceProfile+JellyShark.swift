@@ -7,6 +7,16 @@ import JellyfinAPI
 // so PlaybackInfo can decide between direct play, remux, and transcode.
 
 extension JellyfinClient {
+    /// Streaming bitrate ceiling declared to the server (120 Mbps).
+    ///
+    /// PlaybackInfo requests MUST carry this: when the field is omitted the
+    /// server falls back to a low default cap and reports
+    /// `SupportsDirectPlay=false` for most real-world files (observed
+    /// cutoff ~2.5 Mbps against Jellyfin 10.10). 120 Mbps comfortably covers
+    /// 4K remuxes on a LAN while still letting the server transcode down for
+    /// genuinely enormous sources.
+    static let maxStreamingBitrate = 120_000_000
+
     /// Capabilities profile for Apple TV / Vision Pro playback via AVPlayer
     static var deviceProfile: JellyfinAPI.DeviceProfile {
         JellyfinAPI.DeviceProfile(
@@ -64,6 +74,10 @@ extension JellyfinClient {
             ],
             name: "Jelly Shark",
             subtitleProfiles: [
+                // AVPlayer renders embedded tx3g (mov_text) natively; without
+                // this declaration the server refuses to direct play any
+                // mp4/mov that merely CONTAINS such a track
+                JellyfinAPI.SubtitleProfile(format: "mov_text", method: .embed),
                 JellyfinAPI.SubtitleProfile(format: "vtt", method: .hls),
                 JellyfinAPI.SubtitleProfile(format: "subrip", method: .hls),
                 JellyfinAPI.SubtitleProfile(format: "ass", method: .encode),
