@@ -48,7 +48,7 @@ struct CollectionItemsSection: View {
                     // The collection IS this page's content (like episodes on
                     // a series page), so its posters render a step larger
                     // than the supporting shelves' 200pt cards.
-                    item.posterShelfItem(client: session.client, width: 300)
+                    item.posterShelfItem(client: session.client, width: 316)
                 }
             }
         }

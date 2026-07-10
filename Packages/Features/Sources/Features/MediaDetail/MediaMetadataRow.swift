@@ -17,6 +17,10 @@ struct MediaMetadataRow: View {
     /// Container content count ("3 Seasons", "4 Movies"); shown in place of
     /// runtime for series and collections
     let seasons: String?
+
+    /// SF Symbol accompanying the content count (stacked squares for
+    /// seasons, a film stack for collection contents)
+    let seasonsIcon: String
     let communityRating: Double?
     /// Critic score on a 0–100 scale, rendered as a percentage
     let criticRating: Double?
@@ -44,7 +48,7 @@ struct MediaMetadataRow: View {
                     Label(yearText, systemImage: "calendar")
                 }
                 if let seasons {
-                    Label(seasons, systemImage: "square.stack")
+                    Label(seasons, systemImage: seasonsIcon)
                 }
                 if let runtime {
                     Label(runtime, systemImage: "clock")

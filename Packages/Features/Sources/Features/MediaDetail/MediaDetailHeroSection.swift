@@ -13,6 +13,10 @@ struct MediaDetailHeroSection: View {
     let item: MediaItem
     let directors: [CastMember]
     let topCast: [CastMember]
+    /// Replaces the item's own year in the metadata row when the owner can
+    /// compute a better one — collection pages pass the span of their
+    /// contents' release years ("1984–2024"). Nil falls back to the item's.
+    let yearSpanOverride: String?
     /// Play-button title, computed by the owner ("Play", "Resume",
     /// "Resume S2E4" on series pages)
     let playTitle: String
@@ -62,12 +66,13 @@ struct MediaDetailHeroSection: View {
                         overviewSection
                     }
                     MediaMetadataRow(
-                        yearText: item.yearSpanText,
+                        yearText: yearSpanOverride ?? item.yearSpanText,
                         // Series and collections carry no meaningful single
                         // runtime; their content count is the "how much"
                         // figure instead.
                         runtime: item.type == .series || item.type == .boxSet ? nil : item.formattedRuntime,
                         seasons: item.seasonCountText ?? item.collectionCountText,
+                        seasonsIcon: item.type == .boxSet ? "film.stack" : "square.stack",
                         communityRating: item.communityRating,
                         criticRating: item.criticRating,
                         certificate: item.officialRating,

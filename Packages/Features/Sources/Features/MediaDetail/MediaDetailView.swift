@@ -98,6 +98,16 @@ public struct MediaDetailView: View {
         detailedItem ?? item
     }
 
+    /// Collection pages show the span of their contents' release years in
+    /// the hero metadata ("1984–2024"); nil (item's own year) until the
+    /// contents load, and for every other page type.
+    private var collectionYearSpan: String? {
+        guard item.type == .boxSet else { return nil }
+        let years = collectionItems.compactMap(\.productionYear)
+        guard let first = years.min(), let last = years.max() else { return nil }
+        return first == last ? String(first) : "\(first)–\(last)"
+    }
+
     /// What the hero Play button actually plays: series pages resolve to the
     /// next-up episode (falling back to the selected season's first episode),
     /// collection pages to their first unwatched item (falling back to the
@@ -148,6 +158,7 @@ public struct MediaDetailView: View {
                     item: displayItem,
                     directors: directors,
                     topCast: topCast,
+                    yearSpanOverride: collectionYearSpan,
                     playTitle: playButtonTitle,
                     playTarget: playableItem,
                     playbackItem: $playbackItem,
