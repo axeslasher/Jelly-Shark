@@ -32,21 +32,33 @@ public struct SciFiTheme: Theme, Sendable {
 
     // MARK: - Typography
 
-    public let fonts = FontScheme(
-        display: FontFamily.technor,
-        headline: FontFamily.technor,
-        title: FontFamily.spaceGrotesk,
-        overview: FontFamily.spaceGrotesk,
-        body: FontFamily.spaceGrotesk,
-        caption: FontFamily.spaceGrotesk,
-        small: FontFamily.spaceGrotesk,
-        certificate: TypeStyle(
-            family: FontFamily.zodiak,
-            size: TypographyTokens.Size.certificate,
-            weight: TypographyTokens.Weight.certificate
+    public let fonts: FontScheme = {
+        var scheme = FontScheme(
+            display: FontFamily.technor,
+            headline: FontFamily.technor,
+            title: FontFamily.spaceGrotesk,
+            overview: FontFamily.spaceGrotesk,
+            body: FontFamily.spaceGrotesk,
+            caption: FontFamily.spaceGrotesk,
+            small: FontFamily.spaceGrotesk,
+            certificate: TypeStyle(
+                family: FontFamily.zodiak,
+                size: TypographyTokens.Size.certificate,
+                weight: TypographyTokens.Weight.certificate
+            )
         )
-    )
-
+        scheme.display.weight = .heavy
+        scheme.display.tracking = TypographyTokens.Tracking.tight
+        scheme.headline.weight = .heavy
+        scheme.headline.tracking = TypographyTokens.Tracking.tight
+        scheme.overview.weight = .semibold
+        scheme.title.size = TypographyTokens.Size.title * 1.1
+        scheme.title.weight = .bold
+        scheme.title.tracking = TypographyTokens.Tracking.tight
+        scheme.body.weight = .semibold
+        return scheme
+    }()
+    
     // MARK: - Motion
 
     public let transitionDuration: TimeInterval = 0.45

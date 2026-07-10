@@ -40,12 +40,12 @@ struct LibraryItemsView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: SpacingTokens.sm) {
             Text(viewModel.displayTitle ?? "All \(library.name)")
-                .font(theme.jsHeadline)
+                .jsStyle(.headline)
                 .foregroundStyle(theme.primary)
 
             if let countLabel = viewModel.countLabel {
                 Text(countLabel)
-                    .font(theme.jsCaption)
+                    .jsStyle(.caption)
                     .foregroundStyle(theme.secondary)
             }
         }
@@ -65,7 +65,7 @@ struct LibraryItemsView: View {
                     .foregroundStyle(theme.secondary)
 
                 Text(message)
-                    .font(theme.jsBody)
+                    .jsStyle(.body)
                     .foregroundStyle(theme.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 400)
@@ -77,7 +77,7 @@ struct LibraryItemsView: View {
                     .foregroundStyle(theme.secondary)
 
                 Text("No items match these filters")
-                    .font(theme.jsBody)
+                    .jsStyle(.body)
                     .foregroundStyle(theme.secondary)
             }
             .frame(maxWidth: .infinity, minHeight: 400)

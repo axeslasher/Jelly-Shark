@@ -32,20 +32,34 @@ public struct HorrorTheme: Theme, Sendable {
 
     // MARK: - Typography
 
-    public let fonts = FontScheme(
-        display: FontFamily.grenzeGotisch,
-        headline: FontFamily.grenzeGotisch,
-        title: FontFamily.grenze,
-        overview: FontFamily.sentient,
-        body: FontFamily.sentient,
-        caption: FontFamily.sentient,
-        small: FontFamily.sentient,
-        certificate: TypeStyle(
-            family: FontFamily.zodiak,
-            size: TypographyTokens.Size.certificate,
-            weight: TypographyTokens.Weight.certificate
+    public let fonts: FontScheme = {
+        var scheme = FontScheme(
+            display: FontFamily.grenzeGotisch,
+            headline: FontFamily.grenzeGotisch,
+            title: FontFamily.grenze,
+            overview: FontFamily.sentient,
+            body: FontFamily.sentient,
+            caption: FontFamily.sentient,
+            small: FontFamily.sentient,
+            certificate: TypeStyle(
+                family: FontFamily.zodiak,
+                size: TypographyTokens.Size.certificate,
+                weight: TypographyTokens.Weight.certificate
+            )
         )
-    )
+        scheme.display.weight = .heavy
+        scheme.display.size = TypographyTokens.Size.display * 1.4
+        scheme.display.tracking = TypographyTokens.Tracking.wide
+        scheme.headline.weight = .heavy
+        scheme.headline.size = TypographyTokens.Size.headline * 1.2
+        scheme.headline.tracking = TypographyTokens.Tracking.wide * 4
+        scheme.title.weight = .heavy
+        scheme.title.size = TypographyTokens.Size.title * 1.2
+        scheme.title.tracking = TypographyTokens.Tracking.wide
+        scheme.body.size = TypographyTokens.Size.body * 0.95
+        scheme.body.weight = .regular
+        return scheme
+    }()
 
     // MARK: - Motion
 

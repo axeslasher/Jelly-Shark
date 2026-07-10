@@ -1,7 +1,7 @@
 import DesignSystem
 import SwiftUI
 
-/// A small labeled fact: uppercase caption label over a body value. The shared
+/// A small labeled fact: uppercase eyebrow label over a body value. The shared
 /// typographic unit of the hero's credits column and the info section below
 /// the shelves.
 struct CreditEntry: View {
@@ -14,12 +14,11 @@ struct CreditEntry: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
             Text(label)
-                .font(theme.jsEyebrow)
+                .jsStyle(.eyebrow)
                 .foregroundStyle(theme.tertiary)
                 .textCase(.uppercase)
-                .tracking(theme.jsTracking(.eyebrow))
             Text(value)
-                .font(theme.js(.body, .emphasized))
+                .jsStyle(.body, .emphasized)
                 .foregroundStyle(theme.secondary)
                 .lineLimit(lineLimit)
         }

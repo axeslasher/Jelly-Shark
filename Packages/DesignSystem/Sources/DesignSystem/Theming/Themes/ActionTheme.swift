@@ -32,21 +32,33 @@ public struct ActionTheme: Theme, Sendable {
 
     // MARK: - Typography
 
-    public let fonts = FontScheme(
-        display: FontFamily.supreme,
-        headline: FontFamily.supreme,
-        title: FontFamily.supreme,
-        overview: FontFamily.generalSans,
-        body: FontFamily.generalSans,
-        caption: FontFamily.generalSans,
-        small: FontFamily.generalSans,
-        certificate: TypeStyle(
-            family: FontFamily.zodiak,
-            size: TypographyTokens.Size.certificate,
-            weight: TypographyTokens.Weight.certificate
+    public let fonts: FontScheme = {
+        var scheme = FontScheme(
+            display: FontFamily.supreme,
+            headline: FontFamily.supreme,
+            title: FontFamily.supreme,
+            overview: FontFamily.generalSans,
+            body: FontFamily.generalSans,
+            caption: FontFamily.generalSans,
+            small: FontFamily.generalSans,
+            certificate: TypeStyle(
+                family: FontFamily.zodiak,
+                size: TypographyTokens.Size.certificate,
+                weight: TypographyTokens.Weight.certificate
+            )
         )
-    )
-
+        scheme.display.weight = .heavy
+        scheme.display.tracking = TypographyTokens.Tracking.tight
+        scheme.headline.weight = .heavy
+        scheme.headline.tracking = TypographyTokens.Tracking.tight
+        scheme.overview.weight = .semibold
+        scheme.title.weight = .heavy
+        scheme.title.tracking = TypographyTokens.Tracking.tight
+        scheme.title.size = TypographyTokens.Size.title * 1.1
+        scheme.body.weight = .semibold
+        return scheme
+    }()
+    
     // MARK: - Motion
 
     public let transitionDuration: TimeInterval = 0.2

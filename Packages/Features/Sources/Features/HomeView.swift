@@ -94,12 +94,12 @@ struct HomeView: View {
                 Spacer(minLength: 420)
 
                 Text(item.name)
-                    .font(theme.jsDisplay)
+                    .jsStyle(.display)
                     .foregroundStyle(theme.primary)
 
                 if let year = item.productionYear {
                     Text(String(year))
-                        .font(theme.jsTitle)
+                        .jsStyle(.title)
                         .foregroundStyle(theme.secondary)
                 }
 
@@ -128,12 +128,12 @@ struct HomeView: View {
                         .foregroundStyle(theme.secondary)
 
                     Text("Featured Content")
-                        .font(theme.jsHeadline)
+                        .jsStyle(.headline)
                         .foregroundStyle(theme.primary)
                         .padding(.top, SpacingTokens.md)
 
                     Text(heroSubtitle)
-                        .font(theme.jsBody)
+                        .jsStyle(.body)
                         .foregroundStyle(theme.secondary)
                         .padding(.top, SpacingTokens.xs)
                 }

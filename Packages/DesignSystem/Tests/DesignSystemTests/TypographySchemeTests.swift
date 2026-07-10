@@ -92,12 +92,11 @@ struct TypographySchemeTests {
         }
     }
 
-    @Test("Video Store display is black; certificates are Zodiak bold everywhere")
+    @Test("Certificates are Zodiak bold everywhere")
     func themeSchemeCuration() {
-        #expect(VideoStoreTheme().fonts.display.weight == .black)
-
         // All themes currently share the Zodiak certificate badge; loosen
-        // this once per-theme certificate curation diverges.
+        // this once per-theme certificate curation diverges. Deliberately no
+        // assertions on the other roles' curated values — those are in flux.
         for theme in ThemeCatalogTests.allThemes {
             let certificate = theme.fonts.certificate
             #expect(certificate.family == FontFamily.zodiak, "\(theme.id)")

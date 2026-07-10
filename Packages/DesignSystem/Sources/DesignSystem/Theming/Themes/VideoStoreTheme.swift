@@ -17,7 +17,7 @@ public struct VideoStoreTheme: Theme, Sendable {
     public let surfaceElevated = BaseColors.blue800
     public let primary = BaseColors.yellow100
     public let secondary = BaseColors.yellow100.opacity(0.9)
-    public let tertiary = BaseColors.yellow300.opacity(0.7)
+    public let tertiary = BaseColors.yellow300.opacity(0.8)
     public let onPlatter = BaseColors.blue950
     public let onPlatterSecondary = BaseColors.blue700
     public let accent = BaseColors.yellow400
@@ -47,7 +47,12 @@ public struct VideoStoreTheme: Theme, Sendable {
                 weight: TypographyTokens.Weight.certificate
             )
         )
-        scheme.display.weight = .black
+        scheme.display.weight = .heavy
+        scheme.display.size = TypographyTokens.Size.display * 1.4
+        scheme.display.tracking = TypographyTokens.Tracking.wide
+        scheme.headline.weight = .heavy
+        scheme.headline.size = TypographyTokens.Size.headline * 1.2
+        scheme.headline.tracking = TypographyTokens.Tracking.wide
         return scheme
     }()
 

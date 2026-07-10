@@ -25,12 +25,12 @@ struct OverviewOverlay: View {
                 VStack(alignment: .center, spacing: SpacingTokens.md) {
                     if let tagline, !tagline.isEmpty {
                         Text(tagline)
-                            .font(theme.jsHeadline)
+                            .jsStyle(.headline)
                             .foregroundStyle(theme.primary)
                     }
                     if let overview {
                         Text(overview)
-                            .font(theme.jsTitle)
+                            .jsStyle(.title)
                             .foregroundStyle(theme.primary)
                             .lineSpacing(4)
                             // On tvOS the focus engine drives scrolling; a

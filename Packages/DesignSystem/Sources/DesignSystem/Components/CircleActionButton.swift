@@ -41,7 +41,7 @@ public struct CircleActionButton: View {
     public var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(theme.jsHeadline)
+                .jsStyle(.headline)
                 // Focus lifts the glass circle to a light platter; the
                 // theme's light tints wash out there, so swap to the
                 // on-platter color (or the caller's override).
@@ -64,7 +64,7 @@ public struct CircleActionButton: View {
         // doesn't restructure the view and unsettle the focus engine.
         .overlay(alignment: .bottom) {
             Text(title)
-                .font(theme.jsCaption)
+                .jsStyle(.caption)
                 .foregroundStyle(theme.secondary)
                 .fixedSize()
                 .opacity(isFocused ? 1 : 0)

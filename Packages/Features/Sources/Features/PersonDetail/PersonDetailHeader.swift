@@ -80,7 +80,7 @@ struct PersonDetailHeader: View {
 
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
                 Text(member.name)
-                    .font(theme.jsDisplay)
+                    .jsStyle(.display)
                     .foregroundStyle(theme.primary)
                     .lineLimit(2)
 
@@ -121,7 +121,7 @@ struct PersonDetailHeader: View {
                     Label(place, systemImage: "mappin.and.ellipse")
                 }
             }
-            .font(theme.js(.body, .strong))
+            .jsStyle(.body, .strong)
             .foregroundStyle(theme.tertiary)
             .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
         }

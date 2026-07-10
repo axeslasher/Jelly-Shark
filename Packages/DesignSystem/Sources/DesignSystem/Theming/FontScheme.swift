@@ -100,10 +100,10 @@ public struct TypeStyle: Sendable {
     /// Weight for `.strong` emphasis (Standard scale: bold).
     public var strongWeight: Font.Weight
 
-    /// Letter tracking for the role. `Font` can't carry tracking, so views
-    /// must apply it themselves via `.tracking(theme.jsTracking(role))` —
-    /// today only the eyebrow label (`CreditEntry`) does; tuning a role no
-    /// view applies it to is a silent no-op.
+    /// Letter tracking for the role. `Font` can't carry tracking, so the
+    /// `.jsStyle(_:_:)` view modifier applies it alongside the font — every
+    /// themed-text call site goes through it, so tuning this renders
+    /// everywhere the role appears.
     public var tracking: CGFloat
 
     public init(
@@ -125,8 +125,9 @@ public struct TypeStyle: Sendable {
     }
 }
 
-/// The typographic roles a theme styles. Raw call sites should go through
-/// `theme.js(_:_:)` / the `js*` sugar accessors, never `Font.custom` directly.
+/// The typographic roles a theme styles. Call sites should use the
+/// `.jsStyle(_:_:)` view modifier (font + tracking together), never
+/// `Font.custom` directly.
 public enum TypeRole: Sendable, CaseIterable {
     case display, headline, title, overview, body, caption, small, eyebrow, certificate
 }

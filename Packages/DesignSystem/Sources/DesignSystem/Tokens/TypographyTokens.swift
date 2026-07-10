@@ -88,16 +88,15 @@ public enum TypographyTokens {
 
 /// Pre-configured font styles, resolved against the theme's font scheme
 public extension Theme {
-    /// Font for a role at a given emphasis tier. Components that used to pin
-    /// `.fontWeight(...)` on a themed font ask for a tier instead, so each
-    /// theme decides what "emphasized" means for that role's typeface:
-    /// `.font(theme.js(.body, .emphasized))`.
+    /// Font for a role at a given emphasis tier. Prefer the `.jsStyle(_:_:)`
+    /// view modifier at call sites — it applies the role's tracking too;
+    /// reach for this only where a raw `Font` value is required.
     func js(_ role: TypeRole, _ emphasis: TypeEmphasis = .regular) -> Font {
         fonts[role].font(emphasis)
     }
 
-    /// Per-role letter tracking. `Font` can't carry tracking, so views apply
-    /// it themselves: `.tracking(theme.jsTracking(.eyebrow))`.
+    /// Per-role letter tracking. `Font` can't carry tracking; `.jsStyle(_:_:)`
+    /// applies it for you, so this is only needed alongside a raw `js(_:_:)`.
     func jsTracking(_ role: TypeRole) -> CGFloat {
         fonts[role].tracking
     }
@@ -123,10 +122,43 @@ public extension Theme {
     /// Small font for badges (Standard: 12pt regular)
     var jsSmall: Font { js(.small) }
 
-    /// Eyebrow font for uppercase mini-labels (Standard: 18pt bold, wide
-    /// tracking — apply the tracking at the view via `jsTracking(.eyebrow)`)
+    /// Eyebrow font for uppercase mini-labels (Standard: 18pt bold; the wide
+    /// tracking comes along when applied via `.jsStyle(.eyebrow)`)
     var jsEyebrow: Font { js(.eyebrow) }
 
     /// Certificate font for the age-rating badge (Standard: Zodiak 18pt bold)
     var jsCertificate: Font { js(.certificate) }
+}
+
+// MARK: - Text style modifier
+
+/// Applies a theme role's full text treatment — font AND tracking — from the
+/// `\.theme` environment. This is the standard way to style themed text;
+/// using `.font(theme.js...)` directly silently drops the role's tracking.
+private struct JSTextStyle: ViewModifier {
+    @Environment(\.theme) private var theme
+
+    let role: TypeRole
+    let emphasis: TypeEmphasis
+
+    func body(content: Content) -> some View {
+        content
+            .font(theme.js(role, emphasis))
+            .tracking(theme.jsTracking(role))
+    }
+}
+
+public extension View {
+    /// Style themed text by role and emphasis tier:
+    ///
+    ///     Text(title).jsStyle(.title)
+    ///     Text(value).jsStyle(.body, .emphasized)
+    ///
+    /// Resolves the active theme's `TypeStyle` for the role (typeface, size,
+    /// weight for the tier) and applies its letter tracking, which a bare
+    /// `Font` can't carry. Both propagate to all `Text` in the subtree, so
+    /// it works on containers exactly like `.font(_:)` does.
+    func jsStyle(_ role: TypeRole, _ emphasis: TypeEmphasis = .regular) -> some View {
+        modifier(JSTextStyle(role: role, emphasis: emphasis))
+    }
 }

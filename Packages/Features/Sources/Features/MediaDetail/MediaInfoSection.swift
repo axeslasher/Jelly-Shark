@@ -37,7 +37,7 @@ struct MediaInfoSection: View {
             Image(systemName: icon)
                 .foregroundStyle(theme.accent)
             Text(title)
-                .font(theme.jsHeadline)
+                .jsStyle(.headline)
                 .foregroundStyle(theme.primary)
         }
     }

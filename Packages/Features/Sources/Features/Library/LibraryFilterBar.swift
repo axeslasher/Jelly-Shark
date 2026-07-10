@@ -113,7 +113,7 @@ struct LibraryFilterBar: View {
         .padding(.vertical, SpacingTokens.xs)
         // NOTE: no .tint here — on tvOS it repaints the button chrome
         // itself, drowning the pill labels in accent color
-        .font(theme.jsTitle)
+        .jsStyle(.title)
     }
 
     // MARK: - Sort
@@ -230,7 +230,7 @@ struct LibraryFilterBar: View {
             Text(title)
             if count > 0 {
                 Text("\(count)")
-                    .font(theme.js(.caption, .strong))
+                    .jsStyle(.caption, .strong)
                     .foregroundStyle(theme.primary)
                     .padding(SpacingTokens.xxs)
                     .frame(minWidth: 32, minHeight: 32)

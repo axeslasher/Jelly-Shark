@@ -107,7 +107,7 @@ public struct SettingsView: View {
     /// `navigationTitle`, so the title lives in the list instead.
     private func pageTitle(_ title: String) -> some View {
         Text(title)
-            .font(theme.jsDisplay)
+            .jsStyle(.display)
             .foregroundStyle(theme.primary)
             .padding(.bottom, SpacingTokens.md)
             .listRowBackground(Color.clear)
@@ -115,7 +115,7 @@ public struct SettingsView: View {
 
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
-            .font(theme.jsCaption)
+            .jsStyle(.caption)
             .foregroundStyle(theme.secondary)
     }
 
@@ -176,17 +176,17 @@ private struct SettingsRowLabel: View {
     var body: some View {
         HStack(spacing: SpacingTokens.md) {
             Image(systemName: icon)
-                .font(theme.jsTitle)
+                .jsStyle(.title)
                 .foregroundStyle(theme.accent)
                 .frame(width: 32)
 
             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                 Text(title)
-                    .font(theme.jsBody)
+                    .jsStyle(.body)
                     .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
 
                 Text(subtitle)
-                    .font(theme.jsCaption)
+                    .jsStyle(.caption)
                     .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
             }
         }
@@ -212,11 +212,11 @@ private struct ThemeRowLabel: View {
         HStack {
             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                 Text(name)
-                    .font(theme.jsBody)
+                    .jsStyle(.body)
                     .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
 
                 Text(description)
-                    .font(theme.jsCaption)
+                    .jsStyle(.caption)
                     .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
             }
 

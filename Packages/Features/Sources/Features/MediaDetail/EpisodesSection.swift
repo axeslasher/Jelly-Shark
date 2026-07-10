@@ -180,7 +180,7 @@ struct EpisodesSection: View {
                         scrollToSeason(season.id)
                     } label: {
                         Text(season.name)
-                            .font(theme.jsTitle)
+                            .jsStyle(.title)
                             .foregroundStyle(
                                 season.id == (currentSeasonId ?? seasons.first?.id)
                                     ? theme.accent : theme.primary

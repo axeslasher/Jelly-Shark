@@ -64,7 +64,7 @@ struct MediaMetadataRow: View {
                 }
                 if let certificate {
                     Text(certificate)
-                        .font(theme.jsCertificate)
+                        .jsStyle(.certificate)
                         .padding(.horizontal, SpacingTokens.xs)
                         .padding(.vertical, SpacingTokens.xxs)
                         .overlay(
@@ -84,7 +84,7 @@ struct MediaMetadataRow: View {
                     Label(audioFormat, systemImage: "hifispeaker.fill")
                 }
             }
-            .font(theme.js(.body, .strong))
+            .jsStyle(.body, .strong)
             .foregroundStyle(theme.tertiary)
             .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
         }

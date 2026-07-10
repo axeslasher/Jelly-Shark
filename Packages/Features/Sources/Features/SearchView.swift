@@ -56,11 +56,11 @@ struct SearchView: View {
                 .foregroundStyle(theme.secondary)
 
             Text("Search Your Library")
-                .font(theme.jsHeadline)
+                .jsStyle(.headline)
                 .foregroundStyle(theme.primary)
 
             Text("Find movies, shows, and more")
-                .font(theme.jsBody)
+                .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -73,7 +73,7 @@ struct SearchView: View {
                 .foregroundStyle(theme.secondary)
 
             Text(text)
-                .font(theme.jsBody)
+                .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
                 .multilineTextAlignment(.center)
         }

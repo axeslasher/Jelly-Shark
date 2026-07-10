@@ -76,7 +76,7 @@ struct MediaDetailHeroSection: View {
                     )
                     if let genreLine {
                         Text(genreLine)
-                            .font(theme.js(.caption, .emphasized))
+                            .jsStyle(.caption, .emphasized)
                             .foregroundStyle(theme.tertiary)
                             .lineLimit(1)
                     }
@@ -129,7 +129,7 @@ struct MediaDetailHeroSection: View {
 
     private var titleText: some View {
         Text(item.name)
-            .font(theme.jsDisplay)
+            .jsStyle(.display)
             .foregroundStyle(theme.primary)
     }
 
@@ -141,7 +141,7 @@ struct MediaDetailHeroSection: View {
                 Image(systemName: "play.fill")
                 Text(playTitle)
             }
-            .font(theme.jsHeadline)
+            .jsStyle(.headline)
         }
         .glassButtonStyle(tint: theme.focusFill)
         .disabled(session.client == nil || playTarget == nil)
