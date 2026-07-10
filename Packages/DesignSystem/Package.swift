@@ -5,7 +5,6 @@ import PackageDescription
 let package = Package(
     name: "DesignSystem",
     platforms: [
-        .macOS(.v15),
         .tvOS(.v26),
         .visionOS(.v26)
     ],

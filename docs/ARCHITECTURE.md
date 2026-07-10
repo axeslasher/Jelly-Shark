@@ -25,7 +25,7 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 
 **Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (declared `from: 2.1.6`, resolves to 2.2.1; used to inspect HTTP status codes for error mapping)
 
-**Platform support**: Fully shared (macOS for tests, tvOS, visionOS)
+**Platform support**: Fully shared (tvOS, visionOS)
 
 #### SDK Integration Architecture
 
@@ -229,7 +229,6 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 **Minimum Deployments**: 
 - tvOS 26.0+
 - visionOS 26.0+
-- (packages also declare macOS 15 to enable test runs)
 
 ---
 

@@ -83,16 +83,6 @@ public struct PersonDetailView: View {
         .task(id: member.id) {
             await loadContent()
         }
-        #if os(macOS)
-        .sheet(item: $playbackItem) { target in
-            if let client = session.client {
-                PlaybackContainerView(client: client, item: target)
-            }
-        }
-        .sheet(isPresented: $isPresentingBiography) {
-            biographyOverlay
-        }
-        #else
         .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
                 PlaybackContainerView(client: client, item: target)
@@ -101,7 +91,6 @@ public struct PersonDetailView: View {
         .fullScreenCover(isPresented: $isPresentingBiography) {
             biographyOverlay
         }
-        #endif
     }
 
     /// The biography's full-screen reading view — the same overlay the media

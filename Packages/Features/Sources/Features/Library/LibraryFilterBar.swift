@@ -45,9 +45,7 @@ struct LibraryFilterBar: View {
     /// through the same button styling as the plain Buttons.
     @ViewBuilder
     private var themedPillRow: some View {
-        #if os(macOS)
-        pillRow
-        #else
+        #if os(tvOS)
         if let fill = theme.focusFill {
             pillRow
                 .menuStyle(.button)
@@ -55,6 +53,8 @@ struct LibraryFilterBar: View {
         } else {
             pillRow
         }
+        #else
+        pillRow
         #endif
     }
 

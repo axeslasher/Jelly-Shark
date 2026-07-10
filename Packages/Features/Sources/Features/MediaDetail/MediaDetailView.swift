@@ -220,7 +220,7 @@ public struct MediaDetailView: View {
             // the scroll view directly, blowing past focusable content with
             // focus left behind. The tvOS focus-region snap below scrolls by
             // geometry instead of by id, so it doesn't need the marker.
-            #if !os(tvOS)
+            #if os(visionOS)
             .scrollTargetLayout()
             #endif
             // Bottom-only padding: a top inset would push the viewport-tall,
@@ -229,7 +229,7 @@ public struct MediaDetailView: View {
             .padding(.bottom, SpacingTokens.md)
         }
         .scrollClipDisabled()
-        #if !os(tvOS)
+        #if os(visionOS)
         .scrollTargetBehavior(.viewAligned)
         #endif
         #if os(tvOS)
@@ -299,28 +299,14 @@ public struct MediaDetailView: View {
         .task(id: item.id) {
             await loadContent()
         }
-        #if os(macOS)
-        .sheet(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
-            if let client = session.client {
-                PlaybackContainerView(client: client, item: target)
-            }
-        }
-        #else
         .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
             if let client = session.client {
                 PlaybackContainerView(client: client, item: target)
             }
         }
-        #endif
-        #if os(macOS)
-        .sheet(isPresented: $isPresentingOverview) {
-            overviewOverlay
-        }
-        #else
         .fullScreenCover(isPresented: $isPresentingOverview) {
             overviewOverlay
         }
-        #endif
     }
 
     private var overviewOverlay: OverviewOverlay {

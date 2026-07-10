@@ -183,7 +183,8 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                 }
             }
             .artworkCornerRadius(theme.cornerRadius)
-            .artworkHighlightOnFocus()
+            // Lift, specular highlight, and gimbal motion on focus.
+            .hoverEffect(.highlight)
     }
 
     @ViewBuilder
@@ -269,19 +270,5 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .lineLimit(1)
             .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
             .opacity(subtitle == nil ? 0 : 1)
-    }
-}
-
-private extension View {
-    /// Attaches the `.highlight` hover effect (lift, specular highlight, gimbal
-    /// motion on focus) where the platform supports it. `hoverEffect` is
-    /// unavailable on macOS, which the package builds for to run tests.
-    @ViewBuilder
-    func artworkHighlightOnFocus() -> some View {
-        #if os(tvOS) || os(visionOS) || os(iOS)
-        hoverEffect(.highlight)
-        #else
-        self
-        #endif
     }
 }

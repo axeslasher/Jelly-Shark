@@ -30,15 +30,27 @@ xcodebuild -scheme "Jelly Shark" -configuration Debug build
 ```
 
 ### Run Tests
+
+The app ships only to tvOS/visionOS, so tests run in two venues. **`make test`
+runs both** so nothing is silently skipped — prefer it over a bare `xcodebuild
+test`, which would miss the host suite:
+
 ```bash
-# Run all tests
-xcodebuild test -scheme "Jelly Shark" -destination 'platform=tvOS Simulator,name=Apple TV'
+make test        # everything (simulator scheme + JellyfinKit host suite)
+make test-sim    # app + DesignSystemTests + FeaturesTests on the tvOS simulator
+make test-host   # JellyfinKit on the Mac host
+```
 
-# Run unit tests only
-xcodebuild test -scheme "Jelly Shark" -only-testing:Jelly\ SharkTests -destination 'platform=tvOS Simulator,name=Apple TV'
+Why the split: `DesignSystem` and `Features` reference tvOS/visionOS-only SwiftUI
+APIs and no longer compile for the Mac host, so their test targets are wired into
+the `Jelly Shark` scheme and run on the simulator. `JellyfinKit` is pure logic,
+but its `KeychainStore`/`SessionStore` tests need a real keychain (unavailable to
+a host-less simulator test bundle), so it runs on the host via `swift test`.
 
-# Run UI tests only
-xcodebuild test -scheme "Jelly Shark" -only-testing:Jelly\ SharkUITests -destination 'platform=tvOS Simulator,name=Apple TV'
+Run a single simulator suite (e.g. the design-system theme catalog / WCAG guardrail):
+
+```bash
+xcodebuild test -scheme "Jelly Shark" -only-testing:DesignSystemTests -destination 'platform=tvOS Simulator,name=Apple TV'
 ```
 
 ### Clean Build
@@ -58,7 +70,7 @@ The app follows a modular architecture with clear separation of concerns. All th
    - People (person detail + filmography) and library filter options; user-data mutations (mark played/unplayed, favorite/unfavorite)
    - Domain models (`User`, `MediaItem`, `Library`, `Person`, `CastMember`, `ServerInfo`, `PlaybackSessionInfo`, `LibraryQuery`) + SDK adapters
    - Session persistence via Keychain (`SessionStore`, `KeychainStore`)
-   - Platform support: Fully shared (macOS for tests, tvOS, visionOS)
+   - Platform support: Fully shared (tvOS, visionOS)
 
 2. **DesignSystem** (`Packages/DesignSystem`): Theming engine, design tokens, and base UI components
    - `Theme` protocol with `ThemeManager` (`@Observable` singleton) for runtime switching, persisted in `UserDefaults`
@@ -93,7 +105,7 @@ Session tokens are persisted to the Keychain; artwork is cached via `URLCache`. 
 - Persistence: Keychain (session tokens), URLCache (artwork); SwiftData planned but not yet adopted
 - Testing: Swift Testing
 - Dependency Management: Swift Package Manager
-- Min Deployment: tvOS 26.0+, visionOS 26.0+ (packages also build for macOS 15 to support testing)
+- Min Deployment: tvOS 26.0+, visionOS 26.0+
 
 ## Theming System
 

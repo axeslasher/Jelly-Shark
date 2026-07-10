@@ -87,7 +87,8 @@ public struct CastCard<Value: Hashable>: View {
         ArtworkImage(url: url, placeholderIcon: "person.fill")
             .frame(width: width, height: width)
             .clipShape(Circle())
-            .artworkHighlightOnFocus()
+            // Lift, specular highlight, and gimbal motion on focus.
+            .hoverEffect(.highlight)
     }
 
     private var nameText: some View {
@@ -106,19 +107,5 @@ public struct CastCard<Value: Hashable>: View {
             .lineLimit(1)
             .frame(width: width)
             .opacity(role == nil ? 0 : 1)
-    }
-}
-
-private extension View {
-    /// Attaches the `.highlight` hover effect (lift, specular highlight, gimbal
-    /// motion on focus) where the platform supports it. `hoverEffect` is
-    /// unavailable on macOS, which the package builds for to run tests.
-    @ViewBuilder
-    func artworkHighlightOnFocus() -> some View {
-        #if os(tvOS) || os(visionOS) || os(iOS)
-        hoverEffect(.highlight)
-        #else
-        self
-        #endif
     }
 }
