@@ -1,9 +1,10 @@
 import SwiftUI
 
 public extension View {
-    /// The Liquid Glass button treatment used by prominent actions. `.glass` is
-    /// unavailable on macOS 15, which the package builds for only to run tests;
-    /// there it falls back to `.bordered`.
+    /// The Liquid Glass button treatment used by prominent actions. `.glass`
+    /// and the `glassEffect` the themed styles rely on are unavailable on
+    /// visionOS, where this falls back to the system `.bordered` style (which
+    /// carries its own native Liquid Glass).
     ///
     /// - Parameters:
     ///   - tint: The theme's `focusFill`. The system `.glass` style always
@@ -15,14 +16,14 @@ public extension View {
     ///     `buttonBorderShape(.circle)`, which only informs system styles.
     @ViewBuilder
     func glassButtonStyle(tint: Color? = nil, circular: Bool = false) -> some View {
-        #if os(macOS)
-        buttonStyle(.bordered)
-        #else
+        #if os(tvOS)
         if let tint {
             buttonStyle(ThemedGlassButtonStyle(tint: tint, circular: circular))
         } else {
             buttonStyle(.glass(.clear))
         }
+        #else
+        buttonStyle(.bordered)
         #endif
     }
 }
@@ -38,19 +39,19 @@ public extension View {
     ///     theme's `cornerRadiusLarge`).
     @ViewBuilder
     func plainFocusButtonStyle(tint: Color?, cornerRadius: CGFloat) -> some View {
-        #if os(macOS)
-        buttonStyle(.plain)
-        #else
+        #if os(tvOS)
         if let tint {
             buttonStyle(ThemedPlainButtonStyle(tint: tint, cornerRadius: cornerRadius))
         } else {
             buttonStyle(.plain)
         }
+        #else
+        buttonStyle(.plain)
         #endif
     }
 }
 
-#if !os(macOS)
+#if os(tvOS)
 /// Glass button that renders its own focus platter in a theme color.
 ///
 /// tvOS's system button styles (`.glass`, `.glassProminent`, `.bordered…`)

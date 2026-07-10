@@ -27,8 +27,10 @@ public struct KeychainStore: Sendable {
         var query = baseQuery(for: key)
         query[kSecValueData as String] = data
         #if !os(macOS)
-        // On macOS this attribute requires the data-protection keychain,
-        // which unsigned test runners cannot use
+        // Shipping platforms (tvOS/visionOS) always set this. Guarded off only
+        // on the macOS host, where JellyfinKit's Keychain tests run under
+        // `swift test`: an unsigned test runner can hit the data-protection
+        // keychain this attribute requires and fail with errSecMissingEntitlement.
         query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         #endif
 

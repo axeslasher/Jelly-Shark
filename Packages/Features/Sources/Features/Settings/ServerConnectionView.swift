@@ -59,7 +59,7 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         TextField("https://demo.jellyfin.org/stable", text: $viewModel.serverURL)
-                            #if !os(tvOS)
+                            #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
                             #endif
                             .autocorrectionDisabled()
@@ -75,7 +75,7 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         TextField("demo", text: $viewModel.username)
-                            #if !os(tvOS)
+                            #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
                             #endif
                             .autocorrectionDisabled()
@@ -88,7 +88,7 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         SecureField("Password (leave empty for demo)", text: $viewModel.password)
-                            #if !os(tvOS)
+                            #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
                             #endif
                     }

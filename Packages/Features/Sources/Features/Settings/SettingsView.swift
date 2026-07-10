@@ -71,9 +71,9 @@ public struct SettingsView: View {
                 sectionHeader("About")
             }
         }
-        // tvOS List is already transparent (and lacks this modifier); other
-        // platforms need the system list background hidden first.
-        #if !os(tvOS)
+        // tvOS List is already transparent (and lacks this modifier); visionOS
+        // needs the system list background hidden first.
+        #if os(visionOS)
         .scrollContentBackground(.hidden)
         .navigationTitle("Settings")
         #endif
@@ -140,7 +140,7 @@ public struct SettingsView: View {
                 .buttonStyle(.plain)
             }
         }
-        #if !os(tvOS)
+        #if os(visionOS)
         .scrollContentBackground(.hidden)
         .navigationTitle("Theme")
         #endif
