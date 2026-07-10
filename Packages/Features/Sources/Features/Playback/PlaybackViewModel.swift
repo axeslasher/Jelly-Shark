@@ -137,12 +137,17 @@ public final class PlaybackViewModel {
         player = nil
 
         // Telemetry must never block teardown
-        try? await client.reportPlaybackStopped(
-            itemId: item.id,
-            mediaSourceId: mediaSource?.id,
-            playSessionId: playSessionId,
-            positionTicks: positionTicks
-        )
+        do {
+            try await client.reportPlaybackStopped(
+                itemId: item.id,
+                mediaSourceId: mediaSource?.id,
+                playSessionId: playSessionId,
+                positionTicks: positionTicks
+            )
+            Self.logger.info("[report] stopped ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
+        } catch {
+            Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+        }
     }
 
     // MARK: - Track Selection
@@ -202,15 +207,20 @@ public final class PlaybackViewModel {
         player.play()
         state = .playing
 
-        try? await client.reportPlaybackStart(
-            itemId: item.id,
-            mediaSourceId: mediaSource?.id,
-            playSessionId: playSessionId,
-            positionTicks: resumeTicks,
-            playMethod: playMethod,
-            audioStreamIndex: selectedAudioStreamIndex,
-            subtitleStreamIndex: selectedSubtitleStreamIndex
-        )
+        do {
+            try await client.reportPlaybackStart(
+                itemId: item.id,
+                mediaSourceId: mediaSource?.id,
+                playSessionId: playSessionId,
+                positionTicks: resumeTicks,
+                playMethod: playMethod,
+                audioStreamIndex: selectedAudioStreamIndex,
+                subtitleStreamIndex: selectedSubtitleStreamIndex
+            )
+            Self.logger.info("[report] start ok \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks) method=\(String(describing: self.playMethod), privacy: .public)")
+        } catch {
+            Self.logger.error("[report] start FAILED \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks): \(error, privacy: .public)")
+        }
 
         startProgressReporting()
         observeTimeControlStatus(of: player)
@@ -346,14 +356,22 @@ public final class PlaybackViewModel {
     private func reportProgress() async {
         guard let player, !hasStopped else { return }
 
-        try? await client.reportPlaybackProgress(
-            itemId: item.id,
-            mediaSourceId: mediaSource?.id,
-            playSessionId: playSessionId,
-            positionTicks: currentPositionTicks(),
-            playMethod: playMethod,
-            isPaused: player.timeControlStatus == .paused
-        )
+        let positionTicks = currentPositionTicks()
+        do {
+            try await client.reportPlaybackProgress(
+                itemId: item.id,
+                mediaSourceId: mediaSource?.id,
+                playSessionId: playSessionId,
+                positionTicks: positionTicks,
+                playMethod: playMethod,
+                isPaused: player.timeControlStatus == .paused
+            )
+            // Success at debug level — one line every heartbeat is only
+            // interesting when actively diagnosing
+            Self.logger.debug("[report] progress ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
+        } catch {
+            Self.logger.error("[report] progress FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+        }
     }
 
     private func currentPositionTicks() -> Int64 {
