@@ -18,8 +18,12 @@ struct BlurHashTests {
 
     @Test("Repeated decodes hit the cache and return the same image")
     func cacheReturnsSameInstance() {
-        let first = BlurHash.decode(validHash)
-        let second = BlurHash.decode(validHash)
+        // Decode at a size no other test in this suite uses. The cache is keyed
+        // by hash+size on shared static state, and the suite runs in parallel;
+        // a unique key keeps another test from overwriting this entry between
+        // the two lookups (which would make the instances differ).
+        let first = BlurHash.decode(validHash, width: 24, height: 24)
+        let second = BlurHash.decode(validHash, width: 24, height: 24)
         #expect(first != nil)
         #expect(first === second)
     }
