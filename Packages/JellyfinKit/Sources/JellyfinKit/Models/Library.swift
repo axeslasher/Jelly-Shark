@@ -84,7 +84,7 @@ extension Library {
         case .homevideos:
             return "video.fill"
         case .boxsets:
-            return "square.stack.fill"
+            return "film.stack.fill"
         case .books:
             return "book.fill"
         case .photos:

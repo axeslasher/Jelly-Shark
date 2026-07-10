@@ -34,6 +34,27 @@ struct CastShelfSection: View {
     }
 }
 
+/// Collection contents shelf for BoxSet pages — the movies inside the
+/// collection, in release order. Renders nothing until they arrive.
+struct CollectionItemsSection: View {
+    @Environment(AppSession.self) private var session
+
+    let items: [MediaItem]
+
+    var body: some View {
+        if !items.isEmpty {
+            ContentShelf("In This Collection", icon: "film.stack.fill") {
+                ForEach(items) { item in
+                    // The collection IS this page's content (like episodes on
+                    // a series page), so its posters render a step larger
+                    // than the supporting shelves' 200pt cards.
+                    item.posterShelfItem(client: session.client, width: 316)
+                }
+            }
+        }
+    }
+}
+
 /// More Like This shelf. Renders nothing until similar items arrive.
 struct SimilarItemsSection: View {
     @Environment(AppSession.self) private var session
