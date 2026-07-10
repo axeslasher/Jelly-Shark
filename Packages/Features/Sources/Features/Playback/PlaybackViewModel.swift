@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Observation
 import JellyfinKit
+import OSLog
 
 /// View model for video playback
 ///
@@ -44,6 +45,8 @@ public final class PlaybackViewModel {
     public private(set) var selectedSubtitleStreamIndex: Int?
 
     // MARK: - Private
+
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
     private let client: any JellyfinClientProtocol
     private let progressInterval: Duration
@@ -109,6 +112,7 @@ public final class PlaybackViewModel {
                 )
             )
             playMethod = resolution.playMethod
+            logResolution(resolution, source: source, context: "start")
 
             await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
         } catch {
@@ -253,11 +257,38 @@ public final class PlaybackViewModel {
                 )
             )
             playMethod = resolution.playMethod
+            logResolution(resolution, source: source, context: "rebuild")
 
             await beginPlayback(url: resolution.url, resumeTicks: positionTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// One line per stream resolution so a play session's delivery decisions
+    /// can be read back from the console (filter the Xcode console or
+    /// `log stream` on the "Playback" category).
+    private func logResolution(_ resolution: StreamResolution, source: MediaSource, context: String) {
+        Self.logger.info("""
+        [\(context, privacy: .public)] "\(self.item.name, privacy: .public)" → \
+        \(String(describing: resolution.playMethod), privacy: .public) \
+        (container=\(source.container ?? "?", privacy: .public) \
+        directPlay=\(source.supportsDirectPlay) directStream=\(source.supportsDirectStream) \
+        audio=\(self.selectedAudioStreamIndex.map(String.init) ?? "default", privacy: .public) \
+        subtitle=\(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)) \
+        url=\(Self.sanitizedForLog(resolution.url), privacy: .public)
+        """)
+    }
+
+    /// The stream URL with the access token blanked, safe for console logs
+    private static func sanitizedForLog(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "<unparseable>"
+        }
+        components.queryItems = components.queryItems?.map { item in
+            item.name == "api_key" ? URLQueryItem(name: "api_key", value: "REDACTED") : item
+        }
+        return components.url?.absoluteString ?? "<unparseable>"
     }
 
     private func startProgressReporting() {
