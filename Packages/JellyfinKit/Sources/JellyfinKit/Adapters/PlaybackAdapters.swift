@@ -44,6 +44,22 @@ extension MediaSource {
     }
 }
 
+// MARK: - PlayMethod Adapter
+
+extension JellyfinAPI.PlayMethod {
+    /// Map the domain play method onto the SDK's reporting enum
+    init(from method: PlayMethod) {
+        switch method {
+        case .directPlay:
+            self = .directPlay
+        case .directStream:
+            self = .directStream
+        case .transcode:
+            self = .transcode
+        }
+    }
+}
+
 // MARK: - MediaStreamInfo Adapter
 
 extension MediaStreamInfo {

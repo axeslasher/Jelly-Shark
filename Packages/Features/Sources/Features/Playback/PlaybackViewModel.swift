@@ -2,6 +2,7 @@ import AVFoundation
 import Foundation
 import Observation
 import JellyfinKit
+import OSLog
 
 /// View model for video playback
 ///
@@ -45,9 +46,12 @@ public final class PlaybackViewModel {
 
     // MARK: - Private
 
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
+
     private let client: any JellyfinClientProtocol
     private let progressInterval: Duration
     private var playSessionId: String?
+    private var playMethod: PlayMethod = .transcode
     private var progressTask: Task<Void, Never>?
     private var endObserver: NSObjectProtocol?
     private var timeControlObservation: NSKeyValueObservation?
@@ -97,18 +101,20 @@ public final class PlaybackViewModel {
                 selectedAudioStreamIndex = source.defaultAudioStreamIndex
             }
 
-            let url = try client.hlsStreamURL(
+            let resolution = try client.resolveStream(
+                for: source,
                 parameters: StreamParameters(
                     itemId: item.id,
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
                     subtitleStreamIndex: selectedSubtitleStreamIndex
-                ),
-                eTag: source.eTag
+                )
             )
+            playMethod = resolution.playMethod
+            logResolution(resolution, source: source, context: "start")
 
-            await beginPlayback(url: url, resumeTicks: resumeTicks)
+            await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -131,12 +137,17 @@ public final class PlaybackViewModel {
         player = nil
 
         // Telemetry must never block teardown
-        try? await client.reportPlaybackStopped(
-            itemId: item.id,
-            mediaSourceId: mediaSource?.id,
-            playSessionId: playSessionId,
-            positionTicks: positionTicks
-        )
+        do {
+            try await client.reportPlaybackStopped(
+                itemId: item.id,
+                mediaSourceId: mediaSource?.id,
+                playSessionId: playSessionId,
+                positionTicks: positionTicks
+            )
+            Self.logger.info("[report] stopped ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
+        } catch {
+            Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+        }
     }
 
     // MARK: - Track Selection
@@ -196,14 +207,20 @@ public final class PlaybackViewModel {
         player.play()
         state = .playing
 
-        try? await client.reportPlaybackStart(
-            itemId: item.id,
-            mediaSourceId: mediaSource?.id,
-            playSessionId: playSessionId,
-            positionTicks: resumeTicks,
-            audioStreamIndex: selectedAudioStreamIndex,
-            subtitleStreamIndex: selectedSubtitleStreamIndex
-        )
+        do {
+            try await client.reportPlaybackStart(
+                itemId: item.id,
+                mediaSourceId: mediaSource?.id,
+                playSessionId: playSessionId,
+                positionTicks: resumeTicks,
+                playMethod: playMethod,
+                audioStreamIndex: selectedAudioStreamIndex,
+                subtitleStreamIndex: selectedSubtitleStreamIndex
+            )
+            Self.logger.info("[report] start ok \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks) method=\(String(describing: self.playMethod), privacy: .public)")
+        } catch {
+            Self.logger.error("[report] start FAILED \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks): \(error, privacy: .public)")
+        }
 
         startProgressReporting()
         observeTimeControlStatus(of: player)
@@ -239,21 +256,49 @@ public final class PlaybackViewModel {
             playSessionId = session.playSessionId
             mediaSource = source
 
-            let url = try client.hlsStreamURL(
+            let resolution = try client.resolveStream(
+                for: source,
                 parameters: StreamParameters(
                     itemId: item.id,
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
                     subtitleStreamIndex: selectedSubtitleStreamIndex
-                ),
-                eTag: source.eTag
+                )
             )
+            playMethod = resolution.playMethod
+            logResolution(resolution, source: source, context: "rebuild")
 
-            await beginPlayback(url: url, resumeTicks: positionTicks)
+            await beginPlayback(url: resolution.url, resumeTicks: positionTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// One line per stream resolution so a play session's delivery decisions
+    /// can be read back from the console (filter the Xcode console or
+    /// `log stream` on the "Playback" category).
+    private func logResolution(_ resolution: StreamResolution, source: MediaSource, context: String) {
+        Self.logger.info("""
+        [\(context, privacy: .public)] "\(self.item.name, privacy: .public)" → \
+        \(String(describing: resolution.playMethod), privacy: .public) \
+        (container=\(source.container ?? "?", privacy: .public) \
+        directPlay=\(source.supportsDirectPlay) directStream=\(source.supportsDirectStream) \
+        audio=\(self.selectedAudioStreamIndex.map(String.init) ?? "default", privacy: .public) \
+        subtitle=\(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)) \
+        url=\(Self.sanitizedForLog(resolution.url), privacy: .public)
+        """)
+    }
+
+    /// The stream URL with the access token blanked, safe for console logs
+    private static func sanitizedForLog(_ url: URL) -> String {
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return "<unparseable>"
+        }
+        components.queryItems = components.queryItems?.map { item in
+            item.name == "api_key" ? URLQueryItem(name: "api_key", value: "REDACTED") : item
+        }
+        return components.url?.absoluteString ?? "<unparseable>"
     }
 
     private func startProgressReporting() {
@@ -311,13 +356,22 @@ public final class PlaybackViewModel {
     private func reportProgress() async {
         guard let player, !hasStopped else { return }
 
-        try? await client.reportPlaybackProgress(
-            itemId: item.id,
-            mediaSourceId: mediaSource?.id,
-            playSessionId: playSessionId,
-            positionTicks: currentPositionTicks(),
-            isPaused: player.timeControlStatus == .paused
-        )
+        let positionTicks = currentPositionTicks()
+        do {
+            try await client.reportPlaybackProgress(
+                itemId: item.id,
+                mediaSourceId: mediaSource?.id,
+                playSessionId: playSessionId,
+                positionTicks: positionTicks,
+                playMethod: playMethod,
+                isPaused: player.timeControlStatus == .paused
+            )
+            // Success at debug level — one line every heartbeat is only
+            // interesting when actively diagnosing
+            Self.logger.debug("[report] progress ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
+        } catch {
+            Self.logger.error("[report] progress FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+        }
     }
 
     private func currentPositionTicks() -> Int64 {

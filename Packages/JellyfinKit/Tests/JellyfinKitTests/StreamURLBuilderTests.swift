@@ -94,6 +94,139 @@ struct StreamURLBuilderTests {
 
         #expect(url.path == "/jellyfin/Videos/item-1/main.m3u8")
     }
+
+    // MARK: - Direct play
+
+    @Test("Direct-play URL targets the static endpoint with the container extension")
+    func directPlayPath() throws {
+        let url = try #require(StreamURLBuilder.directPlayURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token-123",
+            deviceId: "device-abc",
+            parameters: StreamParameters(
+                itemId: "item-1",
+                mediaSourceId: "source-1",
+                playSessionId: "session-1"
+            ),
+            container: "mp4",
+            eTag: "etag-9"
+        ))
+
+        #expect(url.path == "/Videos/item-1/stream.mp4")
+        let query = queryItems(of: url)
+        #expect(query["static"] == "true")
+        #expect(query["api_key"] == "token-123")
+        #expect(query["DeviceId"] == "device-abc")
+        #expect(query["MediaSourceId"] == "source-1")
+        #expect(query["PlaySessionId"] == "session-1")
+        #expect(query["Tag"] == "etag-9")
+    }
+
+    @Test("Direct-play URL omits stream selection and transcode parameters")
+    func directPlayOmitsStreamSelection() throws {
+        let url = try #require(StreamURLBuilder.directPlayURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(
+                itemId: "item-1",
+                audioStreamIndex: 1,
+                subtitleStreamIndex: 3
+            )
+        ))
+
+        let query = queryItems(of: url)
+        #expect(query["AudioStreamIndex"] == nil)
+        #expect(query["SubtitleStreamIndex"] == nil)
+        #expect(query["VideoCodec"] == nil)
+        #expect(query["AudioCodec"] == nil)
+        #expect(query["TranscodingProtocol"] == nil)
+    }
+
+    @Test("Container extension is skipped when unknown or a list")
+    func directPlayContainerExtension() throws {
+        let bare = try #require(StreamURLBuilder.directPlayURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(itemId: "item-1"),
+            container: nil
+        ))
+        #expect(bare.path == "/Videos/item-1/stream")
+
+        let list = try #require(StreamURLBuilder.directPlayURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(itemId: "item-1"),
+            container: "mov,mp4,m4a"
+        ))
+        #expect(list.path == "/Videos/item-1/stream")
+    }
+
+    @Test("Direct-play URL preserves the server path prefix")
+    func directPlayPathPrefixPreserved() throws {
+        let url = try #require(StreamURLBuilder.directPlayURL(
+            serverURL: URL(string: "https://example.com/jellyfin")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(itemId: "item-1"),
+            container: "mp4"
+        ))
+
+        #expect(url.path == "/jellyfin/Videos/item-1/stream.mp4")
+    }
+}
+
+@Suite("PlayMethod Decision")
+struct PlayMethodDecisionTests {
+    private func source(
+        directPlay: Bool,
+        directStream: Bool,
+        defaultAudioStreamIndex: Int? = 1
+    ) -> MediaSource {
+        MediaSource(
+            id: "source-1",
+            container: "mp4",
+            supportsDirectPlay: directPlay,
+            supportsDirectStream: directStream,
+            supportsTranscoding: true,
+            defaultAudioStreamIndex: defaultAudioStreamIndex
+        )
+    }
+
+    @Test("Direct-play-capable source with default tracks direct plays")
+    func directPlayWithDefaults() {
+        let source = source(directPlay: true, directStream: true)
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: nil) == .directPlay)
+        #expect(source.playMethod(audioStreamIndex: 1, subtitleStreamIndex: nil) == .directPlay)
+    }
+
+    @Test("Non-default audio routes through HLS")
+    func nonDefaultAudioFallsBack() {
+        let source = source(directPlay: true, directStream: true)
+        #expect(source.playMethod(audioStreamIndex: 2, subtitleStreamIndex: nil) == .directStream)
+    }
+
+    @Test("Any subtitle selection routes through HLS")
+    func subtitleSelectionFallsBack() {
+        let source = source(directPlay: true, directStream: true)
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: 3) == .directStream)
+        #expect(source.playMethod(audioStreamIndex: 1, subtitleStreamIndex: 3) == .directStream)
+    }
+
+    @Test("Direct-stream-only sources direct stream")
+    func directStreamOnly() {
+        let source = source(directPlay: false, directStream: true)
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: nil) == .directStream)
+    }
+
+    @Test("Sources supporting neither transcode")
+    func neitherTranscodes() {
+        let source = source(directPlay: false, directStream: false)
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: nil) == .transcode)
+        #expect(source.playMethod(audioStreamIndex: 2, subtitleStreamIndex: 3) == .transcode)
+    }
 }
 
 @Suite("PlaybackTicks")

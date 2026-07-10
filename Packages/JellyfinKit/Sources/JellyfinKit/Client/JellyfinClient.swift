@@ -156,11 +156,15 @@ public protocol JellyfinClientProtocol: Sendable {
         subtitleStreamIndex: Int?
     ) async throws -> PlaybackSessionInfo
 
-    /// Build an HLS stream URL for an item
-    /// - Parameter parameters: Item and stream selection parameters
-    /// - Returns: The stream URL
+    /// Resolve the stream URL and play method for a media source: the
+    /// original file when the source (and requested tracks) allow direct
+    /// play, the HLS universal endpoint otherwise
+    /// - Parameters:
+    ///   - source: The media source chosen from PlaybackInfo
+    ///   - parameters: Item and stream selection parameters
+    /// - Returns: The stream URL paired with the play method to report
     /// - Throws: `APIError.notAuthenticated` if there is no access token
-    func hlsStreamURL(parameters: StreamParameters, eTag: String?) throws -> URL
+    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution
 
     /// Report that playback has started
     func reportPlaybackStart(
@@ -168,6 +172,7 @@ public protocol JellyfinClientProtocol: Sendable {
         mediaSourceId: String?,
         playSessionId: String?,
         positionTicks: Int64,
+        playMethod: PlayMethod,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?
     ) async throws
@@ -178,6 +183,7 @@ public protocol JellyfinClientProtocol: Sendable {
         mediaSourceId: String?,
         playSessionId: String?,
         positionTicks: Int64,
+        playMethod: PlayMethod,
         isPaused: Bool
     ) async throws
 
@@ -783,6 +789,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 enableDirectPlay: true,
                 enableDirectStream: true,
                 enableTranscoding: true,
+                // Without an explicit budget the server applies a low default
+                // bitrate cap and refuses direct play for most real files
+                // (observed: ~2.5 Mbps cutoff). Apple TV is a wired/strong-
+                // wifi LAN device; declare a generous ceiling.
+                maxStreamingBitrate: Self.maxStreamingBitrate,
                 startTimeTicks: startTimeTicks.map(Int.init),
                 subtitleStreamIndex: subtitleStreamIndex,
                 userID: userId
@@ -810,22 +821,42 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func hlsStreamURL(parameters: StreamParameters, eTag: String?) throws -> URL {
+    public func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
         guard let accessToken = _accessToken else {
             throw APIError.notAuthenticated
         }
 
-        guard let url = StreamURLBuilder.hlsURL(
-            serverURL: serverURL,
-            accessToken: accessToken,
-            deviceId: configuration.deviceID,
-            parameters: parameters,
-            eTag: eTag
-        ) else {
+        let method = source.playMethod(
+            audioStreamIndex: parameters.audioStreamIndex,
+            subtitleStreamIndex: parameters.subtitleStreamIndex
+        )
+
+        let url: URL?
+        switch method {
+        case .directPlay:
+            url = StreamURLBuilder.directPlayURL(
+                serverURL: serverURL,
+                accessToken: accessToken,
+                deviceId: configuration.deviceID,
+                parameters: parameters,
+                container: source.container,
+                eTag: source.eTag
+            )
+        case .directStream, .transcode:
+            url = StreamURLBuilder.hlsURL(
+                serverURL: serverURL,
+                accessToken: accessToken,
+                deviceId: configuration.deviceID,
+                parameters: parameters,
+                eTag: source.eTag
+            )
+        }
+
+        guard let url else {
             throw APIError.invalidURL
         }
 
-        return url
+        return StreamResolution(url: url, playMethod: method)
     }
 
     public func reportPlaybackStart(
@@ -833,6 +864,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         mediaSourceId: String?,
         playSessionId: String?,
         positionTicks: Int64,
+        playMethod: PlayMethod,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?
     ) async throws {
@@ -843,7 +875,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 isPaused: false,
                 itemID: itemId,
                 mediaSourceID: mediaSourceId,
-                playMethod: .transcode,
+                playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
                 positionTicks: Int(positionTicks),
                 subtitleStreamIndex: subtitleStreamIndex
@@ -862,6 +894,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         mediaSourceId: String?,
         playSessionId: String?,
         positionTicks: Int64,
+        playMethod: PlayMethod,
         isPaused: Bool
     ) async throws {
         do {
@@ -870,7 +903,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 isPaused: isPaused,
                 itemID: itemId,
                 mediaSourceID: mediaSourceId,
-                playMethod: .transcode,
+                playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
                 positionTicks: Int(positionTicks)
             )

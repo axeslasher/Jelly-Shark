@@ -89,6 +89,39 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
     }
 }
 
+// MARK: - Play Method
+
+/// How the client delivers a media source
+public enum PlayMethod: Sendable, Equatable {
+    /// The original file streamed as-is, no server processing
+    case directPlay
+
+    /// HLS with server-side stream copy into compatible segments (remux)
+    case directStream
+
+    /// HLS with server-side re-encode
+    case transcode
+}
+
+extension MediaSource {
+    /// Pick the playback method for this source given the requested tracks.
+    ///
+    /// Direct play requires default tracks: a static file cannot honor
+    /// server-side stream selection (and AVPlayer track selection on
+    /// progressive files is unreliable), so explicit choices route through
+    /// the HLS endpoint where AudioStreamIndex/SubtitleStreamIndex apply.
+    public func playMethod(audioStreamIndex: Int?, subtitleStreamIndex: Int?) -> PlayMethod {
+        let usesDefaultAudio = audioStreamIndex == nil || audioStreamIndex == defaultAudioStreamIndex
+        if supportsDirectPlay && usesDefaultAudio && subtitleStreamIndex == nil {
+            return .directPlay
+        }
+        if supportsDirectStream {
+            return .directStream
+        }
+        return .transcode
+    }
+}
+
 /// A single stream (audio, subtitle, video) within a media source
 public struct MediaStreamInfo: Sendable, Equatable, Hashable {
     /// The kind of stream

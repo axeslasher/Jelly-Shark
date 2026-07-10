@@ -264,13 +264,13 @@ public struct MediaDetailView: View {
             await loadContent()
         }
         #if os(macOS)
-        .sheet(item: $playbackItem) { target in
+        .sheet(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
             if let client = session.client {
                 PlaybackContainerView(client: client, item: target)
             }
         }
         #else
-        .fullScreenCover(item: $playbackItem) { target in
+        .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
             if let client = session.client {
                 PlaybackContainerView(client: client, item: target)
             }
@@ -321,6 +321,30 @@ public struct MediaDetailView: View {
         "Director", "Writer", "Producer",
         "Executive Producer", "Co-Producer", "Co-Executive Producer"
     ]
+
+    /// Playback changes server-side user data this view displays — resume
+    /// position (hero Play/Resume button), watched flags on episode cards,
+    /// and next-up. `loadContent` only re-runs when the item id changes, so
+    /// re-fetch in place when the player dismisses; unlike `loadContent`,
+    /// nothing is blanked first, so already-rendered shelves don't flash.
+    private func refreshAfterPlayback() {
+        Task {
+            guard let client = session.client else { return }
+
+            if let refreshed = try? await client.getMediaItem(itemId: item.id) {
+                detailedItem = refreshed
+            }
+
+            if item.type == .series {
+                async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
+                async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
+                if let refreshedEpisodes = await (try? episodesFetch) {
+                    episodes = refreshedEpisodes
+                }
+                nextUpEpisode = await (try? nextUpFetch) ?? nil
+            }
+        }
+    }
 
     private func loadContent() async {
         guard let client = session.client else { return }
