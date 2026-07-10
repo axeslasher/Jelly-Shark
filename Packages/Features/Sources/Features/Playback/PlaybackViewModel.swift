@@ -48,6 +48,7 @@ public final class PlaybackViewModel {
     private let client: any JellyfinClientProtocol
     private let progressInterval: Duration
     private var playSessionId: String?
+    private var playMethod: PlayMethod = .transcode
     private var progressTask: Task<Void, Never>?
     private var endObserver: NSObjectProtocol?
     private var timeControlObservation: NSKeyValueObservation?
@@ -97,18 +98,19 @@ public final class PlaybackViewModel {
                 selectedAudioStreamIndex = source.defaultAudioStreamIndex
             }
 
-            let url = try client.hlsStreamURL(
+            let resolution = try client.resolveStream(
+                for: source,
                 parameters: StreamParameters(
                     itemId: item.id,
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
                     subtitleStreamIndex: selectedSubtitleStreamIndex
-                ),
-                eTag: source.eTag
+                )
             )
+            playMethod = resolution.playMethod
 
-            await beginPlayback(url: url, resumeTicks: resumeTicks)
+            await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -201,6 +203,7 @@ public final class PlaybackViewModel {
             mediaSourceId: mediaSource?.id,
             playSessionId: playSessionId,
             positionTicks: resumeTicks,
+            playMethod: playMethod,
             audioStreamIndex: selectedAudioStreamIndex,
             subtitleStreamIndex: selectedSubtitleStreamIndex
         )
@@ -239,18 +242,19 @@ public final class PlaybackViewModel {
             playSessionId = session.playSessionId
             mediaSource = source
 
-            let url = try client.hlsStreamURL(
+            let resolution = try client.resolveStream(
+                for: source,
                 parameters: StreamParameters(
                     itemId: item.id,
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
                     subtitleStreamIndex: selectedSubtitleStreamIndex
-                ),
-                eTag: source.eTag
+                )
             )
+            playMethod = resolution.playMethod
 
-            await beginPlayback(url: url, resumeTicks: positionTicks)
+            await beginPlayback(url: resolution.url, resumeTicks: positionTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -316,6 +320,7 @@ public final class PlaybackViewModel {
             mediaSourceId: mediaSource?.id,
             playSessionId: playSessionId,
             positionTicks: currentPositionTicks(),
+            playMethod: playMethod,
             isPaused: player.timeControlStatus == .paused
         )
     }

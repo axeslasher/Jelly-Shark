@@ -53,7 +53,7 @@ The app follows a modular architecture with clear separation of concerns. All th
 
 1. **JellyfinKit** (`Packages/JellyfinKit`): API client, networking, and data models
    - Wraps the official [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0) behind a `JellyfinClientProtocol` facade
-   - Authentication, library/item fetching (paged, with sort/filter via `LibraryQuery`), image URL building, playback info, and HLS stream URL construction
+   - Authentication, library/item fetching (paged, with sort/filter via `LibraryQuery`), image URL building, playback info, and stream resolution (direct play of compatible files, HLS remux/transcode otherwise, with true PlayMethod reporting)
    - Playback reporting (start/progress/stopped), resume items, latest items, seasons/episodes, next-up + next-episode lookup, similar items
    - People (person detail + filmography) and library filter options; user-data mutations (mark played/unplayed, favorite/unfavorite)
    - Domain models (`User`, `MediaItem`, `Library`, `Person`, `CastMember`, `ServerInfo`, `PlaybackSessionInfo`, `LibraryQuery`) + SDK adapters
@@ -89,7 +89,7 @@ Session tokens are persisted to the Keychain; artwork is cached via `URLCache`. 
 - Language: Swift 6.2+
 - UI Framework: SwiftUI
 - Networking: jellyfin-sdk-swift (0.6.0), built on Get/URLSession
-- Playback: AVKit / AVPlayer (HLS transcode streaming)
+- Playback: AVKit / AVPlayer (direct play + HLS remux/transcode streaming)
 - Persistence: Keychain (session tokens), URLCache (artwork); SwiftData planned but not yet adopted
 - Testing: Swift Testing
 - Dependency Management: Swift Package Manager
@@ -134,7 +134,7 @@ Users can switch themes globally and customize component variants individually, 
 - Discovery: `GET /Users/{userId}/Items/Resume`, `GET /Users/{userId}/Items/Latest`, seasons/episodes (`GET /Shows/{seriesId}/Episodes`, `GET /Shows/{seriesId}/Seasons`), next-up (`GET /Shows/NextUp`) + next-episode lookup, similar items (`GET /Items/{itemId}/Similar`)
 - People: person detail (`GET /Users/{userId}/Items/{personId}`) + filmography (items featuring a person)
 - Images: `GET /Items/{itemId}/Images/{imageType}` (URL building only)
-- Playback: `GET /Items/{itemId}/PlaybackInfo`, HLS `GET /Videos/{itemId}/main.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
+- Playback: `GET /Items/{itemId}/PlaybackInfo`, direct play `GET /Videos/{itemId}/stream?static=true`, HLS `GET /Videos/{itemId}/main.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
 - User data: mark played/unplayed (`/PlayedItems/{itemId}`), favorite/unfavorite (`/FavoriteItems/{itemId}`) — surfaced as optimistic toggles on media and person detail
 - Search: `GET /Users/{userId}/Items` with `searchTerm` (movies/series/episodes), wired via `searchItems(query:limit:)`
 
@@ -154,7 +154,7 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 - Media detail depth: seasons/episodes browsing, next-up, similar items ("More Like This"), cast & crew, and a person detail view with filmography
 - User-data toggles: optimistic mark-watched/unwatched and favorite/unfavorite on media and person detail
 - Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
-- AVPlayer HLS playback: progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
+- AVPlayer playback with direct play (original file when the source and requested tracks allow) and HLS remux/transcode fallback, true PlayMethod reporting, progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
 - All five themes (Standard, Horror, Action, Video Store, Sci-Fi) switchable at runtime, on a `BaseColors` Tailwind-palette token layer; genre palettes are placeholders pending curation
 - Real unit tests for `ServerConnectionViewModel`, `PlaybackViewModel`, `SearchViewModel`, `LibraryItemsViewModel`, and `LibraryQueryDisplay` (Swift Testing) plus JellyfinKit unit tests and DesignSystem theme-catalog tests (identity, distinctness, WCAG contrast)
 

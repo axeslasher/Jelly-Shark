@@ -18,8 +18,9 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     // Recorded calls
     var playbackInfoRequests: [(itemId: String, startTimeTicks: Int64?, audioStreamIndex: Int?, subtitleStreamIndex: Int?)] = []
-    var startReports: [(itemId: String, positionTicks: Int64)] = []
-    var progressReports: [(itemId: String, positionTicks: Int64, isPaused: Bool)] = []
+    var streamResolutions: [(sourceId: String, parameters: StreamParameters, playMethod: PlayMethod)] = []
+    var startReports: [(itemId: String, positionTicks: Int64, playMethod: PlayMethod)] = []
+    var progressReports: [(itemId: String, positionTicks: Int64, isPaused: Bool, playMethod: PlayMethod)] = []
     var stopReports: [(itemId: String, positionTicks: Int64)] = []
     var nextEpisodeRequests: [String] = []
     var fetchCurrentUserCallCount = 0
@@ -145,8 +146,17 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try playbackInfoResult.get()
     }
 
-    func hlsStreamURL(parameters: StreamParameters, eTag: String?) throws -> URL {
-        URL(string: "https://example.com/Videos/\(parameters.itemId)/main.m3u8")!
+    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+        // Route through the real decision rule so tests exercise it end to end
+        let method = source.playMethod(
+            audioStreamIndex: parameters.audioStreamIndex,
+            subtitleStreamIndex: parameters.subtitleStreamIndex
+        )
+        streamResolutions.append((source.id, parameters, method))
+        return StreamResolution(
+            url: URL(string: "https://example.com/Videos/\(parameters.itemId)/stream")!,
+            playMethod: method
+        )
     }
 
     func reportPlaybackStart(
@@ -154,10 +164,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         mediaSourceId: String?,
         playSessionId: String?,
         positionTicks: Int64,
+        playMethod: PlayMethod,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?
     ) async throws {
-        startReports.append((itemId, positionTicks))
+        startReports.append((itemId, positionTicks, playMethod))
     }
 
     func reportPlaybackProgress(
@@ -165,9 +176,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         mediaSourceId: String?,
         playSessionId: String?,
         positionTicks: Int64,
+        playMethod: PlayMethod,
         isPaused: Bool
     ) async throws {
-        progressReports.append((itemId, positionTicks, isPaused))
+        progressReports.append((itemId, positionTicks, isPaused, playMethod))
     }
 
     func reportPlaybackStopped(
@@ -385,5 +397,87 @@ struct PlaybackViewModelTests {
 
         #expect(viewModel.nextEpisode == nil)
         #expect(viewModel.state == .finished)
+    }
+
+    // MARK: - Direct Play
+
+    private func stubDirectPlaySource(on client: MockJellyfinClient) {
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-1",
+                mediaSources: [
+                    MediaSource(
+                        id: "source-1",
+                        container: "mp4",
+                        supportsDirectPlay: true,
+                        supportsDirectStream: true,
+                        supportsTranscoding: true
+                    ),
+                ]
+            )
+        )
+    }
+
+    @Test("Direct-play-capable sources start and report direct play")
+    func directPlayCapableSourceDirectPlays() async {
+        let client = MockJellyfinClient()
+        stubDirectPlaySource(on: client)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.state == .playing)
+        #expect(client.streamResolutions.count == 1)
+        #expect(client.streamResolutions[0].playMethod == .directPlay)
+        #expect(client.startReports.count == 1)
+        #expect(client.startReports[0].playMethod == .directPlay)
+    }
+
+    @Test("The default mock source still transcodes (existing behavior preserved)")
+    func incompatibleSourceTranscodes() async {
+        let client = MockJellyfinClient()
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(client.streamResolutions.count == 1)
+        #expect(client.streamResolutions[0].playMethod == .transcode)
+        #expect(client.startReports[0].playMethod == .transcode)
+    }
+
+    @Test("Selecting a subtitle on a direct session falls back to HLS and returns on clear")
+    func subtitleSelectionLeavesAndReentersDirectPlay() async {
+        let client = MockJellyfinClient()
+        stubDirectPlaySource(on: client)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(client.startReports[0].playMethod == .directPlay)
+
+        await viewModel.selectSubtitleStream(index: 3)
+        #expect(viewModel.state == .playing)
+        #expect(client.streamResolutions.count == 2)
+        #expect(client.streamResolutions[1].playMethod == .directStream)
+        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 3)
+        #expect(client.startReports[1].playMethod == .directStream)
+
+        await viewModel.selectSubtitleStream(index: nil)
+        #expect(client.streamResolutions.count == 3)
+        #expect(client.streamResolutions[2].playMethod == .directPlay)
+        #expect(client.startReports[2].playMethod == .directPlay)
+    }
+
+    @Test("Resume works on a direct-play source")
+    func resumeOnDirectPlay() async {
+        let client = MockJellyfinClient()
+        stubDirectPlaySource(on: client)
+        let resumeTicks: Int64 = 6_000_000_000
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie(resumeTicks: resumeTicks))
+
+        await viewModel.start()
+
+        #expect(client.streamResolutions[0].playMethod == .directPlay)
+        #expect(client.startReports[0].positionTicks == resumeTicks)
+        #expect(client.startReports[0].playMethod == .directPlay)
     }
 }

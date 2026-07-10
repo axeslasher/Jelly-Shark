@@ -100,3 +100,13 @@ struct PlaybackAdapterTests {
         #expect(session.defaultMediaSource?.id == "source-2")
     }
 }
+
+@Suite("PlayMethod Adapter")
+struct PlayMethodAdapterTests {
+    @Test("Domain play methods map onto the SDK reporting enum")
+    func playMethodMapping() {
+        #expect(JellyfinAPI.PlayMethod(from: .directPlay) == .directPlay)
+        #expect(JellyfinAPI.PlayMethod(from: .directStream) == .directStream)
+        #expect(JellyfinAPI.PlayMethod(from: .transcode) == .transcode)
+    }
+}

@@ -4,7 +4,7 @@
 
 Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (0.6.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
 
-> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + HLS streaming, and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
+> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + streaming (direct play with HLS remux/transcode fallback), and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
 
 ---
 
@@ -129,13 +129,17 @@ GET /Users/{userId}/Images/Primary   — user avatar
 GET /Items/{itemId}/PlaybackInfo (getPlaybackInfo)
 - Returns: media sources + play session ID
 
-GET /Videos/{itemId}/main.m3u8   (hlsStreamURL — built by StreamURLBuilder)
-- HLS transcode stream; codecs hevc,h264 / aac,ac3,eac3; SegmentContainer=mp4
+GET /Videos/{itemId}/stream?static=true   (resolveStream — direct play)
+- Original file streamed as-is when the source supports direct play and the
+  requested tracks are the defaults; container appended as path extension
+
+GET /Videos/{itemId}/main.m3u8   (resolveStream — HLS fallback, built by StreamURLBuilder)
+- HLS remux/transcode stream; codecs hevc,h264 / aac,ac3,eac3; SegmentContainer=mp4
 
 POST /Sessions/Playing           (reportPlaybackStart)
 POST /Sessions/Playing/Progress  (reportPlaybackProgress — heartbeat every 10s)
 POST /Sessions/Playing/Stopped   (reportPlaybackStopped)
-- Note: PlayMethod is currently hardcoded to Transcode
+- PlayMethod reports the resolved delivery: DirectPlay / DirectStream / Transcode
 ```
 
 ### User Data — ✅ implemented
@@ -326,15 +330,17 @@ SwiftData is the intended persistence layer for caching but has **not been adopt
 **Decision (implemented)**: `AVPlayer` + `AVPlayerViewController`, bridged into SwiftUI via a `UIViewControllerRepresentable` (`PlayerViewController`, guarded by `#if canImport(UIKit)`). No third-party player (VLCKit was considered but not adopted). Playback lifecycle is owned by `PlaybackViewModel` (`@Observable @MainActor`).
 
 **Implemented capabilities**:
-- HLS streaming from Jellyfin's transcode endpoint
-- Resume from saved position
-- Audio + subtitle track switching (rebuilds the HLS stream with the chosen indices; on tvOS, surfaced via `AVPlayerViewController` transport-bar menus)
+- Direct play of the original file when the server says the source is compatible (`MediaSource.supportsDirectPlay`) and the requested tracks are the defaults; HLS otherwise
+- Resume from saved position (client-side seek — works on both paths)
+- Audio + subtitle track switching (rebuilds the stream with the chosen indices; an explicit selection on a direct-play session falls back to HLS, and clearing back to defaults returns to direct play. On tvOS, surfaced via `AVPlayerViewController` transport-bar menus)
 - Episode autoplay with an "Up Next" countdown overlay (`UpNextOverlayView`)
 
-**Planned**: Direct play (currently always transcodes), playback speed control, Picture-in-Picture, seek-preview thumbnails, broader codec support.
+**Planned**: playback speed control, Picture-in-Picture, seek-preview thumbnails, broader codec support.
 
 ### Streaming (as implemented)
-- **Always HLS transcode** via `GET /Videos/{itemId}/main.m3u8` — direct play is not yet implemented even when the client could support the codec/container
+- **Two delivery paths**, chosen per source by `MediaSource.playMethod(audioStreamIndex:subtitleStreamIndex:)` and resolved by `JellyfinClient.resolveStream(for:parameters:)`:
+  - **Direct play**: `GET /Videos/{itemId}/stream?static=true` — the original file, no server processing
+  - **HLS universal endpoint**: `GET /Videos/{itemId}/main.m3u8` — the server remuxes when codecs are compatible (reported as DirectStream) and transcodes otherwise
 - `PlaybackInfo` is requested first to obtain media sources and a play session ID
 - Offline downloads NOT supported in v1.0
 
@@ -356,7 +362,7 @@ SwiftData is the intended persistence layer for caching but has **not been adopt
 JellyfinKit/Sources/JellyfinKit/
 ├── Client/
 │   ├── JellyfinClient.swift          (JellyfinClientProtocol + concrete client)
-│   ├── StreamURLBuilder.swift        (HLS main.m3u8 URL construction)
+│   ├── StreamURLBuilder.swift        (direct-play + HLS URL construction)
 │   └── DeviceProfile+JellyShark.swift (codec/container capabilities)
 ├── Models/
 │   ├── User.swift, MediaItem.swift, Library.swift
