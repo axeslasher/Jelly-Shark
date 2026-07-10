@@ -132,6 +132,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return []
     }
 
+    var collectionItemsRequests: [String] = []
+    var collectionItemsResult: Result<[MediaItem], Error> = .success([])
+
+    func getCollectionItems(collectionId: String) async throws -> [MediaItem] {
+        collectionItemsRequests.append(collectionId)
+        return try collectionItemsResult.get()
+    }
+
     func getResumeItems(limit: Int?) async throws -> [MediaItem] { [] }
 
     func getLatestItems(libraryId: String?, limit: Int?) async throws -> [MediaItem] { [] }

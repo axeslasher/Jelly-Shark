@@ -434,6 +434,12 @@ extension MediaItem {
         return count == 1 ? "1 Season" : "\(count) Seasons"
     }
 
+    /// Content count for collections (e.g., "4 Movies"); nil for other types
+    public var collectionCountText: String? {
+        guard type == .boxSet, let count = childCount, count > 0 else { return nil }
+        return count == 1 ? "1 Movie" : "\(count) Movies"
+    }
+
     /// Compact season/episode code (e.g., "S2E4"); nil unless the item is an
     /// episode carrying both numbers
     public var episodeCode: String? {

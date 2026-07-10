@@ -14,7 +14,8 @@ struct MediaMetadataRow: View {
     /// Display year ("2024") or series span ("2008–2013", "2008–")
     let yearText: String?
     let runtime: String?
-    /// Series season count ("3 Seasons"); shown in place of runtime for series
+    /// Container content count ("3 Seasons", "4 Movies"); shown in place of
+    /// runtime for series and collections
     let seasons: String?
     let communityRating: Double?
     /// Critic score on a 0–100 scale, rendered as a percentage

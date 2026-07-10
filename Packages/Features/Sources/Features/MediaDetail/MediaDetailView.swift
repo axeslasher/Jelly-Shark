@@ -26,6 +26,9 @@ public struct MediaDetailView: View {
     @State private var episodes: [MediaItem] = []
     @State private var nextUpEpisode: MediaItem?
 
+    /// BoxSet-only state: the collection's contents, in release order.
+    @State private var collectionItems: [MediaItem] = []
+
     /// Credits derived once when the detailed item lands (see `loadContent`),
     /// rather than re-filtering `people` on every body evaluation.
     @State private var directors: [CastMember] = []
@@ -96,24 +99,42 @@ public struct MediaDetailView: View {
     }
 
     /// What the hero Play button actually plays: series pages resolve to the
-    /// next-up episode (falling back to the selected season's first episode);
-    /// everything else plays the page's own item. Nil while a series' target
-    /// hasn't resolved yet — Play stays disabled rather than sending the
-    /// series itself to the player.
+    /// next-up episode (falling back to the selected season's first episode),
+    /// collection pages to their first unwatched item (falling back to the
+    /// first item — a collection itself isn't playable); everything else
+    /// plays the page's own item. Nil while a resolved target hasn't loaded
+    /// yet — Play stays disabled rather than sending a container to the
+    /// player.
     private var playableItem: MediaItem? {
-        guard item.type == .series else { return item }
-        return nextUpEpisode ?? episodes.first
+        switch item.type {
+        case .series:
+            return nextUpEpisode ?? episodes.first
+        case .boxSet:
+            return collectionItems.first { !($0.userData?.played ?? false) } ?? collectionItems.first
+        default:
+            return item
+        }
     }
 
     /// Play-button title: series pages name their target episode
-    /// ("Resume S2E4"); everything else keeps plain Play/Resume.
+    /// ("Resume S2E4"), collection pages their target movie ("Play Jaws 2");
+    /// everything else keeps plain Play/Resume.
     private var playButtonTitle: String {
-        guard item.type == .series else {
+        switch item.type {
+        case .series:
+            guard let episode = playableItem, episode.type == .episode else { return "Play" }
+            let verb = episode.hasProgress ? "Resume" : "Play"
+            return episode.episodeCode.map { "\(verb) \($0)" } ?? verb
+        case .boxSet:
+            // Movie titles get long; a positional label reads better on the
+            // button. "Play Next" only while the collection is genuinely in
+            // progress — untouched or fully watched both restart at the top.
+            let watchedCount = collectionItems.count { $0.userData?.played ?? false }
+            let inProgress = watchedCount > 0 && watchedCount < collectionItems.count
+            return inProgress ? "Play Next" : "Play First"
+        default:
             return displayItem.hasProgress ? "Resume" : "Play"
         }
-        guard let episode = playableItem, episode.type == .episode else { return "Play" }
-        let verb = episode.hasProgress ? "Resume" : "Play"
-        return episode.episodeCode.map { "\(verb) \($0)" } ?? verb
     }
 
     public var body: some View {
@@ -161,6 +182,10 @@ public struct MediaDetailView: View {
                         isRegionFocused: focusedRegion == .shelves,
                         playbackItem: $playbackItem
                     )
+
+                    // Likewise, the contents lead on collection pages.
+                    // Renders nothing for other types.
+                    CollectionItemsSection(items: collectionItems)
 
                     CastShelfSection(people: displayItem.people ?? [])
 
@@ -343,17 +368,27 @@ public struct MediaDetailView: View {
                 }
                 nextUpEpisode = await (try? nextUpFetch) ?? nil
             }
+
+            // Watched flags on the collection cards (and the Play target's
+            // first-unwatched resolution) change with playback too.
+            if item.type == .boxSet {
+                if let refreshedItems = try? await client.getCollectionItems(collectionId: item.id) {
+                    collectionItems = refreshedItems
+                }
+            }
         }
     }
 
     private func loadContent() async {
         guard let client = session.client else { return }
 
-        // Reset series state so a reused view (item.id change) doesn't show
-        // the previous series' seasons while the new ones load.
+        // Reset per-type state so a reused view (item.id change) doesn't show
+        // the previous item's seasons or collection contents while the new
+        // ones load.
         seasons = []
         episodes = []
         nextUpEpisode = nil
+        collectionItems = []
 
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
         detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
@@ -365,6 +400,10 @@ public struct MediaDetailView: View {
             seasons = (await (try? seasonsFetch)) ?? []
             episodes = (await (try? episodesFetch)) ?? []
             nextUpEpisode = await (try? nextUpFetch) ?? nil
+        }
+
+        if item.type == .boxSet {
+            collectionItems = (try? await client.getCollectionItems(collectionId: item.id)) ?? []
         }
 
         // Derive the credits once per fetch instead of per body evaluation.

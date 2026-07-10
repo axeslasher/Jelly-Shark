@@ -63,10 +63,11 @@ struct MediaDetailHeroSection: View {
                     }
                     MediaMetadataRow(
                         yearText: item.yearSpanText,
-                        // Series carry a per-episode runtime; the season count
-                        // is the meaningful "how much" figure there.
-                        runtime: item.type == .series ? nil : item.formattedRuntime,
-                        seasons: item.seasonCountText,
+                        // Series and collections carry no meaningful single
+                        // runtime; their content count is the "how much"
+                        // figure instead.
+                        runtime: item.type == .series || item.type == .boxSet ? nil : item.formattedRuntime,
+                        seasons: item.seasonCountText ?? item.collectionCountText,
                         communityRating: item.communityRating,
                         criticRating: item.criticRating,
                         certificate: item.officialRating,

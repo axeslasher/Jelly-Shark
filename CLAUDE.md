@@ -54,7 +54,7 @@ The app follows a modular architecture with clear separation of concerns. All th
 1. **JellyfinKit** (`Packages/JellyfinKit`): API client, networking, and data models
    - Wraps the official [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0) behind a `JellyfinClientProtocol` facade
    - Authentication, library/item fetching (paged, with sort/filter via `LibraryQuery`), image URL building, playback info, and stream resolution (direct play of compatible files, HLS remux/transcode otherwise, with true PlayMethod reporting)
-   - Playback reporting (start/progress/stopped), resume items, latest items, seasons/episodes, next-up + next-episode lookup, similar items
+   - Playback reporting (start/progress/stopped), resume items, latest items, seasons/episodes, next-up + next-episode lookup, similar items, collection (BoxSet) contents
    - People (person detail + filmography) and library filter options; user-data mutations (mark played/unplayed, favorite/unfavorite)
    - Domain models (`User`, `MediaItem`, `Library`, `Person`, `CastMember`, `ServerInfo`, `PlaybackSessionInfo`, `LibraryQuery`) + SDK adapters
    - Session persistence via Keychain (`SessionStore`, `KeychainStore`)
@@ -151,7 +151,7 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 - Modular SPM architecture (JellyfinKit, DesignSystem, Features) wired into the app target
 - Server connection + authentication with Keychain-backed session persistence and restore-on-launch
 - Home screen (Continue Watching, Recently Added), library browsing with pagination and a filter/sort bar (`LibraryFilterBar`), media detail
-- Media detail depth: seasons/episodes browsing, next-up, similar items ("More Like This"), cast & crew, and a person detail view with filmography
+- Media detail depth: seasons/episodes browsing, next-up, similar items ("More Like This"), cast & crew, collection (BoxSet) contents shelf, and a person detail view with filmography
 - User-data toggles: optimistic mark-watched/unwatched and favorite/unfavorite on media and person detail
 - Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
 - AVPlayer playback with direct play (original file when the source and requested tracks allow) and HLS remux/transcode fallback, true PlayMethod reporting, progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay

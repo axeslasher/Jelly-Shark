@@ -72,6 +72,13 @@ public protocol JellyfinClientProtocol: Sendable {
         matching query: LibraryQuery
     ) async throws -> LibraryFilterOptions?
 
+    /// Fetch the items inside a collection (BoxSet), in release order.
+    /// Collections are folder items, so their children come from the same
+    /// items endpoint as library grids (the id maps to `parentId`).
+    /// - Parameter collectionId: The BoxSet item ID
+    /// - Returns: The collection's items, sorted by premiere date
+    func getCollectionItems(collectionId: String) async throws -> [MediaItem]
+
     // MARK: - Media
 
     /// Fetch details for a specific media item
@@ -568,6 +575,20 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     // MARK: - Media
+
+    public func getCollectionItems(collectionId: String) async throws -> [MediaItem] {
+        // A BoxSet's id is a valid `parentId`, so its children come from the
+        // same paged items endpoint as library grids. Collections are small
+        // (a franchise, not a library), so one generously-sized page is
+        // plenty — pagination would be over-engineering here.
+        try await getLibraryItems(
+            libraryId: collectionId,
+            itemTypes: nil,
+            query: LibraryQuery(sort: .releaseDate, direction: .ascending),
+            limit: 200,
+            startIndex: 0
+        ).items
+    }
 
     public func getMediaItem(itemId: String) async throws -> MediaItem {
         guard let userId = _userId else {
