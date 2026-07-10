@@ -20,11 +20,11 @@ public struct ComponentPlaceholder: View {
                 .foregroundStyle(theme.secondary)
 
             Text(name)
-                .font(theme.jsTitle)
+                .jsStyle(.title)
                 .foregroundStyle(theme.primary)
 
             Text("Coming Soon")
-                .font(theme.jsCaption)
+                .jsStyle(.caption)
                 .foregroundStyle(theme.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

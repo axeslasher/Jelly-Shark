@@ -99,7 +99,7 @@ struct DesignSystemTests {
 
         @Test("Theme count")
         func themeCount() {
-            #expect(ThemeIdentifier.allCases.count == 4)
+            #expect(ThemeIdentifier.allCases.count == 5)
         }
     }
 }

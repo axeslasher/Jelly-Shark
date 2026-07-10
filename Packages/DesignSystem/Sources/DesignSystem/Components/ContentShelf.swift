@@ -35,7 +35,7 @@ public struct ContentShelf<Content: View>: View {
                 }
 
                 Text(title)
-                    .font(theme.jsHeadline)
+                    .jsStyle(.headline)
                     .foregroundStyle(theme.primary)
             }
             .padding(.horizontal, SpacingTokens.screenPadding)

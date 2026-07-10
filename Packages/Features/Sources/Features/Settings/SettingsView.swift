@@ -21,6 +21,8 @@ public struct SettingsView: View {
     // `tabSelection` for the tvOS bug this works around.
     public var body: some View {
         List {
+            pageTitle("Settings")
+
             // Server Section
             Section {
                 NavigationLink(value: Destination.serverConnection) {
@@ -31,7 +33,7 @@ public struct SettingsView: View {
                     )
                 }
             } header: {
-                Text("Connection")
+                sectionHeader("Connection")
             }
 
             // Appearance Section
@@ -44,7 +46,7 @@ public struct SettingsView: View {
                     )
                 }
             } header: {
-                Text("Appearance")
+                sectionHeader("Appearance")
             }
 
             // Playback Section
@@ -55,7 +57,7 @@ public struct SettingsView: View {
                     subtitle: "Quality, subtitles, audio"
                 )
             } header: {
-                Text("Playback")
+                sectionHeader("Playback")
             }
 
             // About Section
@@ -66,10 +68,16 @@ public struct SettingsView: View {
                     subtitle: "Version 0.0.1"
                 )
             } header: {
-                Text("About")
+                sectionHeader("About")
             }
         }
+        // tvOS List is already transparent (and lacks this modifier); other
+        // platforms need the system list background hidden first.
+        #if !os(tvOS)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Settings")
+        #endif
+        .background(theme.background)
         .navigationDestination(for: Destination.self) { destination in
             switch destination {
             case .serverConnection:
@@ -94,56 +102,49 @@ public struct SettingsView: View {
         }
     }
 
+    /// Page title rendered in the theme's display face — the loudest
+    /// typographic differentiator between themes. tvOS can't restyle
+    /// `navigationTitle`, so the title lives in the list instead.
+    private func pageTitle(_ title: String) -> some View {
+        Text(title)
+            .jsStyle(.display)
+            .foregroundStyle(theme.primary)
+            .padding(.bottom, SpacingTokens.md)
+            .listRowBackground(Color.clear)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .jsStyle(.caption)
+            .foregroundStyle(theme.secondary)
+    }
+
     private func settingsRow(icon: String, title: String, subtitle: String) -> some View {
-        HStack(spacing: SpacingTokens.md) {
-            Image(systemName: icon)
-                .font(theme.jsTitle)
-                .foregroundStyle(theme.accent)
-                .frame(width: 32)
-
-            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
-                Text(title)
-                    .font(theme.jsBody)
-                    .foregroundStyle(theme.primary)
-
-                Text(subtitle)
-                    .font(theme.jsCaption)
-                    .foregroundStyle(theme.secondary)
-            }
-        }
-        .padding(.vertical, SpacingTokens.xs)
+        SettingsRowLabel(icon: icon, title: title, subtitle: subtitle)
     }
 
     private var themeSelectionView: some View {
         List {
+            pageTitle("Theme")
+
             ForEach(themeManager.availableThemes, id: \.self) { (themeId: ThemeIdentifier) in
                 Button {
                     themeManager.switchTheme(to: themeId)
                 } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
-                            Text(themeId.displayName)
-                                .font(theme.jsBody)
-                                .foregroundStyle(theme.primary)
-
-                            Text(themeDescription(for: themeId))
-                                .font(theme.jsCaption)
-                                .foregroundStyle(theme.secondary)
-                        }
-
-                        Spacer()
-
-                        if themeManager.currentThemeId == themeId {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(theme.accent)
-                        }
-                    }
-                    .padding(.vertical, SpacingTokens.xs)
+                    ThemeRowLabel(
+                        name: themeId.displayName,
+                        description: themeDescription(for: themeId),
+                        isSelected: themeManager.currentThemeId == themeId
+                    )
                 }
                 .buttonStyle(.plain)
             }
         }
+        #if !os(tvOS)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Theme")
+        #endif
+        .background(theme.background)
     }
 
     private func themeDescription(for themeId: ThemeIdentifier) -> String {
@@ -156,7 +157,78 @@ public struct SettingsView: View {
             return "Kinetic energy, technological precision"
         case .videoStore:
             return "90s nostalgia, Friday night vibes"
+        case .sciFi:
+            return "Deep-space greens, engineered precision"
         }
+    }
+}
+
+/// Row label for the main Settings list. Focused rows sit on the light system
+/// platter, so the text swaps to the on-platter tokens (see ``ThemeRowLabel``).
+private struct SettingsRowLabel: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    let icon: String
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        HStack(spacing: SpacingTokens.md) {
+            Image(systemName: icon)
+                .jsStyle(.title)
+                .foregroundStyle(theme.accent)
+                .frame(width: 32)
+
+            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                Text(title)
+                    .jsStyle(.body)
+                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+
+                Text(subtitle)
+                    .jsStyle(.caption)
+                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+            }
+        }
+        .padding(.vertical, SpacingTokens.xs)
+        .animation(theme.animation, value: isFocused)
+    }
+}
+
+/// Label for a theme row in the selection list. When the `.plain` button gains
+/// focus, tvOS lifts it onto a light system platter — the theme's content
+/// colors disappear against it, so the text swaps to the on-platter tokens.
+/// `\.isFocused` only resolves inside the focusable's subtree, hence a
+/// dedicated view (same pattern as ``OverviewLabel``).
+private struct ThemeRowLabel: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    let name: String
+    let description: String
+    let isSelected: Bool
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                Text(name)
+                    .jsStyle(.body)
+                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+
+                Text(description)
+                    .jsStyle(.caption)
+                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+            }
+
+            Spacer()
+
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(theme.accent)
+            }
+        }
+        .padding(.vertical, SpacingTokens.xs)
+        .animation(theme.animation, value: isFocused)
     }
 }
 

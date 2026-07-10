@@ -27,15 +27,34 @@ struct LibraryFilterBar: View {
         // horizontal ScrollView slowed the focus engine's return to the bar
         // after a menu dismissal, and the pills fit on screen anyway
         #if os(tvOS)
-        pillRow
+        themedPillRow
             // Make the whole bar a focus target so it is reachable when
             // moving up from any column of the grid below
             .focusSection()
         #else
         ScrollView(.horizontal) {
-            pillRow
+            themedPillRow
         }
         .scrollClipDisabled()
+        #endif
+    }
+
+    /// Themes with a `focusFill` swap the pills onto ``ThemedGlassButtonStyle``
+    /// so the focus platter takes the theme's hue (the default system chrome
+    /// always lifts to white). `.menuStyle(.button)` routes the Menu pills
+    /// through the same button styling as the plain Buttons.
+    @ViewBuilder
+    private var themedPillRow: some View {
+        #if os(macOS)
+        pillRow
+        #else
+        if let fill = theme.focusFill {
+            pillRow
+                .menuStyle(.button)
+                .buttonStyle(ThemedGlassButtonStyle(tint: fill))
+        } else {
+            pillRow
+        }
         #endif
     }
 
@@ -94,7 +113,7 @@ struct LibraryFilterBar: View {
         .padding(.vertical, SpacingTokens.xs)
         // NOTE: no .tint here — on tvOS it repaints the button chrome
         // itself, drowning the pill labels in accent color
-        .font(theme.jsTitle)
+        .jsStyle(.title)
     }
 
     // MARK: - Sort
@@ -211,8 +230,7 @@ struct LibraryFilterBar: View {
             Text(title)
             if count > 0 {
                 Text("\(count)")
-                    .font(theme.jsCaption)
-                    .bold()
+                    .jsStyle(.caption, .strong)
                     .foregroundStyle(theme.primary)
                     .padding(SpacingTokens.xxs)
                     .frame(minWidth: 32, minHeight: 32)

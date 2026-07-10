@@ -65,6 +65,11 @@ public enum MotionTokens {
         .spring(response: 0.35, dampingFraction: 0.6)
     }
 
+    /// Sci-Fi theme - slow, weightless drift
+    public static var sciFiAnimation: Animation {
+        .easeInOut(duration: 0.45)
+    }
+
     // MARK: - Focus Animations
 
     /// Scale factor when focused (tvOS)

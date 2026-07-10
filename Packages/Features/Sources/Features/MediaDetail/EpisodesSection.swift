@@ -180,14 +180,13 @@ struct EpisodesSection: View {
                         scrollToSeason(season.id)
                     } label: {
                         Text(season.name)
-                            .font(theme.jsTitle)
-                            .fontWeight(.semibold)
+                            .jsStyle(.title)
                             .foregroundStyle(
                                 season.id == (currentSeasonId ?? seasons.first?.id)
                                     ? theme.accent : theme.primary
                             )
                     }
-                    .glassButtonStyle()
+                    .glassButtonStyle(tint: theme.focusFill)
                     .buttonBorderShape(.capsule)
                     // From outside the row, only the active season's pill can
                     // take focus — entry always lands on the right pill with

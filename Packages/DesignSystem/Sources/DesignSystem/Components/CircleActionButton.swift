@@ -41,18 +41,18 @@ public struct CircleActionButton: View {
     public var body: some View {
         Button(action: action) {
             Image(systemName: systemImage)
-                .font(theme.jsHeadline)
+                .jsStyle(.headline)
                 // Focus lifts the glass circle to a light platter; the
                 // theme's light tints wash out there, so swap to the
                 // on-platter color (or the caller's override).
-                .foregroundStyle(isFocused ? (focusedTint ?? theme.onPlatter) : tint)
+                .foregroundStyle(isFocused ? (focusedTint ?? theme.onFocusFill) : tint)
                 // The circle takes its diameter from the label, and SF Symbol
                 // glyphs all have different bounding boxes — pin the glyph in
                 // a fixed square so swapping symbols ("eye.fill" ⇄
                 // "checkmark") can't resize the button.
                 .frame(width: Self.glyphBox, height: Self.glyphBox)
         }
-        .glassButtonStyle()
+        .glassButtonStyle(tint: theme.focusFill, circular: true)
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .focused($isFocused)
@@ -64,7 +64,7 @@ public struct CircleActionButton: View {
         // doesn't restructure the view and unsettle the focus engine.
         .overlay(alignment: .bottom) {
             Text(title)
-                .font(theme.jsCaption)
+                .jsStyle(.caption)
                 .foregroundStyle(theme.secondary)
                 .fixedSize()
                 .opacity(isFocused ? 1 : 0)

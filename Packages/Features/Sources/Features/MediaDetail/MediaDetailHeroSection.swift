@@ -76,9 +76,8 @@ struct MediaDetailHeroSection: View {
                     )
                     if let genreLine {
                         Text(genreLine)
-                            .font(theme.jsCaption)
+                            .jsStyle(.caption, .emphasized)
                             .foregroundStyle(theme.tertiary)
-                            .fontWeight(.semibold)
                             .lineLimit(1)
                     }
                 }
@@ -130,7 +129,7 @@ struct MediaDetailHeroSection: View {
 
     private var titleText: some View {
         Text(item.name)
-            .font(theme.jsDisplay)
+            .jsStyle(.display)
             .foregroundStyle(theme.primary)
     }
 
@@ -142,9 +141,9 @@ struct MediaDetailHeroSection: View {
                 Image(systemName: "play.fill")
                 Text(playTitle)
             }
-            .font(theme.jsHeadline)
+            .jsStyle(.headline)
         }
-        .glassButtonStyle()
+        .glassButtonStyle(tint: theme.focusFill)
         .disabled(session.client == nil || playTarget == nil)
     }
 
@@ -187,7 +186,7 @@ struct MediaDetailHeroSection: View {
         } label: {
             OverviewLabel(tagline: item.tagline, overview: item.overview)
         }
-        .buttonStyle(.plain)
+        .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
     }
 
     /// Optimistically flip the watched state, then persist; revert on failure.

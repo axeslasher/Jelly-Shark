@@ -80,7 +80,7 @@ struct PersonDetailHeader: View {
 
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
                 Text(member.name)
-                    .font(theme.jsDisplay)
+                    .jsStyle(.display)
                     .foregroundStyle(theme.primary)
                     .lineLimit(2)
 
@@ -96,7 +96,7 @@ struct PersonDetailHeader: View {
                             overviewLineLimit: 6
                         )
                     }
-                    .buttonStyle(.plain)
+                    .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: headshotColumnHeight, alignment: .topLeading)
@@ -121,9 +121,8 @@ struct PersonDetailHeader: View {
                     Label(place, systemImage: "mappin.and.ellipse")
                 }
             }
-            .font(theme.jsBody)
+            .jsStyle(.body, .strong)
             .foregroundStyle(theme.tertiary)
-            .fontWeight(.bold)
             .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
         }
     }

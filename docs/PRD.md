@@ -143,7 +143,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ✅ Playback with progress tracking (HLS, resume, audio/subtitle tracks, episode autoplay)
 - ✅ Search functionality (debounced live search with suggestions)
 - ⏳ User profile switching (not started)
-- ⏳ Theme customization UI (UI present; only Standard theme functional)
+- ✅ Theme customization UI (all five themes switchable; genre palettes pending hand curation)
 - ✅ Settings management
 
 ### Should Have
@@ -240,7 +240,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - ✅ User-data layer: optimistic mark-watched and favorite toggles
 
 ### Theming & Components — ⏳ in progress
-- ⏳ Remaining launch themes (Horror, Action, Video Store) — tokens defined, themes fall back to Standard
+- ✅ Remaining launch themes (Horror, Action, Video Store) — implemented with per-theme fonts and motion; palettes are first-pass Tailwind picks pending curation
 - ⏳ Component variant system — not started
 - ✅ Theme switching UI and runtime implementation
 - ⏳ Component *variant* system — a reusable component set ships (artwork images, content shelves, cast cards, action buttons, etc.), but the configurable variant selection is not built yet

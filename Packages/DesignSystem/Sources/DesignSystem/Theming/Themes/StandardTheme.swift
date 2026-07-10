@@ -11,20 +11,20 @@ public struct StandardTheme: Theme, Sendable {
 
     // MARK: - Colors
 
-    public let background = ColorTokens.Standard.background
-    public let surface = ColorTokens.Standard.surface
-    public let surfaceElevated = ColorTokens.Standard.surfaceElevated
-    public let primary = ColorTokens.Standard.primary
-    public let secondary = ColorTokens.Standard.secondary
-    public let tertiary = ColorTokens.Standard.tertiary
-    public let onPlatter = ColorTokens.Standard.onPlatter
-    public let onPlatterSecondary = ColorTokens.Standard.onPlatterSecondary
-    public let accent = ColorTokens.Standard.accent
-    public let accentSecondary = ColorTokens.Standard.accentSecondary
-    public let success = ColorTokens.Standard.success
-    public let warning = ColorTokens.Standard.warning
-    public let error = ColorTokens.Standard.error
-    public let focusRing = ColorTokens.Standard.focusRing
+    public let background = BaseColors.zinc950
+    public let surface = BaseColors.zinc900
+    public let surfaceElevated = BaseColors.zinc800
+    public let primary = BaseColors.zinc50
+    public let secondary = BaseColors.zinc300
+    public let tertiary = BaseColors.zinc400
+    public let onPlatter = BaseColors.zinc900
+    public let onPlatterSecondary = BaseColors.zinc600
+    public let accent = BaseColors.orange500
+    public let accentSecondary = BaseColors.orange600
+    public let success = BaseColors.green500
+    public let warning = BaseColors.yellow500
+    public let error = BaseColors.red500
+    public let focusRing = BaseColors.white.opacity(0.8)
 
     // MARK: - Typography
     //
@@ -32,15 +32,17 @@ public struct StandardTheme: Theme, Sendable {
     // │ SWAP FONTS HERE. Each role points at a `FontFamily` name (or `nil` for  │
     // │ the system font / San Francisco). Mix and match freely, then rebuild.   │
     // │                                                                          │
-    // │ Current mapping — "Zodiak display, sans elsewhere":                      │
-    // │   • Zodiak (serif) for the hero Display                                  │
-    // │   • Satoshi for section Headlines + Titles                               │
-    // │   • General Sans for Overview / Body / Caption / Small                   │
+    // │ Sizes, weights, emphasis weights, and tracking default to the Standard  │
+    // │ scale (TypographyTokens). To tune a role beyond its family, mutate the  │
+    // │ scheme in a closure initializer:                                         │
     // │                                                                          │
-    // │ A few alternatives to try:                                               │
-    // │   Serif reading:  overview: FontFamily.zodiak                            │
-    // │   Satoshi hero:   display/headline: .satoshi, title/body: .generalSans   │
-    // │   All system:     set any role to `nil` (or use `.system`)               │
+    // │   public let fonts: FontScheme = {                                       │
+    // │       var scheme = FontScheme(display: FontFamily.generalSans, ...)      │
+    // │       scheme.display.weight = .black   // heavier hero                   │
+    // │       scheme.display.size = 56         // x-height compensation          │
+    // │       scheme.body.emphasizedWeight = .bold  // what "emphasized" means   │
+    // │       return scheme                                                      │
+    // │   }()                                                                    │
     // └────────────────────────────────────────────────────────────────────────┘
     public let fonts = FontScheme(
         display: FontFamily.generalSans,
@@ -49,13 +51,13 @@ public struct StandardTheme: Theme, Sendable {
         overview: FontFamily.satoshi,
         body: FontFamily.satoshi,
         caption: FontFamily.satoshi,
-        small: FontFamily.satoshi
+        small: FontFamily.satoshi,
+        certificate: TypeStyle(
+            family: FontFamily.zodiak,
+            size: TypographyTokens.Size.certificate,
+            weight: TypographyTokens.Weight.certificate
+        )
     )
-
-    public let fontFamily: String? = nil // Legacy single-family hook (unused by tokens)
-    public let fontWeightDisplay: Font.Weight = .bold
-    public let fontWeightBody: Font.Weight = .regular
-    public let letterSpacing: CGFloat = 0
 
     // MARK: - Motion
 

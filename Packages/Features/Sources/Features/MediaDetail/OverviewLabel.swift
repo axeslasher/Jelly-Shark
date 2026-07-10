@@ -24,14 +24,14 @@ struct OverviewLabel: View {
         VStack(alignment: .leading, spacing: SpacingTokens.sm) {
             if let tagline, !tagline.isEmpty {
                 Text(tagline)
-                    .font(theme.jsHeadline)
-                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+                    .jsStyle(.headline)
+                    .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
                     .lineLimit(2)
             }
             if let overview {
                 Text(overview)
-                    .font(theme.jsOverview)
-                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+                    .jsStyle(.overview)
+                    .foregroundStyle(isFocused ? theme.onFocusFillSecondary : theme.secondary)
                     .lineSpacing(4)
                     .lineLimit(overviewLineLimit)
             }
