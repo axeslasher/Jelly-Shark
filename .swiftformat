@@ -1,0 +1,21 @@
+# SwiftFormat configuration — pinned to 0.62.1 (see Makefile / CI).
+# Rules are left at SwiftFormat defaults; only project facts live here.
+
+--swiftversion 6.2
+
+# redundantSelf strips `self.` inside escaping closures (Task { ... } in the
+# @Observable view models) where Swift 6 requires it, breaking the build.
+--disable redundantSelf
+
+# swiftTestingTestCaseNames would rename ~400 tests from this repo's
+# established `@Test("description") func camelCaseName()` convention to
+# backtick raw identifiers. Naming is a convention choice, not formatting.
+--disable swiftTestingTestCaseNames
+
+# noForceUnwrapInTests rewrites `!` into #require calls — a semantic change,
+# and its nested `try #require(#require(...))` output crashes the Swift 6.2
+# frontend when compiling StreamURLBuilderTests.
+--disable noForceUnwrapInTests
+
+# SwiftFormat does not read .gitignore, so exclude generated build output explicitly.
+--exclude .build, **/.build

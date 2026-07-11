@@ -1,6 +1,6 @@
-import Testing
 import Foundation
 @testable import JellyfinKit
+import Testing
 
 @Suite("StreamURLBuilder")
 struct StreamURLBuilderTests {
@@ -19,7 +19,7 @@ struct StreamURLBuilderTests {
             serverURL: URL(string: "https://example.com")!,
             accessToken: "token-123",
             deviceId: "device-abc",
-            parameters: StreamParameters(itemId: "item-1")
+            parameters: StreamParameters(itemId: "item-1"),
         ))
 
         #expect(url.path == "/Videos/item-1/main.m3u8")
@@ -34,8 +34,8 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(
                 itemId: "item-1",
                 mediaSourceId: "source-1",
-                playSessionId: "session-1"
-            )
+                playSessionId: "session-1",
+            ),
         ))
 
         let query = queryItems(of: url)
@@ -54,7 +54,7 @@ struct StreamURLBuilderTests {
             serverURL: URL(string: "https://example.com")!,
             accessToken: "token",
             deviceId: "device",
-            parameters: StreamParameters(itemId: "item-1")
+            parameters: StreamParameters(itemId: "item-1"),
         ))
 
         let query = queryItems(of: url)
@@ -72,9 +72,9 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(
                 itemId: "item-1",
                 audioStreamIndex: 1,
-                subtitleStreamIndex: 3
+                subtitleStreamIndex: 3,
             ),
-            eTag: "etag-9"
+            eTag: "etag-9",
         ))
 
         let query = queryItems(of: url)
@@ -89,7 +89,7 @@ struct StreamURLBuilderTests {
             serverURL: URL(string: "https://example.com/jellyfin")!,
             accessToken: "token",
             deviceId: "device",
-            parameters: StreamParameters(itemId: "item-1")
+            parameters: StreamParameters(itemId: "item-1"),
         ))
 
         #expect(url.path == "/jellyfin/Videos/item-1/main.m3u8")
@@ -106,10 +106,10 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(
                 itemId: "item-1",
                 mediaSourceId: "source-1",
-                playSessionId: "session-1"
+                playSessionId: "session-1",
             ),
             container: "mp4",
-            eTag: "etag-9"
+            eTag: "etag-9",
         ))
 
         #expect(url.path == "/Videos/item-1/stream.mp4")
@@ -131,8 +131,8 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(
                 itemId: "item-1",
                 audioStreamIndex: 1,
-                subtitleStreamIndex: 3
-            )
+                subtitleStreamIndex: 3,
+            ),
         ))
 
         let query = queryItems(of: url)
@@ -150,7 +150,7 @@ struct StreamURLBuilderTests {
             accessToken: "token",
             deviceId: "device",
             parameters: StreamParameters(itemId: "item-1"),
-            container: nil
+            container: nil,
         ))
         #expect(bare.path == "/Videos/item-1/stream")
 
@@ -159,7 +159,7 @@ struct StreamURLBuilderTests {
             accessToken: "token",
             deviceId: "device",
             parameters: StreamParameters(itemId: "item-1"),
-            container: "mov,mp4,m4a"
+            container: "mov,mp4,m4a",
         ))
         #expect(list.path == "/Videos/item-1/stream")
     }
@@ -171,7 +171,7 @@ struct StreamURLBuilderTests {
             accessToken: "token",
             deviceId: "device",
             parameters: StreamParameters(itemId: "item-1"),
-            container: "mp4"
+            container: "mp4",
         ))
 
         #expect(url.path == "/jellyfin/Videos/item-1/stream.mp4")
@@ -183,7 +183,7 @@ struct PlayMethodDecisionTests {
     private func source(
         directPlay: Bool,
         directStream: Bool,
-        defaultAudioStreamIndex: Int? = 1
+        defaultAudioStreamIndex: Int? = 1,
     ) -> MediaSource {
         MediaSource(
             id: "source-1",
@@ -191,7 +191,7 @@ struct PlayMethodDecisionTests {
             supportsDirectPlay: directPlay,
             supportsDirectStream: directStream,
             supportsTranscoding: true,
-            defaultAudioStreamIndex: defaultAudioStreamIndex
+            defaultAudioStreamIndex: defaultAudioStreamIndex,
         )
     }
 

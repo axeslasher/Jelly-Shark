@@ -47,7 +47,7 @@ public struct LibraryQuery: Sendable, Hashable {
         decades: Set<Int> = [],
         watched: WatchedFilter = .any,
         favoritesOnly: Bool = false,
-        officialRatings: Set<String> = []
+        officialRatings: Set<String> = [],
     ) {
         self.sort = sort
         self.direction = direction
@@ -65,7 +65,7 @@ public struct LibraryQuery: Sendable, Hashable {
 
     /// Decades expanded to concrete years for the server's `years` parameter
     public var expandedYears: [Int]? {
-        decades.isEmpty ? nil : decades.sorted().flatMap { $0..<($0 + 10) }
+        decades.isEmpty ? nil : decades.sorted().flatMap { $0 ..< ($0 + 10) }
     }
 
     /// The same query with all filters cleared, keeping sort and direction
@@ -120,11 +120,11 @@ extension LibrarySort {
     /// Server sort keys; secondary keys make ties deterministic
     var sdkSortBy: [JellyfinAPI.ItemSortBy] {
         switch self {
-        case .name: return [.sortName]
-        case .releaseDate: return [.premiereDate, .productionYear, .sortName]
-        case .dateAdded: return [.dateCreated, .sortName]
-        case .communityRating: return [.communityRating, .sortName]
-        case .criticRating: return [.criticRating, .sortName]
+        case .name: [.sortName]
+        case .releaseDate: [.premiereDate, .productionYear, .sortName]
+        case .dateAdded: [.dateCreated, .sortName]
+        case .communityRating: [.communityRating, .sortName]
+        case .criticRating: [.criticRating, .sortName]
         }
     }
 }
@@ -132,8 +132,8 @@ extension LibrarySort {
 extension LibrarySortDirection {
     var sdkSortOrder: JellyfinAPI.SortOrder {
         switch self {
-        case .ascending: return .ascending
-        case .descending: return .descending
+        case .ascending: .ascending
+        case .descending: .descending
         }
     }
 }

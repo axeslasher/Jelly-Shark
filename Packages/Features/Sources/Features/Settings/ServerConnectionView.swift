@@ -1,6 +1,6 @@
-import SwiftUI
 import DesignSystem
 import JellyfinKit
+import SwiftUI
 
 /// View for connecting to a Jellyfin server
 public struct ServerConnectionView: View {
@@ -59,13 +59,13 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         TextField("https://demo.jellyfin.org/stable", text: $viewModel.serverURL)
-                            #if os(visionOS)
+                        #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
-                            #endif
+                        #endif
                             .autocorrectionDisabled()
-                            #if os(tvOS)
+                        #if os(tvOS)
                             .keyboardType(.URL)
-                            #endif
+                        #endif
                     }
 
                     // Username
@@ -75,9 +75,9 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         TextField("demo", text: $viewModel.username)
-                            #if os(visionOS)
+                        #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
-                            #endif
+                        #endif
                             .autocorrectionDisabled()
                     }
 
@@ -88,9 +88,9 @@ public struct ServerConnectionView: View {
                             .foregroundStyle(theme.secondary)
 
                         SecureField("Password (leave empty for demo)", text: $viewModel.password)
-                            #if os(visionOS)
+                        #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
-                            #endif
+                        #endif
                     }
                 }
                 .padding(.horizontal, SpacingTokens.xl)

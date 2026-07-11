@@ -8,7 +8,6 @@
 import XCTest
 
 final class Jelly_SharkUITests: XCTestCase {
-
     override func setUpWithError() throws {
         continueAfterFailure = false
     }
@@ -20,19 +19,19 @@ final class Jelly_SharkUITests: XCTestCase {
     /// of auth or library state — is a stable "the UI actually came up" signal
     /// that doesn't depend on a reachable server.
     @MainActor
-    func testLaunchRendersMainNavigation() throws {
+    func testLaunchRendersMainNavigation() {
         let app = XCUIApplication()
         app.launch()
 
         XCTAssertTrue(
             app.wait(for: .runningForeground, timeout: 30),
-            "App did not reach the foreground after launch"
+            "App did not reach the foreground after launch",
         )
 
         let settingsTab = app.descendants(matching: .any)["Settings"]
         XCTAssertTrue(
             settingsTab.waitForExistence(timeout: 30),
-            "Main tab navigation did not render — 'Settings' tab never appeared.\n\(app.debugDescription)"
+            "Main tab navigation did not render — 'Settings' tab never appeared.\n\(app.debugDescription)",
         )
     }
 }

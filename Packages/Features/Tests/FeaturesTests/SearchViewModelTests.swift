@@ -1,7 +1,7 @@
-import Testing
+@testable import Features
 import Foundation
 import JellyfinKit
-@testable import Features
+import Testing
 
 @MainActor
 struct SearchViewModelTests {
@@ -94,9 +94,9 @@ struct SearchViewModelTests {
         let client = MockJellyfinClient()
         client.searchResult = .success([
             movie("1", "Batman"),
-            movie("2", "Batman"),          // duplicate name -> deduped
+            movie("2", "Batman"), // duplicate name -> deduped
             movie("3", "Batman Returns"),
-            movie("4", "Superman")         // no match -> excluded
+            movie("4", "Superman"), // no match -> excluded
         ])
         let viewModel = makeViewModel(client: client)
         viewModel.query = "bat"

@@ -55,7 +55,7 @@ public protocol JellyfinClientProtocol: Sendable {
         itemTypes: [MediaType]?,
         query: LibraryQuery,
         limit: Int,
-        startIndex: Int
+        startIndex: Int,
     ) async throws -> MediaItemPage
 
     /// Fetch the filter values actually present in a library (genres,
@@ -69,7 +69,7 @@ public protocol JellyfinClientProtocol: Sendable {
     func getLibraryFilterOptions(
         libraryId: String,
         itemTypes: [MediaType]?,
-        matching query: LibraryQuery
+        matching query: LibraryQuery,
     ) async throws -> LibraryFilterOptions?
 
     /// Fetch the items inside a collection (BoxSet), in release order.
@@ -119,7 +119,7 @@ public protocol JellyfinClientProtocol: Sendable {
         personId: String,
         itemTypes: [MediaType],
         personTypes: [String]?,
-        limit: Int?
+        limit: Int?,
     ) async throws -> [MediaItem]
 
     /// Get the image URL for a media item
@@ -160,7 +160,7 @@ public protocol JellyfinClientProtocol: Sendable {
         itemId: String,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
-        subtitleStreamIndex: Int?
+        subtitleStreamIndex: Int?,
     ) async throws -> PlaybackSessionInfo
 
     /// Resolve the stream URL and play method for a media source: the
@@ -181,7 +181,7 @@ public protocol JellyfinClientProtocol: Sendable {
         positionTicks: Int64,
         playMethod: PlayMethod,
         audioStreamIndex: Int?,
-        subtitleStreamIndex: Int?
+        subtitleStreamIndex: Int?,
     ) async throws
 
     /// Report playback progress
@@ -191,7 +191,7 @@ public protocol JellyfinClientProtocol: Sendable {
         playSessionId: String?,
         positionTicks: Int64,
         playMethod: PlayMethod,
-        isPaused: Bool
+        isPaused: Bool,
     ) async throws
 
     /// Report that playback has stopped
@@ -199,7 +199,7 @@ public protocol JellyfinClientProtocol: Sendable {
         itemId: String,
         mediaSourceId: String?,
         playSessionId: String?,
-        positionTicks: Int64
+        positionTicks: Int64,
     ) async throws
 
     // MARK: - Episodes
@@ -273,7 +273,7 @@ public struct JellyfinClientConfiguration: Sendable {
         clientName: String = "Jelly Shark",
         clientVersion: String = "0.0.1",
         deviceName: String = "Apple TV",
-        deviceID: String = UUID().uuidString
+        deviceID: String = UUID().uuidString,
     ) {
         self.serverURL = serverURL
         self.clientName = clientName
@@ -318,9 +318,17 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Cached access token for URLs that authenticate via query parameter
     private var _accessToken: String?
 
-    public var currentUser: User? { _currentUser }
-    public var isAuthenticated: Bool { _currentUser != nil }
-    public var accessToken: String? { _accessToken }
+    public var currentUser: User? {
+        _currentUser
+    }
+
+    public var isAuthenticated: Bool {
+        _currentUser != nil
+    }
+
+    public var accessToken: String? {
+        _accessToken
+    }
 
     // MARK: - Initialization
 
@@ -336,7 +344,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     public init(
         configuration: JellyfinClientConfiguration,
         accessToken: String? = nil,
-        userID: String? = nil
+        userID: String? = nil,
     ) {
         self.serverURL = configuration.serverURL
         self.configuration = configuration
@@ -347,7 +355,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             client: configuration.clientName,
             deviceName: configuration.deviceName,
             deviceID: configuration.deviceID,
-            version: configuration.clientVersion
+            version: configuration.clientVersion,
         )
 
         self.sdkClient = JellyfinAPI.JellyfinClient(configuration: sdkConfiguration)
@@ -407,7 +415,8 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Map SDK/transport errors to APIError, surfacing HTTP status codes
     private static func mapTransportError(_ error: Error) -> APIError {
         if let apiError = error as? Get.APIError,
-           case .unacceptableStatusCode(let statusCode) = apiError {
+           case let .unacceptableStatusCode(statusCode) = apiError
+        {
             switch statusCode {
             case 401:
                 return .unauthorized
@@ -437,7 +446,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.userID = userId
 
             let response = try await sdkClient.send(
-                Paths.getUserViews(parameters: parameters)
+                Paths.getUserViews(parameters: parameters),
             )
 
             return response.value.items?.compactMap { Library(from: $0) } ?? []
@@ -453,7 +462,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         itemTypes: [MediaType]?,
         query: LibraryQuery,
         limit: Int,
-        startIndex: Int
+        startIndex: Int,
     ) async throws -> MediaItemPage {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
@@ -482,7 +491,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             return MediaItemPage(
                 items: value.items?.compactMap { MediaItem(from: $0) } ?? [],
                 startIndex: value.startIndex ?? startIndex,
-                totalRecordCount: value.totalRecordCount
+                totalRecordCount: value.totalRecordCount,
             )
         } catch let error as APIError {
             throw error
@@ -506,7 +515,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     public func getLibraryFilterOptions(
         libraryId: String,
         itemTypes: [MediaType]?,
-        matching query: LibraryQuery
+        matching query: LibraryQuery,
     ) async throws -> LibraryFilterOptions? {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
@@ -544,7 +553,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     public func getLibraryFilterOptions(
         libraryId: String,
-        itemTypes: [MediaType]?
+        itemTypes: [MediaType]?,
     ) async throws -> LibraryFilterOptions {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
@@ -554,18 +563,18 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             let parameters = Paths.GetQueryFiltersLegacyParameters(
                 userID: userId,
                 parentID: libraryId,
-                includeItemTypes: itemTypes.map { $0.compactMap(\.baseItemKind) }
+                includeItemTypes: itemTypes.map { $0.compactMap(\.baseItemKind) },
             )
 
             let response = try await sdkClient.send(
-                Paths.getQueryFiltersLegacy(parameters: parameters)
+                Paths.getQueryFiltersLegacy(parameters: parameters),
             )
 
             let value = response.value
             return LibraryFilterOptions(
                 genres: value.genres ?? [],
                 officialRatings: value.officialRatings ?? [],
-                years: value.years ?? []
+                years: value.years ?? [],
             )
         } catch let error as APIError {
             throw error
@@ -586,7 +595,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             itemTypes: nil,
             query: LibraryQuery(sort: .releaseDate, direction: .ascending),
             limit: 200,
-            startIndex: 0
+            startIndex: 0,
         ).items
     }
 
@@ -597,7 +606,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         do {
             let response = try await sdkClient.send(
-                Paths.getItem(itemID: itemId, userID: userId)
+                Paths.getItem(itemID: itemId, userID: userId),
             )
 
             return MediaItem(from: response.value)
@@ -620,7 +629,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.fields = [.overview, .genres, .dateCreated]
 
             let response = try await sdkClient.send(
-                Paths.getSimilarItems(itemID: itemId, parameters: parameters)
+                Paths.getSimilarItems(itemID: itemId, parameters: parameters),
             )
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
@@ -666,7 +675,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         do {
             let response = try await sdkClient.send(
-                Paths.getItem(itemID: personId, userID: userId)
+                Paths.getItem(itemID: personId, userID: userId),
             )
 
             return Person(from: response.value)
@@ -681,7 +690,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         personId: String,
         itemTypes: [MediaType],
         personTypes: [String]?,
-        limit: Int?
+        limit: Int?,
     ) async throws -> [MediaItem] {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
@@ -724,10 +733,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         var queryItems: [URLQueryItem] = []
-        if let maxWidth = maxWidth {
+        if let maxWidth {
             queryItems.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
         }
-        if let maxHeight = maxHeight {
+        if let maxHeight {
             queryItems.append(URLQueryItem(name: "maxHeight", value: String(maxHeight)))
         }
 
@@ -753,7 +762,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.mediaTypes = [.video]
 
             let response = try await sdkClient.send(
-                Paths.getResumeItems(parameters: parameters)
+                Paths.getResumeItems(parameters: parameters),
             )
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
@@ -779,7 +788,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.fields = [.overview, .genres, .dateCreated]
 
             let response = try await sdkClient.send(
-                Paths.getLatestMedia(parameters: parameters)
+                Paths.getLatestMedia(parameters: parameters),
             )
 
             return response.value.compactMap { MediaItem(from: $0) }
@@ -796,7 +805,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         itemId: String,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
-        subtitleStreamIndex: Int?
+        subtitleStreamIndex: Int?,
     ) async throws -> PlaybackSessionInfo {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
@@ -817,11 +826,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 maxStreamingBitrate: Self.maxStreamingBitrate,
                 startTimeTicks: startTimeTicks.map(Int.init),
                 subtitleStreamIndex: subtitleStreamIndex,
-                userID: userId
+                userID: userId,
             )
 
             let response = try await sdkClient.send(
-                Paths.getPostedPlaybackInfo(itemID: itemId, body)
+                Paths.getPostedPlaybackInfo(itemID: itemId, body),
             )
 
             if let errorCode = response.value.errorCode {
@@ -849,27 +858,26 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         let method = source.playMethod(
             audioStreamIndex: parameters.audioStreamIndex,
-            subtitleStreamIndex: parameters.subtitleStreamIndex
+            subtitleStreamIndex: parameters.subtitleStreamIndex,
         )
 
-        let url: URL?
-        switch method {
+        let url: URL? = switch method {
         case .directPlay:
-            url = StreamURLBuilder.directPlayURL(
+            StreamURLBuilder.directPlayURL(
                 serverURL: serverURL,
                 accessToken: accessToken,
                 deviceId: configuration.deviceID,
                 parameters: parameters,
                 container: source.container,
-                eTag: source.eTag
+                eTag: source.eTag,
             )
         case .directStream, .transcode:
-            url = StreamURLBuilder.hlsURL(
+            StreamURLBuilder.hlsURL(
                 serverURL: serverURL,
                 accessToken: accessToken,
                 deviceId: configuration.deviceID,
                 parameters: parameters,
-                eTag: source.eTag
+                eTag: source.eTag,
             )
         }
 
@@ -887,7 +895,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks: Int64,
         playMethod: PlayMethod,
         audioStreamIndex: Int?,
-        subtitleStreamIndex: Int?
+        subtitleStreamIndex: Int?,
     ) async throws {
         do {
             let info = JellyfinAPI.PlaybackStartInfo(
@@ -899,7 +907,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
                 positionTicks: Int(positionTicks),
-                subtitleStreamIndex: subtitleStreamIndex
+                subtitleStreamIndex: subtitleStreamIndex,
             )
 
             _ = try await sdkClient.send(Paths.reportPlaybackStart(info))
@@ -916,7 +924,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         playSessionId: String?,
         positionTicks: Int64,
         playMethod: PlayMethod,
-        isPaused: Bool
+        isPaused: Bool,
     ) async throws {
         do {
             let info = JellyfinAPI.PlaybackProgressInfo(
@@ -926,7 +934,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 mediaSourceID: mediaSourceId,
                 playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
-                positionTicks: Int(positionTicks)
+                positionTicks: Int(positionTicks),
             )
 
             _ = try await sdkClient.send(Paths.reportPlaybackProgress(info))
@@ -941,14 +949,14 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         itemId: String,
         mediaSourceId: String?,
         playSessionId: String?,
-        positionTicks: Int64
+        positionTicks: Int64,
     ) async throws {
         do {
             let info = JellyfinAPI.PlaybackStopInfo(
                 itemID: itemId,
                 mediaSourceID: mediaSourceId,
                 playSessionID: playSessionId,
-                positionTicks: Int(positionTicks)
+                positionTicks: Int(positionTicks),
             )
 
             _ = try await sdkClient.send(Paths.reportPlaybackStopped(info))
@@ -975,11 +983,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 userID: userId,
                 fields: [.overview, .mediaSources],
                 startItemID: episode.id,
-                limit: 2
+                limit: 2,
             )
 
             let response = try await sdkClient.send(
-                Paths.getEpisodes(seriesID: seriesId, parameters: parameters)
+                Paths.getEpisodes(seriesID: seriesId, parameters: parameters),
             )
 
             let items = response.value.items ?? []
@@ -1007,7 +1015,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.userID = userId
 
             let response = try await sdkClient.send(
-                Paths.getSeasons(seriesID: seriesId, parameters: parameters)
+                Paths.getSeasons(seriesID: seriesId, parameters: parameters),
             )
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
@@ -1032,7 +1040,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.fields = [.overview]
 
             let response = try await sdkClient.send(
-                Paths.getEpisodes(seriesID: seriesId, parameters: parameters)
+                Paths.getEpisodes(seriesID: seriesId, parameters: parameters),
             )
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
@@ -1059,7 +1067,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.enableResumable = true
 
             let response = try await sdkClient.send(
-                Paths.getNextUp(parameters: parameters)
+                Paths.getNextUp(parameters: parameters),
             )
 
             return response.value.items?.first.map { MediaItem(from: $0) }
@@ -1137,7 +1145,7 @@ public extension JellyfinClientProtocol {
             return serverURL
         }
 
-        if let maxWidth = maxWidth {
+        if let maxWidth {
             components.queryItems = [URLQueryItem(name: "maxWidth", value: String(maxWidth))]
         }
 

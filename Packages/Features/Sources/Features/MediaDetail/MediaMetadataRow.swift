@@ -74,7 +74,7 @@ struct MediaMetadataRow: View {
                         .padding(.vertical, SpacingTokens.xxs)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
-                                .stroke(theme.tertiary, lineWidth: 2)
+                                .stroke(theme.tertiary, lineWidth: 2),
                         )
                 }
                 if let resolution {

@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Home screen showing personalized content
 /// Displays a featured hero, continue watching, and recently added
@@ -13,9 +13,9 @@ struct HomeView: View {
     @State private var latestItems: [MediaItem] = []
     @State private var belowFold = false
 
-    // No NavigationStack here: RootView owns each tab's stack (with a path
-    // binding) so it can pop to root before a tab switch — see RootView's
-    // `tabSelection` for the tvOS bug this works around.
+    /// No NavigationStack here: RootView owns each tab's stack (with a path
+    /// binding) so it can pop to root before a tab switch — see RootView's
+    /// `tabSelection` for the tvOS bug this works around.
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
@@ -79,7 +79,7 @@ struct HomeView: View {
                             .init(color: .clear, location: 0.9),
                         ],
                         startPoint: .top,
-                        endPoint: .bottom
+                        endPoint: .bottom,
                     )
                 }
                 .ignoresSafeArea()
@@ -160,8 +160,8 @@ struct HomeView: View {
         async let resume = client.getResumeItems(limit: 12)
         async let latest = client.getLatestItems(libraryId: nil, limit: 16)
 
-        resumeItems = (try? await resume) ?? []
-        latestItems = (try? await latest) ?? []
+        resumeItems = await (try? resume) ?? []
+        latestItems = await (try? latest) ?? []
     }
 }
 

@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Overlay shown when an episode ends and the next one is queued
 ///

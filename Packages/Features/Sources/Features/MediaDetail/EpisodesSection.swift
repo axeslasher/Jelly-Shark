@@ -59,14 +59,14 @@ struct EpisodesSection: View {
     /// Pending debounced anchor jump (see `onChange(of: focusedSeasonId)`).
     @State private var anchorTask: Task<Void, Never>?
 
-    /// The anchor row starts hidden on tvOS (making it unfocusable) so the
-    /// first press down from the hero lands on the pre-parked episode; it
-    /// reveals once an episode has focus and stays. Other platforms have no
-    /// focus-driven entry to choreograph, so the row is always visible there.
+    // The anchor row starts hidden on tvOS (making it unfocusable) so the
+    // first press down from the hero lands on the pre-parked episode; it
+    // reveals once an episode has focus and stays. Other platforms have no
+    // focus-driven entry to choreograph, so the row is always visible there.
     #if os(tvOS)
-    @State private var anchorsRevealed = false
+        @State private var anchorsRevealed = false
     #else
-    @State private var anchorsRevealed = true
+        @State private var anchorsRevealed = true
     #endif
 
     /// How long a pill must hold focus before the shelf anchors to it —
@@ -95,13 +95,13 @@ struct EpisodesSection: View {
                 // downward search from the hero.
                 Group {
                     #if os(tvOS)
-                    if anchorsRevealed {
-                        seasonAnchors.focusSection()
-                    } else {
-                        seasonAnchors
-                    }
+                        if anchorsRevealed {
+                            seasonAnchors.focusSection()
+                        } else {
+                            seasonAnchors
+                        }
                     #else
-                    seasonAnchors
+                        seasonAnchors
                     #endif
                 }
                 .opacity(anchorsRevealed ? 1 : 0)
@@ -183,7 +183,7 @@ struct EpisodesSection: View {
                             .jsStyle(.title)
                             .foregroundStyle(
                                 season.id == (currentSeasonId ?? seasons.first?.id)
-                                    ? theme.accent : theme.primary
+                                    ? theme.accent : theme.primary,
                             )
                     }
                     .glassButtonStyle(tint: theme.focusFill)
@@ -197,7 +197,7 @@ struct EpisodesSection: View {
                     // which would leave the gate stuck shut.
                     .focusable(
                         focusedSeasonId != nil
-                            || season.id == (currentSeasonId ?? seasons.first?.id)
+                            || season.id == (currentSeasonId ?? seasons.first?.id),
                     )
                     .focused($focusedSeasonId, equals: season.id)
                     // The focusable gate's wrapper holds the real focus, so
@@ -236,7 +236,7 @@ struct EpisodesSection: View {
             // short.
             .padding(.trailing, max(
                 SpacingTokens.screenPadding,
-                shelfGeometry.containerWidth - Self.episodeCardWidth - SpacingTokens.screenPadding
+                shelfGeometry.containerWidth - Self.episodeCardWidth - SpacingTokens.screenPadding,
             ))
             .padding(.vertical, SpacingTokens.focusPadding)
         }
@@ -246,7 +246,7 @@ struct EpisodesSection: View {
         .onScrollGeometryChange(for: ShelfGeometry.self) { geometry in
             ShelfGeometry(
                 containerWidth: geometry.containerSize.width,
-                leadingInset: geometry.contentInsets.leading
+                leadingInset: geometry.contentInsets.leading,
             )
         } action: { _, geometry in
             shelfGeometry = geometry

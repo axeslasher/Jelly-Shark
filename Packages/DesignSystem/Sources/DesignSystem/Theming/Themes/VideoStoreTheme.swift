@@ -44,8 +44,8 @@ public struct VideoStoreTheme: Theme, Sendable {
             certificate: TypeStyle(
                 family: FontFamily.zodiak,
                 size: TypographyTokens.Size.certificate,
-                weight: TypographyTokens.Weight.certificate
-            )
+                weight: TypographyTokens.Weight.certificate,
+            ),
         )
         scheme.display.weight = .heavy
         scheme.display.size = TypographyTokens.Size.display * 1.4

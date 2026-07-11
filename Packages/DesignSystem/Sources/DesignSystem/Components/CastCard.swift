@@ -69,17 +69,17 @@ public struct CastCard<Value: Hashable>: View {
     @ViewBuilder
     private var cardLabel: some View {
         #if os(tvOS)
-        // Flat siblings so the borderless style builds the vertical lockup and
-        // moves the captions out of the way as the artwork lifts.
-        artwork
-        nameText
-        roleText
-        #else
-        VStack(spacing: SpacingTokens.xs) {
+            // Flat siblings so the borderless style builds the vertical lockup and
+            // moves the captions out of the way as the artwork lifts.
             artwork
             nameText
             roleText
-        }
+        #else
+            VStack(spacing: SpacingTokens.xs) {
+                artwork
+                nameText
+                roleText
+            }
         #endif
     }
 

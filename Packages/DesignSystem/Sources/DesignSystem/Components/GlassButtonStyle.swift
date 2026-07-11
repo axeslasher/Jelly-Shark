@@ -17,13 +17,13 @@ public extension View {
     @ViewBuilder
     func glassButtonStyle(tint: Color? = nil, circular: Bool = false) -> some View {
         #if os(tvOS)
-        if let tint {
-            buttonStyle(ThemedGlassButtonStyle(tint: tint, circular: circular))
-        } else {
-            buttonStyle(.glass(.clear))
-        }
+            if let tint {
+                buttonStyle(ThemedGlassButtonStyle(tint: tint, circular: circular))
+            } else {
+                buttonStyle(.glass(.clear))
+            }
         #else
-        buttonStyle(.bordered)
+            buttonStyle(.bordered)
         #endif
     }
 }
@@ -40,103 +40,103 @@ public extension View {
     @ViewBuilder
     func plainFocusButtonStyle(tint: Color?, cornerRadius: CGFloat) -> some View {
         #if os(tvOS)
-        if let tint {
-            buttonStyle(ThemedPlainButtonStyle(tint: tint, cornerRadius: cornerRadius))
-        } else {
-            buttonStyle(.plain)
-        }
+            if let tint {
+                buttonStyle(ThemedPlainButtonStyle(tint: tint, cornerRadius: cornerRadius))
+            } else {
+                buttonStyle(.plain)
+            }
         #else
-        buttonStyle(.plain)
+            buttonStyle(.plain)
         #endif
     }
 }
 
 #if os(tvOS)
-/// Glass button that renders its own focus platter in a theme color.
-///
-/// tvOS's system button styles (`.glass`, `.glassProminent`, `.bordered…`)
-/// all lift to the fixed white system platter on focus — there is no public
-/// hook to recolor it. This style reproduces the treatment with
-/// `glassEffect`, which does honor a tint: clear glass at rest, a tinted
-/// platter plus scale-up when focused.
-///
-/// The focused label color defaults to the theme's `onFocusFill`; labels that
-/// set an explicit `foregroundStyle` (e.g. ``CircleActionButton``'s icon)
-/// still win, matching how the system platter treats them.
-public struct ThemedGlassButtonStyle: ButtonStyle {
-    @Environment(\.theme) private var theme
-    @Environment(\.isFocused) private var isFocused
+    /// Glass button that renders its own focus platter in a theme color.
+    ///
+    /// tvOS's system button styles (`.glass`, `.glassProminent`, `.bordered…`)
+    /// all lift to the fixed white system platter on focus — there is no public
+    /// hook to recolor it. This style reproduces the treatment with
+    /// `glassEffect`, which does honor a tint: clear glass at rest, a tinted
+    /// platter plus scale-up when focused.
+    ///
+    /// The focused label color defaults to the theme's `onFocusFill`; labels that
+    /// set an explicit `foregroundStyle` (e.g. ``CircleActionButton``'s icon)
+    /// still win, matching how the system platter treats them.
+    public struct ThemedGlassButtonStyle: ButtonStyle {
+        @Environment(\.theme) private var theme
+        @Environment(\.isFocused) private var isFocused
 
-    let tint: Color
-    let circular: Bool
+        let tint: Color
+        let circular: Bool
 
-    public init(tint: Color, circular: Bool = false) {
-        self.tint = tint
-        self.circular = circular
-    }
+        public init(tint: Color, circular: Bool = false) {
+            self.tint = tint
+            self.circular = circular
+        }
 
-    public func makeBody(configuration: Configuration) -> some View {
-        paddedLabel(configuration.label)
-            .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
-            .glassEffect(
-                isFocused ? .regular.tint(tint).interactive() : .clear,
-                in: circular ? AnyShape(.circle) : AnyShape(.capsule)
-            )
-            .scaleEffect(isFocused ? theme.focusScale : 1)
-            .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
-            .animation(theme.animation, value: isFocused)
-            .animation(MotionTokens.fast, value: configuration.isPressed)
-    }
+        public func makeBody(configuration: Configuration) -> some View {
+            paddedLabel(configuration.label)
+                .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
+                .glassEffect(
+                    isFocused ? .regular.tint(tint).interactive() : .clear,
+                    in: circular ? AnyShape(.circle) : AnyShape(.capsule),
+                )
+                .scaleEffect(isFocused ? theme.focusScale : 1)
+                .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
+                .animation(theme.animation, value: isFocused)
+                .animation(MotionTokens.fast, value: configuration.isPressed)
+        }
 
-    /// Circles need uniform padding so a square glyph label stays square;
-    /// capsules breathe wider than they are tall.
-    @ViewBuilder
-    private func paddedLabel(_ label: Configuration.Label) -> some View {
-        if circular {
-            label.padding(SpacingTokens.sm)
-        } else {
-            label
-                .padding(.horizontal, SpacingTokens.md)
-                .padding(.vertical, SpacingTokens.sm)
+        /// Circles need uniform padding so a square glyph label stays square;
+        /// capsules breathe wider than they are tall.
+        @ViewBuilder
+        private func paddedLabel(_ label: Configuration.Label) -> some View {
+            if circular {
+                label.padding(SpacingTokens.sm)
+            } else {
+                label
+                    .padding(.horizontal, SpacingTokens.md)
+                    .padding(.vertical, SpacingTokens.sm)
+            }
         }
     }
-}
 
-/// `.plain` button that renders its own focus platter in a theme color
-/// (the system highlight platter is fixed white, as with the glass styles).
-///
-/// The platter draws in the background and bleeds outward past the label via
-/// negative padding — mirroring how the system platter overflows content —
-/// so the resting layout is pixel-identical to `.plain` and text stays
-/// aligned with its neighbors. Content colors are left to the label
-/// (e.g. ``OverviewLabel`` swaps its own text to the on-focus tokens).
-public struct ThemedPlainButtonStyle: ButtonStyle {
-    @Environment(\.theme) private var theme
-    @Environment(\.isFocused) private var isFocused
+    /// `.plain` button that renders its own focus platter in a theme color
+    /// (the system highlight platter is fixed white, as with the glass styles).
+    ///
+    /// The platter draws in the background and bleeds outward past the label via
+    /// negative padding — mirroring how the system platter overflows content —
+    /// so the resting layout is pixel-identical to `.plain` and text stays
+    /// aligned with its neighbors. Content colors are left to the label
+    /// (e.g. ``OverviewLabel`` swaps its own text to the on-focus tokens).
+    public struct ThemedPlainButtonStyle: ButtonStyle {
+        @Environment(\.theme) private var theme
+        @Environment(\.isFocused) private var isFocused
 
-    let tint: Color
-    let cornerRadius: CGFloat
+        let tint: Color
+        let cornerRadius: CGFloat
 
-    public init(tint: Color, cornerRadius: CGFloat) {
-        self.tint = tint
-        self.cornerRadius = cornerRadius
+        public init(tint: Color, cornerRadius: CGFloat) {
+            self.tint = tint
+            self.cornerRadius = cornerRadius
+        }
+
+        public func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .background {
+                    Color.clear
+                        .glassEffect(
+                            .regular.tint(tint).interactive(),
+                            in: .rect(cornerRadius: cornerRadius),
+                        )
+                        .padding(.horizontal, -SpacingTokens.md)
+                        .padding(.vertical, -SpacingTokens.sm)
+                        .opacity(isFocused ? 1 : 0)
+                }
+                .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
+                .animation(theme.animation, value: isFocused)
+                .animation(MotionTokens.fast, value: configuration.isPressed)
+        }
     }
-
-    public func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background {
-                Color.clear
-                    .glassEffect(
-                        .regular.tint(tint).interactive(),
-                        in: .rect(cornerRadius: cornerRadius)
-                    )
-                    .padding(.horizontal, -SpacingTokens.md)
-                    .padding(.vertical, -SpacingTokens.sm)
-                    .opacity(isFocused ? 1 : 0)
-            }
-            .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
-            .animation(theme.animation, value: isFocused)
-            .animation(MotionTokens.fast, value: configuration.isPressed)
-    }
-}
 #endif

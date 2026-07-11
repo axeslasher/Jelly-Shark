@@ -59,7 +59,7 @@ private func trimmingTransparentMargins(of image: CGImage) -> CGImage {
               bitsPerComponent: 8,
               bytesPerRow: width * 4,
               space: CGColorSpaceCreateDeviceRGB(),
-              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
           )
     else { return image }
 
@@ -70,13 +70,21 @@ private func trimmingTransparentMargins(of image: CGImage) -> CGImage {
     // Ignore near-invisible haloing around the artwork, not just alpha 0.
     let threshold: UInt8 = 16
     var minX = width, minY = height, maxX = -1, maxY = -1
-    for y in 0..<height {
+    for y in 0 ..< height {
         let row = y * width * 4
-        for x in 0..<width where pixels[row + x * 4 + 3] > threshold {
-            if x < minX { minX = x }
-            if x > maxX { maxX = x }
-            if y < minY { minY = y }
-            if y > maxY { maxY = y }
+        for x in 0 ..< width where pixels[row + x * 4 + 3] > threshold {
+            if x < minX {
+                minX = x
+            }
+            if x > maxX {
+                maxX = x
+            }
+            if y < minY {
+                minY = y
+            }
+            if y > maxY {
+                maxY = y
+            }
         }
     }
 

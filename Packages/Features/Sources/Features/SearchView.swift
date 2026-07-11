@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Search screen for finding media across the user's libraries
 struct SearchView: View {
@@ -8,9 +8,9 @@ struct SearchView: View {
     @Environment(AppSession.self) private var session
     @State private var viewModel = SearchViewModel()
 
-    // No NavigationStack here: RootView owns each tab's stack (with a path
-    // binding) so it can pop to root before a tab switch — see RootView's
-    // `tabSelection` for the tvOS bug this works around.
+    /// No NavigationStack here: RootView owns each tab's stack (with a path
+    /// binding) so it can pop to root before a tab switch — see RootView's
+    /// `tabSelection` for the tvOS bug this works around.
     var body: some View {
         content
             .background(theme.background)
@@ -40,9 +40,9 @@ struct SearchView: View {
         case .empty:
             message(
                 icon: "magnifyingglass",
-                text: "No results for \"\(viewModel.query)\""
+                text: "No results for \"\(viewModel.query)\"",
             )
-        case .failed(let errorMessage):
+        case let .failed(errorMessage):
             message(icon: "exclamationmark.triangle.fill", text: errorMessage)
         case .results:
             resultsGrid
@@ -84,9 +84,9 @@ struct SearchView: View {
         ScrollView {
             LazyVGrid(
                 columns: [
-                    GridItem(.adaptive(minimum: 340), spacing: SpacingTokens.cardGap)
+                    GridItem(.adaptive(minimum: 340), spacing: SpacingTokens.cardGap),
                 ],
-                spacing: SpacingTokens.cardGap
+                spacing: SpacingTokens.cardGap,
             ) {
                 ForEach(viewModel.results) { item in
                     item.landscapeShelfItem(client: session.client)

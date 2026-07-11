@@ -1,6 +1,6 @@
 import Foundation
-import Observation
 import JellyfinKit
+import Observation
 
 /// View model backing a library's item grid.
 ///
@@ -110,17 +110,17 @@ public final class LibraryItemsViewModel {
         LibraryFilterOptions(
             genres: merged(narrowedGenres, base: filterOptions.genres, selected: query.genres),
             officialRatings: merged(
-                narrowedRatings, base: filterOptions.officialRatings, selected: query.officialRatings
+                narrowedRatings, base: filterOptions.officialRatings, selected: query.officialRatings,
             ),
             // A selected decade's start year stands in for the whole decade
-            years: merged(narrowedYears, base: filterOptions.years, selected: query.decades)
+            years: merged(narrowedYears, base: filterOptions.years, selected: query.decades),
         )
     }
 
     private func merged<Value: Hashable & Comparable>(
         _ narrowed: [Value]?,
         base: [Value],
-        selected: Set<Value>
+        selected: Set<Value>,
     ) -> [Value] {
         guard let narrowed else { return base }
         return Set(narrowed).union(selected).sorted()
@@ -167,7 +167,7 @@ public final class LibraryItemsViewModel {
         // non-fatal — the bar just offers fewer menus.
         async let optionsFetch = try? client.getLibraryFilterOptions(
             libraryId: library.id,
-            itemTypes: library.collectionType?.gridItemTypes
+            itemTypes: library.collectionType?.gridItemTypes,
         )
 
         await loadFirstPage(client: client, library: library, generation: generation)
@@ -215,10 +215,10 @@ public final class LibraryItemsViewModel {
         loadTask = Task { [weak self] in
             guard let self else { return }
             async let firstPage: Void = self.loadFirstPage(
-                client: client, library: library, generation: generation
+                client: client, library: library, generation: generation,
             )
             async let narrowing: Void = self.refreshNarrowedOptions(
-                client: client, library: library, generation: generation
+                client: client, library: library, generation: generation,
             )
             _ = await (firstPage, narrowing)
         }
@@ -245,7 +245,7 @@ public final class LibraryItemsViewModel {
                     itemTypes: library.collectionType?.gridItemTypes,
                     query: self.query,
                     limit: self.pageSize,
-                    startIndex: startIndex
+                    startIndex: startIndex,
                 )
                 guard generation == self.loadGeneration else { return }
                 self.items.append(contentsOf: page.items)
@@ -277,7 +277,7 @@ public final class LibraryItemsViewModel {
     private func refreshNarrowedOptions(
         client: any JellyfinClientProtocol,
         library: Library,
-        generation: Int
+        generation: Int,
     ) async {
         var minusGenres = query
         minusGenres.genres = []
@@ -296,10 +296,10 @@ public final class LibraryItemsViewModel {
         await withTaskGroup(of: (LibraryQuery, LibraryFilterOptions?).self) { group in
             for scanQuery in scanQueries {
                 group.addTask {
-                    let options = (try? await client.getLibraryFilterOptions(
+                    let options = await (try? client.getLibraryFilterOptions(
                         libraryId: libraryId,
                         itemTypes: itemTypes,
-                        matching: scanQuery
+                        matching: scanQuery,
                     )) ?? nil
                     return (scanQuery, options)
                 }
@@ -316,15 +316,21 @@ public final class LibraryItemsViewModel {
         let genres = results[minusGenres]?.genres
         let years = results[minusDecades]?.years
         let ratings = results[minusRatings]?.officialRatings
-        if narrowedGenres != genres { narrowedGenres = genres }
-        if narrowedYears != years { narrowedYears = years }
-        if narrowedRatings != ratings { narrowedRatings = ratings }
+        if narrowedGenres != genres {
+            narrowedGenres = genres
+        }
+        if narrowedYears != years {
+            narrowedYears = years
+        }
+        if narrowedRatings != ratings {
+            narrowedRatings = ratings
+        }
     }
 
     private func loadFirstPage(
         client: any JellyfinClientProtocol,
         library: Library,
-        generation: Int
+        generation: Int,
     ) async {
         do {
             let page = try await client.getLibraryItems(
@@ -332,7 +338,7 @@ public final class LibraryItemsViewModel {
                 itemTypes: library.collectionType?.gridItemTypes,
                 query: query,
                 limit: pageSize,
-                startIndex: 0
+                startIndex: 0,
             )
             guard generation == loadGeneration else { return }
             items = page.items

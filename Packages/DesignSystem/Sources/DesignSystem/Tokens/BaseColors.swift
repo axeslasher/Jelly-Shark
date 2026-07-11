@@ -17,6 +17,7 @@ public enum BaseColors {
     public static let white = Color(oklch: 1, 0, 0)
 
     // MARK: Slate
+
     public static let slate50 = Color(oklch: 0.984, 0.003, 247.858)
     public static let slate100 = Color(oklch: 0.968, 0.007, 247.896)
     public static let slate200 = Color(oklch: 0.929, 0.013, 255.508)
@@ -30,6 +31,7 @@ public enum BaseColors {
     public static let slate950 = Color(oklch: 0.129, 0.042, 264.695)
 
     // MARK: Gray
+
     public static let gray50 = Color(oklch: 0.985, 0.002, 247.839)
     public static let gray100 = Color(oklch: 0.967, 0.003, 264.542)
     public static let gray200 = Color(oklch: 0.928, 0.006, 264.531)
@@ -43,6 +45,7 @@ public enum BaseColors {
     public static let gray950 = Color(oklch: 0.13, 0.028, 261.692)
 
     // MARK: Zinc
+
     public static let zinc50 = Color(oklch: 0.985, 0.0, 0.0)
     public static let zinc100 = Color(oklch: 0.967, 0.001, 286.375)
     public static let zinc200 = Color(oklch: 0.92, 0.004, 286.32)
@@ -56,6 +59,7 @@ public enum BaseColors {
     public static let zinc950 = Color(oklch: 0.141, 0.005, 285.823)
 
     // MARK: Neutral
+
     public static let neutral50 = Color(oklch: 0.985, 0.0, 0.0)
     public static let neutral100 = Color(oklch: 0.97, 0.0, 0.0)
     public static let neutral200 = Color(oklch: 0.922, 0.0, 0.0)
@@ -69,6 +73,7 @@ public enum BaseColors {
     public static let neutral950 = Color(oklch: 0.145, 0.0, 0.0)
 
     // MARK: Stone
+
     public static let stone50 = Color(oklch: 0.985, 0.001, 106.423)
     public static let stone100 = Color(oklch: 0.97, 0.001, 106.424)
     public static let stone200 = Color(oklch: 0.923, 0.003, 48.717)
@@ -82,6 +87,7 @@ public enum BaseColors {
     public static let stone950 = Color(oklch: 0.147, 0.004, 49.25)
 
     // MARK: Mauve
+
     public static let mauve50 = Color(oklch: 0.985, 0.0, 0.0)
     public static let mauve100 = Color(oklch: 0.96, 0.003, 325.6)
     public static let mauve200 = Color(oklch: 0.922, 0.005, 325.62)
@@ -95,6 +101,7 @@ public enum BaseColors {
     public static let mauve950 = Color(oklch: 0.145, 0.008, 326.0)
 
     // MARK: Olive
+
     public static let olive50 = Color(oklch: 0.988, 0.003, 106.5)
     public static let olive100 = Color(oklch: 0.966, 0.005, 106.5)
     public static let olive200 = Color(oklch: 0.93, 0.007, 106.5)
@@ -108,6 +115,7 @@ public enum BaseColors {
     public static let olive950 = Color(oklch: 0.153, 0.006, 107.1)
 
     // MARK: Mist
+
     public static let mist50 = Color(oklch: 0.987, 0.002, 197.1)
     public static let mist100 = Color(oklch: 0.963, 0.002, 197.1)
     public static let mist200 = Color(oklch: 0.925, 0.005, 214.3)
@@ -121,6 +129,7 @@ public enum BaseColors {
     public static let mist950 = Color(oklch: 0.148, 0.004, 228.8)
 
     // MARK: Taupe
+
     public static let taupe50 = Color(oklch: 0.986, 0.002, 67.8)
     public static let taupe100 = Color(oklch: 0.96, 0.002, 17.2)
     public static let taupe200 = Color(oklch: 0.922, 0.005, 34.3)
@@ -134,6 +143,7 @@ public enum BaseColors {
     public static let taupe950 = Color(oklch: 0.147, 0.004, 49.3)
 
     // MARK: Red
+
     public static let red50 = Color(oklch: 0.971, 0.013, 17.38)
     public static let red100 = Color(oklch: 0.936, 0.032, 17.717)
     public static let red200 = Color(oklch: 0.885, 0.062, 18.334)
@@ -147,6 +157,7 @@ public enum BaseColors {
     public static let red950 = Color(oklch: 0.258, 0.092, 26.042)
 
     // MARK: Orange
+
     public static let orange50 = Color(oklch: 0.98, 0.016, 73.684)
     public static let orange100 = Color(oklch: 0.954, 0.038, 75.164)
     public static let orange200 = Color(oklch: 0.901, 0.076, 70.697)
@@ -160,6 +171,7 @@ public enum BaseColors {
     public static let orange950 = Color(oklch: 0.266, 0.079, 36.259)
 
     // MARK: Amber
+
     public static let amber50 = Color(oklch: 0.987, 0.022, 95.277)
     public static let amber100 = Color(oklch: 0.962, 0.059, 95.617)
     public static let amber200 = Color(oklch: 0.924, 0.12, 95.746)
@@ -173,6 +185,7 @@ public enum BaseColors {
     public static let amber950 = Color(oklch: 0.279, 0.077, 45.635)
 
     // MARK: Yellow
+
     public static let yellow50 = Color(oklch: 0.987, 0.026, 102.212)
     public static let yellow100 = Color(oklch: 0.973, 0.071, 103.193)
     public static let yellow200 = Color(oklch: 0.945, 0.129, 101.54)
@@ -186,6 +199,7 @@ public enum BaseColors {
     public static let yellow950 = Color(oklch: 0.286, 0.066, 53.813)
 
     // MARK: Lime
+
     public static let lime50 = Color(oklch: 0.986, 0.031, 120.757)
     public static let lime100 = Color(oklch: 0.967, 0.067, 122.328)
     public static let lime200 = Color(oklch: 0.938, 0.127, 124.321)
@@ -199,6 +213,7 @@ public enum BaseColors {
     public static let lime950 = Color(oklch: 0.274, 0.072, 132.109)
 
     // MARK: Green
+
     public static let green50 = Color(oklch: 0.982, 0.018, 155.826)
     public static let green100 = Color(oklch: 0.962, 0.044, 156.743)
     public static let green200 = Color(oklch: 0.925, 0.084, 155.995)
@@ -212,6 +227,7 @@ public enum BaseColors {
     public static let green950 = Color(oklch: 0.266, 0.065, 152.934)
 
     // MARK: Emerald
+
     public static let emerald50 = Color(oklch: 0.979, 0.021, 166.113)
     public static let emerald100 = Color(oklch: 0.95, 0.052, 163.051)
     public static let emerald200 = Color(oklch: 0.905, 0.093, 164.15)
@@ -225,6 +241,7 @@ public enum BaseColors {
     public static let emerald950 = Color(oklch: 0.262, 0.051, 172.552)
 
     // MARK: Teal
+
     public static let teal50 = Color(oklch: 0.984, 0.014, 180.72)
     public static let teal100 = Color(oklch: 0.953, 0.051, 180.801)
     public static let teal200 = Color(oklch: 0.91, 0.096, 180.426)
@@ -238,6 +255,7 @@ public enum BaseColors {
     public static let teal950 = Color(oklch: 0.277, 0.046, 192.524)
 
     // MARK: Cyan
+
     public static let cyan50 = Color(oklch: 0.984, 0.019, 200.873)
     public static let cyan100 = Color(oklch: 0.956, 0.045, 203.388)
     public static let cyan200 = Color(oklch: 0.917, 0.08, 205.041)
@@ -251,6 +269,7 @@ public enum BaseColors {
     public static let cyan950 = Color(oklch: 0.302, 0.056, 229.695)
 
     // MARK: Sky
+
     public static let sky50 = Color(oklch: 0.977, 0.013, 236.62)
     public static let sky100 = Color(oklch: 0.951, 0.026, 236.824)
     public static let sky200 = Color(oklch: 0.901, 0.058, 230.902)
@@ -264,6 +283,7 @@ public enum BaseColors {
     public static let sky950 = Color(oklch: 0.293, 0.066, 243.157)
 
     // MARK: Blue
+
     public static let blue50 = Color(oklch: 0.97, 0.014, 254.604)
     public static let blue100 = Color(oklch: 0.932, 0.032, 255.585)
     public static let blue200 = Color(oklch: 0.882, 0.059, 254.128)
@@ -277,6 +297,7 @@ public enum BaseColors {
     public static let blue950 = Color(oklch: 0.282, 0.091, 267.935)
 
     // MARK: Indigo
+
     public static let indigo50 = Color(oklch: 0.962, 0.018, 272.314)
     public static let indigo100 = Color(oklch: 0.93, 0.034, 272.788)
     public static let indigo200 = Color(oklch: 0.87, 0.065, 274.039)
@@ -290,6 +311,7 @@ public enum BaseColors {
     public static let indigo950 = Color(oklch: 0.257, 0.09, 281.288)
 
     // MARK: Violet
+
     public static let violet50 = Color(oklch: 0.969, 0.016, 293.756)
     public static let violet100 = Color(oklch: 0.943, 0.029, 294.588)
     public static let violet200 = Color(oklch: 0.894, 0.057, 293.283)
@@ -303,6 +325,7 @@ public enum BaseColors {
     public static let violet950 = Color(oklch: 0.283, 0.141, 291.089)
 
     // MARK: Purple
+
     public static let purple50 = Color(oklch: 0.977, 0.014, 308.299)
     public static let purple100 = Color(oklch: 0.946, 0.033, 307.174)
     public static let purple200 = Color(oklch: 0.902, 0.063, 306.703)
@@ -316,6 +339,7 @@ public enum BaseColors {
     public static let purple950 = Color(oklch: 0.291, 0.149, 302.717)
 
     // MARK: Fuchsia
+
     public static let fuchsia50 = Color(oklch: 0.977, 0.017, 320.058)
     public static let fuchsia100 = Color(oklch: 0.952, 0.037, 318.852)
     public static let fuchsia200 = Color(oklch: 0.903, 0.076, 319.62)
@@ -329,6 +353,7 @@ public enum BaseColors {
     public static let fuchsia950 = Color(oklch: 0.293, 0.136, 325.661)
 
     // MARK: Pink
+
     public static let pink50 = Color(oklch: 0.971, 0.014, 343.198)
     public static let pink100 = Color(oklch: 0.948, 0.028, 342.258)
     public static let pink200 = Color(oklch: 0.899, 0.061, 343.231)
@@ -342,6 +367,7 @@ public enum BaseColors {
     public static let pink950 = Color(oklch: 0.284, 0.109, 3.907)
 
     // MARK: Rose
+
     public static let rose50 = Color(oklch: 0.969, 0.015, 12.422)
     public static let rose100 = Color(oklch: 0.941, 0.03, 12.58)
     public static let rose200 = Color(oklch: 0.892, 0.058, 10.001)

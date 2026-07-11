@@ -1,10 +1,9 @@
-import Testing
-import JellyfinKit
 @testable import Features
+import JellyfinKit
+import Testing
 
 @Suite("LibraryQuery display")
 struct LibraryQueryDisplayTests {
-
     @Suite("Sort phrases")
     struct SortPhraseTests {
         @Test("Every sort reads as plain language in both directions")
@@ -55,7 +54,7 @@ struct LibraryQueryDisplayTests {
             let query = LibraryQuery(genres: ["Horror", "Comedy"], decades: [1990, 1980])
             #expect(
                 query.displayTitle(libraryName: "Movies")
-                    == "Comedy & Horror Movies from the 1980s & 1990s"
+                    == "Comedy & Horror Movies from the 1980s & 1990s",
             )
         }
 
@@ -71,11 +70,11 @@ struct LibraryQueryDisplayTests {
                 genres: ["Western"],
                 watched: .unplayed,
                 favoritesOnly: true,
-                officialRatings: ["R"]
+                officialRatings: ["R"],
             )
             #expect(
                 query.displayTitle(libraryName: "Movies")
-                    == "Unwatched Favorite Western Movies rated R"
+                    == "Unwatched Favorite Western Movies rated R",
             )
         }
 

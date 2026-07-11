@@ -54,7 +54,7 @@ struct PersonDetailHeader: View {
                 ArtworkImage(
                     url: session.client?.headshotURL(for: member, maxWidth: 600),
                     blurHash: person?.primaryBlurHash,
-                    placeholderIcon: "person.fill"
+                    placeholderIcon: "person.fill",
                 )
                 .frame(width: Self.headshotSize, height: Self.headshotSize)
                 .clipShape(Circle())
@@ -64,7 +64,7 @@ struct PersonDetailHeader: View {
                     title: isFavorite ? "Favorited" : "Favorite",
                     tint: isFavorite ? theme.accent : theme.primary,
                     focusedTint: isFavorite ? theme.accent : nil,
-                    isEnabled: session.client != nil
+                    isEnabled: session.client != nil,
                 ) {
                     Task { await toggleFavorite() }
                 }
@@ -93,7 +93,7 @@ struct PersonDetailHeader: View {
                         OverviewLabel(
                             tagline: nil,
                             overview: biography,
-                            overviewLineLimit: 6
+                            overviewLineLimit: 6,
                         )
                     }
                     .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
@@ -101,7 +101,7 @@ struct PersonDetailHeader: View {
             }
             .frame(maxWidth: .infinity, minHeight: headshotColumnHeight, alignment: .topLeading)
             #if os(tvOS)
-            .focusSection()
+                .focusSection()
             #endif
         }
     }

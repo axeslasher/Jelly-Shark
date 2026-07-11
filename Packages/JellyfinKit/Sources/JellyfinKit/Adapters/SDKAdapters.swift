@@ -2,6 +2,7 @@ import Foundation
 import JellyfinAPI
 
 // MARK: - SDK Type Adapters
+
 //
 // This file contains extensions that map Jellyfin SDK types (BaseItemDto, UserDto, etc.)
 // to our clean, app-specific types (MediaItem, User, Library).
@@ -22,7 +23,7 @@ extension User {
             name: dto.name ?? "Unknown",
             serverId: dto.serverID,
             isAdministrator: dto.policy?.isAdministrator ?? false,
-            primaryImageTag: dto.primaryImageTag
+            primaryImageTag: dto.primaryImageTag,
         )
     }
 }
@@ -55,7 +56,7 @@ extension MediaItem {
             imageTags: ImageTags(
                 from: dto.imageTags,
                 backdropTags: dto.backdropImageTags,
-                blurHashes: dto.imageBlurHashes
+                blurHashes: dto.imageBlurHashes,
             ),
             userData: dto.userData.map { UserData(from: $0) },
             seriesId: dto.seriesID,
@@ -76,10 +77,10 @@ extension MediaItem {
                     name: person.name ?? "",
                     role: person.role,
                     kind: (person.type ?? .unknown).rawValue,
-                    primaryImageTag: person.primaryImageTag
+                    primaryImageTag: person.primaryImageTag,
                 )
             },
-            parentArtwork: ParentArtwork(from: dto)
+            parentArtwork: ParentArtwork(from: dto),
         )
     }
 }
@@ -103,7 +104,7 @@ extension Person {
             birthPlace: dto.productionLocations?.first,
             primaryImageTag: primaryTag,
             primaryBlurHash: primaryTag.flatMap { dto.imageBlurHashes?.primary?[$0] },
-            isFavorite: dto.userData?.isFavorite ?? false
+            isFavorite: dto.userData?.isFavorite ?? false,
         )
     }
 }
@@ -130,7 +131,7 @@ extension ParentArtwork {
             backdropImageTag: backdropTag,
             logoItemId: logoId,
             logoImageTag: logoTag,
-            seriesPrimaryImageTag: seriesPrimary
+            seriesPrimaryImageTag: seriesPrimary,
         )
     }
 }
@@ -140,7 +141,7 @@ extension ParentArtwork {
 extension MediaType {
     /// Create a MediaType from the SDK's BaseItemKind
     init(from kind: JellyfinAPI.BaseItemKind?) {
-        guard let kind = kind else {
+        guard let kind else {
             self = .unknown
             return
         }
@@ -221,7 +222,7 @@ extension MediaTechnicalInfo {
             container: (source?.container ?? dto.container).flatMap(Self.containerLabel),
             videoCodec: video.flatMap(Self.videoCodecLabel),
             bitrate: source?.bitrate,
-            frameRate: (video?.averageFrameRate ?? video?.realFrameRate).map(Double.init)
+            frameRate: (video?.averageFrameRate ?? video?.realFrameRate).map(Double.init),
         )
     }
 
@@ -278,18 +279,18 @@ extension MediaTechnicalInfo {
         switch stream.videoRangeType {
         case .dovi, .doviWithHDR10, .doviWithHLG, .doviWithSDR,
              .doviWithEL, .doviWithHDR10Plus, .doviWithELHDR10Plus:
-            return "Dolby Vision"
+            "Dolby Vision"
         case .hdr10Plus:
-            return "HDR10+"
+            "HDR10+"
         case .hdr10:
-            return "HDR10"
+            "HDR10"
         case .hlg:
-            return "HLG"
+            "HLG"
         case .sdr:
-            return nil
+            nil
         default:
             // Unknown/invalid range type: fall back to the coarse HDR flag.
-            return stream.videoRange == .hdr ? "HDR" : nil
+            stream.videoRange == .hdr ? "HDR" : nil
         }
     }
 
@@ -310,7 +311,7 @@ extension MediaTechnicalInfo {
         case .some(2): return "Stereo"
         case .some(6): return "5.1"
         case .some(8): return "7.1"
-        case .some(let channels) where channels > 2: return "\(channels - 1).1"
+        case let .some(channels) where channels > 2: return "\(channels - 1).1"
         default: return nil
         }
     }
@@ -332,18 +333,18 @@ extension MediaType {
     /// Reverse of `MediaType(from:)`, for request filters
     var baseItemKind: JellyfinAPI.BaseItemKind? {
         switch self {
-        case .movie: return .movie
-        case .series: return .series
-        case .season: return .season
-        case .episode: return .episode
-        case .boxSet: return .boxSet
-        case .musicAlbum: return .musicAlbum
-        case .musicArtist: return .musicArtist
-        case .audio: return .audio
-        case .video: return .video
-        case .folder: return .folder
-        case .collectionFolder: return .collectionFolder
-        case .unknown: return nil
+        case .movie: .movie
+        case .series: .series
+        case .season: .season
+        case .episode: .episode
+        case .boxSet: .boxSet
+        case .musicAlbum: .musicAlbum
+        case .musicArtist: .musicArtist
+        case .audio: .audio
+        case .video: .video
+        case .folder: .folder
+        case .collectionFolder: .collectionFolder
+        case .unknown: nil
         }
     }
 }
@@ -363,7 +364,7 @@ extension ImageTags {
     init?(
         from tags: [String: String]?,
         backdropTags: [String]? = nil,
-        blurHashes: JellyfinAPI.BaseItemDto.ImageBlurHashes? = nil
+        blurHashes: JellyfinAPI.BaseItemDto.ImageBlurHashes? = nil,
     ) {
         let backdrop = tags?["Backdrop"] ?? backdropTags?.first
         guard tags != nil || backdrop != nil else { return nil }
@@ -381,7 +382,7 @@ extension ImageTags {
             logo: tags?["Logo"],
             primaryBlurHash: hash(in: blurHashes?.primary, for: tags?["Primary"]),
             backdropBlurHash: hash(in: blurHashes?.backdrop, for: backdrop),
-            thumbBlurHash: hash(in: blurHashes?.thumb, for: tags?["Thumb"])
+            thumbBlurHash: hash(in: blurHashes?.thumb, for: tags?["Thumb"]),
         )
     }
 }
@@ -396,7 +397,7 @@ extension UserData {
             playCount: dto.playCount,
             isFavorite: dto.isFavorite ?? false,
             played: dto.isPlayed ?? false,
-            lastPlayedDate: dto.lastPlayedDate
+            lastPlayedDate: dto.lastPlayedDate,
         )
     }
 }
@@ -411,7 +412,7 @@ extension Library {
             name: dto.name ?? "Unknown",
             collectionType: CollectionType(from: dto.collectionType),
             primaryImageTag: dto.imageTags?["Primary"],
-            childCount: dto.childCount
+            childCount: dto.childCount,
         )
     }
 }
@@ -421,7 +422,7 @@ extension Library {
 extension CollectionType {
     /// Create a CollectionType from the SDK's CollectionType
     init(from type: JellyfinAPI.CollectionType?) {
-        guard let type = type else {
+        guard let type else {
             self = .unknown
             return
         }
@@ -456,6 +457,7 @@ extension CollectionType {
 }
 
 // MARK: - APIError Adapter
+
 //
 // NOTE: The SDK doesn't expose a JellyfinAPIError type. Instead it uses:
 // - JellyfinClient.ClientError for client-specific errors

@@ -6,12 +6,12 @@ let package = Package(
     name: "DesignSystem",
     platforms: [
         .tvOS(.v26),
-        .visionOS(.v26)
+        .visionOS(.v26),
     ],
     products: [
         .library(
             name: "DesignSystem",
-            targets: ["DesignSystem"]
+            targets: ["DesignSystem"],
         ),
     ],
     targets: [
@@ -22,12 +22,12 @@ let package = Package(
                 // The .ttf binaries are git-ignored — see Resources/Fonts/FONTS.md.
                 // The build works whether or not the fonts are present; styles fall
                 // back to the system font when they're missing.
-                .process("Resources/Fonts")
-            ]
+                .process("Resources/Fonts"),
+            ],
         ),
         .testTarget(
             name: "DesignSystemTests",
-            dependencies: ["DesignSystem"]
+            dependencies: ["DesignSystem"],
         ),
-    ]
+    ],
 )

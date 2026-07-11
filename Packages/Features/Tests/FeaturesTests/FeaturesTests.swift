@@ -1,12 +1,11 @@
-import Testing
-import SwiftUI
+@testable import DesignSystem
 @testable import Features
 @testable import JellyfinKit
-@testable import DesignSystem
+import SwiftUI
+import Testing
 
 @Suite("Features Tests")
 struct FeaturesTests {
-
     @Suite("RootView Tests")
     struct RootViewTests {
         @Test("RootView initializes")
@@ -25,7 +24,7 @@ struct FeaturesTests {
                 id: "test-1",
                 name: "Test Movie",
                 type: .movie,
-                productionYear: 2024
+                productionYear: 2024,
             )
             let view = MediaDetailView(item: item)
             _ = view

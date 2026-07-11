@@ -12,13 +12,12 @@ public enum TypographyTokens {
 
         /// Title - 24pt (card titles)
         public static let title: CGFloat = 24
-        
+
         /// Overview - 24pt (long text descriptions)
         public static let overview: CGFloat = 24
 
         /// Body - 22pt
         public static let body: CGFloat = 22
-
 
         /// Caption - 18pt (metadata)
         public static let caption: CGFloat = 18
@@ -76,6 +75,7 @@ public enum TypographyTokens {
 }
 
 // MARK: - Font Styles
+
 //
 // These resolve through the theme's font scheme, so views pick up the active
 // theme's typeface via the `\.theme` environment — `.font(theme.jsTitle)`
@@ -102,32 +102,50 @@ public extension Theme {
     }
 
     /// Display font for hero titles (Standard: 52pt bold)
-    var jsDisplay: Font { js(.display) }
+    var jsDisplay: Font {
+        js(.display)
+    }
 
     /// Headline font for section headers (Standard: 32pt semibold)
-    var jsHeadline: Font { js(.headline) }
+    var jsHeadline: Font {
+        js(.headline)
+    }
 
     /// Title font for card titles (Standard: 24pt semibold)
-    var jsTitle: Font { js(.title) }
+    var jsTitle: Font {
+        js(.title)
+    }
 
     /// Overview font for long text descriptions (Standard: 24pt medium)
-    var jsOverview: Font { js(.overview) }
+    var jsOverview: Font {
+        js(.overview)
+    }
 
     /// Body font for descriptions (Standard: 22pt regular)
-    var jsBody: Font { js(.body) }
+    var jsBody: Font {
+        js(.body)
+    }
 
     /// Caption font for metadata (Standard: 18pt regular)
-    var jsCaption: Font { js(.caption) }
+    var jsCaption: Font {
+        js(.caption)
+    }
 
     /// Small font for badges (Standard: 12pt regular)
-    var jsSmall: Font { js(.small) }
+    var jsSmall: Font {
+        js(.small)
+    }
 
     /// Eyebrow font for uppercase mini-labels (Standard: 18pt bold; the wide
     /// tracking comes along when applied via `.jsStyle(.eyebrow)`)
-    var jsEyebrow: Font { js(.eyebrow) }
+    var jsEyebrow: Font {
+        js(.eyebrow)
+    }
 
     /// Certificate font for the age-rating badge (Standard: Zodiak 18pt bold)
-    var jsCertificate: Font { js(.certificate) }
+    var jsCertificate: Font {
+        js(.certificate)
+    }
 }
 
 // MARK: - Text style modifier

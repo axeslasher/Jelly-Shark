@@ -19,7 +19,7 @@ public struct ContentShelf<Content: View>: View {
     public init(
         _ title: String,
         icon: String? = nil,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: () -> Content,
     ) {
         self.title = title
         self.icon = icon

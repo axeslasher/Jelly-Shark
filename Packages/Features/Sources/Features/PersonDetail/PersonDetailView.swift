@@ -45,7 +45,7 @@ public struct PersonDetailView: View {
                 PersonDetailHeader(
                     member: member,
                     person: person,
-                    isPresentingBiography: $isPresentingBiography
+                    isPresentingBiography: $isPresentingBiography,
                 )
                 .padding(.horizontal, SpacingTokens.screenPadding)
                 // The header isn't a viewport-tall hero; inset it from the
@@ -59,17 +59,17 @@ public struct PersonDetailView: View {
                     PersonShelfSection(
                         title: "Movies", icon: "film.fill",
                         items: movies, style: .poster,
-                        playbackItem: $playbackItem
+                        playbackItem: $playbackItem,
                     )
                     PersonShelfSection(
                         title: "TV Series", icon: "tv.fill",
                         items: series, style: .poster,
-                        playbackItem: $playbackItem
+                        playbackItem: $playbackItem,
                     )
                     PersonShelfSection(
                         title: "Episodes", icon: "play.tv",
                         items: episodes, style: .episode,
-                        playbackItem: $playbackItem
+                        playbackItem: $playbackItem,
                     )
                 }
                 #if os(tvOS)
@@ -99,7 +99,7 @@ public struct PersonDetailView: View {
         OverviewOverlay(
             tagline: nil,
             overview: person?.biography,
-            backdropURL: backdropItem.flatMap { session.client?.backdropURL(for: $0) }
+            backdropURL: backdropItem.flatMap { session.client?.backdropURL(for: $0) },
         )
     }
 
@@ -114,7 +114,7 @@ public struct PersonDetailView: View {
             MediaDetailHeroBackdrop(
                 url: url,
                 blurHash: backdropItem.backdropBlurHash,
-                progress: 1
+                progress: 1,
             )
         }
     }
@@ -126,20 +126,20 @@ public struct PersonDetailView: View {
 
         async let personFetch = client.getPerson(personId: member.id)
         async let moviesFetch = client.getItemsFeaturingPerson(
-            personId: member.id, itemTypes: [.movie], personTypes: nil, limit: Self.shelfLimit
+            personId: member.id, itemTypes: [.movie], personTypes: nil, limit: Self.shelfLimit,
         )
         async let seriesFetch = client.getItemsFeaturingPerson(
-            personId: member.id, itemTypes: [.series], personTypes: nil, limit: Self.shelfLimit
+            personId: member.id, itemTypes: [.series], personTypes: nil, limit: Self.shelfLimit,
         )
         async let episodesFetch = client.getItemsFeaturingPerson(
-            personId: member.id, itemTypes: [.episode], personTypes: nil, limit: Self.shelfLimit
+            personId: member.id, itemTypes: [.episode], personTypes: nil, limit: Self.shelfLimit,
         )
 
         // Failures degrade gracefully: keep the stub header, hide the shelf.
         person = try? await personFetch
-        movies = (await (try? moviesFetch)) ?? []
-        series = (await (try? seriesFetch)) ?? []
-        episodes = (await (try? episodesFetch)) ?? []
+        movies = await ((try? moviesFetch)) ?? []
+        series = await ((try? seriesFetch)) ?? []
+        episodes = await ((try? episodesFetch)) ?? []
 
         // Person items rarely carry a backdrop of their own; borrow one from
         // the filmography. `backdropURL(for:)` handles backdrop → thumb →
@@ -157,8 +157,8 @@ public struct PersonDetailView: View {
                 id: "preview-person",
                 name: "Boris Karloff",
                 role: "The Monster",
-                kind: "Actor"
-            )
+                kind: "Actor",
+            ),
         )
     }
     .environment(AppSession())

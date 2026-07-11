@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Sort and filter controls shown above a library grid.
 ///
@@ -27,15 +27,15 @@ struct LibraryFilterBar: View {
         // horizontal ScrollView slowed the focus engine's return to the bar
         // after a menu dismissal, and the pills fit on screen anyway
         #if os(tvOS)
-        themedPillRow
-            // Make the whole bar a focus target so it is reachable when
-            // moving up from any column of the grid below
-            .focusSection()
-        #else
-        ScrollView(.horizontal) {
             themedPillRow
-        }
-        .scrollClipDisabled()
+                // Make the whole bar a focus target so it is reachable when
+                // moving up from any column of the grid below
+                .focusSection()
+        #else
+            ScrollView(.horizontal) {
+                themedPillRow
+            }
+            .scrollClipDisabled()
         #endif
     }
 
@@ -46,15 +46,15 @@ struct LibraryFilterBar: View {
     @ViewBuilder
     private var themedPillRow: some View {
         #if os(tvOS)
-        if let fill = theme.focusFill {
-            pillRow
-                .menuStyle(.button)
-                .buttonStyle(ThemedGlassButtonStyle(tint: fill))
-        } else {
-            pillRow
-        }
+            if let fill = theme.focusFill {
+                pillRow
+                    .menuStyle(.button)
+                    .buttonStyle(ThemedGlassButtonStyle(tint: fill))
+            } else {
+                pillRow
+            }
         #else
-        pillRow
+            pillRow
         #endif
     }
 
@@ -67,7 +67,7 @@ struct LibraryFilterBar: View {
                     title: "Genres",
                     values: options.genres,
                     selection: query.genres,
-                    label: { $0 }
+                    label: { $0 },
                 ) { updated in
                     var next = query
                     next.genres = updated
@@ -80,7 +80,7 @@ struct LibraryFilterBar: View {
                     title: "Decades",
                     values: options.decades,
                     selection: query.decades,
-                    label: { "\($0.formatted(.number.grouping(.never)))s" }
+                    label: { "\($0.formatted(.number.grouping(.never)))s" },
                 ) { updated in
                     var next = query
                     next.decades = updated
@@ -97,7 +97,7 @@ struct LibraryFilterBar: View {
                     title: "Ratings",
                     values: options.officialRatings,
                     selection: query.officialRatings,
-                    label: { $0 }
+                    label: { $0 },
                 ) { updated in
                     var next = query
                     next.officialRatings = updated
@@ -137,8 +137,8 @@ struct LibraryFilterBar: View {
                                 next.direction = sort.defaultDirection
                             }
                             onChange(next)
-                        }
-                    )
+                        },
+                    ),
                 )
                 // Scoped to the dropdown row, where tint only colors the
                 // selection indicator
@@ -156,7 +156,7 @@ struct LibraryFilterBar: View {
         values: [Value],
         selection: Set<Value>,
         label: @escaping (Value) -> String,
-        onSelect: @escaping (Set<Value>) -> Void
+        onSelect: @escaping (Set<Value>) -> Void,
     ) -> some View {
         Menu {
             ForEach(values, id: \.self) { value in
@@ -174,8 +174,8 @@ struct LibraryFilterBar: View {
                                 updated.remove(value)
                             }
                             onSelect(updated)
-                        }
-                    )
+                        },
+                    ),
                 )
                 .tint(theme.accent)
             }
@@ -192,7 +192,7 @@ struct LibraryFilterBar: View {
                     var next = query
                     next.watched = selected
                     onChange(next)
-                }
+                },
             )) {
                 ForEach(WatchedFilter.allCases, id: \.self) { filter in
                     Text(filter.displayName).tag(filter)
@@ -245,10 +245,10 @@ struct LibraryFilterBar: View {
         options: LibraryFilterOptions(
             genres: ["Action", "Comedy", "Horror"],
             officialRatings: ["PG", "PG-13", "R"],
-            years: [1985, 1994, 2003, 2021]
+            years: [1985, 1994, 2003, 2021],
         ),
         query: LibraryQuery(genres: ["Horror"], favoritesOnly: true),
-        onChange: { _ in }
+        onChange: { _ in },
     )
     .padding()
     .withThemeEnvironment()

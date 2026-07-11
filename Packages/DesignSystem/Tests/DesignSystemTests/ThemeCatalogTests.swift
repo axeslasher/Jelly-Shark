@@ -1,6 +1,6 @@
-import Testing
-import SwiftUI
 @testable import DesignSystem
+import SwiftUI
+import Testing
 
 /// WCAG 2.x relative-luminance helpers built on `Color.resolve(in:)`.
 /// `Color.Resolved`'s linear components are exactly the WCAG-linearized sRGB
@@ -17,7 +17,7 @@ private enum WCAG {
         let components = (
             r: Double(resolved.linearRed),
             g: Double(resolved.linearGreen),
-            b: Double(resolved.linearBlue)
+            b: Double(resolved.linearBlue),
         )
         return (components, Double(resolved.opacity))
     }
@@ -30,7 +30,7 @@ private enum WCAG {
         return (
             r: fg.r * alpha + backdrop.r * (1 - alpha),
             g: fg.g * alpha + backdrop.g * (1 - alpha),
-            b: fg.b * alpha + backdrop.b * (1 - alpha)
+            b: fg.b * alpha + backdrop.b * (1 - alpha),
         )
     }
 
@@ -206,23 +206,23 @@ struct ThemeCatalogTests {
                     let platterLuminance = WCAG.luminance(platter)
                     let content = WCAG.contrastRatio(
                         luminance: WCAG.luminance(WCAG.flatten(theme.onFocusFill, over: platter)),
-                        platterLuminance
+                        platterLuminance,
                     )
                     let secondary = WCAG.contrastRatio(
                         luminance: WCAG.luminance(WCAG.flatten(theme.onFocusFillSecondary, over: platter)),
-                        platterLuminance
+                        platterLuminance,
                     )
                     #expect(
                         content >= 4.5,
-                        "\(theme.id) onFocusFill on focusFill-over-\(backdropName): \(content)"
+                        "\(theme.id) onFocusFill on focusFill-over-\(backdropName): \(content)",
                     )
                     #expect(
                         secondary >= 4.5,
-                        "\(theme.id) onFocusFillSecondary on focusFill-over-\(backdropName): \(secondary)"
+                        "\(theme.id) onFocusFillSecondary on focusFill-over-\(backdropName): \(secondary)",
                     )
                     if fillAlpha >= 1 {
                         let lift = WCAG.contrastRatio(
-                            luminance: platterLuminance, WCAG.luminance(base)
+                            luminance: platterLuminance, WCAG.luminance(base),
                         )
                         #expect(lift >= 3.0, "\(theme.id) focusFill/\(backdropName): \(lift)")
                     }

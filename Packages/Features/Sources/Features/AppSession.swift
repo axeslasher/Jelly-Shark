@@ -1,6 +1,6 @@
 import Foundation
-import Observation
 import JellyfinKit
+import Observation
 
 /// Shared session state for the app
 ///

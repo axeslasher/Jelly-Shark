@@ -1,11 +1,10 @@
-import Testing
 import Foundation
 import JellyfinAPI
 @testable import JellyfinKit
+import Testing
 
 @Suite("LibraryQuery")
 struct LibraryQueryTests {
-
     @Suite("Expanded years")
     struct ExpandedYearsTests {
         @Test("Decades expand to their concrete years, sorted")
@@ -34,7 +33,7 @@ struct LibraryQueryTests {
             let options = LibraryFilterOptions(
                 genres: [],
                 officialRatings: [],
-                years: [1994, 1997, 2003]
+                years: [1994, 1997, 2003],
             )
 
             #expect(options.decades == [2000, 1990])
@@ -106,7 +105,7 @@ struct LibraryQueryTests {
     @Suite("MediaItemPage")
     struct MediaItemPageTests {
         private func makeItems(_ count: Int) -> [MediaItem] {
-            (0..<count).map { MediaItem(id: "item-\($0)", name: "Item \($0)", type: .movie) }
+            (0 ..< count).map { MediaItem(id: "item-\($0)", name: "Item \($0)", type: .movie) }
         }
 
         @Test("First page of many has more")
@@ -159,7 +158,7 @@ struct LibraryQueryTests {
                 sort: .criticRating,
                 direction: .descending,
                 genres: ["Action"],
-                favoritesOnly: true
+                favoritesOnly: true,
             )
 
             let cleared = query.withFiltersCleared

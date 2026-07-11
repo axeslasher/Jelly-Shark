@@ -22,7 +22,7 @@ public struct StreamParameters: Sendable, Equatable {
         mediaSourceId: String? = nil,
         playSessionId: String? = nil,
         audioStreamIndex: Int? = nil,
-        subtitleStreamIndex: Int? = nil
+        subtitleStreamIndex: Int? = nil,
     ) {
         self.itemId = itemId
         self.mediaSourceId = mediaSourceId
@@ -54,7 +54,7 @@ public struct StreamResolution: Sendable, Equatable {
 /// endpoint; everything else uses the HLS universal endpoint, where the
 /// server remuxes when the codecs are compatible and transcodes otherwise,
 /// and the playlist spans the full duration so AVPlayer can seek anywhere.
-struct StreamURLBuilder {
+enum StreamURLBuilder {
     /// Build an HLS universal stream URL: `/Videos/{itemId}/main.m3u8`
     ///
     /// - Parameters:
@@ -69,7 +69,7 @@ struct StreamURLBuilder {
         accessToken: String,
         deviceId: String,
         parameters: StreamParameters,
-        eTag: String? = nil
+        eTag: String? = nil,
     ) -> URL? {
         // Append to the server URL rather than overwriting the path,
         // so servers hosted under a path prefix (e.g. /jellyfin) keep working
@@ -106,7 +106,7 @@ struct StreamURLBuilder {
         if let subtitleStreamIndex = parameters.subtitleStreamIndex {
             queryItems.append(URLQueryItem(name: "SubtitleStreamIndex", value: String(subtitleStreamIndex)))
         }
-        if let eTag = eTag {
+        if let eTag {
             queryItems.append(URLQueryItem(name: "Tag", value: eTag))
         }
 
@@ -137,7 +137,7 @@ struct StreamURLBuilder {
         deviceId: String,
         parameters: StreamParameters,
         container: String? = nil,
-        eTag: String? = nil
+        eTag: String? = nil,
     ) -> URL? {
         var endpoint = serverURL
             .appendingPathComponent("Videos")
@@ -166,7 +166,7 @@ struct StreamURLBuilder {
         if let playSessionId = parameters.playSessionId {
             queryItems.append(URLQueryItem(name: "PlaySessionId", value: playSessionId))
         }
-        if let eTag = eTag {
+        if let eTag {
             queryItems.append(URLQueryItem(name: "Tag", value: eTag))
         }
 

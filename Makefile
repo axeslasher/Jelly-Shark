@@ -11,7 +11,13 @@
 SCHEME   = Jelly Shark
 SIM_DEST = platform=tvOS Simulator,name=Apple TV
 
-.PHONY: test test-sim test-host build build-visionos clean
+# Formatting is pinned to an exact SwiftFormat version so local runs, the
+# pre-commit hook, and CI all agree on the output. Bump here and in
+# .github/workflows/swiftformat.yml together.
+SWIFTFORMAT_VERSION = 0.62.1
+
+.PHONY: test test-sim test-host build build-visionos clean \
+	format lint check-swiftformat install-hooks
 
 # Full suite across both venues.
 test: test-sim test-host
@@ -33,3 +39,23 @@ build-visionos:
 
 clean:
 	xcodebuild clean -scheme "$(SCHEME)"
+
+# Format all Swift sources in place (config in .swiftformat).
+format: check-swiftformat
+	swiftformat .
+
+# Check formatting without modifying files — what CI and the pre-commit hook run.
+lint: check-swiftformat
+	swiftformat --lint .
+
+# Fail fast if swiftformat is missing or not the pinned version.
+check-swiftformat:
+	@command -v swiftformat >/dev/null 2>&1 || \
+		{ echo "swiftformat not installed — run: brew install swiftformat"; exit 1; }
+	@[ "$$(swiftformat --version)" = "$(SWIFTFORMAT_VERSION)" ] || \
+		{ echo "swiftformat $$(swiftformat --version) installed, but $(SWIFTFORMAT_VERSION) is required"; exit 1; }
+
+# Point git at the repo's versioned hooks (one-time, opt-in).
+install-hooks:
+	git config core.hooksPath .githooks
+	@echo "Pre-commit format check enabled (core.hooksPath -> .githooks)."

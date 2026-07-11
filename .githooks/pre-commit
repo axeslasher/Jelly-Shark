@@ -1,0 +1,31 @@
+#!/bin/sh
+# Lint-only formatting gate: blocks the commit if staged Swift files are not
+# swiftformat-clean, but never rewrites files. Enable with `make install-hooks`.
+#
+# If swiftformat is missing or not the pinned version, the check is skipped
+# with a warning — CI runs the same lint and is the authoritative gate.
+
+REQUIRED_VERSION="0.62.1"
+
+# NUL-delimited to survive the spaces in this repo's paths.
+STAGED_SWIFT=$(git diff --cached --name-only --diff-filter=ACMR -z -- '*.swift' | tr '\0' '\n')
+[ -z "$STAGED_SWIFT" ] && exit 0
+
+if ! command -v swiftformat >/dev/null 2>&1; then
+    echo "pre-commit: swiftformat not installed; skipping format check (CI will verify)." >&2
+    exit 0
+fi
+
+INSTALLED_VERSION=$(swiftformat --version)
+if [ "$INSTALLED_VERSION" != "$REQUIRED_VERSION" ]; then
+    echo "pre-commit: swiftformat $INSTALLED_VERSION != pinned $REQUIRED_VERSION; skipping format check (CI will verify)." >&2
+    exit 0
+fi
+
+git diff --cached --name-only --diff-filter=ACMR -z -- '*.swift' |
+    xargs -0 swiftformat --lint
+if [ $? -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: staged Swift files are not formatted. Run: make format" >&2
+    exit 1
+fi

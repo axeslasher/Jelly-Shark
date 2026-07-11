@@ -1,7 +1,7 @@
-import Testing
 import Foundation
 import JellyfinAPI
 @testable import JellyfinKit
+import Testing
 
 @Suite("Playback Adapters")
 struct PlaybackAdapterTests {
@@ -17,7 +17,7 @@ struct PlaybackAdapterTests {
             isSupportsDirectPlay: true,
             isSupportsDirectStream: true,
             isSupportsTranscoding: true,
-            transcodingURL: "/videos/source-1/master.m3u8"
+            transcodingURL: "/videos/source-1/master.m3u8",
         )
 
         let source = try #require(MediaSource(from: info))
@@ -53,9 +53,9 @@ struct PlaybackAdapterTests {
                     index: 3,
                     isTextSubtitleStream: true,
                     language: "eng",
-                    type: .subtitle
+                    type: .subtitle,
                 ),
-            ]
+            ],
         )
 
         let source = try #require(MediaSource(from: info))
@@ -75,7 +75,7 @@ struct PlaybackAdapterTests {
                 JellyfinAPI.MediaSourceInfo(id: "source-1"),
                 JellyfinAPI.MediaSourceInfo(id: "source-2"),
             ],
-            playSessionID: "session-1"
+            playSessionID: "session-1",
         )
 
         let session = PlaybackSessionInfo(from: response)
@@ -91,7 +91,7 @@ struct PlaybackAdapterTests {
             mediaSources: [
                 JellyfinAPI.MediaSourceInfo(container: "mp4"),
                 JellyfinAPI.MediaSourceInfo(id: "source-2"),
-            ]
+            ],
         )
 
         let session = PlaybackSessionInfo(from: response)

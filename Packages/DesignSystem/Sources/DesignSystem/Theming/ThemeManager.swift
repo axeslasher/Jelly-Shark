@@ -66,15 +66,15 @@ public final class ThemeManager {
     private static func createTheme(for id: ThemeIdentifier) -> any Theme {
         switch id {
         case .standard:
-            return StandardTheme()
+            StandardTheme()
         case .horror:
-            return HorrorTheme()
+            HorrorTheme()
         case .action:
-            return ActionTheme()
+            ActionTheme()
         case .videoStore:
-            return VideoStoreTheme()
+            VideoStoreTheme()
         case .sciFi:
-            return SciFiTheme()
+            SciFiTheme()
         }
     }
 

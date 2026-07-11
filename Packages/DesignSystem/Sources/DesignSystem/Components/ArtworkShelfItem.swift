@@ -62,7 +62,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         width: CGFloat = 200,
         progress: Double? = nil,
         playbackBadge: PlaybackBadge? = nil,
-        value: Value
+        value: Value,
     ) {
         self.action = nil
         self.url = url
@@ -96,7 +96,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         width: CGFloat = 200,
         progress: Double? = nil,
         playbackBadge: PlaybackBadge? = nil,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
     ) where Value == Bool {
         self.url = url
         self.blurHash = blurHash
@@ -136,21 +136,21 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     @ViewBuilder
     private var cardLabel: some View {
         #if os(tvOS)
-        // Artwork and captions are intentionally flat siblings, not nested in
-        // a stack — the borderless style arranges them into a vertical lockup
-        // and moves the captions out of the way as the artwork lifts.
-        artwork
-        captions
-        synopsisText
-        #else
-        // Other platforms don't apply the borderless lockup, so multiple
-        // direct label children lay out horizontally. Stack them explicitly
-        // to keep the captions below the artwork.
-        VStack(alignment: captionAlignment, spacing: SpacingTokens.xs) {
+            // Artwork and captions are intentionally flat siblings, not nested in
+            // a stack — the borderless style arranges them into a vertical lockup
+            // and moves the captions out of the way as the artwork lifts.
             artwork
             captions
             synopsisText
-        }
+        #else
+            // Other platforms don't apply the borderless lockup, so multiple
+            // direct label children lay out horizontally. Stack them explicitly
+            // to keep the captions below the artwork.
+            VStack(alignment: captionAlignment, spacing: SpacingTokens.xs) {
+                artwork
+                captions
+                synopsisText
+            }
         #endif
     }
 
@@ -177,7 +177,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                             LinearGradient(
                                 colors: [theme.background.opacity(0.55), .clear],
                                 startPoint: .bottom,
-                                endPoint: .top
+                                endPoint: .top,
                             )
                         }
                 }
@@ -187,21 +187,20 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .hoverEffect(.highlight)
     }
 
-    @ViewBuilder
     private func playbackBadgeContent(_ badge: PlaybackBadge) -> some View {
         HStack(spacing: SpacingTokens.xs) {
             switch badge {
-            case .unplayed(let runtime):
+            case let .unplayed(runtime):
                 Image(systemName: "play.fill")
                 if let runtime {
                     Text(runtime)
                 }
-            case .played(let runtime):
+            case let .played(runtime):
                 Image(systemName: "arrow.counterclockwise")
                 if let runtime {
                     Text(runtime)
                 }
-            case .inProgress(let progress, let remaining):
+            case let .inProgress(progress, remaining):
                 Image(systemName: "play.fill")
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
