@@ -43,6 +43,39 @@ struct LibraryItemsViewModelTests {
         #expect(client.libraryItemsRequests[0].limit == 3)
     }
 
+    @Test("An initial query seeds the grid's genre filter, title, and request")
+    func initialQuerySeeds() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = LibraryItemsViewModel(pageSize: 3, prefetchDistance: 2)
+        viewModel.attach(client: client, library: Self.library, initialQuery: LibraryQuery(genres: ["Horror"]))
+
+        await viewModel.loadInitial()
+
+        #expect(viewModel.query.genres == ["Horror"])
+        #expect(viewModel.query.isFiltering)
+        #expect(viewModel.displayTitle == "Horror Movies")
+        #expect(client.libraryItemsRequests.count == 1)
+        #expect(client.libraryItemsRequests[0].query.genres == ["Horror"])
+    }
+
+    @Test("No initial query leaves the grid unfiltered")
+    func noInitialQueryUnfiltered() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = makeViewModel(client: client)
+
+        await viewModel.loadInitial()
+
+        #expect(viewModel.query.genres.isEmpty)
+        #expect(!viewModel.query.isFiltering)
+        #expect(client.libraryItemsRequests[0].query.genres.isEmpty)
+    }
+
     @Test("Empty first page lands in empty")
     func emptyLibrary() async {
         let client = MockJellyfinClient()

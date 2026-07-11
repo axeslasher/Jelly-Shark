@@ -11,7 +11,11 @@ struct HomeView: View {
 
     @State private var resumeItems: [MediaItem] = []
     @State private var latestItems: [MediaItem] = []
+    @State private var genreCards: [GenreCard] = []
     @State private var belowFold = false
+
+    /// How many genre cards the Browse by Genre shelf shows.
+    private let genreCardLimit = 12
 
     /// No NavigationStack here: RootView owns each tab's stack (with a path
     /// binding) so it can pop to root before a tab switch — see RootView's
@@ -44,6 +48,20 @@ struct HomeView: View {
                         }
                     }
                 }
+
+                // Browse by Genre
+                if !genreCards.isEmpty {
+                    ContentShelf("Browse by Genre", icon: "theatermasks.fill") {
+                        ForEach(genreCards) { card in
+                            GenreShelfItem(
+                                title: card.name,
+                                backdropURL: card.backdropURL,
+                                blurHash: card.blurHash,
+                                value: GenreFilter(library: card.library, genre: card.name),
+                            )
+                        }
+                    }
+                }
             }
             .padding(.vertical, SpacingTokens.lg)
         }
@@ -52,6 +70,7 @@ struct HomeView: View {
         .background(theme.background)
         .task(id: session.isConnected) {
             await loadContent()
+            await loadGenres()
         }
     }
 
@@ -163,6 +182,99 @@ struct HomeView: View {
         resumeItems = await (try? resume) ?? []
         latestItems = await (try? latest) ?? []
     }
+
+    /// The library whose genres the shelf browses. Genre filtering is
+    /// library-scoped, so the shelf targets one library — preferring a movies
+    /// library (the most genre-rich), else the first available.
+    private var genreSourceLibrary: Library? {
+        let libraries = connection.libraries
+        return libraries.first { $0.collectionType == .movies } ?? libraries.first
+    }
+
+    /// Build the genre cards for a library: fetch the genres present, then pick
+    /// a random backdrop for each (concurrently). Loaded once per connection —
+    /// genres are stable, and the per-genre fetches shouldn't repeat on every
+    /// return to Home. Any failure degrades to an empty shelf.
+    private func loadGenres() async {
+        guard let client = session.client, session.isConnected else {
+            genreCards = []
+            return
+        }
+        // Already populated (a return to Home, not a fresh connection) — keep
+        // the existing cards rather than re-running the per-genre fetches.
+        guard genreCards.isEmpty, let library = genreSourceLibrary else { return }
+
+        guard let options = try? await client.getLibraryFilterOptions(
+            libraryId: library.id,
+            itemTypes: library.collectionType?.gridItemTypes,
+        ), !options.genres.isEmpty else {
+            genreCards = []
+            return
+        }
+
+        let genres = Array(options.genres.prefix(genreCardLimit))
+        let backdrops = await withTaskGroup(of: (Int, URL?, String?).self) { group in
+            for (index, genre) in genres.enumerated() {
+                group.addTask {
+                    let backdrop = await representativeBackdrop(
+                        client: client, library: library, genre: genre,
+                    )
+                    return (index, backdrop?.url, backdrop?.blurHash)
+                }
+            }
+            var byIndex: [Int: (URL?, String?)] = [:]
+            for await (index, url, hash) in group {
+                byIndex[index] = (url, hash)
+            }
+            return byIndex
+        }
+
+        genreCards = genres.enumerated().map { index, genre in
+            GenreCard(
+                name: genre,
+                library: library,
+                backdropURL: backdrops[index]?.0 ?? nil,
+                blurHash: backdrops[index]?.1 ?? nil,
+            )
+        }
+    }
+}
+
+/// One card in the Browse by Genre shelf: the genre name, the library it
+/// filters, and a representative backdrop.
+private struct GenreCard: Identifiable {
+    let name: String
+    let library: Library
+    let backdropURL: URL?
+    let blurHash: String?
+
+    var id: String {
+        name
+    }
+}
+
+/// Pick a random item's backdrop to represent a genre. Fetches a small page of
+/// that genre (there's no server-side random sort) and chooses randomly among
+/// the items that actually have a backdrop, so a future "refresh" affordance can
+/// just re-run this for one card. Returns nil when the genre has no artwork.
+private func representativeBackdrop(
+    client: any JellyfinClientProtocol,
+    library: Library,
+    genre: String,
+) async -> (url: URL, blurHash: String?)? {
+    guard let page = try? await client.getLibraryItems(
+        libraryId: library.id,
+        itemTypes: library.collectionType?.gridItemTypes,
+        query: LibraryQuery(genres: [genre]),
+        limit: 24,
+        startIndex: 0,
+    ) else { return nil }
+
+    let withBackdrop = page.items.filter { client.backdropURL(for: $0) != nil }
+    guard let item = withBackdrop.randomElement(),
+          let url = client.backdropURL(for: item)
+    else { return nil }
+    return (url, item.backdropBlurHash)
 }
 
 #Preview {

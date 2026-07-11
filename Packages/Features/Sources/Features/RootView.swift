@@ -126,9 +126,9 @@ public struct RootView: View {
     }
 
     /// The per-tab `NavigationStack`, bound to this tab's path, with the
-    /// media-detail and person-detail destinations registered at the root so
-    /// every shelf/grid card (and details pushed from other details) resolves
-    /// through it.
+    /// media-detail, person-detail, and genre-filtered-library destinations
+    /// registered at the root so every shelf/grid card (and details pushed from
+    /// other details) resolves through it.
     private func navigationRoot(
         for tab: AppTab,
         @ViewBuilder content: () -> some View,
@@ -140,6 +140,12 @@ public struct RootView: View {
                 }
                 .navigationDestination(for: CastMember.self) { member in
                     PersonDetailView(member: member)
+                }
+                .navigationDestination(for: GenreFilter.self) { filter in
+                    LibraryItemsView(
+                        library: filter.library,
+                        initialQuery: LibraryQuery(genres: [filter.genre]),
+                    )
                 }
         }
     }

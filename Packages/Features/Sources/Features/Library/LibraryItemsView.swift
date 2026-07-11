@@ -10,6 +10,11 @@ struct LibraryItemsView: View {
 
     let library: Library
 
+    /// Seeds the grid's sort/filter for the first load — e.g. a genre card
+    /// opens this view pre-filtered to one genre. `nil` is the default
+    /// unfiltered grid used by the library tabs.
+    var initialQuery: LibraryQuery?
+
     @State private var viewModel = LibraryItemsViewModel()
     @State private var gridWidth: CGFloat = 0
 
@@ -32,7 +37,7 @@ struct LibraryItemsView: View {
         .scrollClipDisabled()
         .background(theme.background)
         .task(id: session.isConnected) {
-            viewModel.attach(client: session.client, library: library)
+            viewModel.attach(client: session.client, library: library, initialQuery: initialQuery)
             await viewModel.loadInitial()
         }
     }
