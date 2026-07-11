@@ -32,12 +32,12 @@ public enum BlurHash {
 
     private static func decodeUncached(_ hash: String, width: Int, height: Int, punch: Float) -> CGImage? {
         let chars = Array(hash)
-        guard chars.count >= 6, let sizeFlag = decode83(chars[0...0]) else { return nil }
+        guard chars.count >= 6, let sizeFlag = decode83(chars[0 ... 0]) else { return nil }
 
         let componentsX = (sizeFlag % 9) + 1
         let componentsY = (sizeFlag / 9) + 1
         guard chars.count == 4 + 2 * componentsX * componentsY,
-              let quantisedMaximum = decode83(chars[1...1])
+              let quantisedMaximum = decode83(chars[1 ... 1])
         else { return nil }
 
         let maximumValue = Float(quantisedMaximum + 1) / 166 * punch
@@ -45,30 +45,30 @@ public enum BlurHash {
         var colors: [(Float, Float, Float)] = []
         colors.reserveCapacity(componentsX * componentsY)
 
-        guard let dcValue = decode83(chars[2...5]) else { return nil }
+        guard let dcValue = decode83(chars[2 ... 5]) else { return nil }
         colors.append((
             sRGBToLinear((dcValue >> 16) & 255),
             sRGBToLinear((dcValue >> 8) & 255),
-            sRGBToLinear(dcValue & 255)
+            sRGBToLinear(dcValue & 255),
         ))
 
-        for component in 1..<(componentsX * componentsY) {
+        for component in 1 ..< (componentsX * componentsY) {
             let start = 4 + component * 2
-            guard let acValue = decode83(chars[start...(start + 1)]) else { return nil }
+            guard let acValue = decode83(chars[start ... (start + 1)]) else { return nil }
             colors.append((
                 signPow((Float(acValue / (19 * 19)) - 9) / 9, 2) * maximumValue,
                 signPow((Float((acValue / 19) % 19) - 9) / 9, 2) * maximumValue,
-                signPow((Float(acValue % 19) - 9) / 9, 2) * maximumValue
+                signPow((Float(acValue % 19) - 9) / 9, 2) * maximumValue,
             ))
         }
 
         var pixels = [UInt8](repeating: 255, count: width * height * 4)
-        for y in 0..<height {
-            for x in 0..<width {
+        for y in 0 ..< height {
+            for x in 0 ..< width {
                 var r: Float = 0, g: Float = 0, b: Float = 0
-                for j in 0..<componentsY {
+                for j in 0 ..< componentsY {
                     let cosY = cos(.pi * Float(y) * Float(j) / Float(height))
-                    for i in 0..<componentsX {
+                    for i in 0 ..< componentsX {
                         let basis = cos(.pi * Float(x) * Float(i) / Float(width)) * cosY
                         let color = colors[i + j * componentsX]
                         r += color.0 * basis
@@ -91,7 +91,7 @@ public enum BlurHash {
                 bitsPerComponent: 8,
                 bytesPerRow: width * 4,
                 space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue,
             )
         }
         return context?.makeImage()
@@ -100,7 +100,7 @@ public enum BlurHash {
     // MARK: - Encoding primitives
 
     private static let base83Characters = Array(
-        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~"
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz#$%*+,-.:;=?@[]^_{|}~",
     )
 
     private static func decode83(_ chars: ArraySlice<Character>) -> Int? {

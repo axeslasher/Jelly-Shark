@@ -1,11 +1,10 @@
-import Testing
 import Foundation
 import JellyfinAPI
 @testable import JellyfinKit
+import Testing
 
 @Suite("JellyfinKit Tests")
 struct JellyfinKitTests {
-
     @Suite("User Model")
     struct UserTests {
         @Test("User initialization")
@@ -14,7 +13,7 @@ struct JellyfinKitTests {
                 id: "123",
                 name: "Test User",
                 serverId: "server-1",
-                isAdministrator: true
+                isAdministrator: true,
             )
 
             #expect(user.id == "123")
@@ -40,7 +39,7 @@ struct JellyfinKitTests {
                 name: "Test Movie",
                 type: .movie,
                 productionYear: 2024,
-                runTimeTicks: 72_000_000_000 // 2 hours
+                runTimeTicks: 72_000_000_000, // 2 hours
             )
 
             #expect(item.id == "movie-1")
@@ -55,7 +54,7 @@ struct JellyfinKitTests {
                 id: "1",
                 name: "Movie",
                 type: .movie,
-                runTimeTicks: 72_000_000_000 // 2 hours
+                runTimeTicks: 72_000_000_000, // 2 hours
             )
             #expect(twoHourMovie.formattedRuntime == "2h 0m")
         }
@@ -66,7 +65,7 @@ struct JellyfinKitTests {
                 id: "2",
                 name: "Short",
                 type: .video,
-                runTimeTicks: 18_000_000_000 // 30 minutes
+                runTimeTicks: 18_000_000_000, // 30 minutes
             )
             #expect(shortVideo.formattedRuntime == "30m")
         }
@@ -76,12 +75,12 @@ struct JellyfinKitTests {
             let item = MediaItem(
                 id: "1", name: "Movie", type: .movie,
                 runTimeTicks: 72_000_000_000, // 2h
-                userData: UserData(playbackPositionTicks: 27_000_000_000) // 45m in
+                userData: UserData(playbackPositionTicks: 27_000_000_000), // 45m in
             )
             #expect(item.formattedRemainingRuntime == "1h 15m")
 
             let unstarted = MediaItem(
-                id: "2", name: "Movie", type: .movie, runTimeTicks: 72_000_000_000
+                id: "2", name: "Movie", type: .movie, runTimeTicks: 72_000_000_000,
             )
             #expect(unstarted.formattedRemainingRuntime == nil)
         }
@@ -96,8 +95,8 @@ struct JellyfinKitTests {
                 userData: UserData(
                     playbackPositionTicks: 50_000_000_000,
                     isFavorite: false,
-                    played: false
-                )
+                    played: false,
+                ),
             )
             #expect(item.progressPercentage == 0.5)
         }
@@ -109,7 +108,7 @@ struct JellyfinKitTests {
                 name: "Movie",
                 type: .movie,
                 runTimeTicks: 100_000_000_000,
-                userData: UserData(playbackPositionTicks: 50_000_000_000)
+                userData: UserData(playbackPositionTicks: 50_000_000_000),
             )
             #expect(inProgressItem.hasProgress == true)
 
@@ -117,7 +116,7 @@ struct JellyfinKitTests {
                 id: "2",
                 name: "Movie 2",
                 type: .movie,
-                runTimeTicks: 100_000_000_000
+                runTimeTicks: 100_000_000_000,
             )
             #expect(notStartedItem.hasProgress == false)
         }
@@ -129,7 +128,7 @@ struct JellyfinKitTests {
                 name: "Pilot",
                 type: .episode,
                 indexNumber: 5,
-                parentIndexNumber: 1
+                parentIndexNumber: 1,
             )
             #expect(episode.episodeDisplayTitle == "S01E05 - Pilot")
         }
@@ -146,9 +145,9 @@ struct JellyfinKitTests {
                 id: "1", name: "Show", type: .series,
                 productionYear: 2008,
                 endDate: DateComponents(
-                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 9, day: 29
+                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 9, day: 29,
                 ).date,
-                status: "Ended"
+                status: "Ended",
             )
             #expect(series.yearSpanText == "2008–2013")
         }
@@ -159,9 +158,9 @@ struct JellyfinKitTests {
                 id: "1", name: "Show", type: .series,
                 productionYear: 2013,
                 endDate: DateComponents(
-                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 12, day: 1
+                    calendar: Calendar(identifier: .gregorian), year: 2013, month: 12, day: 1,
                 ).date,
-                status: "Ended"
+                status: "Ended",
             )
             #expect(series.yearSpanText == "2013")
         }
@@ -170,7 +169,7 @@ struct JellyfinKitTests {
         func yearSpanContinuingSeries() {
             let series = MediaItem(
                 id: "1", name: "Show", type: .series,
-                productionYear: 2020, status: "Continuing"
+                productionYear: 2020, status: "Continuing",
             )
             #expect(series.yearSpanText == "2020–")
         }
@@ -200,7 +199,7 @@ struct JellyfinKitTests {
                 parentLogoItemID: "series-1",
                 seriesID: "series-1",
                 seriesPrimaryImageTag: "poster-tag",
-                type: .episode
+                type: .episode,
             ))
 
             #expect(item.parentArtwork?.backdropItemId == "series-1")
@@ -221,7 +220,7 @@ struct JellyfinKitTests {
             let item = MediaItem(from: BaseItemDto(
                 id: "ep1",
                 parentBackdropImageTags: ["bd-tag"],
-                type: .episode
+                type: .episode,
             ))
             #expect(item.parentArtwork == nil)
         }
@@ -243,7 +242,7 @@ struct JellyfinKitTests {
                 premiereDate: birth,
                 productionLocations: ["London, England, UK", "Elsewhere"],
                 type: .person,
-                userData: UserItemDataDto(isFavorite: true)
+                userData: UserItemDataDto(isFavorite: true),
             ))
 
             #expect(person.id == "person-guid")
@@ -286,7 +285,7 @@ struct JellyfinKitTests {
             let person = Person(
                 id: "1", name: "P",
                 birthDate: date(1887, 11, 23),
-                deathDate: date(1969, 2, 2)
+                deathDate: date(1969, 2, 2),
             )
             #expect(person.age == 81)
         }
@@ -330,7 +329,7 @@ struct JellyfinKitTests {
                 MediaStream(audioSpatialFormat: .dolbyAtmos, channels: 8, isDefault: true, language: "eng", type: .audio),
                 MediaStream(language: "eng", type: .subtitle),
                 MediaStream(language: "ENG", type: .subtitle),
-                MediaStream(isHearingImpaired: true, language: "fra", type: .subtitle)
+                MediaStream(isHearingImpaired: true, language: "fra", type: .subtitle),
             ])
 
             #expect(info?.resolution == "4K")
@@ -347,7 +346,7 @@ struct JellyfinKitTests {
         @Test("No SDH flag when no subtitle is hearing-impaired")
         func noSDHWithoutFlaggedStreams() {
             let info = info(from: [
-                MediaStream(language: "eng", type: .subtitle)
+                MediaStream(language: "eng", type: .subtitle),
             ])
             #expect(info?.hasSDHSubtitles == false)
             #expect(info?.hasSubtitles == true)
@@ -357,7 +356,7 @@ struct JellyfinKitTests {
         func resolutionClasses() {
             func resolution(width: Int, height: Int) -> String? {
                 info(from: [
-                    MediaStream(height: height, type: .video, width: width)
+                    MediaStream(height: height, type: .video, width: width),
                 ])?.resolution
             }
 
@@ -371,18 +370,18 @@ struct JellyfinKitTests {
         @Test("SDR yields no range label; coarse HDR flag is the fallback")
         func videoRangeLabels() {
             let sdr = info(from: [
-                MediaStream(type: .video, videoRange: .sdr, videoRangeType: .sdr, width: 1920)
+                MediaStream(type: .video, videoRange: .sdr, videoRangeType: .sdr, width: 1920),
             ])
             #expect(sdr?.videoRange == nil)
             #expect(sdr?.resolution == "1080p")
 
             let coarseHDR = info(from: [
-                MediaStream(type: .video, videoRange: .hdr, width: 3840)
+                MediaStream(type: .video, videoRange: .hdr, width: 3840),
             ])
             #expect(coarseHDR?.videoRange == "HDR")
 
             let hdr10Plus = info(from: [
-                MediaStream(type: .video, videoRangeType: .hdr10Plus, width: 3840)
+                MediaStream(type: .video, videoRangeType: .hdr10Plus, width: 3840),
             ])
             #expect(hdr10Plus?.videoRange == "HDR10+")
         }
@@ -391,12 +390,12 @@ struct JellyfinKitTests {
         func audioLabels() {
             let surround = info(from: [
                 MediaStream(channels: 2, isDefault: false, type: .audio),
-                MediaStream(channels: 6, isDefault: true, type: .audio)
+                MediaStream(channels: 6, isDefault: true, type: .audio),
             ])
             #expect(surround?.audioFormat == "5.1")
 
             let stereo = info(from: [
-                MediaStream(channels: 2, type: .audio)
+                MediaStream(channels: 2, type: .audio),
             ])
             #expect(stereo?.audioFormat == "Stereo")
         }
@@ -415,11 +414,11 @@ struct JellyfinKitTests {
                     bitrate: 24_500_000,
                     container: "mov,mp4,m4a",
                     mediaStreams: [
-                        MediaStream(averageFrameRate: 23.976, codec: "hevc", type: .video, width: 3840)
+                        MediaStream(averageFrameRate: 23.976, codec: "hevc", type: .video, width: 3840),
                     ],
                     path: "C:\\Media\\Movies\\Example (2024)\\Example.2024.2160p.mkv",
-                    size: 4_200_000_000
-                )
+                    size: 4_200_000_000,
+                ),
             ]))
 
             #expect(info?.fileName == "Example.2024.2160p.mkv")
@@ -434,7 +433,7 @@ struct JellyfinKitTests {
         func fileNameFallsBackToItemPath() {
             let info = MediaTechnicalInfo(from: BaseItemDto(
                 mediaSources: [MediaSourceInfo(mediaStreams: [MediaStream(type: .video, width: 1920)])],
-                path: "/media/movies/example.mkv"
+                path: "/media/movies/example.mkv",
             ))
             #expect(info?.fileName == "example.mkv")
         }
@@ -448,7 +447,7 @@ struct JellyfinKitTests {
                 id: "lib-1",
                 name: "Movies",
                 collectionType: .movies,
-                childCount: 150
+                childCount: 150,
             )
 
             #expect(library.id == "lib-1")
@@ -506,8 +505,8 @@ struct JellyfinKitTests {
                 blurHashes: .init(
                     backdrop: ["bd-tag": "bd-hash"],
                     primary: ["other-key": "p-hash"],
-                    thumb: [:]
-                )
+                    thumb: [:],
+                ),
             )
 
             #expect(tags?.backdropBlurHash == "bd-hash")
@@ -523,8 +522,8 @@ struct JellyfinKitTests {
                 id: "1", name: "Movie", type: .movie,
                 imageTags: ImageTags(
                     primary: "p", thumb: "t",
-                    backdropBlurHash: "bd-hash", thumbBlurHash: "t-hash"
-                )
+                    backdropBlurHash: "bd-hash", thumbBlurHash: "t-hash",
+                ),
             )
             // No primary hash → poster falls to thumb.
             #expect(item.posterBlurHash == "t-hash")
@@ -539,7 +538,7 @@ struct JellyfinKitTests {
         // has its own `JellyfinClient`.
         private func makeClient(serverURL: String) -> JellyfinKit.JellyfinClient {
             JellyfinKit.JellyfinClient(
-                configuration: JellyfinClientConfiguration(serverURL: URL(string: serverURL)!)
+                configuration: JellyfinClientConfiguration(serverURL: URL(string: serverURL)!),
             )
         }
 
@@ -603,7 +602,7 @@ struct JellyfinKitTests {
                 clientName: "Custom Client",
                 clientVersion: "1.0.0",
                 deviceName: "Vision Pro",
-                deviceID: "custom-id"
+                deviceID: "custom-id",
             )
 
             #expect(config.clientName == "Custom Client")

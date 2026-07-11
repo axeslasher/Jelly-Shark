@@ -1,7 +1,7 @@
-import Testing
+@testable import Features
 import Foundation
 import JellyfinKit
-@testable import Features
+import Testing
 
 // MARK: - Mock Client
 
@@ -13,7 +13,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     let serverURL = URL(string: "https://example.com")!
     var currentUser: User?
-    var isAuthenticated: Bool { currentUser != nil }
+    var isAuthenticated: Bool {
+        currentUser != nil
+    }
+
     var accessToken: String?
 
     // Recorded calls
@@ -25,12 +28,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var nextEpisodeRequests: [String] = []
     var fetchCurrentUserCallCount = 0
 
-    // Stubbed responses
+    /// Stubbed responses
     var playbackInfoResult: Result<PlaybackSessionInfo, Error> = .success(
         PlaybackSessionInfo(
             playSessionId: "session-1",
-            mediaSources: [MediaSource(id: "source-1")]
-        )
+            mediaSources: [MediaSource(id: "source-1")],
+        ),
     )
     var nextEpisodeResult: MediaItem?
     var fetchCurrentUserResult: Result<User, Error> = .success(User(id: "user-1", name: "demo"))
@@ -42,7 +45,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var libraryItemsRequests: [(libraryId: String, query: LibraryQuery, limit: Int, startIndex: Int)] = []
     /// Pages served in request order; the last page repeats once exhausted
     var libraryItemsPages: [Result<MediaItemPage, Error>] = [
-        .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0))
+        .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0)),
     ]
     /// Optional gate awaited before serving a library page, for in-flight tests
     var libraryItemsDelay: (() async -> Void)?
@@ -52,7 +55,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Per-scan-query results; falls back to narrowedOptionsResult when nil
     var narrowedOptionsHandler: ((LibraryQuery) -> Result<LibraryFilterOptions?, Error>)?
 
-    func authenticate(username: String, password: String) async throws -> User {
+    func authenticate(username: String, password _: String) async throws -> User {
         let user = User(id: "user-1", name: username)
         currentUser = user
         accessToken = "token-1"
@@ -71,14 +74,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return user
     }
 
-    func getLibraries() async throws -> [Library] { try librariesResult.get() }
+    func getLibraries() async throws -> [Library] {
+        try librariesResult.get()
+    }
 
     func getLibraryItems(
         libraryId: String,
-        itemTypes: [MediaType]?,
+        itemTypes _: [MediaType]?,
         query: LibraryQuery,
         limit: Int,
-        startIndex: Int
+        startIndex: Int,
     ) async throws -> MediaItemPage {
         let result: Result<MediaItemPage, Error> = lock.withLock {
             libraryItemsRequests.append((libraryId, query, limit, startIndex))
@@ -89,14 +94,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
-    func getLibraryFilterOptions(libraryId: String, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions {
+    func getLibraryFilterOptions(libraryId _: String, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
         try filterOptionsResult.get()
     }
 
     func getLibraryFilterOptions(
-        libraryId: String,
-        itemTypes: [MediaType]?,
-        matching query: LibraryQuery
+        libraryId _: String,
+        itemTypes _: [MediaType]?,
+        matching query: LibraryQuery,
     ) async throws -> LibraryFilterOptions? {
         let result: Result<LibraryFilterOptions?, Error> = lock.withLock {
             narrowedOptionsRequests.append(query)
@@ -109,24 +114,28 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         MediaItem(id: itemId, name: "Item", type: .movie)
     }
 
-    func getSimilarItems(itemId: String, limit: Int?) async throws -> [MediaItem] { [] }
+    func getSimilarItems(itemId _: String, limit _: Int?) async throws -> [MediaItem] {
+        []
+    }
 
-    func searchItems(query: String, limit: Int?) async throws -> [MediaItem] {
+    func searchItems(query: String, limit _: Int?) async throws -> [MediaItem] {
         searchQueries.append(query)
         return try searchResult.get()
     }
 
-    func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL {
+    func getImageURL(itemId _: String, imageType _: ImageType, maxWidth _: Int?, maxHeight _: Int?) -> URL {
         serverURL
     }
 
-    func getPerson(personId: String) async throws -> Person { try personResult.get() }
+    func getPerson(personId _: String) async throws -> Person {
+        try personResult.get()
+    }
 
     func getItemsFeaturingPerson(
         personId: String,
         itemTypes: [MediaType],
-        personTypes: [String]?,
-        limit: Int?
+        personTypes _: [String]?,
+        limit _: Int?,
     ) async throws -> [MediaItem] {
         itemsFeaturingPersonRequests.append((personId, itemTypes))
         return []
@@ -140,15 +149,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try collectionItemsResult.get()
     }
 
-    func getResumeItems(limit: Int?) async throws -> [MediaItem] { [] }
+    func getResumeItems(limit _: Int?) async throws -> [MediaItem] {
+        []
+    }
 
-    func getLatestItems(libraryId: String?, limit: Int?) async throws -> [MediaItem] { [] }
+    func getLatestItems(libraryId _: String?, limit _: Int?) async throws -> [MediaItem] {
+        []
+    }
 
     func getPlaybackInfo(
         itemId: String,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
-        subtitleStreamIndex: Int?
+        subtitleStreamIndex: Int?,
     ) async throws -> PlaybackSessionInfo {
         playbackInfoRequests.append((itemId, startTimeTicks, audioStreamIndex, subtitleStreamIndex))
         return try playbackInfoResult.get()
@@ -158,43 +171,43 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         // Route through the real decision rule so tests exercise it end to end
         let method = source.playMethod(
             audioStreamIndex: parameters.audioStreamIndex,
-            subtitleStreamIndex: parameters.subtitleStreamIndex
+            subtitleStreamIndex: parameters.subtitleStreamIndex,
         )
         streamResolutions.append((source.id, parameters, method))
         return StreamResolution(
             url: URL(string: "https://example.com/Videos/\(parameters.itemId)/stream")!,
-            playMethod: method
+            playMethod: method,
         )
     }
 
     func reportPlaybackStart(
         itemId: String,
-        mediaSourceId: String?,
-        playSessionId: String?,
+        mediaSourceId _: String?,
+        playSessionId _: String?,
         positionTicks: Int64,
         playMethod: PlayMethod,
-        audioStreamIndex: Int?,
-        subtitleStreamIndex: Int?
+        audioStreamIndex _: Int?,
+        subtitleStreamIndex _: Int?,
     ) async throws {
         startReports.append((itemId, positionTicks, playMethod))
     }
 
     func reportPlaybackProgress(
         itemId: String,
-        mediaSourceId: String?,
-        playSessionId: String?,
+        mediaSourceId _: String?,
+        playSessionId _: String?,
         positionTicks: Int64,
         playMethod: PlayMethod,
-        isPaused: Bool
+        isPaused: Bool,
     ) async throws {
         progressReports.append((itemId, positionTicks, isPaused, playMethod))
     }
 
     func reportPlaybackStopped(
         itemId: String,
-        mediaSourceId: String?,
-        playSessionId: String?,
-        positionTicks: Int64
+        mediaSourceId _: String?,
+        playSessionId _: String?,
+        positionTicks: Int64,
     ) async throws {
         stopReports.append((itemId, positionTicks))
     }
@@ -204,14 +217,22 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return nextEpisodeResult
     }
 
-    func getSeasons(seriesId: String) async throws -> [MediaItem] { [] }
-    func getEpisodes(seriesId: String, seasonId: String?) async throws -> [MediaItem] { [] }
-    func getNextUpEpisode(seriesId: String) async throws -> MediaItem? { nil }
+    func getSeasons(seriesId _: String) async throws -> [MediaItem] {
+        []
+    }
 
-    func markPlayed(itemId: String) async throws {}
-    func markUnplayed(itemId: String) async throws {}
-    func markFavorite(itemId: String) async throws {}
-    func unmarkFavorite(itemId: String) async throws {}
+    func getEpisodes(seriesId _: String, seasonId _: String?) async throws -> [MediaItem] {
+        []
+    }
+
+    func getNextUpEpisode(seriesId _: String) async throws -> MediaItem? {
+        nil
+    }
+
+    func markPlayed(itemId _: String) async throws {}
+    func markUnplayed(itemId _: String) async throws {}
+    func markFavorite(itemId _: String) async throws {}
+    func unmarkFavorite(itemId _: String) async throws {}
 }
 
 // MARK: - Tests
@@ -225,7 +246,7 @@ struct PlaybackViewModelTests {
             name: "Test Movie",
             type: .movie,
             runTimeTicks: 72_000_000_000,
-            userData: resumeTicks.map { UserData(playbackPositionTicks: $0) }
+            userData: resumeTicks.map { UserData(playbackPositionTicks: $0) },
         )
     }
 
@@ -302,7 +323,7 @@ struct PlaybackViewModelTests {
         let viewModel = PlaybackViewModel(
             client: client,
             item: makeMovie(),
-            progressInterval: .milliseconds(50)
+            progressInterval: .milliseconds(50),
         )
 
         await viewModel.start()
@@ -419,10 +440,10 @@ struct PlaybackViewModelTests {
                         container: "mp4",
                         supportsDirectPlay: true,
                         supportsDirectStream: true,
-                        supportsTranscoding: true
+                        supportsTranscoding: true,
                     ),
-                ]
-            )
+                ],
+            ),
         )
     }
 

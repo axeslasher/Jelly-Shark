@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
-import Observation
 import JellyfinKit
+import Observation
 import OSLog
 
 /// View model for video playback
@@ -66,7 +66,7 @@ public final class PlaybackViewModel {
     public init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
-        progressInterval: Duration = .seconds(10)
+        progressInterval: Duration = .seconds(10),
     ) {
         self.client = client
         self.item = item
@@ -87,7 +87,7 @@ public final class PlaybackViewModel {
                 itemId: item.id,
                 startTimeTicks: resumeTicks > 0 ? resumeTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
-                subtitleStreamIndex: selectedSubtitleStreamIndex
+                subtitleStreamIndex: selectedSubtitleStreamIndex,
             )
 
             guard let source = session.defaultMediaSource else {
@@ -108,8 +108,8 @@ public final class PlaybackViewModel {
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
-                    subtitleStreamIndex: selectedSubtitleStreamIndex
-                )
+                    subtitleStreamIndex: selectedSubtitleStreamIndex,
+                ),
             )
             playMethod = resolution.playMethod
             logResolution(resolution, source: source, context: "start")
@@ -142,7 +142,7 @@ public final class PlaybackViewModel {
                 itemId: item.id,
                 mediaSourceId: mediaSource?.id,
                 playSessionId: playSessionId,
-                positionTicks: positionTicks
+                positionTicks: positionTicks,
             )
             Self.logger.info("[report] stopped ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
         } catch {
@@ -200,7 +200,7 @@ public final class PlaybackViewModel {
             await player.seek(
                 to: CMTime(seconds: seconds, preferredTimescale: 600),
                 toleranceBefore: .zero,
-                toleranceAfter: .positiveInfinity
+                toleranceAfter: .positiveInfinity,
             )
         }
 
@@ -215,7 +215,7 @@ public final class PlaybackViewModel {
                 positionTicks: resumeTicks,
                 playMethod: playMethod,
                 audioStreamIndex: selectedAudioStreamIndex,
-                subtitleStreamIndex: selectedSubtitleStreamIndex
+                subtitleStreamIndex: selectedSubtitleStreamIndex,
             )
             Self.logger.info("[report] start ok \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks) method=\(String(describing: self.playMethod), privacy: .public)")
         } catch {
@@ -245,7 +245,7 @@ public final class PlaybackViewModel {
                 itemId: item.id,
                 startTimeTicks: positionTicks > 0 ? positionTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
-                subtitleStreamIndex: selectedSubtitleStreamIndex
+                subtitleStreamIndex: selectedSubtitleStreamIndex,
             )
 
             guard let source = session.defaultMediaSource else {
@@ -263,8 +263,8 @@ public final class PlaybackViewModel {
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
-                    subtitleStreamIndex: selectedSubtitleStreamIndex
-                )
+                    subtitleStreamIndex: selectedSubtitleStreamIndex,
+                ),
             )
             playMethod = resolution.playMethod
             logResolution(resolution, source: source, context: "rebuild")
@@ -328,7 +328,7 @@ public final class PlaybackViewModel {
         endObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.didPlayToEndTimeNotification,
             object: playerItem,
-            queue: .main
+            queue: .main,
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 await self?.handlePlaybackEnded()
@@ -345,7 +345,8 @@ public final class PlaybackViewModel {
 
     func handlePlaybackEnded() async {
         if item.type == .episode,
-           let next = try? await client.getNextEpisode(after: item) {
+           let next = try? await client.getNextEpisode(after: item)
+        {
             nextEpisode = next
         } else {
             await stop()
@@ -364,7 +365,7 @@ public final class PlaybackViewModel {
                 playSessionId: playSessionId,
                 positionTicks: positionTicks,
                 playMethod: playMethod,
-                isPaused: player.timeControlStatus == .paused
+                isPaused: player.timeControlStatus == .paused,
             )
             // Success at debug level — one line every heartbeat is only
             // interesting when actively diagnosing

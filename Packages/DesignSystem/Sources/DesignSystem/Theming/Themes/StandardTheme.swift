@@ -27,23 +27,24 @@ public struct StandardTheme: Theme, Sendable {
     public let focusRing = BaseColors.white.opacity(0.8)
 
     // MARK: - Typography
-    //
-    // ┌────────────────────────────────────────────────────────────────────────┐
-    // │ SWAP FONTS HERE. Each role points at a `FontFamily` name (or `nil` for  │
-    // │ the system font / San Francisco). Mix and match freely, then rebuild.   │
-    // │                                                                          │
-    // │ Sizes, weights, emphasis weights, and tracking default to the Standard  │
-    // │ scale (TypographyTokens). To tune a role beyond its family, mutate the  │
-    // │ scheme in a closure initializer:                                         │
-    // │                                                                          │
-    // │   public let fonts: FontScheme = {                                       │
-    // │       var scheme = FontScheme(display: FontFamily.generalSans, ...)      │
-    // │       scheme.display.weight = .black   // heavier hero                   │
-    // │       scheme.display.size = 56         // x-height compensation          │
-    // │       scheme.body.emphasizedWeight = .bold  // what "emphasized" means   │
-    // │       return scheme                                                      │
-    // │   }()                                                                    │
-    // └────────────────────────────────────────────────────────────────────────┘
+
+    ///
+    /// ┌────────────────────────────────────────────────────────────────────────┐
+    /// │ SWAP FONTS HERE. Each role points at a `FontFamily` name (or `nil` for  │
+    /// │ the system font / San Francisco). Mix and match freely, then rebuild.   │
+    /// │                                                                          │
+    /// │ Sizes, weights, emphasis weights, and tracking default to the Standard  │
+    /// │ scale (TypographyTokens). To tune a role beyond its family, mutate the  │
+    /// │ scheme in a closure initializer:                                         │
+    /// │                                                                          │
+    /// │   public let fonts: FontScheme = {                                       │
+    /// │       var scheme = FontScheme(display: FontFamily.generalSans, ...)      │
+    /// │       scheme.display.weight = .black   // heavier hero                   │
+    /// │       scheme.display.size = 56         // x-height compensation          │
+    /// │       scheme.body.emphasizedWeight = .bold  // what "emphasized" means   │
+    /// │       return scheme                                                      │
+    /// │   }()                                                                    │
+    /// └────────────────────────────────────────────────────────────────────────┘
     public let fonts = FontScheme(
         display: FontFamily.generalSans,
         headline: FontFamily.generalSans,
@@ -55,8 +56,8 @@ public struct StandardTheme: Theme, Sendable {
         certificate: TypeStyle(
             family: FontFamily.zodiak,
             size: TypographyTokens.Size.certificate,
-            weight: TypographyTokens.Weight.certificate
-        )
+            weight: TypographyTokens.Weight.certificate,
+        ),
     )
 
     // MARK: - Motion

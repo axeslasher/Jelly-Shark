@@ -36,18 +36,18 @@ struct MediaDetailHeroBackdrop: View {
                                 stops: [
                                     .init(color: .black, location: 0.0),
                                     .init(color: .black.opacity(0.3), location: 0.3),
-                                    .init(color: .black.opacity(0), location: 0.6)
+                                    .init(color: .black.opacity(0), location: 0.6),
                                 ],
-                                startPoint: .bottom, endPoint: .top
+                                startPoint: .bottom, endPoint: .top,
                             )
                         }
                     LinearGradient(
                         stops: [
                             .init(color: theme.background, location: 0.0),
                             .init(color: theme.background.opacity(0.6), location: 0.3),
-                            .init(color: theme.background.opacity(0), location: 0.6)
+                            .init(color: theme.background.opacity(0), location: 0.6),
                         ],
-                        startPoint: .bottom, endPoint: .top
+                        startPoint: .bottom, endPoint: .top,
                     )
                 }
                 .opacity(1 - progress)

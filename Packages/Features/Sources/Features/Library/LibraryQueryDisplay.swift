@@ -1,24 +1,24 @@
 import Foundation
 import JellyfinKit
 
-/// Display language for library sort and filter state: menu phrases and the
-/// grid's dynamic title.
+// Display language for library sort and filter state: menu phrases and the
+// grid's dynamic title.
 
 extension LibrarySort {
     /// A plain-language phrase for sorting in the given direction, shown in
     /// place of ascending/descending jargon ("A to Z", "Fan Favorites", ...)
     func phrase(for direction: LibrarySortDirection) -> String {
         switch (self, direction) {
-        case (.name, .ascending): return "A to Z"
-        case (.name, .descending): return "Z to A"
-        case (.releaseDate, .descending): return "Newest First"
-        case (.releaseDate, .ascending): return "Oldest First"
-        case (.dateAdded, .descending): return "Newest Arrivals"
-        case (.dateAdded, .ascending): return "Oldest Arrivals"
-        case (.communityRating, .descending): return "Fan Favorites"
-        case (.communityRating, .ascending): return "Fan Scorned"
-        case (.criticRating, .descending): return "Critically Acclaimed"
-        case (.criticRating, .ascending): return "Critically Panned"
+        case (.name, .ascending): "A to Z"
+        case (.name, .descending): "Z to A"
+        case (.releaseDate, .descending): "Newest First"
+        case (.releaseDate, .ascending): "Oldest First"
+        case (.dateAdded, .descending): "Newest Arrivals"
+        case (.dateAdded, .ascending): "Oldest Arrivals"
+        case (.communityRating, .descending): "Fan Favorites"
+        case (.communityRating, .ascending): "Fan Scorned"
+        case (.criticRating, .descending): "Critically Acclaimed"
+        case (.criticRating, .ascending): "Critically Panned"
         }
     }
 
@@ -31,9 +31,9 @@ extension LibrarySort {
 extension WatchedFilter {
     var displayName: String {
         switch self {
-        case .any: return "Any"
-        case .unplayed: return "Unwatched"
-        case .played: return "Watched"
+        case .any: "Any"
+        case .unplayed: "Unwatched"
+        case .played: "Watched"
         }
     }
 }
@@ -78,9 +78,9 @@ extension LibraryQuery {
     /// "Horror", "Horror & Comedy", or "Horror, Comedy & More"
     private static func shortList(_ values: [String]) -> String {
         switch values.count {
-        case 1: return values[0]
-        case 2: return "\(values[0]) & \(values[1])"
-        default: return "\(values[0]), \(values[1]) & More"
+        case 1: values[0]
+        case 2: "\(values[0]) & \(values[1])"
+        default: "\(values[0]), \(values[1]) & More"
         }
     }
 }

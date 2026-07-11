@@ -1,5 +1,5 @@
-import SwiftUI
 import DesignSystem
+import SwiftUI
 
 /// Settings screen for app configuration
 public struct SettingsView: View {
@@ -16,9 +16,9 @@ public struct SettingsView: View {
         case themeSelection
     }
 
-    // No NavigationStack here: RootView owns each tab's stack (with a path
-    // binding) so it can pop to root before a tab switch — see RootView's
-    // `tabSelection` for the tvOS bug this works around.
+    /// No NavigationStack here: RootView owns each tab's stack (with a path
+    /// binding) so it can pop to root before a tab switch — see RootView's
+    /// `tabSelection` for the tvOS bug this works around.
     public var body: some View {
         List {
             pageTitle("Settings")
@@ -29,7 +29,7 @@ public struct SettingsView: View {
                     settingsRow(
                         icon: "server.rack",
                         title: "Server",
-                        subtitle: serverSubtitle
+                        subtitle: serverSubtitle,
                     )
                 }
             } header: {
@@ -42,7 +42,7 @@ public struct SettingsView: View {
                     settingsRow(
                         icon: "paintpalette.fill",
                         title: "Theme",
-                        subtitle: themeManager.currentTheme.name
+                        subtitle: themeManager.currentTheme.name,
                     )
                 }
             } header: {
@@ -54,7 +54,7 @@ public struct SettingsView: View {
                 settingsRow(
                     icon: "play.circle.fill",
                     title: "Playback",
-                    subtitle: "Quality, subtitles, audio"
+                    subtitle: "Quality, subtitles, audio",
                 )
             } header: {
                 sectionHeader("Playback")
@@ -65,7 +65,7 @@ public struct SettingsView: View {
                 settingsRow(
                     icon: "info.circle.fill",
                     title: "About",
-                    subtitle: "Version 0.0.1"
+                    subtitle: "Version 0.0.1",
                 )
             } header: {
                 sectionHeader("About")
@@ -134,7 +134,7 @@ public struct SettingsView: View {
                     ThemeRowLabel(
                         name: themeId.displayName,
                         description: themeDescription(for: themeId),
-                        isSelected: themeManager.currentThemeId == themeId
+                        isSelected: themeManager.currentThemeId == themeId,
                     )
                 }
                 .buttonStyle(.plain)
@@ -150,15 +150,15 @@ public struct SettingsView: View {
     private func themeDescription(for themeId: ThemeIdentifier) -> String {
         switch themeId {
         case .standard:
-            return "Elegant, timeless baseline"
+            "Elegant, timeless baseline"
         case .horror:
-            return "Atmospheric dread, visceral intensity"
+            "Atmospheric dread, visceral intensity"
         case .action:
-            return "Kinetic energy, technological precision"
+            "Kinetic energy, technological precision"
         case .videoStore:
-            return "90s nostalgia, Friday night vibes"
+            "90s nostalgia, Friday night vibes"
         case .sciFi:
-            return "Deep-space greens, engineered precision"
+            "Deep-space greens, engineered precision"
         }
     }
 }

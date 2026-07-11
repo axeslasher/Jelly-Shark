@@ -13,13 +13,13 @@ struct CreditsColumn: View {
             if !directorNames.isEmpty {
                 CreditEntry(
                     label: directorNames.count > 1 ? "Directed by" : "Director",
-                    value: directorNames.formatted(.list(type: .and))
+                    value: directorNames.formatted(.list(type: .and)),
                 )
             }
             if !castNames.isEmpty {
                 CreditEntry(
                     label: "Starring",
-                    value: castNames.formatted(.list(type: .and))
+                    value: castNames.formatted(.list(type: .and)),
                 )
             }
         }

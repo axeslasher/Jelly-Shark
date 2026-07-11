@@ -74,7 +74,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     public let seriesName: String?
     public let seasonId: String?
     public let seasonName: String?
-    public let indexNumber: Int?       // Episode number
+    public let indexNumber: Int? // Episode number
     public let parentIndexNumber: Int? // Season number
 
     /// Cast and crew credited on this item (populated on detail fetches)
@@ -114,7 +114,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         indexNumber: Int? = nil,
         parentIndexNumber: Int? = nil,
         people: [CastMember]? = nil,
-        parentArtwork: ParentArtwork? = nil
+        parentArtwork: ParentArtwork? = nil,
     ) {
         self.id = id
         self.name = name
@@ -168,7 +168,7 @@ public struct ParentArtwork: Sendable, Equatable, Hashable {
         backdropImageTag: String? = nil,
         logoItemId: String? = nil,
         logoImageTag: String? = nil,
-        seriesPrimaryImageTag: String? = nil
+        seriesPrimaryImageTag: String? = nil,
     ) {
         self.backdropItemId = backdropItemId
         self.backdropImageTag = backdropImageTag
@@ -218,7 +218,7 @@ public struct ImageTags: Sendable, Equatable, Hashable {
         logo: String? = nil,
         primaryBlurHash: String? = nil,
         backdropBlurHash: String? = nil,
-        thumbBlurHash: String? = nil
+        thumbBlurHash: String? = nil,
     ) {
         self.primary = primary
         self.backdrop = backdrop
@@ -298,7 +298,7 @@ public struct MediaTechnicalInfo: Sendable, Equatable, Hashable {
         container: String? = nil,
         videoCodec: String? = nil,
         bitrate: Int? = nil,
-        frameRate: Double? = nil
+        frameRate: Double? = nil,
     ) {
         self.resolution = resolution
         self.videoRange = videoRange
@@ -338,7 +338,7 @@ public struct UserData: Sendable, Equatable, Hashable {
         playCount: Int? = nil,
         isFavorite: Bool = false,
         played: Bool = false,
-        lastPlayedDate: Date? = nil
+        lastPlayedDate: Date? = nil,
     ) {
         self.playbackPositionTicks = playbackPositionTicks
         self.playCount = playCount
@@ -350,15 +350,15 @@ public struct UserData: Sendable, Equatable, Hashable {
 
 // MARK: - Computed Properties
 
-extension MediaItem {
+public extension MediaItem {
     /// Runtime formatted as hours and minutes
-    public var formattedRuntime: String? {
+    var formattedRuntime: String? {
         runTimeTicks.map(Self.runtimeText)
     }
 
     /// Time left in an in-progress item, in the same "1h 5m" style as
     /// `formattedRuntime`; nil without both a playback position and a runtime
-    public var formattedRemainingRuntime: String? {
+    var formattedRemainingRuntime: String? {
         guard let position = userData?.playbackPositionTicks,
               let total = runTimeTicks,
               total > position
@@ -379,7 +379,7 @@ extension MediaItem {
     }
 
     /// Progress percentage (0.0 - 1.0)
-    public var progressPercentage: Double? {
+    var progressPercentage: Double? {
         guard let position = userData?.playbackPositionTicks,
               let total = runTimeTicks,
               total > 0 else { return nil }
@@ -387,7 +387,7 @@ extension MediaItem {
     }
 
     /// Whether the user has started watching this item
-    public var hasProgress: Bool {
+    var hasProgress: Bool {
         guard let percentage = progressPercentage else { return false }
         return percentage > 0 && percentage < 1
     }
@@ -395,7 +395,7 @@ extension MediaItem {
     /// Year text for display: a plain year for most items, a span for series —
     /// "2008–2013" when ended (single year if it ended the year it started),
     /// "2008–" while continuing.
-    public var yearSpanText: String? {
+    var yearSpanText: String? {
         guard let year = productionYear else { return nil }
         guard type == .series else { return String(year) }
 
@@ -412,37 +412,37 @@ extension MediaItem {
     /// BlurHash for a poster slot, mirroring `posterURL`'s primary → thumb
     /// resolution order. (Ancestor-art fallbacks carry no hashes; a nil here
     /// just means the icon placeholder.)
-    public var posterBlurHash: String? {
+    var posterBlurHash: String? {
         imageTags?.primaryBlurHash ?? imageTags?.thumbBlurHash
     }
 
     /// BlurHash for a backdrop slot, mirroring `backdropURL`'s backdrop → thumb
     /// resolution order
-    public var backdropBlurHash: String? {
+    var backdropBlurHash: String? {
         imageTags?.backdropBlurHash ?? imageTags?.thumbBlurHash
     }
 
     /// BlurHash for a landscape card, mirroring `landscapeURL`'s thumb →
     /// backdrop → primary resolution order
-    public var landscapeBlurHash: String? {
+    var landscapeBlurHash: String? {
         imageTags?.thumbBlurHash ?? imageTags?.backdropBlurHash ?? imageTags?.primaryBlurHash
     }
 
     /// Season count for series (e.g., "3 Seasons"); nil for other types
-    public var seasonCountText: String? {
+    var seasonCountText: String? {
         guard type == .series, let count = childCount, count > 0 else { return nil }
         return count == 1 ? "1 Season" : "\(count) Seasons"
     }
 
     /// Content count for collections (e.g., "4 Movies"); nil for other types
-    public var collectionCountText: String? {
+    var collectionCountText: String? {
         guard type == .boxSet, let count = childCount, count > 0 else { return nil }
         return count == 1 ? "1 Movie" : "\(count) Movies"
     }
 
     /// Compact season/episode code (e.g., "S2E4"); nil unless the item is an
     /// episode carrying both numbers
-    public var episodeCode: String? {
+    var episodeCode: String? {
         guard type == .episode,
               let season = parentIndexNumber,
               let episode = indexNumber
@@ -451,7 +451,7 @@ extension MediaItem {
     }
 
     /// Display title for episodes (e.g., "S01E05 - Episode Title")
-    public var episodeDisplayTitle: String? {
+    var episodeDisplayTitle: String? {
         guard type == .episode,
               let season = parentIndexNumber,
               let episode = indexNumber else { return nil }

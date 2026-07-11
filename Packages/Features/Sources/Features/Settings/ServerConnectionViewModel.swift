@@ -1,6 +1,6 @@
 import Foundation
-import Observation
 import JellyfinKit
+import Observation
 
 /// Connection state for the server connection flow
 public enum ConnectionState: Equatable, Sendable {
@@ -55,7 +55,7 @@ public final class ServerConnectionViewModel {
     /// Factory for building clients (injectable for tests); the saved session
     /// is non-nil when restoring rather than authenticating fresh
     private let makeClient: @MainActor (
-        JellyfinClientConfiguration, _ restoredSession: SavedSession?
+        JellyfinClientConfiguration, _ restoredSession: SavedSession?,
     ) -> any JellyfinClientProtocol
 
     // MARK: - Initialization
@@ -63,14 +63,14 @@ public final class ServerConnectionViewModel {
     public init(
         sessionStore: any SessionStoring = SessionStore(),
         makeClient: @escaping @MainActor (
-            JellyfinClientConfiguration, SavedSession?
+            JellyfinClientConfiguration, SavedSession?,
         ) -> any JellyfinClientProtocol = { configuration, restored in
             JellyfinClient(
                 configuration: configuration,
                 accessToken: restored?.accessToken,
-                userID: restored?.userID
+                userID: restored?.userID,
             )
-        }
+        },
     ) {
         self.sessionStore = sessionStore
         self.makeClient = makeClient
@@ -86,7 +86,7 @@ public final class ServerConnectionViewModel {
     /// Connect to the server and authenticate
     public func connect() async {
         // Ignore re-entrant taps while a connection attempt is in flight
-        guard state != .connecting && state != .authenticating else { return }
+        guard state != .connecting, state != .authenticating else { return }
 
         // Clear previous error
         errorMessage = nil
@@ -153,7 +153,7 @@ public final class ServerConnectionViewModel {
 
     /// Disconnect from the server
     public func disconnect() async {
-        if let client = client {
+        if let client {
             await client.signOut()
         }
 
@@ -194,11 +194,11 @@ public final class ServerConnectionViewModel {
     /// Device name based on platform
     private var deviceName: String {
         #if os(tvOS)
-        return "Apple TV"
+            return "Apple TV"
         #elseif os(visionOS)
-        return "Apple Vision Pro"
+            return "Apple Vision Pro"
         #else
-        return "Apple Device"
+            return "Apple Device"
         #endif
     }
 
@@ -213,7 +213,7 @@ public final class ServerConnectionViewModel {
         JellyfinClientConfiguration(
             serverURL: serverURL,
             deviceName: deviceName,
-            deviceID: deviceID
+            deviceID: deviceID,
         )
     }
 
@@ -233,7 +233,7 @@ public final class ServerConnectionViewModel {
         // A failed Keychain write should not fail a live connection; the
         // session simply won't be restored on the next launch
         try? sessionStore.save(
-            SavedSession(serverURL: serverURL, userID: user.id, accessToken: accessToken)
+            SavedSession(serverURL: serverURL, userID: user.id, accessToken: accessToken),
         )
     }
 }

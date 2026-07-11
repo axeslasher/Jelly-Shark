@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Full-screen container for video playback
 ///
@@ -28,7 +28,7 @@ public struct PlaybackContainerView: View {
             case .playing:
                 playerView
 
-            case .failed(let message):
+            case let .failed(message):
                 errorView(message)
 
             case .finished:
@@ -43,7 +43,7 @@ public struct PlaybackContainerView: View {
                     },
                     onCancel: {
                         viewModel.cancelAutoplay()
-                    }
+                    },
                 )
             }
         }
@@ -64,25 +64,25 @@ public struct PlaybackContainerView: View {
     @ViewBuilder
     private var playerView: some View {
         #if canImport(UIKit)
-        if let player = viewModel.player {
-            PlayerViewControllerRepresentable(
-                player: player,
-                audioStreams: viewModel.mediaSource?.audioStreams ?? [],
-                subtitleStreams: viewModel.mediaSource?.subtitleStreams ?? [],
-                selectedAudioIndex: viewModel.selectedAudioStreamIndex,
-                selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
-                onSelectAudio: { index in
-                    Task { await viewModel.selectAudioStream(index: index) }
-                },
-                onSelectSubtitle: { index in
-                    Task { await viewModel.selectSubtitleStream(index: index) }
-                }
-            )
-        }
+            if let player = viewModel.player {
+                PlayerViewControllerRepresentable(
+                    player: player,
+                    audioStreams: viewModel.mediaSource?.audioStreams ?? [],
+                    subtitleStreams: viewModel.mediaSource?.subtitleStreams ?? [],
+                    selectedAudioIndex: viewModel.selectedAudioStreamIndex,
+                    selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
+                    onSelectAudio: { index in
+                        Task { await viewModel.selectAudioStream(index: index) }
+                    },
+                    onSelectSubtitle: { index in
+                        Task { await viewModel.selectSubtitleStream(index: index) }
+                    },
+                )
+            }
         #else
-        Text("Playback is not supported on this platform")
-            .jsStyle(.body)
-            .foregroundStyle(theme.secondary)
+            Text("Playback is not supported on this platform")
+                .jsStyle(.body)
+                .foregroundStyle(theme.secondary)
         #endif
     }
 

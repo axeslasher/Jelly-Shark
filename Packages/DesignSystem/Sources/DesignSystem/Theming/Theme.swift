@@ -129,11 +129,11 @@ public enum ThemeIdentifier: String, CaseIterable, Sendable, Codable {
 
     public var displayName: String {
         switch self {
-        case .standard: return "Standard"
-        case .horror: return "Horror"
-        case .action: return "Action"
-        case .videoStore: return "Video Store"
-        case .sciFi: return "Sci-Fi"
+        case .standard: "Standard"
+        case .horror: "Horror"
+        case .action: "Action"
+        case .videoStore: "Video Store"
+        case .sciFi: "Sci-Fi"
         }
     }
 }
@@ -141,27 +141,61 @@ public enum ThemeIdentifier: String, CaseIterable, Sendable, Codable {
 // MARK: - Default Values
 
 public extension Theme {
-    // Default focus platter: the untinted system platter with the standard
-    // on-platter content colors
-    var focusFill: Color? { nil }
-    var onFocusFill: Color { onPlatter }
-    var onFocusFillSecondary: Color { onPlatterSecondary }
+    /// Default focus platter: the untinted system platter with the standard
+    /// on-platter content colors
+    var focusFill: Color? {
+        nil
+    }
 
-    // Default typography (can be overridden)
-    var fonts: FontScheme { .system }
+    var onFocusFill: Color {
+        onPlatter
+    }
 
-    // Default spacing
-    var spacingUnit: CGFloat { SpacingTokens.unit }
-    var cardPadding: CGFloat { SpacingTokens.cardPadding }
-    var sectionSpacing: CGFloat { SpacingTokens.sectionSpacing }
+    var onFocusFillSecondary: Color {
+        onPlatterSecondary
+    }
 
-    // Default motion
-    var transitionDuration: TimeInterval { MotionTokens.durationNormal }
-    var animation: Animation { MotionTokens.standard }
-    var focusScale: CGFloat { MotionTokens.focusScale }
+    /// Default typography (can be overridden)
+    var fonts: FontScheme {
+        .system
+    }
 
-    // Default geometry
-    var cornerRadius: CGFloat { 8 }
-    var cornerRadiusLarge: CGFloat { 16 }
-    var borderWidth: CGFloat { 1 }
+    /// Default spacing
+    var spacingUnit: CGFloat {
+        SpacingTokens.unit
+    }
+
+    var cardPadding: CGFloat {
+        SpacingTokens.cardPadding
+    }
+
+    var sectionSpacing: CGFloat {
+        SpacingTokens.sectionSpacing
+    }
+
+    /// Default motion
+    var transitionDuration: TimeInterval {
+        MotionTokens.durationNormal
+    }
+
+    var animation: Animation {
+        MotionTokens.standard
+    }
+
+    var focusScale: CGFloat {
+        MotionTokens.focusScale
+    }
+
+    /// Default geometry
+    var cornerRadius: CGFloat {
+        8
+    }
+
+    var cornerRadiusLarge: CGFloat {
+        16
+    }
+
+    var borderWidth: CGFloat {
+        1
+    }
 }

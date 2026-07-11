@@ -44,8 +44,8 @@ public struct ActionTheme: Theme, Sendable {
             certificate: TypeStyle(
                 family: FontFamily.zodiak,
                 size: TypographyTokens.Size.certificate,
-                weight: TypographyTokens.Weight.certificate
-            )
+                weight: TypographyTokens.Weight.certificate,
+            ),
         )
         scheme.display.weight = .heavy
         scheme.display.tracking = TypographyTokens.Tracking.tight
@@ -58,7 +58,7 @@ public struct ActionTheme: Theme, Sendable {
         scheme.body.weight = .semibold
         return scheme
     }()
-    
+
     // MARK: - Motion
 
     public let transitionDuration: TimeInterval = 0.2

@@ -1,6 +1,6 @@
 import Foundation
-import Observation
 import JellyfinKit
+import Observation
 
 /// View model backing the search screen.
 ///
@@ -69,7 +69,9 @@ public final class SearchViewModel {
             if seen.insert(name).inserted {
                 ordered.append(name)
             }
-            if ordered.count == 8 { break }
+            if ordered.count == 8 {
+                break
+            }
         }
         return ordered
     }

@@ -1,7 +1,7 @@
-import Testing
+@testable import Features
 import Foundation
 import JellyfinKit
-@testable import Features
+import Testing
 
 // MARK: - In-Memory Session Store
 
@@ -49,14 +49,14 @@ struct ServerConnectionViewModelTests {
         SavedSession(
             serverURL: URL(string: "https://demo.jellyfin.org/stable")!,
             userID: "user-1",
-            accessToken: "token-1"
+            accessToken: "token-1",
         )
     }
 
     private func makeViewModel(
         store: InMemorySessionStore,
         client: MockJellyfinClient,
-        recorder: FactoryRecorder
+        recorder: FactoryRecorder,
     ) -> ServerConnectionViewModel {
         ServerConnectionViewModel(sessionStore: store) { configuration, restored in
             recorder.configurations.append(configuration)
@@ -171,7 +171,7 @@ struct ServerConnectionViewModelTests {
         #expect(store.session == SavedSession(
             serverURL: URL(string: "https://demo.jellyfin.org/stable")!,
             userID: "user-1",
-            accessToken: "token-1"
+            accessToken: "token-1",
         ))
     }
 

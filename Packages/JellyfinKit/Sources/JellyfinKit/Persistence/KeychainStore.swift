@@ -27,11 +27,11 @@ public struct KeychainStore: Sendable {
         var query = baseQuery(for: key)
         query[kSecValueData as String] = data
         #if !os(macOS)
-        // Shipping platforms (tvOS/visionOS) always set this. Guarded off only
-        // on the macOS host, where JellyfinKit's Keychain tests run under
-        // `swift test`: an unsigned test runner can hit the data-protection
-        // keychain this attribute requires and fail with errSecMissingEntitlement.
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            // Shipping platforms (tvOS/visionOS) always set this. Guarded off only
+            // on the macOS host, where JellyfinKit's Keychain tests run under
+            // `swift test`: an unsigned test runner can hit the data-protection
+            // keychain this attribute requires and fail with errSecMissingEntitlement.
+            query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         #endif
 
         let status = SecItemAdd(query as CFDictionary, nil)
@@ -40,7 +40,7 @@ public struct KeychainStore: Sendable {
             let attributes = [kSecValueData as String: data]
             let updateStatus = SecItemUpdate(
                 baseQuery(for: key) as CFDictionary,
-                attributes as CFDictionary
+                attributes as CFDictionary,
             )
             guard updateStatus == errSecSuccess else {
                 throw KeychainError.unexpectedStatus(updateStatus)
@@ -103,7 +103,7 @@ public struct KeychainStore: Sendable {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: key
+            kSecAttrAccount as String: key,
         ]
     }
 }

@@ -25,7 +25,7 @@ public struct Library: Identifiable, Sendable, Equatable, Hashable {
         name: String,
         collectionType: CollectionType? = nil,
         primaryImageTag: String? = nil,
-        childCount: Int? = nil
+        childCount: Int? = nil,
     ) {
         self.id = id
         self.name = name
@@ -37,17 +37,17 @@ public struct Library: Identifiable, Sendable, Equatable, Hashable {
 
 /// Types of library collections in Jellyfin
 public enum CollectionType: String, Sendable, Hashable {
-    case movies = "movies"
-    case tvshows = "tvshows"
-    case music = "music"
-    case musicvideos = "musicvideos"
-    case homevideos = "homevideos"
-    case boxsets = "boxsets"
-    case books = "books"
-    case photos = "photos"
-    case livetv = "livetv"
-    case playlists = "playlists"
-    case folders = "folders"
+    case movies
+    case tvshows
+    case music
+    case musicvideos
+    case homevideos
+    case boxsets
+    case books
+    case photos
+    case livetv
+    case playlists
+    case folders
     case unknown
 }
 
@@ -58,45 +58,45 @@ public extension CollectionType {
     /// (mixed/unknown libraries show everything).
     var gridItemTypes: [MediaType]? {
         switch self {
-        case .movies: return [.movie]
-        case .tvshows: return [.series]
-        case .boxsets: return [.boxSet]
-        case .music: return [.musicAlbum]
-        default: return nil
+        case .movies: [.movie]
+        case .tvshows: [.series]
+        case .boxsets: [.boxSet]
+        case .music: [.musicAlbum]
+        default: nil
         }
     }
 }
 
 // MARK: - Computed Properties
 
-extension Library {
+public extension Library {
     /// SF Symbol name for the library type
-    public var systemImageName: String {
+    var systemImageName: String {
         switch collectionType {
         case .movies:
-            return "film.fill"
+            "film.fill"
         case .tvshows:
-            return "tv.fill"
+            "tv.fill"
         case .music:
-            return "music.note"
+            "music.note"
         case .musicvideos:
-            return "music.note.tv.fill"
+            "music.note.tv.fill"
         case .homevideos:
-            return "video.fill"
+            "video.fill"
         case .boxsets:
-            return "film.stack.fill"
+            "film.stack.fill"
         case .books:
-            return "book.fill"
+            "book.fill"
         case .photos:
-            return "photo.fill"
+            "photo.fill"
         case .livetv:
-            return "antenna.radiowaves.left.and.right"
+            "antenna.radiowaves.left.and.right"
         case .playlists:
-            return "music.note.list"
+            "music.note.list"
         case .folders:
-            return "folder.fill"
+            "folder.fill"
         case .unknown, .none:
-            return "questionmark.folder.fill"
+            "questionmark.folder.fill"
         }
     }
 }

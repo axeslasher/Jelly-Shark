@@ -1,10 +1,9 @@
-import Testing
-import SwiftUI
 @testable import DesignSystem
+import SwiftUI
+import Testing
 
 @Suite("DesignSystem Tests")
 struct DesignSystemTests {
-
     @Suite("Theme Tests")
     struct ThemeTests {
         @Test("StandardTheme has correct identity")

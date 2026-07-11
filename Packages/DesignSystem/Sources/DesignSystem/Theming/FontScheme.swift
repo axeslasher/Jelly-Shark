@@ -1,20 +1,21 @@
-import SwiftUI
 import CoreText
+import SwiftUI
 
 // MARK: - Font family names
-//
-// ┌──────────────────────────────────────────────────────────────────────────┐
-// │ THIS IS WHERE YOU SWAP FONTS.                                              │
-// │                                                                            │
-// │ `FontFamily` holds the registered name `Font.custom(_:)` needs. These are  │
-// │ best-guesses for the Fontshare variable files. If a font isn't applying,   │
-// │ launch a DEBUG build and read the console — `registerAll()` prints every   │
-// │ name the OS actually registered — then correct the strings below.          │
-// │                                                                            │
-// │ To change which typeface a role uses, edit the theme's `fonts` scheme      │
-// │ (see `StandardTheme.fonts`), NOT the call sites. Every `.font(theme.jsTitle)`│
-// │ etc. resolves through that view's theme environment automatically.         │
-// └──────────────────────────────────────────────────────────────────────────┘
+
+///
+/// ┌──────────────────────────────────────────────────────────────────────────┐
+/// │ THIS IS WHERE YOU SWAP FONTS.                                              │
+/// │                                                                            │
+/// │ `FontFamily` holds the registered name `Font.custom(_:)` needs. These are  │
+/// │ best-guesses for the Fontshare variable files. If a font isn't applying,   │
+/// │ launch a DEBUG build and read the console — `registerAll()` prints every   │
+/// │ name the OS actually registered — then correct the strings below.          │
+/// │                                                                            │
+/// │ To change which typeface a role uses, edit the theme's `fonts` scheme      │
+/// │ (see `StandardTheme.fonts`), NOT the call sites. Every `.font(theme.jsTitle)`│
+/// │ etc. resolves through that view's theme environment automatically.         │
+/// └──────────────────────────────────────────────────────────────────────────┘
 public enum FontFamily {
     // These are the registered FAMILY names (not filenames / PostScript names).
     // `Font.custom` resolves a variable font by family, and `.weight(_:)` then
@@ -113,7 +114,7 @@ public struct TypeStyle: Sendable {
         subtleWeight: Font.Weight = TypographyTokens.Weight.subtle,
         emphasizedWeight: Font.Weight = TypographyTokens.Weight.emphasized,
         strongWeight: Font.Weight = TypographyTokens.Weight.strong,
-        tracking: CGFloat = TypographyTokens.Tracking.normal
+        tracking: CGFloat = TypographyTokens.Tracking.normal,
     ) {
         self.family = family
         self.size = size
@@ -142,10 +143,10 @@ public enum TypeEmphasis: Sendable {
 extension TypeStyle {
     func weight(for emphasis: TypeEmphasis) -> Font.Weight {
         switch emphasis {
-        case .regular: return weight
-        case .subtle: return subtleWeight
-        case .emphasized: return emphasizedWeight
-        case .strong: return strongWeight
+        case .regular: weight
+        case .subtle: subtleWeight
+        case .emphasized: emphasizedWeight
+        case .strong: strongWeight
         }
     }
 
@@ -205,49 +206,49 @@ public struct FontScheme: Sendable {
         certificate: TypeStyle = TypeStyle(
             family: FontFamily.zodiak,
             size: TypographyTokens.Size.certificate,
-            weight: TypographyTokens.Weight.certificate
-        )
+            weight: TypographyTokens.Weight.certificate,
+        ),
     ) {
         self.display = TypeStyle(
             family: display,
             size: TypographyTokens.Size.display,
-            weight: TypographyTokens.Weight.display
+            weight: TypographyTokens.Weight.display,
         )
         self.headline = TypeStyle(
             family: headline,
             size: TypographyTokens.Size.headline,
-            weight: TypographyTokens.Weight.headline
+            weight: TypographyTokens.Weight.headline,
         )
         self.title = TypeStyle(
             family: title,
             size: TypographyTokens.Size.title,
-            weight: TypographyTokens.Weight.title
+            weight: TypographyTokens.Weight.title,
         )
         self.overview = TypeStyle(
             family: overview,
             size: TypographyTokens.Size.overview,
-            weight: TypographyTokens.Weight.overview
+            weight: TypographyTokens.Weight.overview,
         )
         self.body = TypeStyle(
             family: body,
             size: TypographyTokens.Size.body,
-            weight: TypographyTokens.Weight.body
+            weight: TypographyTokens.Weight.body,
         )
         self.caption = TypeStyle(
             family: caption,
             size: TypographyTokens.Size.caption,
-            weight: TypographyTokens.Weight.caption
+            weight: TypographyTokens.Weight.caption,
         )
         self.small = TypeStyle(
             family: small,
             size: TypographyTokens.Size.small,
-            weight: TypographyTokens.Weight.small
+            weight: TypographyTokens.Weight.small,
         )
         self.eyebrow = eyebrow ?? TypeStyle(
             family: caption,
             size: TypographyTokens.Size.eyebrow,
             weight: TypographyTokens.Weight.eyebrow,
-            tracking: TypographyTokens.Tracking.wide
+            tracking: TypographyTokens.Tracking.wide,
         )
         self.certificate = certificate
     }
@@ -259,15 +260,15 @@ public struct FontScheme: Sendable {
 
     public subscript(role: TypeRole) -> TypeStyle {
         switch role {
-        case .display: return display
-        case .headline: return headline
-        case .title: return title
-        case .overview: return overview
-        case .body: return body
-        case .caption: return caption
-        case .small: return small
-        case .eyebrow: return eyebrow
-        case .certificate: return certificate
+        case .display: display
+        case .headline: headline
+        case .title: title
+        case .overview: overview
+        case .body: body
+        case .caption: caption
+        case .small: small
+        case .eyebrow: eyebrow
+        case .certificate: certificate
         }
     }
 }
@@ -288,31 +289,31 @@ public enum DesignSystemFonts {
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
         #if DEBUG
-        debugPrintRegisteredNames()
+            debugPrintRegisteredNames()
         #endif
     }
 
     #if DEBUG
-    /// Print the family + PostScript names the OS registered for the bundled
-    /// fonts, so you can confirm/correct the `FontFamily` constants.
-    public static func debugPrintRegisteredNames() {
-        let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
-        guard !urls.isEmpty else {
-            print("[DesignSystemFonts] No bundled .ttf found — using system font. See Resources/Fonts/FONTS.md.")
-            return
+        /// Print the family + PostScript names the OS registered for the bundled
+        /// fonts, so you can confirm/correct the `FontFamily` constants.
+        public static func debugPrintRegisteredNames() {
+            let urls = Bundle.module.urls(forResourcesWithExtension: "ttf", subdirectory: nil) ?? []
+            guard !urls.isEmpty else {
+                print("[DesignSystemFonts] No bundled .ttf found — using system font. See Resources/Fonts/FONTS.md.")
+                return
+            }
+            for url in urls {
+                // Family name is what `Font.custom(_:)` / `FontFamily` should use.
+                let family = (CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor])?
+                    .first
+                    .flatMap { CTFontDescriptorCopyAttribute($0, kCTFontFamilyNameAttribute) as? String }
+                    ?? "?"
+                let psName = CGDataProvider(url: url as CFURL)
+                    .flatMap { CGFont($0) }
+                    .flatMap { $0.postScriptName as String? }
+                    ?? "?"
+                print("[DesignSystemFonts] \(url.lastPathComponent) → family: \"\(family)\"  postScript: \"\(psName)\"")
+            }
         }
-        for url in urls {
-            // Family name is what `Font.custom(_:)` / `FontFamily` should use.
-            let family = (CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor])?
-                .first
-                .flatMap { CTFontDescriptorCopyAttribute($0, kCTFontFamilyNameAttribute) as? String }
-                ?? "?"
-            let psName = CGDataProvider(url: url as CFURL)
-                .flatMap { CGFont($0) }
-                .flatMap { $0.postScriptName as String? }
-                ?? "?"
-            print("[DesignSystemFonts] \(url.lastPathComponent) → family: \"\(family)\"  postScript: \"\(psName)\"")
-        }
-    }
     #endif
 }

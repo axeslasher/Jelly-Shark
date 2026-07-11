@@ -78,7 +78,7 @@ struct MediaDetailHeroSection: View {
                         certificate: item.officialRating,
                         resolution: item.technicalInfo?.resolution,
                         videoRange: item.technicalInfo?.videoRange,
-                        audioFormat: item.technicalInfo?.audioFormat
+                        audioFormat: item.technicalInfo?.audioFormat,
                     )
                     if let genreLine {
                         Text(genreLine)
@@ -89,7 +89,7 @@ struct MediaDetailHeroSection: View {
                 }
                 CreditsColumn(
                     directorNames: directors.map(\.name),
-                    castNames: topCast.map(\.name)
+                    castNames: topCast.map(\.name),
                 )
                 .frame(width: 250)
             }
@@ -166,7 +166,7 @@ struct MediaDetailHeroSection: View {
                 title: isPlayed ? "Watched" : "Mark Watched",
                 tint: isPlayed ? theme.accent : theme.primary,
                 focusedTint: isPlayed ? theme.accent : nil,
-                isEnabled: session.client != nil
+                isEnabled: session.client != nil,
             ) {
                 Task { await togglePlayed() }
             }
@@ -176,7 +176,7 @@ struct MediaDetailHeroSection: View {
                 title: isFavorite ? "Favorited" : "Favorite",
                 tint: isFavorite ? theme.accent : theme.primary,
                 focusedTint: isFavorite ? theme.accent : nil,
-                isEnabled: session.client != nil
+                isEnabled: session.client != nil,
             ) {
                 Task { await toggleFavorite() }
             }

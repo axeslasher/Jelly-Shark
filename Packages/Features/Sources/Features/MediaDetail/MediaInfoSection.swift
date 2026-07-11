@@ -98,7 +98,7 @@ struct MediaInfoSection: View {
         if let premiereDate = item.premiereDate {
             entries.append((
                 item.type == .series ? "First Aired" : "Released",
-                premiereDate.formatted(date: .long, time: .omitted)
+                premiereDate.formatted(date: .long, time: .omitted),
             ))
         }
         if item.type == .series, let status = item.status {
@@ -140,11 +140,11 @@ struct MediaInfoSection: View {
         }
         if let bitrate = tech.bitrate {
             let mbps = (Double(bitrate) / 1_000_000)
-                .formatted(.number.precision(.fractionLength(0...1)))
+                .formatted(.number.precision(.fractionLength(0 ... 1)))
             entries.append(("Bitrate", "\(mbps) Mbps"))
         }
         if let frameRate = tech.frameRate {
-            let fps = frameRate.formatted(.number.precision(.fractionLength(0...3)))
+            let fps = frameRate.formatted(.number.precision(.fractionLength(0 ... 3)))
             entries.append(("Frame Rate", "\(fps) fps"))
         }
         return entries

@@ -118,11 +118,11 @@ public struct MediaDetailView: View {
     private var playableItem: MediaItem? {
         switch item.type {
         case .series:
-            return nextUpEpisode ?? episodes.first
+            nextUpEpisode ?? episodes.first
         case .boxSet:
-            return collectionItems.first { !($0.userData?.played ?? false) } ?? collectionItems.first
+            collectionItems.first { !($0.userData?.played ?? false) } ?? collectionItems.first
         default:
-            return item
+            item
         }
     }
 
@@ -162,7 +162,7 @@ public struct MediaDetailView: View {
                     playTitle: playButtonTitle,
                     playTarget: playableItem,
                     playbackItem: $playbackItem,
-                    isPresentingOverview: $isPresentingOverview
+                    isPresentingOverview: $isPresentingOverview,
                 )
                 // Drift the hero lockup as it scrolls, in lockstep with the
                 // backdrop's melt/dim/blur. Offset only — no opacity fade: fading
@@ -172,8 +172,8 @@ public struct MediaDetailView: View {
                 // stay unchanged during scroll and its body is skipped.
                 .offset(y: scrollProgress * Self.heroScrollDrift)
                 #if os(tvOS)
-                .focusSection()
-                .focused($focusedRegion, equals: .hero)
+                    .focusSection()
+                    .focused($focusedRegion, equals: .hero)
                 #endif
 
                 // Everything below the fold shares one focus region so tvOS
@@ -191,7 +191,7 @@ public struct MediaDetailView: View {
                         // pre-parks there and first focus lands on it.
                         initialEpisodeId: (nextUpEpisode ?? episodes.first)?.id,
                         isRegionFocused: focusedRegion == .shelves,
-                        playbackItem: $playbackItem
+                        playbackItem: $playbackItem,
                     )
 
                     // Likewise, the contents lead on collection pages.
@@ -230,7 +230,7 @@ public struct MediaDetailView: View {
         }
         .scrollClipDisabled()
         #if os(visionOS)
-        .scrollTargetBehavior(.viewAligned)
+            .scrollTargetBehavior(.viewAligned)
         #endif
         #if os(tvOS)
         .scrollPosition($scrollPosition)
@@ -262,7 +262,7 @@ public struct MediaDetailView: View {
                         // scrolls need `scrollTargetLayout`, which is what
                         // hijacks Siri Remote pans on hardware.)
                         scrollPosition.scrollTo(
-                            y: snapMetrics.containerHeight + SpacingTokens.sectionSpacing - snapMetrics.topInset
+                            y: snapMetrics.containerHeight + SpacingTokens.sectionSpacing - snapMetrics.topInset,
                         )
                     }
                 }
@@ -281,7 +281,7 @@ public struct MediaDetailView: View {
         .onScrollGeometryChange(for: ScrollSnapMetrics.self) { geometry in
             ScrollSnapMetrics(
                 containerHeight: geometry.containerSize.height,
-                topInset: geometry.contentInsets.top
+                topInset: geometry.contentInsets.top,
             )
         } action: { _, metrics in
             snapMetrics = metrics
@@ -313,7 +313,7 @@ public struct MediaDetailView: View {
         OverviewOverlay(
             tagline: displayItem.tagline,
             overview: displayItem.overview,
-            backdropURL: session.client?.backdropURL(for: displayItem)
+            backdropURL: session.client?.backdropURL(for: displayItem),
         )
     }
 
@@ -329,7 +329,7 @@ public struct MediaDetailView: View {
             MediaDetailHeroBackdrop(
                 url: url,
                 blurHash: displayItem.backdropBlurHash,
-                progress: scrollProgress
+                progress: scrollProgress,
             )
         }
     }
@@ -341,7 +341,7 @@ public struct MediaDetailView: View {
     /// the billed-cast list) regardless of which field carries the credit.
     private static let crewRoles: Set<String> = [
         "Director", "Writer", "Producer",
-        "Executive Producer", "Co-Producer", "Co-Executive Producer"
+        "Executive Producer", "Co-Producer", "Co-Executive Producer",
     ]
 
     /// Playback changes server-side user data this view displays — resume
@@ -388,19 +388,19 @@ public struct MediaDetailView: View {
         collectionItems = []
 
         // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
-        detailedItem = (try? await client.getMediaItem(itemId: item.id)) ?? item
+        detailedItem = await (try? client.getMediaItem(itemId: item.id)) ?? item
 
         if item.type == .series {
             async let seasonsFetch = client.getSeasons(seriesId: item.id)
             async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
             async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
-            seasons = (await (try? seasonsFetch)) ?? []
-            episodes = (await (try? episodesFetch)) ?? []
+            seasons = await ((try? seasonsFetch)) ?? []
+            episodes = await ((try? episodesFetch)) ?? []
             nextUpEpisode = await (try? nextUpFetch) ?? nil
         }
 
         if item.type == .boxSet {
-            collectionItems = (try? await client.getCollectionItems(collectionId: item.id)) ?? []
+            collectionItems = await (try? client.getCollectionItems(collectionId: item.id)) ?? []
         }
 
         // Derive the credits once per fetch instead of per body evaluation.
@@ -412,10 +412,10 @@ public struct MediaDetailView: View {
         topCast = Array(
             people
                 .filter { $0.kind == "Actor" && !(($0.role).map(Self.crewRoles.contains) ?? false) }
-                .prefix(3)
+                .prefix(3),
         )
 
-        similarItems = (try? await client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
+        similarItems = await (try? client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
     }
 }
 
@@ -456,9 +456,9 @@ private struct ScrollSnapMetrics: Equatable {
                     container: "MKV",
                     videoCodec: "HEVC",
                     bitrate: 24_500_000,
-                    frameRate: 23.976
-                )
-            )
+                    frameRate: 23.976,
+                ),
+            ),
         )
     }
     .withThemeEnvironment()

@@ -28,7 +28,7 @@ public struct ArtworkImage: View {
         blurHash: String? = nil,
         placeholderIcon: String = "photo",
         contentMode: ContentMode = .fill,
-        cornerRadius: CGFloat = 0
+        cornerRadius: CGFloat = 0,
     ) {
         self.url = url
         self.blurHash = blurHash
@@ -46,7 +46,7 @@ public struct ArtworkImage: View {
                 if let url {
                     AsyncImage(url: url) { phase in
                         switch phase {
-                        case .success(let image):
+                        case let .success(image):
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: contentMode)

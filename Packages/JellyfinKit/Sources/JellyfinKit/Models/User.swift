@@ -25,7 +25,7 @@ public struct User: Identifiable, Sendable, Equatable, Hashable {
         name: String,
         serverId: String? = nil,
         isAdministrator: Bool = false,
-        primaryImageTag: String? = nil
+        primaryImageTag: String? = nil,
     ) {
         self.id = id
         self.name = name

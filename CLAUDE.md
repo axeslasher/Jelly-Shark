@@ -58,6 +58,18 @@ xcodebuild test -scheme "Jelly Shark" -only-testing:DesignSystemTests -destinati
 xcodebuild clean -scheme "Jelly Shark"
 ```
 
+### Formatting
+
+The codebase is formatted with SwiftFormat, pinned to **0.62.1** (`brew install swiftformat`; the Makefile refuses other versions so local runs match CI). Config lives in `.swiftformat` — SwiftFormat defaults plus `--swiftversion 6.2`, with three rules disabled because they change semantics rather than formatting: `redundantSelf`, `swiftTestingTestCaseNames`, and `noForceUnwrapInTests` (each documented with its reason in the config file).
+
+```bash
+make format        # format all Swift sources in place
+make lint          # check only — what CI and the pre-commit hook run
+make install-hooks # one-time opt-in: enables the lint-only pre-commit hook (.githooks/)
+```
+
+**Always run `make format` after modifying Swift code and before finishing a change.** A GitHub Actions check (`.github/workflows/swiftformat.yml`) runs `swiftformat --lint` on every PR with the same pinned version, so unformatted code fails CI.
+
 ## Architecture
 
 ### Modular Design Philosophy

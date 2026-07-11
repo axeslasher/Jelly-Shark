@@ -14,14 +14,14 @@ extension Color {
                 (int >> 16) & 0xFF,
                 (int >> 8) & 0xFF,
                 int & 0xFF,
-                255
+                255,
             )
         case 8: // RGBA
             (r, g, b, a) = (
                 (int >> 24) & 0xFF,
                 (int >> 16) & 0xFF,
                 (int >> 8) & 0xFF,
-                int & 0xFF
+                int & 0xFF,
             )
         default:
             (r, g, b, a) = (0, 0, 0, 255)
@@ -32,7 +32,7 @@ extension Color {
             red: Double(r) / 255,
             green: Double(g) / 255,
             blue: Double(b) / 255,
-            opacity: Double(a) / 255
+            opacity: Double(a) / 255,
         )
     }
 }

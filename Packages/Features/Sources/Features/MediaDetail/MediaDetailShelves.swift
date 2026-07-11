@@ -19,13 +19,13 @@ struct CastShelfSection: View {
                             url: client.headshotURL(for: member),
                             name: member.name,
                             role: member.role ?? member.kind,
-                            value: member
+                            value: member,
                         )
                     } else {
                         CastCard(
                             url: client.headshotURL(for: member),
                             name: member.name,
-                            role: member.role ?? member.kind
+                            role: member.role ?? member.kind,
                         )
                     }
                 }

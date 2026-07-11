@@ -43,7 +43,7 @@ public struct Person: Identifiable, Sendable, Equatable, Hashable {
         birthPlace: String? = nil,
         primaryImageTag: String? = nil,
         primaryBlurHash: String? = nil,
-        isFavorite: Bool = false
+        isFavorite: Bool = false,
     ) {
         self.id = id
         self.name = name
@@ -59,20 +59,20 @@ public struct Person: Identifiable, Sendable, Equatable, Hashable {
 
 // MARK: - Computed Properties
 
-extension Person {
+public extension Person {
     /// Birth date formatted for display (e.g., "May 4, 1929")
-    public var formattedBirthDate: String? {
+    var formattedBirthDate: String? {
         birthDate?.formatted(date: .long, time: .omitted)
     }
 
     /// Death date formatted for display (e.g., "January 20, 1993")
-    public var formattedDeathDate: String? {
+    var formattedDeathDate: String? {
         deathDate?.formatted(date: .long, time: .omitted)
     }
 
     /// Age in years — at death when `deathDate` is set, otherwise current.
     /// Nil without a birth date.
-    public var age: Int? {
+    var age: Int? {
         guard let birthDate else { return nil }
         return Calendar(identifier: .gregorian)
             .dateComponents([.year], from: birthDate, to: deathDate ?? Date()).year

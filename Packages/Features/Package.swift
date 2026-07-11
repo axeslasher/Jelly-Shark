@@ -6,12 +6,12 @@ let package = Package(
     name: "Features",
     platforms: [
         .tvOS(.v26),
-        .visionOS(.v26)
+        .visionOS(.v26),
     ],
     products: [
         .library(
             name: "Features",
-            targets: ["Features"]
+            targets: ["Features"],
         ),
     ],
     dependencies: [
@@ -24,11 +24,11 @@ let package = Package(
             dependencies: [
                 "JellyfinKit",
                 "DesignSystem",
-            ]
+            ],
         ),
         .testTarget(
             name: "FeaturesTests",
-            dependencies: ["Features"]
+            dependencies: ["Features"],
         ),
-    ]
+    ],
 )

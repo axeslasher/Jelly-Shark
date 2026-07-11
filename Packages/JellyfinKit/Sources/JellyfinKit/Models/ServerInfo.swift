@@ -22,7 +22,7 @@ public struct ServerInfo: Sendable, Codable, Equatable {
         version: String,
         id: String,
         operatingSystem: String? = nil,
-        startupWizardCompleted: Bool? = nil
+        startupWizardCompleted: Bool? = nil,
     ) {
         self.serverName = serverName
         self.version = version
@@ -62,7 +62,7 @@ private func compareVersions(_ v1: String, _ v2: String) -> Int {
 
     let maxLength = max(components1.count, components2.count)
 
-    for i in 0..<maxLength {
+    for i in 0 ..< maxLength {
         let c1 = i < components1.count ? components1[i] : 0
         let c2 = i < components2.count ? components2[i] : 0
 

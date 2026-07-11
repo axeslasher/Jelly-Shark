@@ -33,12 +33,12 @@ struct OverviewOverlay: View {
                             .jsStyle(.title)
                             .foregroundStyle(theme.primary)
                             .lineSpacing(4)
-                            // On tvOS the focus engine drives scrolling; a
-                            // focusable text block lets the remote move through
-                            // long synopses.
-                            #if os(tvOS)
+                        // On tvOS the focus engine drives scrolling; a
+                        // focusable text block lets the remote move through
+                        // long synopses.
+                        #if os(tvOS)
                             .focusable()
-                            #endif
+                        #endif
                     }
 
                     Button("Close") {

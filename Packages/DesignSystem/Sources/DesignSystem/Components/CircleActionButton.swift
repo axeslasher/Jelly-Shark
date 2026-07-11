@@ -28,7 +28,7 @@ public struct CircleActionButton: View {
         tint: Color,
         focusedTint: Color? = nil,
         isEnabled: Bool = true,
-        action: @escaping () -> Void
+        action: @escaping () -> Void,
     ) {
         self.systemImage = systemImage
         self.title = title

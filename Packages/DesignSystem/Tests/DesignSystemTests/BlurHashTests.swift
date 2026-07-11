@@ -1,7 +1,7 @@
 import CoreGraphics
+@testable import DesignSystem
 import Foundation
 import Testing
-@testable import DesignSystem
 
 @Suite("BlurHash Decoder")
 struct BlurHashTests {

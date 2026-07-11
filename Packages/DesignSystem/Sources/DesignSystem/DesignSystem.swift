@@ -5,5 +5,5 @@ import SwiftUI
 
 // MARK: - Public Exports
 
-// Make Theme and ThemeManager easily accessible
+/// Make Theme and ThemeManager easily accessible
 public typealias AppTheme = Theme

@@ -2,6 +2,7 @@ import Foundation
 import JellyfinAPI
 
 // MARK: - Playback Adapters
+
 //
 // Extensions that map Jellyfin SDK playback types (PlaybackInfoResponse,
 // MediaSourceInfo, MediaStream) to our clean, app-specific types.
@@ -13,7 +14,7 @@ extension PlaybackSessionInfo {
     init(from response: JellyfinAPI.PlaybackInfoResponse) {
         self.init(
             playSessionId: response.playSessionID,
-            mediaSources: response.mediaSources?.compactMap { MediaSource(from: $0) } ?? []
+            mediaSources: response.mediaSources?.compactMap { MediaSource(from: $0) } ?? [],
         )
     }
 }
@@ -39,7 +40,7 @@ extension MediaSource {
             defaultAudioStreamIndex: info.defaultAudioStreamIndex,
             defaultSubtitleStreamIndex: info.defaultSubtitleStreamIndex,
             audioStreams: streams.filter { $0.type == .audio },
-            subtitleStreams: streams.filter { $0.type == .subtitle }
+            subtitleStreams: streams.filter { $0.type == .subtitle },
         )
     }
 }
@@ -74,7 +75,7 @@ extension MediaStreamInfo {
             isDefault: stream.isDefault ?? false,
             isExternal: stream.isExternal ?? false,
             isTextSubtitleStream: stream.isTextSubtitleStream ?? false,
-            deliveryURL: stream.deliveryURL
+            deliveryURL: stream.deliveryURL,
         )
     }
 }

@@ -1,6 +1,6 @@
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import JellyfinKit
+import SwiftUI
 
 /// Grid of media items within a single library, with sort/filter controls
 /// and infinite scrolling
@@ -21,7 +21,7 @@ struct LibraryItemsView: View {
                 LibraryFilterBar(
                     options: viewModel.visibleFilterOptions,
                     query: viewModel.query,
-                    onChange: { viewModel.update(query: $0) }
+                    onChange: { viewModel.update(query: $0) },
                 )
 
                 content
@@ -58,7 +58,7 @@ struct LibraryItemsView: View {
             ProgressView()
                 .frame(maxWidth: .infinity, minHeight: 400)
 
-        case .failed(let message):
+        case let .failed(message):
             VStack(spacing: SpacingTokens.md) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 48))
@@ -108,9 +108,9 @@ struct LibraryItemsView: View {
         return LazyVGrid(
             columns: Array(
                 repeating: GridItem(.flexible(), spacing: SpacingTokens.cardGap),
-                count: layout.count
+                count: layout.count,
             ),
-            spacing: SpacingTokens.cardGap
+            spacing: SpacingTokens.cardGap,
         ) {
             ForEach(viewModel.items) { item in
                 item.posterShelfItem(client: session.client, width: layout.width)
@@ -136,7 +136,7 @@ struct LibraryItemsView: View {
 #Preview {
     NavigationStack {
         LibraryItemsView(
-            library: Library(id: "preview-1", name: "Movies", collectionType: .movies)
+            library: Library(id: "preview-1", name: "Movies", collectionType: .movies),
         )
     }
     .withThemeEnvironment()

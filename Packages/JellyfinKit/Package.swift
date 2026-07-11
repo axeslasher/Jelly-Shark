@@ -6,12 +6,12 @@ let package = Package(
     name: "JellyfinKit",
     platforms: [
         .tvOS(.v26),
-        .visionOS(.v26)
+        .visionOS(.v26),
     ],
     products: [
         .library(
             name: "JellyfinKit",
-            targets: ["JellyfinKit"]
+            targets: ["JellyfinKit"],
         ),
     ],
     dependencies: [
@@ -26,11 +26,11 @@ let package = Package(
             dependencies: [
                 .product(name: "JellyfinAPI", package: "jellyfin-sdk-swift"),
                 .product(name: "Get", package: "Get"),
-            ]
+            ],
         ),
         .testTarget(
             name: "JellyfinKitTests",
-            dependencies: ["JellyfinKit"]
+            dependencies: ["JellyfinKit"],
         ),
-    ]
+    ],
 )

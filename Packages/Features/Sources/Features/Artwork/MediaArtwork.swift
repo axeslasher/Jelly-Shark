@@ -1,7 +1,7 @@
-import Foundation
-import SwiftUI
-import JellyfinKit
 import DesignSystem
+import Foundation
+import JellyfinKit
+import SwiftUI
 
 /// Artwork URL helpers for views
 ///
@@ -69,14 +69,13 @@ extension JellyfinClientProtocol {
         guard let tags = item.imageTags else { return nil }
 
         for type in types {
-            let tag: String?
-            switch type {
-            case .primary: tag = tags.primary
-            case .backdrop: tag = tags.backdrop
-            case .banner: tag = tags.banner
-            case .thumb: tag = tags.thumb
-            case .logo: tag = tags.logo
-            default: tag = nil
+            let tag: String? = switch type {
+            case .primary: tags.primary
+            case .backdrop: tags.backdrop
+            case .banner: tags.banner
+            case .thumb: tags.thumb
+            case .logo: tags.logo
+            default: nil
             }
 
             if tag != nil {
@@ -95,7 +94,7 @@ extension JellyfinClientProtocol {
 /// stack root in `RootView`) resolves it to a `MediaDetailView`.
 extension MediaItem {
     /// Portrait poster card (2:3). Title is the item name; subtitle is the year.
-    @MainActor @ViewBuilder
+    @MainActor
     func posterShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 200) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
@@ -105,7 +104,7 @@ extension MediaItem {
             aspectRatio: 2.0 / 3.0,
             width: width,
             progress: progressPercentage,
-            value: self
+            value: self,
         )
     }
 
@@ -117,12 +116,12 @@ extension MediaItem {
     /// Unlike the navigation cards, clicking plays the episode immediately.
     /// `showsSeriesName` prefixes the eyebrow with the series name — for
     /// shelves outside a series page, where the episode needs that context.
-    @MainActor @ViewBuilder
+    @MainActor
     func episodeShelfItem(
         client: JellyfinClientProtocol?,
         width: CGFloat = 440,
         showsSeriesName: Bool = false,
-        onPlay: @escaping () -> Void
+        onPlay: @escaping () -> Void,
     ) -> some View {
         ArtworkShelfItem(
             // 440pt is ~880 physical px on a 4K panel; fetch to match so the
@@ -140,7 +139,7 @@ extension MediaItem {
             aspectRatio: 16.0 / 9.0,
             width: width,
             playbackBadge: playbackBadge,
-            action: onPlay
+            action: onPlay,
         )
     }
 
@@ -159,7 +158,7 @@ extension MediaItem {
 
     /// Landscape card (16:9). Episodes show the episode title over the series
     /// name; everything else shows the name over the year.
-    @MainActor @ViewBuilder
+    @MainActor
     func landscapeShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 320) -> some View {
         ArtworkShelfItem(
             url: client?.landscapeURL(for: self),
@@ -169,7 +168,7 @@ extension MediaItem {
             aspectRatio: 16.0 / 9.0,
             width: width,
             progress: progressPercentage,
-            value: self
+            value: self,
         )
     }
 }

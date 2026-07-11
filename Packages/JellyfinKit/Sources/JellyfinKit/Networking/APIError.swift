@@ -42,27 +42,27 @@ extension APIError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid server URL"
-        case .httpError(let statusCode):
-            return "HTTP error: \(statusCode)"
+            "Invalid server URL"
+        case let .httpError(statusCode):
+            "HTTP error: \(statusCode)"
         case .unauthorized:
-            return "Invalid username or password"
+            "Invalid username or password"
         case .forbidden:
-            return "Access denied"
+            "Access denied"
         case .notFound:
-            return "Resource not found"
-        case .serverError(let statusCode):
-            return "Server error: \(statusCode)"
-        case .networkError(let message):
-            return "Network error: \(message)"
-        case .decodingError(let message):
-            return "Failed to parse response: \(message)"
-        case .unsupportedServerVersion(let version):
-            return "Server version \(version) is not supported. Minimum required: 10.8.0"
+            "Resource not found"
+        case let .serverError(statusCode):
+            "Server error: \(statusCode)"
+        case let .networkError(message):
+            "Network error: \(message)"
+        case let .decodingError(message):
+            "Failed to parse response: \(message)"
+        case let .unsupportedServerVersion(version):
+            "Server version \(version) is not supported. Minimum required: 10.8.0"
         case .notAuthenticated:
-            return "Not authenticated. Please sign in."
-        case .generic(let message):
-            return message
+            "Not authenticated. Please sign in."
+        case let .generic(message):
+            message
         }
     }
 }

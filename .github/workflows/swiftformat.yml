@@ -1,0 +1,26 @@
+name: SwiftFormat
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    name: swiftformat --lint
+    runs-on: ubuntu-latest
+    env:
+      # Keep in sync with SWIFTFORMAT_VERSION in the Makefile.
+      SWIFTFORMAT_VERSION: 0.62.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SwiftFormat ${{ env.SWIFTFORMAT_VERSION }}
+        run: |
+          curl -fsSL -o swiftformat.zip \
+            "https://github.com/nicklockwood/SwiftFormat/releases/download/${SWIFTFORMAT_VERSION}/swiftformat_linux.zip"
+          unzip -o swiftformat.zip
+          chmod +x swiftformat_linux
+
+      - name: Lint
+        run: ./swiftformat_linux --lint .

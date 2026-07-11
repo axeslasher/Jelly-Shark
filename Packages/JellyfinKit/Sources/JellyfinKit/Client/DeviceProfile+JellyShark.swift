@@ -2,6 +2,7 @@ import Foundation
 import JellyfinAPI
 
 // MARK: - Device Profile
+
 //
 // The device profile tells the server what this client can play natively,
 // so PlaybackInfo can decide between direct play, remux, and transcode.
@@ -36,10 +37,10 @@ extension JellyfinClient {
                             condition: .equalsAny,
                             isRequired: true,
                             property: .videoCodecTag,
-                            value: "hvc1|dvh1"
+                            value: "hvc1|dvh1",
                         ),
                     ],
-                    type: .video
+                    type: .video,
                 ),
                 // No Apple hardware decodes 10-bit H.264 (Hi10P), and only
                 // the mainstream profiles are supported. isRequired stays
@@ -52,16 +53,16 @@ extension JellyfinClient {
                             condition: .lessThanEqual,
                             isRequired: false,
                             property: .videoBitDepth,
-                            value: "8"
+                            value: "8",
                         ),
                         JellyfinAPI.ProfileCondition(
                             condition: .equalsAny,
                             isRequired: false,
                             property: .videoProfile,
-                            value: "high|main|baseline|constrained baseline"
+                            value: "high|main|baseline|constrained baseline",
                         ),
                     ],
-                    type: .video
+                    type: .video,
                 ),
             ],
             directPlayProfiles: [
@@ -69,7 +70,7 @@ extension JellyfinClient {
                     audioCodec: "aac,ac3,eac3,flac,alac",
                     container: "mp4,m4v,mov",
                     type: .video,
-                    videoCodec: "hevc,h264"
+                    videoCodec: "hevc,h264",
                 ),
             ],
             name: "Jelly Shark",
@@ -94,9 +95,9 @@ extension JellyfinClient {
                     minSegments: 2,
                     protocol: .hls,
                     type: .video,
-                    videoCodec: "hevc,h264"
+                    videoCodec: "hevc,h264",
                 ),
-            ]
+            ],
         )
     }
 }

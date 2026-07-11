@@ -1,6 +1,6 @@
-import SwiftUI
 import DesignSystem
 import JellyfinKit
+import SwiftUI
 
 /// The root view of the application
 /// Handles top-level navigation and theme application
@@ -42,14 +42,14 @@ public struct RootView: View {
                 } else {
                     selectedTab = newValue
                 }
-            }
+            },
         )
     }
 
     private func path(for tab: AppTab) -> Binding<NavigationPath> {
         Binding(
             get: { tabPaths[tab, default: NavigationPath()] },
-            set: { tabPaths[tab] = $0 }
+            set: { tabPaths[tab] = $0 },
         )
     }
 
@@ -76,7 +76,7 @@ public struct RootView: View {
                         Tab(
                             library.name,
                             systemImage: library.systemImageName,
-                            value: AppTab.library(library.id)
+                            value: AppTab.library(library.id),
                         ) {
                             navigationRoot(for: .library(library.id)) {
                                 LibraryItemsView(library: library)
@@ -117,7 +117,7 @@ public struct RootView: View {
         // or the server removed a library), fall back to Home rather than
         // leaving the selection pointing at a tab that no longer exists.
         .onChange(of: connectionViewModel.libraries) { _, libraries in
-            if case .library(let id) = selectedTab,
+            if case let .library(id) = selectedTab,
                !libraries.contains(where: { $0.id == id })
             {
                 selectedTab = .home
@@ -131,7 +131,7 @@ public struct RootView: View {
     /// through it.
     private func navigationRoot(
         for tab: AppTab,
-        @ViewBuilder content: () -> some View
+        @ViewBuilder content: () -> some View,
     ) -> some View {
         NavigationStack(path: path(for: tab)) {
             content()

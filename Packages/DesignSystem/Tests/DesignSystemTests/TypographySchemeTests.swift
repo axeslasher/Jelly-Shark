@@ -1,6 +1,6 @@
-import Testing
-import SwiftUI
 @testable import DesignSystem
+import SwiftUI
+import Testing
 
 /// Guards for the theme typography scheme. The family-per-role `FontScheme`
 /// initializer must seed every size/weight/tracking with the Standard scale
@@ -12,7 +12,7 @@ struct TypographySchemeTests {
     func familyInitMatchesTokens() {
         let scheme = FontScheme(
             display: "A", headline: "B", title: "C", overview: "D",
-            body: "E", caption: "F", small: "G"
+            body: "E", caption: "F", small: "G",
         )
 
         let expected: [(TypeRole, CGFloat, Font.Weight)] = [

@@ -1,0 +1,83 @@
+name: Bug report
+description: Something in Jelly Shark isn't working right
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+      placeholder: Playback stalls when switching subtitle tracks mid-episode…
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a series with external subtitles
+        2. Start an episode
+        3. Switch subtitle tracks from the transport bar
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Apple TV (tvOS)
+        - Apple Vision Pro (visionOS)
+        - Both
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: tvOS / visionOS version
+      placeholder: tvOS 26.1
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Jelly Shark version or commit
+      placeholder: main @ aa6383a
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Jellyfin server version
+      placeholder: "10.10.3"
+    validations:
+      required: true
+
+  - type: textarea
+    id: media-details
+    attributes:
+      label: Media details (if playback-related)
+      description: Container, codecs, direct play vs. transcode — whatever you know about the affected file.
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Console logs, screenshots, or screen recordings if you have them.
+    validations:
+      required: false

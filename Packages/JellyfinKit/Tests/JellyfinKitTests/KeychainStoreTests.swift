@@ -1,6 +1,6 @@
-import Testing
 import Foundation
 @testable import JellyfinKit
+import Testing
 
 /// Make a store with a unique, test-specific service so tests never touch
 /// the production namespace or each other
@@ -63,7 +63,7 @@ struct SessionStoreTests {
         SavedSession(
             serverURL: URL(string: "https://demo.jellyfin.org/stable")!,
             userID: "user-1",
-            accessToken: "token-1"
+            accessToken: "token-1",
         )
     }
 

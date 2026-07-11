@@ -1,12 +1,11 @@
-import Testing
+@testable import Features
 import Foundation
 import JellyfinKit
-@testable import Features
+import Testing
 
 @MainActor
 @Suite("LibraryItemsViewModel")
 struct LibraryItemsViewModelTests {
-
     private static let library = Library(id: "lib-1", name: "Movies", collectionType: .movies)
 
     private func makeItems(_ range: Range<Int>) -> [MediaItem] {
@@ -15,7 +14,7 @@ struct LibraryItemsViewModelTests {
 
     private func makeViewModel(
         client: MockJellyfinClient,
-        pageSize: Int = 3
+        pageSize: Int = 3,
     ) -> LibraryItemsViewModel {
         let viewModel = LibraryItemsViewModel(pageSize: pageSize, prefetchDistance: 2)
         viewModel.attach(client: client, library: Self.library)
@@ -28,7 +27,7 @@ struct LibraryItemsViewModelTests {
     func initialLoad() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 8))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 8)),
         ]
         let viewModel = makeViewModel(client: client)
 
@@ -86,7 +85,7 @@ struct LibraryItemsViewModelTests {
     func reappearanceIsNoOp() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -104,7 +103,7 @@ struct LibraryItemsViewModelTests {
     func newClientReloads() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -123,7 +122,7 @@ struct LibraryItemsViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
             .failure(APIError.serverError(statusCode: 500)),
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3)),
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         let viewModel = makeViewModel(client: client)
 
@@ -146,8 +145,8 @@ struct LibraryItemsViewModelTests {
     func paginationAppends() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 5)),
-            .success(MediaItemPage(items: makeItems(3..<5), startIndex: 3, totalRecordCount: 5)),
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 5)),
+            .success(MediaItemPage(items: makeItems(3 ..< 5), startIndex: 3, totalRecordCount: 5)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -165,7 +164,7 @@ struct LibraryItemsViewModelTests {
     func farFromEndNoFetch() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<5), startIndex: 0, totalRecordCount: 10))
+            .success(MediaItemPage(items: makeItems(0 ..< 5), startIndex: 0, totalRecordCount: 10)),
         ]
         let viewModel = makeViewModel(client: client, pageSize: 5)
         await viewModel.loadInitial()
@@ -179,7 +178,7 @@ struct LibraryItemsViewModelTests {
     func exhaustedNoFetch() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -194,8 +193,8 @@ struct LibraryItemsViewModelTests {
     func noDoubleFire() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 9)),
-            .success(MediaItemPage(items: makeItems(3..<6), startIndex: 3, totalRecordCount: 9)),
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 9)),
+            .success(MediaItemPage(items: makeItems(3 ..< 6), startIndex: 3, totalRecordCount: 9)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -211,7 +210,7 @@ struct LibraryItemsViewModelTests {
     func failedPageKeepsGrid() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 6)),
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 6)),
             .failure(APIError.serverError(statusCode: 500)),
         ]
         let viewModel = makeViewModel(client: client)
@@ -236,8 +235,8 @@ struct LibraryItemsViewModelTests {
     func queryChangeResets() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 8)),
-            .success(MediaItemPage(items: makeItems(10..<12), startIndex: 0, totalRecordCount: 2)),
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 8)),
+            .success(MediaItemPage(items: makeItems(10 ..< 12), startIndex: 0, totalRecordCount: 2)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -275,7 +274,7 @@ struct LibraryItemsViewModelTests {
     func sameQueryNoOp() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -290,9 +289,9 @@ struct LibraryItemsViewModelTests {
     func staleResponseDiscarded() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 9)),
-            .success(MediaItemPage(items: makeItems(3..<6), startIndex: 3, totalRecordCount: 9)),
-            .success(MediaItemPage(items: makeItems(20..<22), startIndex: 0, totalRecordCount: 2)),
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 9)),
+            .success(MediaItemPage(items: makeItems(3 ..< 6), startIndex: 3, totalRecordCount: 9)),
+            .success(MediaItemPage(items: makeItems(20 ..< 22), startIndex: 0, totalRecordCount: 2)),
         ]
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -321,10 +320,10 @@ struct LibraryItemsViewModelTests {
     func filterOptionsLoad() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .success(
-            LibraryFilterOptions(genres: ["Horror"], officialRatings: ["R"], years: [1985])
+            LibraryFilterOptions(genres: ["Horror"], officialRatings: ["R"], years: [1985]),
         )
         let viewModel = makeViewModel(client: client)
 
@@ -338,17 +337,17 @@ struct LibraryItemsViewModelTests {
     func narrowingApplies() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .success(
             LibraryFilterOptions(
                 genres: ["Comedy", "Horror", "Western"],
                 officialRatings: ["PG", "R"],
-                years: [1969, 1985, 2021]
-            )
+                years: [1969, 1985, 2021],
+            ),
         )
         client.narrowedOptionsResult = .success(
-            LibraryFilterOptions(genres: ["Western"], officialRatings: ["R"], years: [1969])
+            LibraryFilterOptions(genres: ["Western"], officialRatings: ["R"], years: [1969]),
         )
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -374,17 +373,17 @@ struct LibraryItemsViewModelTests {
     func decadesDoNotNarrowThemselves() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .success(
             LibraryFilterOptions(
                 genres: ["Comedy", "Western"],
                 officialRatings: ["PG", "R"],
-                years: [1969, 1985, 2021]
-            )
+                years: [1969, 1985, 2021],
+            ),
         )
         client.narrowedOptionsResult = .success(
-            LibraryFilterOptions(genres: ["Western"], officialRatings: ["R"], years: [1969])
+            LibraryFilterOptions(genres: ["Western"], officialRatings: ["R"], years: [1969]),
         )
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -404,25 +403,25 @@ struct LibraryItemsViewModelTests {
     func crossNarrowing() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .success(
             LibraryFilterOptions(
                 genres: ["Comedy", "Horror", "Western"],
                 officialRatings: ["PG", "R"],
-                years: [1969, 1985, 2021]
-            )
+                years: [1969, 1985, 2021],
+            ),
         )
         client.narrowedOptionsHandler = { scanQuery in
             if scanQuery.genres.isEmpty {
                 // Scan for the genre menu: 1960s only
                 return .success(
-                    LibraryFilterOptions(genres: ["Comedy", "Western"], officialRatings: ["PG"], years: [1969])
+                    LibraryFilterOptions(genres: ["Comedy", "Western"], officialRatings: ["PG"], years: [1969]),
                 )
             }
             // Scan for the decades/ratings menus: Western only
             return .success(
-                LibraryFilterOptions(genres: ["Western"], officialRatings: ["R"], years: [1969, 1985])
+                LibraryFilterOptions(genres: ["Western"], officialRatings: ["R"], years: [1969, 1985]),
             )
         }
         let viewModel = makeViewModel(client: client)
@@ -446,10 +445,10 @@ struct LibraryItemsViewModelTests {
     func selectionsSurviveNarrowing() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0))
+            .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0)),
         ]
         client.narrowedOptionsResult = .success(
-            LibraryFilterOptions(genres: [], officialRatings: [], years: [])
+            LibraryFilterOptions(genres: [], officialRatings: [], years: []),
         )
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -468,10 +467,10 @@ struct LibraryItemsViewModelTests {
     func narrowingBailoutFallsBack() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .success(
-            LibraryFilterOptions(genres: ["Comedy", "Horror"], officialRatings: [], years: [])
+            LibraryFilterOptions(genres: ["Comedy", "Horror"], officialRatings: [], years: []),
         )
         client.narrowedOptionsResult = .success(nil)
         let viewModel = makeViewModel(client: client)
@@ -489,13 +488,13 @@ struct LibraryItemsViewModelTests {
     func clearRestoresFullOptions() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .success(
-            LibraryFilterOptions(genres: ["Comedy", "Horror"], officialRatings: ["PG", "R"], years: [])
+            LibraryFilterOptions(genres: ["Comedy", "Horror"], officialRatings: ["PG", "R"], years: []),
         )
         client.narrowedOptionsResult = .success(
-            LibraryFilterOptions(genres: ["Horror"], officialRatings: ["R"], years: [])
+            LibraryFilterOptions(genres: ["Horror"], officialRatings: ["R"], years: []),
         )
         let viewModel = makeViewModel(client: client)
         await viewModel.loadInitial()
@@ -528,7 +527,7 @@ struct LibraryItemsViewModelTests {
     func filterOptionsFailureIsNonFatal() async {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [
-            .success(MediaItemPage(items: makeItems(0..<3), startIndex: 0, totalRecordCount: 3))
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         client.filterOptionsResult = .failure(APIError.serverError(statusCode: 500))
         let viewModel = makeViewModel(client: client)
@@ -546,7 +545,9 @@ private actor AsyncGate {
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     func wait() async {
-        if isOpen { return }
+        if isOpen {
+            return
+        }
         await withCheckedContinuation { waiters.append($0) }
     }
 

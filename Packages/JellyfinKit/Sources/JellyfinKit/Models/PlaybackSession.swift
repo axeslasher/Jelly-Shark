@@ -72,7 +72,7 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
         defaultAudioStreamIndex: Int? = nil,
         defaultSubtitleStreamIndex: Int? = nil,
         audioStreams: [MediaStreamInfo] = [],
-        subtitleStreams: [MediaStreamInfo] = []
+        subtitleStreams: [MediaStreamInfo] = [],
     ) {
         self.id = id
         self.container = container
@@ -103,16 +103,16 @@ public enum PlayMethod: Sendable, Equatable {
     case transcode
 }
 
-extension MediaSource {
+public extension MediaSource {
     /// Pick the playback method for this source given the requested tracks.
     ///
     /// Direct play requires default tracks: a static file cannot honor
     /// server-side stream selection (and AVPlayer track selection on
     /// progressive files is unreliable), so explicit choices route through
     /// the HLS endpoint where AudioStreamIndex/SubtitleStreamIndex apply.
-    public func playMethod(audioStreamIndex: Int?, subtitleStreamIndex: Int?) -> PlayMethod {
+    func playMethod(audioStreamIndex: Int?, subtitleStreamIndex: Int?) -> PlayMethod {
         let usesDefaultAudio = audioStreamIndex == nil || audioStreamIndex == defaultAudioStreamIndex
-        if supportsDirectPlay && usesDefaultAudio && subtitleStreamIndex == nil {
+        if supportsDirectPlay, usesDefaultAudio, subtitleStreamIndex == nil {
             return .directPlay
         }
         if supportsDirectStream {
@@ -168,7 +168,7 @@ public struct MediaStreamInfo: Sendable, Equatable, Hashable {
         isDefault: Bool = false,
         isExternal: Bool = false,
         isTextSubtitleStream: Bool = false,
-        deliveryURL: String? = nil
+        deliveryURL: String? = nil,
     ) {
         self.index = index
         self.type = type
