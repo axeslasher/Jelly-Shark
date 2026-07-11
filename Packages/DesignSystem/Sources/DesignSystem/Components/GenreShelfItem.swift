@@ -22,6 +22,10 @@ public struct GenreShelfItem<Value: Hashable>: View {
     private let width: CGFloat
     private let value: Value
 
+    // TODO(#21): expose the blob-styling knobs as init params (defaulted) so call
+    // sites can tune them without editing the component — blob count, drift
+    // amount, blend mode (GenreGradientVariation), and the backdrop grayscale /
+    // opacity (GenreCardContent) are hard-coded for now.
     public init(
         title: String,
         backdropURL: URL? = nil,
@@ -105,10 +109,10 @@ private struct GenreCardContent: View {
                     .opacity(0.35)
             }
 
-            // No scrim: the headline weight and `primary` color read cleanly over
+            // No scrim: the display weight and `primary` color read cleanly over
             // the wash at 10 feet.
             Text(title)
-                .jsStyle(.headline)
+                .jsStyle(.display)
                 .foregroundStyle(theme.primary)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -154,7 +158,7 @@ private struct GenreCardContent: View {
                             endRadius: blob.radiusFactor * diagonal,
                         ),
                     )
-                    .blendMode(.screen)
+                    .blendMode(.hardLight)
             }
         }
         // Isolate the blend so the glow composites against the card wash only,
@@ -190,10 +194,10 @@ private struct GenreGradientVariation {
     /// Blob palette in brightness order (the darkest, `surfaceElevated`, is the
     /// wash the blobs sit on, not a blob color).
     private static let paletteCount = 3
-    private static let blobCount = 4
+    private static let blobCount = 5
 
     /// Drift radius, in UV space, of a focused blob's orbit.
-    private static let driftAmount = 0.11
+    private static let driftAmount = 0.33
 
     let blobs: [Blob]
     private let rotation: Int
@@ -210,7 +214,7 @@ private struct GenreGradientVariation {
                     basePosition: [0.5 + rng.signedUnit() * 0.32, 0.5 + rng.signedUnit() * 0.32],
                     colorIndex: (index + rotation) % Self.paletteCount,
                     radiusFactor: CGFloat(0.45 + rng.unit() * 0.35),
-                    freq: [0.6 + rng.unit() * 0.8, 0.6 + rng.unit() * 0.8],
+                    freq: [0.6 + rng.unit() * 1, 0.6 + rng.unit() * 1],
                 ),
             )
         }
