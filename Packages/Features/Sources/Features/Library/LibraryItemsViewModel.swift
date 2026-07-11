@@ -131,13 +131,23 @@ public final class LibraryItemsViewModel {
     /// Attach the authenticated client and library (called by the view on
     /// every appearance). Only an actual change — a new session's client or
     /// a different library — schedules a fresh initial load.
-    public func attach(client: (any JellyfinClientProtocol)?, library: Library) {
+    ///
+    /// `initialQuery` seeds the sort/filter selection for that fresh load (e.g.
+    /// a genre card pushes a genre-filtered grid); it's applied only when a
+    /// reload is scheduled, so returning to the view preserves any filters the
+    /// user has since changed. Omit it for the default unfiltered grid.
+    public func attach(
+        client: (any JellyfinClientProtocol)?,
+        library: Library,
+        initialQuery: LibraryQuery? = nil,
+    ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let libraryChanged = library.id != self.library?.id
         self.client = client
         self.library = library
         if clientChanged || libraryChanged {
             needsInitialLoad = true
+            query = initialQuery ?? LibraryQuery()
         }
     }
 

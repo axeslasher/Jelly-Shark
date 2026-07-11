@@ -11,6 +11,7 @@ struct HomeView: View {
 
     @State private var resumeItems: [MediaItem] = []
     @State private var latestItems: [MediaItem] = []
+    @State private var genreShelves = GenreShelvesViewModel()
     @State private var belowFold = false
 
     /// No NavigationStack here: RootView owns each tab's stack (with a path
@@ -44,6 +45,9 @@ struct HomeView: View {
                         }
                     }
                 }
+
+                // Browse by Genre (one shelf per movies/TV library)
+                GenreShelvesView(shelves: genreShelves.shelves)
             }
             .padding(.vertical, SpacingTokens.lg)
         }
@@ -52,6 +56,8 @@ struct HomeView: View {
         .background(theme.background)
         .task(id: session.isConnected) {
             await loadContent()
+            genreShelves.attach(client: session.client, libraries: connection.libraries)
+            await genreShelves.load()
         }
     }
 
