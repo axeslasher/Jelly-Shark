@@ -302,25 +302,19 @@ struct HomeHeroSection: View {
     private func lockup(for item: MediaItem) -> some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
             titleTreatment(for: item)
-            if let overview = item.overview {
-                Text(overview)
-                    .jsStyle(.overview)
-                    .foregroundStyle(theme.primary)
-                    .lineLimit(3)
-                    .frame(maxWidth: HomeHeroMotion.overviewMaxWidth, alignment: .leading)
-            }
-            // Overview and fact row read as one block — tighter spacing
+
+            // Fact row and overview read as one block — tighter spacing
             // inside the pair than the lockup's stride between elements.
             VStack(alignment: .leading, spacing: SpacingTokens.xs) {
                 // A slimmed-down cut of the detail hero's fact row sits
-                // between the overview and the year/genre line: ratings and
-                // certificate (plus season count for a series). Renders
-                // nothing when every field is nil.
+                // between the logo and the overview: ratings and certificate
+                // (plus a new-episode count for a series). Renders nothing
+                // when every field is nil.
                 MediaMetadataRow(
                     yearText: nil,
                     runtime: nil,
-                    seasons: item.seasonCountText,
-                    seasonsIcon: "square.stack",
+                    seasons: newEpisodesText(for: item),
+                    seasonsIcon: "tv",
                     communityRating: item.communityRating,
                     criticRating: item.criticRating,
                     certificate: item.officialRating,
@@ -328,12 +322,19 @@ struct HomeHeroSection: View {
                     videoRange: nil,
                     audioFormat: nil,
                 )
-                if let metadataLine = metadataLine(for: item) {
-                    Text(metadataLine)
-                        .jsStyle(.caption, .emphasized)
-                        .foregroundStyle(theme.tertiary)
-                        .lineLimit(1)
+                if let overview = item.overview {
+                    Text(overview)
+                        .jsStyle(.overview)
+                        .foregroundStyle(theme.primary)
+                        .lineLimit(3)
+                        .frame(maxWidth: HomeHeroMotion.overviewMaxWidth, alignment: .leading)
                 }
+            }
+            if let metadataLine = metadataLine(for: item) {
+                Text(metadataLine)
+                    .jsStyle(.caption, .emphasized)
+                    .foregroundStyle(theme.tertiary)
+                    .lineLimit(1)
             }
         }
     }
@@ -365,6 +366,16 @@ struct HomeHeroSection: View {
         Text(item.name)
             .jsStyle(.display)
             .foregroundStyle(theme.primary)
+    }
+
+    /// "20 New Episodes" for a series in the marquee. Hero series entries
+    /// come from `/Latest`, which groups new episodes under a series-shaped
+    /// item and repurposes `childCount` as the group's size — NOT the season
+    /// count it means on a directly-fetched series. Local to the hero on
+    /// purpose: nowhere else is that reading of `childCount` valid.
+    private func newEpisodesText(for item: MediaItem) -> String? {
+        guard item.type == .series, let count = item.childCount, count > 0 else { return nil }
+        return count == 1 ? "1 New Episode" : "\(count) New Episodes"
     }
 
     /// One subdued line: year · up to three genres.
