@@ -398,6 +398,7 @@ extension UserData {
             isFavorite: dto.isFavorite ?? false,
             played: dto.isPlayed ?? false,
             lastPlayedDate: dto.lastPlayedDate,
+            unplayedItemCount: dto.unplayedItemCount,
         )
     }
 }

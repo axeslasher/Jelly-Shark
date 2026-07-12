@@ -44,6 +44,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private let width: CGFloat
     private let progress: Double?
     private let playbackBadge: PlaybackBadge?
+    private let countBadge: Int?
     private let value: Value?
     private let action: (() -> Void)?
 
@@ -62,6 +63,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         width: CGFloat = 200,
         progress: Double? = nil,
         playbackBadge: PlaybackBadge? = nil,
+        countBadge: Int? = nil,
         value: Value,
     ) {
         self.action = nil
@@ -77,6 +79,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.width = width
         self.progress = progress
         self.playbackBadge = playbackBadge
+        self.countBadge = countBadge
         self.value = value
     }
 
@@ -96,6 +99,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         width: CGFloat = 200,
         progress: Double? = nil,
         playbackBadge: PlaybackBadge? = nil,
+        countBadge: Int? = nil,
         action: @escaping () -> Void,
     ) where Value == Bool {
         self.url = url
@@ -110,6 +114,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.width = width
         self.progress = progress
         self.playbackBadge = playbackBadge
+        self.countBadge = countBadge
         self.value = nil
         self.action = action
     }
@@ -183,6 +188,22 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                 }
             }
             .artworkCornerRadius(theme.cornerRadius)
+            // Count badge rides the artwork's top-trailing corner (unwatched
+            // episodes on a series poster) — same recipe as the library
+            // filter bar's selection count. Applied after the corner clip so
+            // the circle never gets shaved, before the hover effect so it
+            // lifts with the card.
+            .overlay(alignment: .topTrailing) {
+                if let countBadge {
+                    Text("\(countBadge)")
+                        .jsStyle(.caption, .strong)
+                        .foregroundStyle(theme.primary)
+                        .padding(SpacingTokens.xxs)
+                        .frame(minWidth: 32, minHeight: 32)
+                        .background(Circle().fill(theme.accent))
+                        .padding(SpacingTokens.xs)
+                }
+            }
             // Lift, specular highlight, and gimbal motion on focus.
             .hoverEffect(.highlight)
     }

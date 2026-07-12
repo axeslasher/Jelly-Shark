@@ -24,6 +24,18 @@ struct HomeShelvesSection: View {
     /// badge is the affordance); the owner presents the player.
     let onPlay: (MediaItem) -> Void
 
+    /// Measured section width, feeding the shared poster-column math so
+    /// Recently Added posters match the library grid's card size exactly.
+    @State private var sectionWidth: CGFloat = 0
+
+    /// The library grid measures its width inside the screen padding; the
+    /// shelves span the full container (padding lives inside `ContentShelf`),
+    /// so subtract it here to run the same math on the same span.
+    private var posterWidth: CGFloat {
+        guard sectionWidth > 0 else { return PosterGridLayout.minimumCardWidth }
+        return PosterGridLayout.columns(for: sectionWidth - SpacingTokens.screenPadding * 2).width
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             if !resumeItems.isEmpty {
@@ -53,7 +65,11 @@ struct HomeShelvesSection: View {
             ForEach(latestShelves) { shelf in
                 ContentShelf("Recently Added \(shelf.library.name)", icon: "sparkles") {
                     ForEach(shelf.items) { item in
-                        item.posterShelfItem(client: session.client)
+                        item.posterShelfItem(
+                            client: session.client,
+                            width: posterWidth,
+                            countBadge: unwatchedBadge(for: item, in: shelf),
+                        )
                     }
                 }
             }
@@ -61,6 +77,21 @@ struct HomeShelvesSection: View {
                 FailedShelfNotice(title: "Recently Added", icon: "sparkles")
             }
         }
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            sectionWidth = width
+        }
+    }
+
+    /// TV shelves badge each series poster with its unwatched-episode count
+    /// (the server's `UnplayedItemCount`), hidden at zero — the badge marks
+    /// something new to watch, not bookkeeping.
+    private func unwatchedBadge(for item: MediaItem, in shelf: HomeViewModel.LibraryShelf) -> Int? {
+        guard shelf.library.collectionType == .tvshows,
+              let count = item.userData?.unplayedItemCount, count > 0
+        else { return nil }
+        return count
     }
 }
 

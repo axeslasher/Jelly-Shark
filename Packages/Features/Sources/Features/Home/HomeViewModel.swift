@@ -263,7 +263,10 @@ public final class HomeViewModel {
         let byIndex = await withTaskGroup(of: (Int, LibraryShelf?).self) { group in
             for (index, library) in libraries.enumerated() {
                 group.addTask {
-                    let items = await (try? client.getLatestItems(libraryId: library.id, limit: limit)) ?? []
+                    var items = await (try? client.getLatestItems(libraryId: library.id, limit: limit)) ?? []
+                    if library.collectionType == .tvshows {
+                        items = await resolvingSeriesEntries(client: client, items: items)
+                    }
                     return (index, items.isEmpty ? nil : LibraryShelf(library: library, items: items))
                 }
             }
@@ -274,6 +277,33 @@ public final class HomeViewModel {
             return results
         }
         return libraries.indices.compactMap { byIndex[$0] }
+    }
+
+    /// TV "Recently Added" entries can be single episodes — the server only
+    /// groups multi-episode additions into their series. An episode lockup
+    /// is wrong for a poster shelf (portrait-cropped still, episode-title
+    /// caption), so swap each for its series item: poster, series name,
+    /// year, and the server's unplayed count for the unwatched badge.
+    /// Series appearing more than once collapse into one entry.
+    private nonisolated static func resolvingSeriesEntries(
+        client: any JellyfinClientProtocol,
+        items: [MediaItem],
+    ) async -> [MediaItem] {
+        var seenSeries: Set<String> = []
+        var resolved: [MediaItem] = []
+        for item in items {
+            if item.type == .episode, let seriesId = item.seriesId {
+                guard seenSeries.insert(seriesId).inserted else { continue }
+                let series = try? await client.getMediaItem(itemId: seriesId)
+                resolved.append(series ?? item)
+            } else {
+                if item.type == .series {
+                    guard seenSeries.insert(item.id).inserted else { continue }
+                }
+                resolved.append(item)
+            }
+        }
+        return resolved
     }
 
     // MARK: - Hero curation

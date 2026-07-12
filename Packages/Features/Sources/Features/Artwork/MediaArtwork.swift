@@ -93,9 +93,15 @@ extension JellyfinClientProtocol {
 /// stack's `navigationDestination(for: MediaItem.self)` (registered at each tab's
 /// stack root in `RootView`) resolves it to a `MediaDetailView`.
 extension MediaItem {
-    /// Portrait poster card (2:3). Title is the item name; subtitle is the year.
+    /// Portrait poster card (2:3). Title is the item name; subtitle is the
+    /// year. `countBadge` overlays a count on the poster's top-trailing
+    /// corner (unwatched episodes on a series card).
     @MainActor
-    func posterShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 200) -> some View {
+    func posterShelfItem(
+        client: JellyfinClientProtocol?,
+        width: CGFloat = 200,
+        countBadge: Int? = nil,
+    ) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
             blurHash: posterBlurHash,
@@ -104,6 +110,7 @@ extension MediaItem {
             aspectRatio: 2.0 / 3.0,
             width: width,
             progress: progressPercentage,
+            countBadge: countBadge,
             value: self,
         )
     }
