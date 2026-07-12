@@ -54,6 +54,15 @@ struct HomeHeroSection: View {
         .containerRelativeFrame(.vertical, alignment: .bottomLeading) { height, _ in
             height * HomeHeroMotion.heroHeightFraction
         }
+        // Page dots hang just below the hero's bottom edge, centered in the
+        // hero→shelves gap — an overlay so they never participate in the
+        // left stack's layout.
+        .overlay(alignment: .bottom) {
+            if items.count > 1 {
+                pageDots
+                    .offset(y: HomeHeroMotion.dotsDrop)
+            }
+        }
     }
 
     // MARK: - Paged lockup
@@ -142,11 +151,6 @@ struct HomeHeroSection: View {
                 isEnabled: items.count > 1,
             ) {
                 onNext()
-            }
-
-            if items.count > 1 {
-                pageDots
-                    .padding(.leading, SpacingTokens.md)
             }
         }
     }

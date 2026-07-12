@@ -50,11 +50,14 @@ struct HomeView: View {
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var regionSnapTask: Task<Void, Never>?
 
-    /// Where the shelves' top parks: one fractional hero plus one section gap
-    /// into the content.
+    /// Where the shelves' top parks: one fractional hero plus the hero→shelf
+    /// gap into the content. `scrollTo(y:)` works in the same inset-adjusted
+    /// space as our tracked offset, so no `topInset` correction — subtracting
+    /// it (as MediaDetail's small-inset pages do) double-counts Home's large
+    /// tab-bar inset and parks the row a whole inset too low.
     private var shelvesAnchor: CGFloat {
         snapMetrics.containerHeight * HomeHeroMotion.heroHeightFraction
-            + SpacingTokens.sectionSpacing - snapMetrics.topInset
+            + HomeHeroMotion.heroToShelvesGap
     }
 
     /// No NavigationStack here: RootView owns each tab's stack (with a path
@@ -104,8 +107,10 @@ struct HomeView: View {
         ScrollView {
             // A plain VStack (not LazyVStack): on tvOS the focus engine can't
             // move focus into a section a lazy stack hasn't built yet. The
-            // per-shelf horizontal scrolls stay lazy on their own.
-            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            // per-shelf horizontal scrolls stay lazy on their own. Spacing
+            // here is only the hero→shelves gap (tighter than the section
+            // spacing the shelves keep between themselves).
+            VStack(alignment: .leading, spacing: HomeHeroMotion.heroToShelvesGap) {
                 HomeHeroSection(
                     items: viewModel.heroItems,
                     index: viewModel.heroIndex,
@@ -171,10 +176,22 @@ struct HomeView: View {
                     // then assert the page anchor over it.
                     try? await Task.sleep(for: .milliseconds(80))
                     guard !Task.isCancelled else { return }
-                    withAnimation(theme.animation) {
-                        if region == .hero {
+                    switch region {
+                    case .hero:
+                        guard scrollOffset > HomeHeroMotion.snapSlack else { return }
+                        withAnimation(theme.animation) {
                             scrollPosition.scrollTo(edge: .top)
-                        } else {
+                        }
+                    case .shelves:
+                        // Unlike Media Detail's one-container hero, Home's
+                        // shelves run several screens deep — a fast scroll
+                        // lands focus well past the anchor before this fires,
+                        // and parking back up would yank the page out from
+                        // under the focused row (the focus engine then fights
+                        // to re-reveal it: the scroll-jack). Only ever pull
+                        // the page *down* to the anchor, never back up.
+                        guard scrollOffset < shelvesAnchor - HomeHeroMotion.snapSlack else { return }
+                        withAnimation(theme.animation) {
                             scrollPosition.scrollTo(y: shelvesAnchor)
                         }
                     }

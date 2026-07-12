@@ -1,3 +1,4 @@
+import DesignSystem
 import SwiftUI
 
 /// Every layout and motion knob for the Home hero in one place, so design
@@ -6,7 +7,12 @@ import SwiftUI
 enum HomeHeroMotion {
     /// Fraction of the container the hero occupies; the remainder is the
     /// Continue Watching peek above the fold.
-    static let heroHeightFraction: CGFloat = 0.8
+    static let heroHeightFraction: CGFloat = 0.85
+
+    /// Gap between the hero's bottom edge and the Continue Watching row —
+    /// deliberately tighter than the `sectionSpacing` used between shelves,
+    /// so the peeking row hugs the hero.
+    static let heroToShelvesGap: CGFloat = SpacingTokens.md
 
     /// Full-bleed backdrop canvas height (matches the previous Home hero).
     static let backdropHeight: CGFloat = 1080
@@ -41,6 +47,11 @@ enum HomeHeroMotion {
     /// the title arrives as the hero leaves.
     static let shelfHeaderReveal: CGFloat = 0.8
 
+    /// Offsets closer than this to a snap target skip the snap — redundant
+    /// assertions during fast focus movement are what the scroll-jack was
+    /// made of.
+    static let snapSlack: CGFloat = 24
+
     /// Horizontal page slide: the incoming item enters from the trailing
     /// edge while the outgoing one exits leading, with a fade riding along.
     /// (Computed because `AnyTransition` isn't `Sendable`, so a stored static
@@ -63,4 +74,7 @@ enum HomeHeroMotion {
     static let dotHeight: CGFloat = 8
     static let dotWidth: CGFloat = 8
     static let activeDotWidth: CGFloat = 26
+    /// How far below the hero's bottom edge the dots hang (into the
+    /// hero→shelves gap).
+    static let dotsDrop: CGFloat = 12
 }
