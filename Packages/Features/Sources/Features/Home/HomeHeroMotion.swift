@@ -7,12 +7,12 @@ import SwiftUI
 enum HomeHeroMotion {
     /// Fraction of the container the hero occupies; the remainder is the
     /// Continue Watching peek above the fold.
-    static let heroHeightFraction: CGFloat = 0.85
+    static let heroHeightFraction: CGFloat = 0.93
 
     /// Gap between the hero's bottom edge and the Continue Watching row —
     /// deliberately tighter than the `sectionSpacing` used between shelves,
     /// so the peeking row hugs the hero.
-    static let heroToShelvesGap: CGFloat = SpacingTokens.md
+    static let heroToShelvesGap: CGFloat = SpacingTokens.sm
 
     /// Full-bleed backdrop canvas height (matches the previous Home hero).
     static let backdropHeight: CGFloat = 1080
@@ -20,7 +20,7 @@ enum HomeHeroMotion {
     /// Where the backdrop's bottom fade begins/ends, as fractions of its
     /// height — the image is gone before the shelves start.
     static let backdropFadeStart: CGFloat = 0.6
-    static let backdropFadeEnd: CGFloat = 0.9
+    static let backdropFadeEnd: CGFloat = 1.1
 
     /// Leading scrim behind the left-stacked lockup: opacity at the screen
     /// edge and where it fades to clear (fraction of the width).
@@ -45,7 +45,7 @@ enum HomeHeroMotion {
     /// Exit progress at which the Continue Watching header fades/slides in.
     /// While the hero owns the screen the peeking shelf stays headerless;
     /// the title arrives as the hero leaves.
-    static let shelfHeaderReveal: CGFloat = 0.8
+    static let shelfHeaderReveal: CGFloat = 1
 
     /// Offsets closer than this to a snap target skip the snap — redundant
     /// assertions during fast focus movement are what the scroll-jack was
@@ -68,7 +68,7 @@ enum HomeHeroMotion {
     static let logoHeight: CGFloat = 220
 
     /// Measure cap for the hero overview so lines stay readable.
-    static let overviewMaxWidth: CGFloat = 760
+    static let overviewMaxWidth: CGFloat = 560
 
     /// Page indicator dots.
     static let dotHeight: CGFloat = 8
@@ -76,5 +76,5 @@ enum HomeHeroMotion {
     static let activeDotWidth: CGFloat = 26
     /// How far below the hero's bottom edge the dots hang (into the
     /// hero→shelves gap).
-    static let dotsDrop: CGFloat = 12
+    static let dotsDrop: CGFloat = 42
 }

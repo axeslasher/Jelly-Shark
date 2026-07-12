@@ -27,7 +27,7 @@ struct HomeShelvesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             if !resumeItems.isEmpty {
-                ContentShelf("Continue Watching", icon: "play.circle.fill", headerVisible: showsResumeHeader) {
+                ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                     ForEach(resumeItems) { item in
                         item.playableShelfItem(client: session.client) {
                             onPlay(item)
@@ -51,7 +51,7 @@ struct HomeShelvesSection: View {
             }
 
             ForEach(latestShelves) { shelf in
-                ContentShelf("Recently Added · \(shelf.library.name)", icon: "sparkles") {
+                ContentShelf("Recently Added \(shelf.library.name)", icon: "sparkles") {
                     ForEach(shelf.items) { item in
                         item.posterShelfItem(client: session.client)
                     }

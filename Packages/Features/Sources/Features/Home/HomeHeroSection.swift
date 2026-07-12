@@ -73,8 +73,8 @@ struct HomeHeroSection: View {
 
             if let overview = item.overview {
                 Text(overview)
-                    .jsStyle(.body)
-                    .foregroundStyle(theme.secondary)
+                    .jsStyle(.overview)
+                    .foregroundStyle(theme.primary)
                     .lineLimit(3)
                     .frame(maxWidth: HomeHeroMotion.overviewMaxWidth, alignment: .leading)
             }
@@ -139,13 +139,13 @@ struct HomeHeroSection: View {
             playButton
 
             CircleNavigationLink(
-                systemImage: "info",
+                systemImage: "info.circle.text.page.fill",
                 title: "Details",
                 value: item,
             )
 
             CircleActionButton(
-                systemImage: "arrow.right",
+                systemImage: "chevron.forward",
                 title: "Next",
                 tint: theme.primary,
                 isEnabled: items.count > 1,
