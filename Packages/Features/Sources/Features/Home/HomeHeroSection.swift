@@ -302,7 +302,6 @@ struct HomeHeroSection: View {
     private func lockup(for item: MediaItem) -> some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
             titleTreatment(for: item)
-
             if let overview = item.overview {
                 Text(overview)
                     .jsStyle(.overview)
@@ -310,12 +309,31 @@ struct HomeHeroSection: View {
                     .lineLimit(3)
                     .frame(maxWidth: HomeHeroMotion.overviewMaxWidth, alignment: .leading)
             }
-
-            if let metadataLine = metadataLine(for: item) {
-                Text(metadataLine)
-                    .jsStyle(.caption, .emphasized)
-                    .foregroundStyle(theme.tertiary)
-                    .lineLimit(1)
+            // Overview and fact row read as one block — tighter spacing
+            // inside the pair than the lockup's stride between elements.
+            VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+                // A slimmed-down cut of the detail hero's fact row sits
+                // between the overview and the year/genre line: ratings and
+                // certificate (plus season count for a series). Renders
+                // nothing when every field is nil.
+                MediaMetadataRow(
+                    yearText: nil,
+                    runtime: nil,
+                    seasons: item.seasonCountText,
+                    seasonsIcon: "square.stack",
+                    communityRating: item.communityRating,
+                    criticRating: item.criticRating,
+                    certificate: item.officialRating,
+                    resolution: nil,
+                    videoRange: nil,
+                    audioFormat: nil,
+                )
+                if let metadataLine = metadataLine(for: item) {
+                    Text(metadataLine)
+                        .jsStyle(.caption, .emphasized)
+                        .foregroundStyle(theme.tertiary)
+                        .lineLimit(1)
+                }
             }
         }
     }
