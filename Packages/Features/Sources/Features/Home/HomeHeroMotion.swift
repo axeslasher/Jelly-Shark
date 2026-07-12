@@ -21,6 +21,26 @@ enum HomeHeroMotion {
     static let scrimEdgeOpacity: Double = 0.75
     static let scrimEnd: CGFloat = 0.55
 
+    /// Scroll distance ignored before the hero's exit begins — dead-bands the
+    /// tvOS focus engine's small settle so the hero stays put until the
+    /// scroll is a deliberate move toward the shelves.
+    static let exitThreshold: CGFloat = 60
+
+    /// Points of scrolling over which the hero fully fades and drifts out
+    /// (progress 0 → 1). Smaller = snappier exit; larger = more gradual.
+    static let exitDistance: CGFloat = 350
+
+    /// Extra upward drift of the lockup at full exit progress, on top of its
+    /// natural scroll movement — the hero leaves faster than the page.
+    /// Offset only, never opacity: faded-out controls become unfocusable on
+    /// tvOS, which strands the scroll (see MediaDetailView).
+    static let exitDrift: CGFloat = -240
+
+    /// Exit progress at which the Continue Watching header fades/slides in.
+    /// While the hero owns the screen the peeking shelf stays headerless;
+    /// the title arrives as the hero leaves.
+    static let shelfHeaderReveal: CGFloat = 0.8
+
     /// Horizontal page slide: the incoming item enters from the trailing
     /// edge while the outgoing one exits leading, with a fade riding along.
     /// (Computed because `AnyTransition` isn't `Sendable`, so a stored static

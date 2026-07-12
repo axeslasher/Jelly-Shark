@@ -18,6 +18,9 @@ struct HomeHeroBackdrop: View {
     let itemId: String
     /// Live scroll offset (`contentOffset.y + contentInsets.top`).
     let scrollOffset: CGFloat
+    /// Hero exit progress (0 at rest, 1 once the shelves own the screen);
+    /// the backdrop fades out as it slides up, and back in on the way down.
+    let progress: CGFloat
 
     var body: some View {
         ZStack {
@@ -32,6 +35,7 @@ struct HomeHeroBackdrop: View {
         // steady while pages slide beneath it.
         .overlay { leadingScrim }
         .mask { bottomFade }
+        .opacity(1 - progress)
         .offset(y: -scrollOffset)
         .ignoresSafeArea()
     }

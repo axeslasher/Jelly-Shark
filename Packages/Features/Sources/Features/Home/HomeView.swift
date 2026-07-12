@@ -28,6 +28,12 @@ struct HomeView: View {
     /// slide up as one unit.
     @State private var scrollOffset: CGFloat = 0
 
+    /// Hero exit progress (0...1) mapped from the scroll offset — drives the
+    /// lockup's extra drift and the backdrop fade, and reverses on the way
+    /// back up. No `withAnimation`: the scroll itself provides continuity
+    /// (and the region snap's animated scroll animates it for free).
+    @State private var scrollProgress: CGFloat = 0
+
     /// Whether the hero has scrolled far enough away to pause the carousel.
     @State private var isHeroOffscreen = false
 
@@ -110,9 +116,15 @@ struct HomeView: View {
                         viewModel.noteUserInteraction()
                     },
                 )
+                // Drift the lockup up faster than the page as it exits, in
+                // lockstep with the backdrop fade — and back on the way up.
+                // Offset only, never opacity (see HomeHeroMotion.exitDrift).
+                // Applied here so the hero's inputs stay unchanged during
+                // scroll and its body is skipped.
+                .offset(y: scrollProgress * HomeHeroMotion.exitDrift)
                 #if os(tvOS)
-                .focusSection()
-                .focused($focusedRegion, equals: .hero)
+                    .focusSection()
+                    .focused($focusedRegion, equals: .hero)
                 #endif
 
                 // Everything below the fold shares one focus region so tvOS
@@ -125,6 +137,11 @@ struct HomeView: View {
                         resumeStatus: viewModel.resumeStatus,
                         nextUpStatus: viewModel.nextUpStatus,
                         latestStatus: viewModel.latestStatus,
+                        // Headerless while the hero owns the screen; the
+                        // title fades/slides in as the hero exits (always
+                        // shown when there's no hero to defer to).
+                        showsResumeHeader: viewModel.currentHeroItem == nil
+                            || scrollProgress >= HomeHeroMotion.shelfHeaderReveal,
                         onPlay: { playbackItem = $0 },
                     )
 
@@ -178,10 +195,20 @@ struct HomeView: View {
                 if offset != scrollOffset {
                     scrollOffset = offset
                 }
-                // Pause the carousel once the hero is mostly gone; only report
-                // boundary crossings so scrolling doesn't spam the view model.
-                let offscreen = snapMetrics.containerHeight > 0
-                    && offset >= snapMetrics.containerHeight * HomeHeroMotion.heroHeightFraction / 2
+                // Map the offset to exit progress (dead-banding the focus
+                // engine's settle); skip redundant writes so scrolling past
+                // the fold stops invalidating.
+                let progress = min(
+                    max((offset - HomeHeroMotion.exitThreshold) / HomeHeroMotion.exitDistance, 0),
+                    1,
+                )
+                if progress != scrollProgress {
+                    scrollProgress = progress
+                }
+                // Pause the carousel once the hero has fully exited; only
+                // report boundary crossings so scrolling doesn't spam the
+                // view model.
+                let offscreen = progress >= 1
                 if offscreen != isHeroOffscreen {
                     isHeroOffscreen = offscreen
                     viewModel.setPaused(offscreen, reason: .offscreen)
@@ -202,6 +229,7 @@ struct HomeView: View {
                 blurHash: item.backdropBlurHash,
                 itemId: item.id,
                 scrollOffset: scrollOffset,
+                progress: scrollProgress,
             )
         }
     }

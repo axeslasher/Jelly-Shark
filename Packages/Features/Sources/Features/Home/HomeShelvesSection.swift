@@ -17,6 +17,9 @@ struct HomeShelvesSection: View {
     let resumeStatus: HomeViewModel.SectionStatus
     let nextUpStatus: HomeViewModel.SectionStatus
     let latestStatus: HomeViewModel.SectionStatus
+    /// The first shelf peeks above the fold under the hero; its header stays
+    /// hidden until the hero has (mostly) exited, then fades/slides in.
+    let showsResumeHeader: Bool
     /// Continue Watching and Next Up cards play immediately (the playback
     /// badge is the affordance); the owner presents the player.
     let onPlay: (MediaItem) -> Void
@@ -24,9 +27,9 @@ struct HomeShelvesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             if !resumeItems.isEmpty {
-                ContentShelf("Continue Watching", icon: "play.circle.fill") {
+                ContentShelf("Continue Watching", icon: "play.circle.fill", headerVisible: showsResumeHeader) {
                     ForEach(resumeItems) { item in
-                        item.resumeShelfItem(client: session.client) {
+                        item.playableShelfItem(client: session.client) {
                             onPlay(item)
                         }
                     }
@@ -38,7 +41,7 @@ struct HomeShelvesSection: View {
             if !nextUpItems.isEmpty {
                 ContentShelf("Next Up", icon: "play.square.stack") {
                     ForEach(nextUpItems) { item in
-                        item.episodeShelfItem(client: session.client, showsSeriesName: true) {
+                        item.playableShelfItem(client: session.client) {
                             onPlay(item)
                         }
                     }

@@ -11,12 +11,19 @@ struct HomeSkeleton: View {
     @State private var pulsing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-            heroGhost
-            skeletonShelf(aspectRatio: 16.0 / 9.0, cardWidth: 320)
-            skeletonShelf(aspectRatio: 2.0 / 3.0, cardWidth: 200)
+        // Mirrors the real content's scroll structure (same container, same
+        // spine, same paddings) so the ghosts sit exactly where the loaded
+        // layout will — a plain stack gets inset differently than scroll
+        // content, which read as mismatched screen padding.
+        ScrollView {
+            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                heroGhost
+                skeletonShelf(aspectRatio: 16.0 / 9.0, cardWidth: 440)
+                skeletonShelf(aspectRatio: 2.0 / 3.0, cardWidth: 200)
+            }
+            .padding(.bottom, SpacingTokens.lg)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .scrollClipDisabled()
         .opacity(pulsing ? 0.55 : 1)
         .animation(
             reduceMotion ? nil : .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
