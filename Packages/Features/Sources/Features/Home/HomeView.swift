@@ -114,10 +114,16 @@ struct HomeView: View {
                 HomeHeroSection(
                     items: viewModel.heroItems,
                     index: viewModel.heroIndex,
+                    pagingDirection: viewModel.pagingDirection,
+                    advanceRequests: viewModel.advanceRequests,
                     playTarget: viewModel.heroPlayTarget,
                     onPlay: { playbackItem = $0 },
                     onNext: {
                         viewModel.advanceHero()
+                        viewModel.noteUserInteraction()
+                    },
+                    onSelect: { newIndex in
+                        viewModel.selectHero(newIndex)
                         viewModel.noteUserInteraction()
                     },
                 )
@@ -245,6 +251,8 @@ struct HomeView: View {
                 url: client.backdropURL(for: item),
                 blurHash: item.backdropBlurHash,
                 itemId: item.id,
+                direction: viewModel.pagingDirection,
+                generation: viewModel.pagingGeneration,
                 scrollOffset: scrollOffset,
                 progress: scrollProgress,
             )

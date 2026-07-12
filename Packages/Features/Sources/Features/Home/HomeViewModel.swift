@@ -308,11 +308,45 @@ public final class HomeViewModel {
 
     // MARK: - Hero paging
 
-    /// Advance to the next hero item (wrapping). Used by both the timer and
-    /// the hero's "next" button.
+    /// Which way the last page turn went — the view aims the backdrop slide
+    /// and the post-turn focus landing (advance → Next, retreat → Play) off
+    /// this. Set before `heroIndex` mutates so observers see them together.
+    public enum PagingDirection {
+        case forward
+        case backward
+    }
+
+    public private(set) var pagingDirection: PagingDirection = .forward
+
+    /// Monotonic page-turn counter: the backdrop stacks the incoming image
+    /// above the outgoing one by this (index alone can't — wrapping from the
+    /// last page back to 0 would order the new image underneath).
+    public private(set) var pagingGeneration = 0
+
+    /// Bumped when the auto-advance timer wants a page turn. The view
+    /// answers by fading the content out and then calling `advanceHero()` —
+    /// mutating the index directly from here would snap the new page in
+    /// before the fade choreography could hide it.
+    public private(set) var advanceRequests = 0
+
+    /// Advance to the next hero item (wrapping). Used by the timer and the
+    /// hero's "next" button.
     public func advanceHero() {
         guard heroItems.count > 1 else { return }
+        pagingDirection = .forward
+        pagingGeneration += 1
         heroIndex = (heroIndex + 1) % heroItems.count
+        resolveHeroPlayTarget()
+    }
+
+    /// Jump to a specific hero item — the paged tab view reports user-driven
+    /// page turns (edge navigation, swipes) here. Native paging never wraps,
+    /// so plain comparison gives the direction.
+    public func selectHero(_ newIndex: Int) {
+        guard heroItems.indices.contains(newIndex), newIndex != heroIndex else { return }
+        pagingDirection = newIndex > heroIndex ? .forward : .backward
+        pagingGeneration += 1
+        heroIndex = newIndex
         resolveHeroPlayTarget()
     }
 
@@ -345,7 +379,7 @@ public final class HomeViewModel {
                 guard let interval = self?.autoAdvanceInterval else { return }
                 try? await Task.sleep(for: interval)
                 guard !Task.isCancelled else { return }
-                self?.advanceHero()
+                self?.advanceRequests += 1
             }
         }
     }
