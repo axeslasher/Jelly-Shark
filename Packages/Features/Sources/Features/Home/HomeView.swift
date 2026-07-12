@@ -65,15 +65,24 @@ struct HomeView: View {
     /// `tabSelection` for the tvOS bug this works around.
     var body: some View {
         Group {
-            if session.isConnected, viewModel.isInitialLoading {
-                HomeSkeleton()
-            } else if !session.isConnected || viewModel.isEmptyServer {
-                HomeEmptyState(
-                    isConnected: session.isConnected,
-                    userName: connection.connectedUser?.name,
-                )
+            // The skeleton owns every "still finding out" state — session
+            // restore in flight AND section loads in flight — so launch never
+            // flashes the disconnected or empty placeholders on its way to
+            // content. The placeholders are verdicts, not defaults: Welcome
+            // requires the restore to have settled with no connection, and
+            // Nothing Here requires every section to have come back empty.
+            if session.isConnected {
+                if viewModel.isInitialLoading {
+                    HomeSkeleton()
+                } else if viewModel.isEmptyServer {
+                    HomeEmptyState(isConnected: true, userName: connection.connectedUser?.name)
+                } else {
+                    contentScroll
+                }
+            } else if connection.hasAttemptedRestore, connection.state == .disconnected {
+                HomeEmptyState(isConnected: false, userName: nil)
             } else {
-                contentScroll
+                HomeSkeleton()
             }
         }
         // Fill the window even in the non-scrolling states (skeleton, empty),

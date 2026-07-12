@@ -139,13 +139,18 @@ public final class HomeViewModel {
         heroPlayTarget = nil
 
         guard let client else {
+            // No client means the session is still being established (or was
+            // torn down) — Home is showing the skeleton or the disconnected
+            // placeholder, never these statuses. Park them at `.loading`
+            // rather than `.empty`: pre-marking empty made "Nothing here yet"
+            // flash in the beat between connecting and the real load.
             heroItems = []
             resumeItems = []
             nextUpItems = []
             latestShelves = []
-            resumeStatus = .empty
-            nextUpStatus = .empty
-            latestStatus = .empty
+            resumeStatus = .loading
+            nextUpStatus = .loading
+            latestStatus = .loading
             heroIndex = 0
             return
         }
