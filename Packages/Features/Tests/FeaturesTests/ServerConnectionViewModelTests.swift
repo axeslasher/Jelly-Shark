@@ -80,6 +80,7 @@ struct ServerConnectionViewModelTests {
         await viewModel.restoreSession()
 
         #expect(viewModel.state == .connected)
+        #expect(viewModel.hasAttemptedRestore)
         #expect(viewModel.connectedUser?.id == "user-1")
         #expect(viewModel.libraries.count == 1)
         #expect(viewModel.errorMessage == nil)
@@ -96,9 +97,14 @@ struct ServerConnectionViewModelTests {
         let recorder = FactoryRecorder()
         let viewModel = makeViewModel(store: store, client: MockJellyfinClient(), recorder: recorder)
 
+        // Until the restore settles, a `.disconnected` state is provisional —
+        // Home shows a skeleton off this flag instead of "Welcome".
+        #expect(viewModel.hasAttemptedRestore == false)
+
         await viewModel.restoreSession()
 
         #expect(viewModel.state == .disconnected)
+        #expect(viewModel.hasAttemptedRestore)
         #expect(viewModel.errorMessage == nil)
         #expect(recorder.configurations.isEmpty)
     }
@@ -156,6 +162,7 @@ struct ServerConnectionViewModelTests {
         #expect(store.session != nil)
         #expect(store.clearSessionCallCount == 0)
         #expect(viewModel.state == .disconnected)
+        #expect(viewModel.hasAttemptedRestore)
         #expect(viewModel.connectedUser == nil)
         #expect(viewModel.errorMessage?.contains("offline") == true)
     }
