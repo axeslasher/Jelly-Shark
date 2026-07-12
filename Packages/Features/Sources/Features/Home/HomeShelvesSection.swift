@@ -35,7 +35,7 @@ struct HomeShelvesSection: View {
                     }
                 }
             } else if resumeStatus.isFailed {
-                FailedShelfNotice(title: "Continue Watching", icon: "play.circle.fill")
+                FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill")
             }
 
             if !nextUpItems.isEmpty {
