@@ -156,6 +156,29 @@ extension MediaItem {
         return .unplayed(runtime: formattedRuntime)
     }
 
+    /// Continue Watching card (16:9): the landscape treatment plus the
+    /// episode card's playback badge (play + themed progress bar + remaining
+    /// runtime). Clicking resumes playback immediately — the badge is the
+    /// affordance — rather than navigating to detail.
+    @MainActor
+    func resumeShelfItem(
+        client: JellyfinClientProtocol?,
+        width: CGFloat = 320,
+        onPlay: @escaping () -> Void,
+    ) -> some View {
+        ArtworkShelfItem(
+            url: client?.landscapeURL(for: self),
+            blurHash: landscapeBlurHash,
+            title: episodeDisplayTitle ?? name,
+            subtitle: type == .episode ? seriesName : productionYear.map(String.init),
+            placeholderIcon: "play.tv",
+            aspectRatio: 16.0 / 9.0,
+            width: width,
+            playbackBadge: playbackBadge,
+            action: onPlay,
+        )
+    }
+
     /// Landscape card (16:9). Episodes show the episode title over the series
     /// name; everything else shows the name over the year.
     @MainActor

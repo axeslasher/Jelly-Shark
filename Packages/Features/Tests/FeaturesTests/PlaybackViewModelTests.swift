@@ -229,6 +229,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         nil
     }
 
+    func getNextUpItems(limit _: Int?) async throws -> [MediaItem] {
+        []
+    }
+
     func markPlayed(itemId _: String) async throws {}
     func markUnplayed(itemId _: String) async throws {}
     func markFavorite(itemId _: String) async throws {}
