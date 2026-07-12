@@ -48,11 +48,11 @@ public final class HomeViewModel {
     /// are out of scope for Home).
     private static let latestCapable: Set<CollectionType> = [.movies, .tvshows, .boxsets]
 
-    private static let resumeLimit = 12
-    private static let nextUpLimit = 12
+    private static let resumeLimit = 16
+    private static let nextUpLimit = 16
     /// Global latest fetch feeding hero curation only (the shelves are per-library).
     private static let heroSourceLimit = 16
-    private static let latestPerLibraryLimit = 10
+    private static let latestPerLibraryLimit = 26
 
     // MARK: - Outputs
 
@@ -108,7 +108,7 @@ public final class HomeViewModel {
     /// doesn't refetch its next-up episode.
     private var playTargets: [String: MediaItem] = [:]
 
-    public init(heroLimit: Int = 5, autoAdvanceInterval: Duration = .seconds(7)) {
+    public init(heroLimit: Int = 10, autoAdvanceInterval: Duration = .seconds(7)) {
         self.heroLimit = heroLimit
         self.autoAdvanceInterval = autoAdvanceInterval
     }
