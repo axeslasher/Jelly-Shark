@@ -572,8 +572,9 @@ struct LibraryItemsViewModelTests {
     }
 }
 
-/// A reusable async gate: `wait()` suspends until `open()` is called
-private actor AsyncGate {
+/// A reusable async gate: `wait()` suspends until `open()` is called.
+/// Target-visible: HomeViewModelTests gates in-flight loads with it too.
+actor AsyncGate {
     private var isOpen = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 

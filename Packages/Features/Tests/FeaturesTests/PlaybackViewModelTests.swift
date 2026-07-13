@@ -171,11 +171,15 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Per-library results, keyed the same way; nil handler serves []
     var latestItemsHandler: ((String?) -> Result<[MediaItem], Error>)?
 
+    /// Optional gate awaited before serving latest items, for in-flight tests
+    var latestItemsDelay: (() async -> Void)?
+
     func getLatestItems(libraryId: String?, limit _: Int?) async throws -> [MediaItem] {
         let result: Result<[MediaItem], Error> = lock.withLock {
             latestItemsRequests.append(libraryId)
             return latestItemsHandler?(libraryId) ?? .success([])
         }
+        await latestItemsDelay?()
         return try result.get()
     }
 

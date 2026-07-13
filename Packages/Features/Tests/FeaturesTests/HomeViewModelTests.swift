@@ -159,6 +159,35 @@ struct HomeViewModelTests {
         #expect(viewModel.isEmptyServer == false)
     }
 
+    @Test("First paint waits for every section — a fast shelf can't beat the hero")
+    func initialLoadingHoldsUntilAllSectionsSettle() async {
+        // Regression: `isInitialLoading` used to clear when ANY section
+        // resolved. With resume in first and the hero source still in
+        // flight, the content mounted heroless — tvOS focus landed on the
+        // Continue Watching row and scrolled the hero away before it showed.
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([movie("hero-1")]) : .success([])
+        }
+        client.latestItemsDelay = { await gate.wait() }
+
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [])
+        let loadTask = Task { await viewModel.load() }
+
+        await waitUntil { viewModel.resumeStatus == .loaded }
+        #expect(viewModel.resumeStatus == .loaded)
+        #expect(viewModel.isInitialLoading)
+
+        await gate.open()
+        await loadTask.value
+
+        #expect(viewModel.isInitialLoading == false)
+        #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
+    }
+
     @Test("One failed section degrades alone and re-arms the next load")
     func sectionFailureRetries() async {
         let client = MockJellyfinClient()

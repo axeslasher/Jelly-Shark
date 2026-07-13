@@ -73,9 +73,13 @@ public final class HomeViewModel {
     /// nil while resolving or for unplayable items (box sets).
     public private(set) var heroPlayTarget: MediaItem?
 
-    /// True until the first load resolves any section.
+    /// True until the load settles EVERY section — all-or-nothing on
+    /// purpose. Revealing content while the hero's source is still in
+    /// flight hands tvOS focus to whichever shelf loaded first (an empty
+    /// hero has no focusables), and the region snap then scrolls the hero
+    /// away before it has anything to show.
     public var isInitialLoading: Bool {
-        resumeStatus == .loading && nextUpStatus == .loading && latestStatus == .loading
+        resumeStatus == .loading || nextUpStatus == .loading || latestStatus == .loading
     }
 
     /// Connected and fully loaded, but the server has nothing to show.
