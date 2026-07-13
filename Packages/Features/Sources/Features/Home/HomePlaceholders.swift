@@ -16,10 +16,21 @@ struct HomeSkeleton: View {
         // layout will — a plain stack gets inset differently than scroll
         // content, which read as mismatched screen padding.
         ScrollView {
-            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            // Hero → first shelf uses the tighter hero gap (the peeking
+            // Continue Watching row hugs the hero); shelves keep the
+            // section stride between themselves — same as the real spine.
+            VStack(alignment: .leading, spacing: HomeHeroMotion.heroToShelvesGap) {
                 heroGhost
-                skeletonShelf(aspectRatio: 16.0 / 9.0, cardWidth: 440)
-                skeletonShelf(aspectRatio: 2.0 / 3.0, cardWidth: 200)
+
+                VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                    // The peeking row is headerless while the hero owns the
+                    // screen, so its ghost is too.
+                    skeletonShelf(aspectRatio: 16.0 / 9.0, cardWidth: 440, showsHeader: false)
+                    skeletonShelf(
+                        aspectRatio: 2.0 / 3.0,
+                        cardWidth: PosterGridLayout.minimumCardWidth,
+                    )
+                }
             }
             .padding(.bottom, SpacingTokens.lg)
         }
@@ -33,33 +44,61 @@ struct HomeSkeleton: View {
         .accessibilityLabel("Loading")
     }
 
-    /// Ghost of the hero lockup: logo box, overview lines, button row.
+    /// Ghost of the hero lockup, line for line: logo, the fact-row/overview
+    /// pair, the year/genre caption, then the controls row — bottom-anchored
+    /// with the real page's clearance, so nothing jumps when content fades in.
     private var heroGhost: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
-            ghostBlock(width: HomeHeroMotion.logoWidth, height: 120)
-            ghostBlock(width: HomeHeroMotion.overviewMaxWidth, height: 72)
+            ghostBlock(width: 360, height: 120)
+
+            VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+                ghostBlock(width: 320, height: 26)
+                ghostBlock(width: HomeHeroMotion.overviewMaxWidth, height: 72)
+            }
+
+            ghostBlock(width: 240, height: 20)
             ghostBlock(width: 320, height: 56)
         }
         .padding(.horizontal, SpacingTokens.screenPadding)
-        .padding(.bottom, SpacingTokens.md)
+        .padding(.bottom, HomeHeroMotion.controlsBottomClearance)
         .containerRelativeFrame(.vertical, alignment: .bottomLeading) { height, _ in
             height * HomeHeroMotion.heroHeightFraction
         }
     }
 
-    private func skeletonShelf(aspectRatio: CGFloat, cardWidth: CGFloat) -> some View {
+    /// One ghost row. The cards live in their own horizontal scroll, exactly
+    /// like `ContentShelf` — NOT a naked HStack: rows overflow the screen on
+    /// purpose, and overflowing content inside the vertical scroll re-centers
+    /// the whole content stack horizontally, throwing every narrower sibling
+    /// (the hero ghost) off-screen left. The scroll contains the overflow.
+    private func skeletonShelf(
+        aspectRatio: CGFloat,
+        cardWidth: CGFloat,
+        showsHeader: Bool = true,
+    ) -> some View {
         VStack(alignment: .leading, spacing: SpacingTokens.headerSpacing) {
-            ghostBlock(width: 280, height: 30)
-
-            HStack(alignment: .top, spacing: SpacingTokens.cardGap) {
-                ForEach(0 ..< 6, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: theme.cornerRadius)
-                        .fill(theme.surface)
-                        .frame(width: cardWidth, height: cardWidth / aspectRatio)
-                }
+            if showsHeader {
+                ghostBlock(width: 280, height: 30)
+                    .padding(.horizontal, SpacingTokens.screenPadding)
             }
+
+            ScrollView(.horizontal) {
+                HStack(alignment: .top, spacing: SpacingTokens.cardGap) {
+                    ForEach(0 ..< 8, id: \.self) { _ in
+                        VStack(alignment: .center, spacing: SpacingTokens.xs) {
+                            RoundedRectangle(cornerRadius: theme.cornerRadius)
+                                .fill(theme.surface)
+                                .frame(width: cardWidth, height: cardWidth / aspectRatio)
+                            // Caption stand-in, so cards read as lockups.
+                            ghostBlock(width: cardWidth * 0.6, height: 18)
+                        }
+                    }
+                }
+                .padding(.horizontal, SpacingTokens.screenPadding)
+            }
+            .scrollClipDisabled()
+            .scrollIndicators(.hidden)
         }
-        .padding(.horizontal, SpacingTokens.screenPadding)
     }
 
     private func ghostBlock(width: CGFloat, height: CGFloat) -> some View {
@@ -67,6 +106,11 @@ struct HomeSkeleton: View {
             .fill(theme.surface)
             .frame(width: width, height: height)
     }
+}
+
+#Preview("Skeleton") {
+    HomeSkeleton()
+        .withThemeEnvironment()
 }
 
 /// Deliberate hero-shaped empty state: connected-but-empty servers get a
