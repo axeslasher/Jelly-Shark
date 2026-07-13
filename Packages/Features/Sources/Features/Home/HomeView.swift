@@ -163,9 +163,14 @@ struct HomeView: View {
                         showsResumeHeader: viewModel.currentHeroItem == nil
                             || scrollProgress >= HomeHeroMotion.shelfHeaderReveal,
                         onPlay: { playbackItem = $0 },
+                        onRetry: { Task { await viewModel.retryFailedSections() } },
                     )
 
-                    GenreShelvesView(shelves: genreShelves.shelves)
+                    GenreShelvesView(
+                        shelves: genreShelves.shelves,
+                        status: genreShelves.status,
+                        onRetry: { Task { await genreShelves.retry() } },
+                    )
                 }
                 #if os(tvOS)
                 .focusSection()

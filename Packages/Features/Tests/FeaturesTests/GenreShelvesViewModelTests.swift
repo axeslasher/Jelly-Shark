@@ -25,6 +25,7 @@ struct GenreShelvesViewModelTests {
 
         // Music is not genre-capable; movies + shows are, in their library order.
         #expect(viewModel.shelves.map(\.library.id) == ["movies", "shows"])
+        #expect(viewModel.status == .loaded)
     }
 
     @Test("No genre-capable libraries yields no shelves")
@@ -38,6 +39,7 @@ struct GenreShelvesViewModelTests {
         await viewModel.load()
 
         #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.status == .empty)
     }
 
     @Test("A library with no genres produces no shelf")
@@ -49,15 +51,90 @@ struct GenreShelvesViewModelTests {
         await viewModel.load()
 
         #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.status == .empty)
     }
 
-    @Test("A nil client yields no shelves")
+    @Test("A nil client yields no shelves, parked at .loading")
     func nilClient() async {
         let viewModel = GenreShelvesViewModel()
         viewModel.attach(client: nil, libraries: [Self.movies])
         await viewModel.load()
 
         #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.status == .loading)
+    }
+
+    // MARK: - Failure
+
+    @Test("Every library failing reports .failed and re-arms the next load")
+    func allFailedRearms() async {
+        // Regression: a failed build used to leave `needsLoad` false, so the
+        // section stayed silently blank until the client or libraries changed.
+        let client = MockJellyfinClient()
+        client.filterOptionsResult = .failure(APIError.networkError("offline"))
+
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        #expect(viewModel.shelves.isEmpty)
+        #expect(viewModel.status.isFailed)
+
+        // The reappearance re-fires attach + load with unchanged inputs.
+        client.filterOptionsResult = .success(
+            LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []),
+        )
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        #expect(viewModel.shelves.map(\.library.id) == ["movies"])
+        #expect(viewModel.status == .loaded)
+    }
+
+    @Test("Retry re-runs a failed build immediately")
+    func retryRecovers() async {
+        let client = MockJellyfinClient()
+        client.filterOptionsResult = .failure(APIError.networkError("offline"))
+
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.status.isFailed)
+
+        client.filterOptionsResult = .success(
+            LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []),
+        )
+        await viewModel.retry()
+
+        #expect(viewModel.status == .loaded)
+        #expect(viewModel.shelves.first?.genres == ["Horror"])
+    }
+
+    @Test("A partial failure keeps the surviving shelves and re-arms")
+    func partialFailureRearms() async {
+        let client = MockJellyfinClient()
+        client.filterOptionsHandler = { libraryId in
+            libraryId == "movies"
+                ? .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+                : .failure(APIError.networkError("offline"))
+        }
+
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        await viewModel.load()
+
+        // Something survived, so no error notice — but the gap re-armed a
+        // rebuild for the next appearance.
+        #expect(viewModel.shelves.map(\.library.id) == ["movies"])
+        #expect(viewModel.status == .loaded)
+
+        client.filterOptionsHandler = { _ in
+            .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        }
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        await viewModel.load()
+
+        #expect(viewModel.shelves.map(\.library.id) == ["movies", "shows"])
     }
 
     // MARK: - Genre ordering & cap

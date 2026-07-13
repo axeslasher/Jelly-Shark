@@ -176,20 +176,69 @@ public final class HomeViewModel {
             return
         }
 
-        // Hero fallback: when the curation source failed, promote the first
-        // backdrop-bearing item so the marquee never goes dark while content
-        // exists (single item — no rotation).
-        if heroItems.isEmpty {
-            let fallback = (resumeItems + nextUpItems).first { client.backdropURL(for: $0) != nil }
-            heroItems = fallback.map { [$0] } ?? []
-        }
-        heroIndex = 0
-        resolveHeroPlayTarget()
-        startAutoAdvance()
+        settleHero(client: client, previousHeroIds: nil)
 
         if resumeStatus.isFailed || nextUpStatus.isFailed || latestStatus.isFailed {
             needsLoad = true
         }
+    }
+
+    /// Re-run only the sections currently marked `.failed` — the action
+    /// behind the shelf notices' Retry buttons. The load methods never set
+    /// `.loading`, so `isInitialLoading` can't flip the page back to the
+    /// skeleton mid-retry, and untouched sections keep their content and
+    /// focus undisturbed.
+    public func retryFailedSections() async {
+        guard let client else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        let shouldRetryResume = resumeStatus.isFailed
+        let shouldRetryNextUp = nextUpStatus.isFailed
+        let shouldRetryLatest = latestStatus.isFailed
+        let heroIdsBefore = heroItems.map(\.id)
+
+        if shouldRetryResume {
+            await loadResume(client: client, generation: generation)
+        }
+        if shouldRetryNextUp {
+            await loadNextUp(client: client, generation: generation)
+        }
+        if shouldRetryLatest {
+            await loadLatest(client: client, generation: generation)
+        }
+
+        guard generation == loadGeneration else { return }
+
+        // A recovered section can change the hero: latest rebuilds the
+        // curation, and a recovered resume/next-up can offer a fallback
+        // where there was none. `settleHero` skips the marquee reset when
+        // the hero set didn't actually change.
+        if shouldRetryLatest || heroItems.isEmpty {
+            settleHero(client: client, previousHeroIds: heroIdsBefore)
+        }
+
+        if resumeStatus.isFailed || nextUpStatus.isFailed || latestStatus.isFailed {
+            needsLoad = true
+        }
+    }
+
+    /// The hero settling shared by `load()` and `retryFailedSections()`:
+    /// promote a fallback when curation produced nothing (the first
+    /// backdrop-bearing resume/next-up item — single item, no rotation), then
+    /// restart the marquee. Pass the previous hero ids to skip the index
+    /// reset and auto-advance restart when the hero set is unchanged, so a
+    /// shelf-only retry doesn't yank the marquee; `nil` always resets (a
+    /// full load).
+    private func settleHero(client: any JellyfinClientProtocol, previousHeroIds: [String]?) {
+        if heroItems.isEmpty {
+            let fallback = (resumeItems + nextUpItems).first { client.backdropURL(for: $0) != nil }
+            heroItems = fallback.map { [$0] } ?? []
+        }
+        guard heroItems.map(\.id) != previousHeroIds else { return }
+        heroIndex = 0
+        resolveHeroPlayTarget()
+        startAutoAdvance()
     }
 
     /// Refresh just the watch-state sections after playback ends — resume and
@@ -236,7 +285,7 @@ public final class HomeViewModel {
         let capable = libraries.filter { library in
             library.collectionType.map(Self.latestCapable.contains) ?? false
         }
-        let shelves = await Self.buildLatestShelves(
+        let (shelves, shelfError) = await Self.buildLatestShelves(
             client: client,
             libraries: capable,
             limit: Self.latestPerLibraryLimit,
@@ -251,11 +300,27 @@ public final class HomeViewModel {
                 hasBackdrop: { client.backdropURL(for: $0) != nil },
                 limit: heroLimit,
             )
-            latestStatus = (shelves.isEmpty && heroItems.isEmpty) ? .empty : .loaded
+            // A partial library failure still shows what survived, but re-arms
+            // the load so the next appearance refetches the missing rows.
+            // (`load()` only ever re-sets this to true at its end, so setting
+            // it mid-flight is safe.)
+            if shelfError != nil {
+                needsLoad = true
+            }
+            if shelves.isEmpty, let shelfError {
+                // The hero curation isn't the section's content; when every
+                // row failed, that's a failed section even with a live hero.
+                latestStatus = .failed(shelfError)
+            } else {
+                latestStatus = (shelves.isEmpty && heroItems.isEmpty) ? .empty : .loaded
+            }
         } catch {
             guard generation == loadGeneration else { return }
             latestShelves = shelves
             heroItems = []
+            if shelfError != nil {
+                needsLoad = true
+            }
             // The per-library rows stand on their own; only report failure
             // when nothing in the section survived.
             latestStatus = shelves.isEmpty ? .failed(error.localizedDescription) : .loaded
@@ -263,29 +328,51 @@ public final class HomeViewModel {
     }
 
     /// One "Recently Added" fetch per qualifying library, concurrently, in
-    /// library order. Failed or empty libraries simply contribute no row.
+    /// library order. Empty libraries simply contribute no row; failed ones
+    /// also report back (as the first failure's description, in library
+    /// order) so `loadLatest` can surface the error and re-arm a retry
+    /// instead of silently blanking the rows.
     private nonisolated static func buildLatestShelves(
         client: any JellyfinClientProtocol,
         libraries: [Library],
         limit: Int,
-    ) async -> [LibraryShelf] {
-        let byIndex = await withTaskGroup(of: (Int, LibraryShelf?).self) { group in
+    ) async -> (shelves: [LibraryShelf], firstError: String?) {
+        let byIndex = await withTaskGroup(of: (Int, Result<LibraryShelf?, Error>).self) { group in
             for (index, library) in libraries.enumerated() {
                 group.addTask {
-                    var items = await (try? client.getLatestItems(libraryId: library.id, limit: limit)) ?? []
-                    if library.collectionType == .tvshows {
-                        items = await resolvingSeriesEntries(client: client, items: items)
+                    do {
+                        var items = try await client.getLatestItems(libraryId: library.id, limit: limit)
+                        if library.collectionType == .tvshows {
+                            items = await resolvingSeriesEntries(client: client, items: items)
+                        }
+                        return (index, .success(items.isEmpty ? nil : LibraryShelf(library: library, items: items)))
+                    } catch {
+                        return (index, .failure(error))
                     }
-                    return (index, items.isEmpty ? nil : LibraryShelf(library: library, items: items))
                 }
             }
-            var results: [Int: LibraryShelf] = [:]
-            for await (index, shelf) in group {
-                results[index] = shelf
+            var results: [Int: Result<LibraryShelf?, Error>] = [:]
+            for await (index, result) in group {
+                results[index] = result
             }
             return results
         }
-        return libraries.indices.compactMap { byIndex[$0] }
+
+        var shelves: [LibraryShelf] = []
+        var firstError: String?
+        for index in libraries.indices {
+            switch byIndex[index] {
+            case let .success(shelf?):
+                shelves.append(shelf)
+            case let .failure(error):
+                if firstError == nil {
+                    firstError = error.localizedDescription
+                }
+            case .success(nil), .none:
+                break
+            }
+        }
+        return (shelves, firstError)
     }
 
     /// TV "Recently Added" entries can be single episodes — the server only
@@ -452,6 +539,10 @@ public final class HomeViewModel {
         case .series:
             guard let client else { return }
             playTargetTask = Task { [weak self] in
+                // `try?` is enrichment, not swallowing: a nil target just
+                // disables the hero Play button, and failures are never
+                // cached (`playTargets` is written on success only), so
+                // paging back to the item refetches.
                 let next = try? await client.getNextUpEpisode(seriesId: item.id)
                 guard !Task.isCancelled, let self, self.currentHeroItem?.id == item.id else { return }
                 if let next {

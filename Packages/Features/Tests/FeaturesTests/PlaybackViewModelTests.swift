@@ -50,6 +50,9 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Optional gate awaited before serving a library page, for in-flight tests
     var libraryItemsDelay: (() async -> Void)?
     var filterOptionsResult: Result<LibraryFilterOptions, Error> = .success(.empty)
+    /// Per-library filter options (the genre builds fan out per library);
+    /// falls back to `filterOptionsResult` when nil
+    var filterOptionsHandler: ((String) -> Result<LibraryFilterOptions, Error>)?
     var narrowedOptionsRequests: [LibraryQuery] = []
     var narrowedOptionsResult: Result<LibraryFilterOptions?, Error> = .success(nil)
     /// Per-scan-query results; falls back to narrowedOptionsResult when nil
@@ -94,8 +97,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
-    func getLibraryFilterOptions(libraryId _: String, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
-        try filterOptionsResult.get()
+    func getLibraryFilterOptions(libraryId: String, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
+        let result: Result<LibraryFilterOptions, Error> = lock.withLock {
+            filterOptionsHandler?(libraryId) ?? filterOptionsResult
+        }
+        return try result.get()
     }
 
     func getLibraryFilterOptions(
@@ -124,8 +130,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
+    var similarItemsResult: Result<[MediaItem], Error> = .success([])
+
     func getSimilarItems(itemId _: String, limit _: Int?) async throws -> [MediaItem] {
-        []
+        try similarItemsResult.get()
     }
 
     func searchItems(query: String, limit _: Int?) async throws -> [MediaItem] {
@@ -141,14 +149,21 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         try personResult.get()
     }
 
+    /// Per-shelf results keyed by the requested item types (the person page
+    /// fans its three shelves out concurrently); nil handler serves []
+    var itemsFeaturingPersonHandler: (([MediaType]) -> Result<[MediaItem], Error>)?
+
     func getItemsFeaturingPerson(
         personId: String,
         itemTypes: [MediaType],
         personTypes _: [String]?,
         limit _: Int?,
     ) async throws -> [MediaItem] {
-        itemsFeaturingPersonRequests.append((personId, itemTypes))
-        return []
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            itemsFeaturingPersonRequests.append((personId, itemTypes))
+            return itemsFeaturingPersonHandler?(itemTypes) ?? .success([])
+        }
+        return try result.get()
     }
 
     var collectionItemsRequests: [String] = []
@@ -243,19 +258,34 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return nextEpisodeResult
     }
 
+    var seasonsResult: Result<[MediaItem], Error> = .success([])
+
     func getSeasons(seriesId _: String) async throws -> [MediaItem] {
-        []
+        try seasonsResult.get()
     }
 
-    func getEpisodes(seriesId _: String, seasonId _: String?) async throws -> [MediaItem] {
-        []
+    var episodesResult: Result<[MediaItem], Error> = .success([])
+    var episodesRequests: [String] = []
+
+    func getEpisodes(seriesId: String, seasonId _: String?) async throws -> [MediaItem] {
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            episodesRequests.append(seriesId)
+            return episodesResult
+        }
+        return try result.get()
     }
 
     var nextUpEpisodesBySeries: [String: MediaItem] = [:]
     var nextUpEpisodeRequests: [String] = []
+    /// When set, `getNextUpEpisode` throws — for proving next-up failures
+    /// are enrichment (they must not fail a page)
+    var nextUpEpisodeError: Error?
 
     func getNextUpEpisode(seriesId: String) async throws -> MediaItem? {
-        nextUpEpisodeRequests.append(seriesId)
+        lock.withLock { nextUpEpisodeRequests.append(seriesId) }
+        if let nextUpEpisodeError {
+            throw nextUpEpisodeError
+        }
         return nextUpEpisodesBySeries[seriesId]
     }
 
