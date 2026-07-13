@@ -223,6 +223,13 @@ public protocol JellyfinClientProtocol: Sendable {
     /// callers can fall back to the first episode)
     func getNextUpEpisode(seriesId: String) async throws -> MediaItem?
 
+    /// The user's cross-series Next Up queue: the next episode to watch for
+    /// each in-progress series, per the server's Next Up logic. Excludes
+    /// never-started series and resumable episodes (those belong to Continue
+    /// Watching).
+    /// - Parameter limit: Maximum number of episodes to return
+    func getNextUpItems(limit: Int?) async throws -> [MediaItem]
+
     // MARK: - User Data
 
     /// Mark an item as played for the current user
@@ -1071,6 +1078,34 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             return response.value.items?.first.map { MediaItem(from: $0) }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getNextUpItems(limit: Int?) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetNextUpParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            // Unlike the per-series variant: skip never-started series (their
+            // first episodes aren't "next up" for a Home shelf) and exclude
+            // resumable episodes (those already surface in Continue Watching).
+            parameters.isDisableFirstEpisode = true
+            parameters.enableResumable = false
+            parameters.fields = [.overview]
+
+            let response = try await sdkClient.send(
+                Paths.getNextUp(parameters: parameters),
+            )
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
         } catch let error as APIError {
             throw error
         } catch {

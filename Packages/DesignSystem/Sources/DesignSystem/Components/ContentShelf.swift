@@ -12,17 +12,30 @@ import SwiftUI
 public struct ContentShelf<Content: View>: View {
     private let title: String
     private let icon: String?
+    private let headerVisible: Bool
     private let content: Content
+
+    /// How far below its resting spot the header sits while hidden, so a
+    /// reveal reads as a fade + upward slide.
+    private static var headerHiddenSlide: CGFloat {
+        18
+    }
 
     @Environment(\.theme) private var theme
 
+    /// - Parameter headerVisible: Fades/slides the header away while false
+    ///   (its layout space is kept, so the cards never reflow). Used by
+    ///   shelves that sit under a hero and reveal their header only once the
+    ///   hero has left the screen.
     public init(
         _ title: String,
         icon: String? = nil,
+        headerVisible: Bool = true,
         @ViewBuilder content: () -> Content,
     ) {
         self.title = title
         self.icon = icon
+        self.headerVisible = headerVisible
         self.content = content()
     }
 
@@ -39,6 +52,9 @@ public struct ContentShelf<Content: View>: View {
                     .foregroundStyle(theme.primary)
             }
             .padding(.horizontal, SpacingTokens.screenPadding)
+            .opacity(headerVisible ? 1 : 0)
+            .offset(y: headerVisible ? 0 : Self.headerHiddenSlide)
+            .animation(theme.animation, value: headerVisible)
 
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {

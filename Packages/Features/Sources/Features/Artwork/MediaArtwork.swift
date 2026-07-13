@@ -93,9 +93,15 @@ extension JellyfinClientProtocol {
 /// stack's `navigationDestination(for: MediaItem.self)` (registered at each tab's
 /// stack root in `RootView`) resolves it to a `MediaDetailView`.
 extension MediaItem {
-    /// Portrait poster card (2:3). Title is the item name; subtitle is the year.
+    /// Portrait poster card (2:3). Title is the item name; subtitle is the
+    /// year. `countBadge` overlays a count on the poster's top-trailing
+    /// corner (unwatched episodes on a series card).
     @MainActor
-    func posterShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 200) -> some View {
+    func posterShelfItem(
+        client: JellyfinClientProtocol?,
+        width: CGFloat = 200,
+        countBadge: Int? = nil,
+    ) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
             blurHash: posterBlurHash,
@@ -104,6 +110,7 @@ extension MediaItem {
             aspectRatio: 2.0 / 3.0,
             width: width,
             progress: progressPercentage,
+            countBadge: countBadge,
             value: self,
         )
     }
@@ -154,6 +161,36 @@ extension MediaItem {
             return .played(runtime: formattedRuntime)
         }
         return .unplayed(runtime: formattedRuntime)
+    }
+
+    /// Playable landscape card (16:9) shared by Home's Continue Watching and
+    /// Next Up rows: episode-shelf width, playback badge (play/replay +
+    /// runtime, or play + themed progress bar + remaining), and a leading
+    /// caption — the episode title over "Series · S2E4" (movies: title over
+    /// year). Clicking plays immediately — the badge is the affordance —
+    /// rather than navigating to detail.
+    @MainActor
+    func playableShelfItem(
+        client: JellyfinClientProtocol?,
+        width: CGFloat = 440,
+        onPlay: @escaping () -> Void,
+    ) -> some View {
+        ArtworkShelfItem(
+            // Fetch to the card's physical size (~880px on a 4K panel) so the
+            // still isn't upscaled.
+            url: client?.landscapeURL(for: self, maxWidth: 1000),
+            blurHash: landscapeBlurHash,
+            title: name,
+            subtitle: type == .episode
+                ? [seriesName, episodeCode].compactMap(\.self).joined(separator: " · ")
+                : productionYear.map(String.init),
+            captionAlignment: .leading,
+            placeholderIcon: "play.tv",
+            aspectRatio: 16.0 / 9.0,
+            width: width,
+            playbackBadge: playbackBadge,
+            action: onPlay,
+        )
     }
 
     /// Landscape card (16:9). Episodes show the episode title over the series

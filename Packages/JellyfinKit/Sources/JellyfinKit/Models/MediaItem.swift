@@ -333,18 +333,24 @@ public struct UserData: Sendable, Equatable, Hashable {
     /// Last played date
     public let lastPlayedDate: Date?
 
+    /// Unwatched children of a container item (unplayed episodes of a
+    /// series or season); nil for leaf items
+    public let unplayedItemCount: Int?
+
     public init(
         playbackPositionTicks: Int64? = nil,
         playCount: Int? = nil,
         isFavorite: Bool = false,
         played: Bool = false,
         lastPlayedDate: Date? = nil,
+        unplayedItemCount: Int? = nil,
     ) {
         self.playbackPositionTicks = playbackPositionTicks
         self.playCount = playCount
         self.isFavorite = isFavorite
         self.played = played
         self.lastPlayedDate = lastPlayedDate
+        self.unplayedItemCount = unplayedItemCount
     }
 }
 

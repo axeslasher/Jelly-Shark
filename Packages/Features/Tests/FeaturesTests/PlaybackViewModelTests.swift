@@ -110,8 +110,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
+    var mediaItemsById: [String: MediaItem] = [:]
+    var mediaItemFailureIds: Set<String> = []
+    var mediaItemRequests: [String] = []
+
     func getMediaItem(itemId: String) async throws -> MediaItem {
-        MediaItem(id: itemId, name: "Item", type: .movie)
+        try lock.withLock {
+            mediaItemRequests.append(itemId)
+            if mediaItemFailureIds.contains(itemId) {
+                throw APIError.generic("Item fetch failed")
+            }
+            return mediaItemsById[itemId] ?? MediaItem(id: itemId, name: "Item", type: .movie)
+        }
     }
 
     func getSimilarItems(itemId _: String, limit _: Int?) async throws -> [MediaItem] {
@@ -149,12 +159,28 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try collectionItemsResult.get()
     }
 
+    var resumeItemsResult: Result<[MediaItem], Error> = .success([])
+
     func getResumeItems(limit _: Int?) async throws -> [MediaItem] {
-        []
+        try resumeItemsResult.get()
     }
 
-    func getLatestItems(libraryId _: String?, limit _: Int?) async throws -> [MediaItem] {
-        []
+    /// Latest requests by libraryId (nil = the global hero-source fetch);
+    /// lock-guarded because the per-library fetches fan out in a task group
+    var latestItemsRequests: [String?] = []
+    /// Per-library results, keyed the same way; nil handler serves []
+    var latestItemsHandler: ((String?) -> Result<[MediaItem], Error>)?
+
+    /// Optional gate awaited before serving latest items, for in-flight tests
+    var latestItemsDelay: (() async -> Void)?
+
+    func getLatestItems(libraryId: String?, limit _: Int?) async throws -> [MediaItem] {
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            latestItemsRequests.append(libraryId)
+            return latestItemsHandler?(libraryId) ?? .success([])
+        }
+        await latestItemsDelay?()
+        return try result.get()
     }
 
     func getPlaybackInfo(
@@ -225,8 +251,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         []
     }
 
-    func getNextUpEpisode(seriesId _: String) async throws -> MediaItem? {
-        nil
+    var nextUpEpisodesBySeries: [String: MediaItem] = [:]
+    var nextUpEpisodeRequests: [String] = []
+
+    func getNextUpEpisode(seriesId: String) async throws -> MediaItem? {
+        nextUpEpisodeRequests.append(seriesId)
+        return nextUpEpisodesBySeries[seriesId]
+    }
+
+    var nextUpItemsResult: Result<[MediaItem], Error> = .success([])
+
+    func getNextUpItems(limit _: Int?) async throws -> [MediaItem] {
+        try nextUpItemsResult.get()
     }
 
     func markPlayed(itemId _: String) async throws {}

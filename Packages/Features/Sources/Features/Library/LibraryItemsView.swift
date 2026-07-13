@@ -95,17 +95,10 @@ struct LibraryItemsView: View {
         }
     }
 
-    /// Poster cards need an explicit width, so the grid can't rely on
-    /// adaptive columns (cards would float centered inside stretched
-    /// columns, insetting the edges). Instead, measure the available width
-    /// and size cards to exactly fill their columns, flush both edges.
+    /// Column math lives in `PosterGridLayout`, shared with Home's Recently
+    /// Added shelves so posters are the same size on both surfaces.
     private var columnLayout: (count: Int, width: CGFloat) {
-        let gap = SpacingTokens.cardGap
-        let minimumCardWidth: CGFloat = 220
-        guard gridWidth > minimumCardWidth else { return (1, minimumCardWidth) }
-        let count = max(1, Int((gridWidth + gap) / (minimumCardWidth + gap)))
-        let width = (gridWidth - gap * CGFloat(count - 1)) / CGFloat(count)
-        return (count, width)
+        PosterGridLayout.columns(for: gridWidth)
     }
 
     private var itemGrid: some View {

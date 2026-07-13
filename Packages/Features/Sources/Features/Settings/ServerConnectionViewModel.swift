@@ -30,6 +30,12 @@ public final class ServerConnectionViewModel {
     /// Current connection state
     public private(set) var state: ConnectionState = .disconnected
 
+    /// Whether the launch-time session restore has run to completion (found
+    /// no saved session, failed, or connected). Until this flips, a
+    /// `.disconnected` state is provisional — screens should show a loading
+    /// treatment rather than the "not connected" placeholder.
+    public private(set) var hasAttemptedRestore = false
+
     /// Error message if connection/auth failed
     public private(set) var errorMessage: String?
 
@@ -120,6 +126,7 @@ public final class ServerConnectionViewModel {
 
     /// Restore a previously saved session from the Keychain, if any
     public func restoreSession() async {
+        defer { hasAttemptedRestore = true }
         guard state == .disconnected else { return }
         guard let saved = sessionStore.load() else { return }
 
