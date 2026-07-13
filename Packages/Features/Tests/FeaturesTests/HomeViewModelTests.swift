@@ -211,6 +211,65 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
     }
 
+    @Test("retryFailedSections re-runs only the failed sections, skeleton-free")
+    func retryOnlyFailedSections() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .failure(APIError.networkError("offline"))
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1"), movie("hero-2")])
+            case "movies": .success([movie("latest-1")])
+            default: .success([])
+            }
+        }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+        #expect(viewModel.resumeStatus.isFailed)
+        #expect(viewModel.latestStatus == .loaded)
+
+        viewModel.advanceHero()
+        let heroIndexBefore = viewModel.heroIndex
+        let latestRequestsBefore = client.latestItemsRequests.count
+
+        client.resumeItemsResult = .success([movie("resume-1")])
+        await viewModel.retryFailedSections()
+
+        #expect(viewModel.resumeStatus == .loaded)
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+        // The loaded sections were untouched: no refetch, no skeleton flip,
+        // no marquee yank.
+        #expect(client.latestItemsRequests.count == latestRequestsBefore)
+        #expect(viewModel.isInitialLoading == false)
+        #expect(viewModel.heroIndex == heroIndexBefore)
+        #expect(viewModel.heroItems.map(\.id) == ["hero-1", "hero-2"])
+    }
+
+    @Test("retryFailedSections recovers a failed Recently Added section's hero")
+    func retryFailedLatestSettlesHero() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { _ in .failure(APIError.networkError("offline")) }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+        #expect(viewModel.latestStatus.isFailed)
+        #expect(viewModel.heroItems.isEmpty)
+
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            default: .success([])
+            }
+        }
+        await viewModel.retryFailedSections()
+
+        #expect(viewModel.latestStatus == .loaded)
+        #expect(viewModel.latestShelves.map(\.id) == ["movies"])
+        #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
+        #expect(viewModel.heroIndex == 0)
+    }
+
     @Test("Loads once per connection; a reappearance is a no-op")
     func loadOncePerConnection() async {
         let client = MockJellyfinClient()
@@ -305,6 +364,55 @@ struct HomeViewModelTests {
         let shelf = viewModel.latestShelves.first
         #expect(shelf?.items.map(\.id) == ["s1", "s2"])
         #expect(client.mediaItemRequests == ["s1"])
+    }
+
+    @Test("A partial library failure keeps the surviving rows and re-arms")
+    func partialLibraryFailureRearms() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            default: .failure(APIError.networkError("offline"))
+            }
+        }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies, Self.shows])
+
+        // Something survived, so no failure notice — but the gap re-armed a
+        // reload for the next appearance.
+        #expect(viewModel.latestShelves.map(\.id) == ["movies"])
+        #expect(viewModel.latestStatus == .loaded)
+
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            case "shows": .success([series("latest-2")])
+            default: .success([])
+            }
+        }
+        await load(viewModel, client: client, libraries: [Self.movies, Self.shows])
+
+        #expect(viewModel.latestShelves.map(\.id) == ["movies", "shows"])
+    }
+
+    @Test("Every library failing reports .failed even when the hero source landed")
+    func allLibrariesFailedReportsFailure() async {
+        // Regression: shelves.isEmpty used to read as `.empty` whenever the
+        // hero curation had items — every row silently vanished with no
+        // notice and no re-arm.
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([movie("hero-1")]) : .failure(APIError.networkError("offline"))
+        }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        #expect(viewModel.latestStatus.isFailed)
+        #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
     }
 
     @Test("A failed series fetch falls back to the episode entry")

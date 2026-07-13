@@ -16,24 +16,15 @@ public struct PersonDetailView: View {
 
     let member: CastMember
 
-    /// Detailed fetch; upgrades the header's metadata and biography.
-    @State private var person: Person?
-    @State private var movies: [MediaItem] = []
-    @State private var series: [MediaItem] = []
-    @State private var episodes: [MediaItem] = []
-
-    /// Random filmography entry with a usable backdrop; drives the background.
-    @State private var backdropItem: MediaItem?
+    /// Owns the person and filmography fetches and their status; this view
+    /// keeps only presentation state (playback cover, biography overlay).
+    @State private var viewModel = PersonDetailViewModel()
 
     /// The episode currently being played, driving the player cover.
     @State private var playbackItem: MediaItem?
 
     /// Whether the full biography is presented in its reading overlay.
     @State private var isPresentingBiography = false
-
-    /// Items fetched per shelf: a few pages of horizontal scrolling without
-    /// pagination, and three light queries per page load.
-    private static let shelfLimit = 25
 
     public init(member: CastMember) {
         self.member = member
@@ -44,7 +35,7 @@ public struct PersonDetailView: View {
             VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 PersonDetailHeader(
                     member: member,
-                    person: person,
+                    person: viewModel.person,
                     isPresentingBiography: $isPresentingBiography,
                 )
                 .padding(.horizontal, SpacingTokens.screenPadding)
@@ -56,21 +47,32 @@ public struct PersonDetailView: View {
                 // single page — moving between rows doesn't nudge the offset
                 // per row (same rationale as the media detail shelves).
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                    PersonShelfSection(
-                        title: "Movies", icon: "film.fill",
-                        items: movies, style: .poster,
-                        playbackItem: $playbackItem,
-                    )
-                    PersonShelfSection(
-                        title: "TV Series", icon: "tv.fill",
-                        items: series, style: .poster,
-                        playbackItem: $playbackItem,
-                    )
-                    PersonShelfSection(
-                        title: "Episodes", icon: "play.tv",
-                        items: episodes, style: .episode,
-                        playbackItem: $playbackItem,
-                    )
+                    // The filmography is the page's body: when the load left
+                    // nothing to show, degrade in place — the stub header
+                    // stays, the notice sits where the shelves would, and its
+                    // Retry button keeps this focus region reachable.
+                    if viewModel.filmographyStatus.isFailed {
+                        FailedShelfNotice(
+                            message: "Couldn't load filmography — check your connection",
+                            retry: { Task { await viewModel.retry() } },
+                        )
+                    } else {
+                        PersonShelfSection(
+                            title: "Movies", icon: "film.fill",
+                            items: viewModel.movies, style: .poster,
+                            playbackItem: $playbackItem,
+                        )
+                        PersonShelfSection(
+                            title: "TV Series", icon: "tv.fill",
+                            items: viewModel.series, style: .poster,
+                            playbackItem: $playbackItem,
+                        )
+                        PersonShelfSection(
+                            title: "Episodes", icon: "play.tv",
+                            items: viewModel.episodes, style: .episode,
+                            playbackItem: $playbackItem,
+                        )
+                    }
                 }
                 #if os(tvOS)
                 .focusSection()
@@ -81,7 +83,8 @@ public struct PersonDetailView: View {
         .background(alignment: .top) { background }
         .background(theme.background)
         .task(id: member.id) {
-            await loadContent()
+            viewModel.attach(client: session.client, member: member)
+            await viewModel.load()
         }
         .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
@@ -98,8 +101,8 @@ public struct PersonDetailView: View {
     private var biographyOverlay: OverviewOverlay {
         OverviewOverlay(
             tagline: nil,
-            overview: person?.biography,
-            backdropURL: backdropItem.flatMap { session.client?.backdropURL(for: $0) },
+            overview: viewModel.person?.biography,
+            backdropURL: viewModel.backdropItem.flatMap { session.client?.backdropURL(for: $0) },
         )
     }
 
@@ -108,7 +111,7 @@ public struct PersonDetailView: View {
     @ViewBuilder
     private var background: some View {
         if let client = session.client,
-           let backdropItem,
+           let backdropItem = viewModel.backdropItem,
            let url = client.backdropURL(for: backdropItem)
         {
             MediaDetailHeroBackdrop(
@@ -117,36 +120,6 @@ public struct PersonDetailView: View {
                 progress: 1,
             )
         }
-    }
-
-    // MARK: - Data
-
-    private func loadContent() async {
-        guard let client = session.client, member.hasServerId else { return }
-
-        async let personFetch = client.getPerson(personId: member.id)
-        async let moviesFetch = client.getItemsFeaturingPerson(
-            personId: member.id, itemTypes: [.movie], personTypes: nil, limit: Self.shelfLimit,
-        )
-        async let seriesFetch = client.getItemsFeaturingPerson(
-            personId: member.id, itemTypes: [.series], personTypes: nil, limit: Self.shelfLimit,
-        )
-        async let episodesFetch = client.getItemsFeaturingPerson(
-            personId: member.id, itemTypes: [.episode], personTypes: nil, limit: Self.shelfLimit,
-        )
-
-        // Failures degrade gracefully: keep the stub header, hide the shelf.
-        person = try? await personFetch
-        movies = await ((try? moviesFetch)) ?? []
-        series = await ((try? seriesFetch)) ?? []
-        episodes = await ((try? episodesFetch)) ?? []
-
-        // Person items rarely carry a backdrop of their own; borrow one from
-        // the filmography. `backdropURL(for:)` handles backdrop → thumb →
-        // ancestor fallbacks, so the filter matches what would actually render.
-        backdropItem = (movies + series)
-            .filter { client.backdropURL(for: $0) != nil }
-            .randomElement()
     }
 }
 

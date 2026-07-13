@@ -1,0 +1,220 @@
+import Foundation
+import JellyfinKit
+import Observation
+
+/// Loads a media detail page's server-side content: the full item (which
+/// carries cast & crew), the per-type sections (seasons/episodes for series,
+/// contents for collections), and the More Like This enrichment.
+///
+/// The screen-defining fetches share one `status` — they hit the same server
+/// in the same instant, and the failed notice's Retry re-runs them together,
+/// so per-facet statuses would only add UI branches with no distinct
+/// recovery path. Genuinely optional enrichment (similar items, the next-up
+/// resolution with its first-episode fallback) keeps `try?` and never
+/// touches `status`.
+@Observable
+@MainActor
+public final class MediaDetailViewModel {
+    /// Lifecycle of the core load. No `.empty` case: the passed-in stub
+    /// always renders, so a fetch that returns little just makes a sparse
+    /// page — only a *failed* fetch needs surfacing.
+    public enum Status: Equatable {
+        case loading
+        case loaded
+        case failed(String)
+
+        var isFailed: Bool {
+            if case .failed = self {
+                return true
+            }
+            return false
+        }
+    }
+
+    // MARK: - Outputs
+
+    /// The detailed fetch; nil until it lands (or when it failed), so the
+    /// view can keep rendering the stub it was pushed with.
+    public private(set) var detailedItem: MediaItem?
+
+    /// Series-only: the season list, every episode in series order (one
+    /// continuous shelf spans all seasons), and the episode the hero Play
+    /// button resolves to.
+    public private(set) var seasons: [MediaItem] = []
+    public private(set) var episodes: [MediaItem] = []
+    public private(set) var nextUpEpisode: MediaItem?
+
+    /// BoxSet-only: the collection's contents, in release order.
+    public private(set) var collectionItems: [MediaItem] = []
+
+    /// Credits derived once when the detailed item lands, rather than
+    /// re-filtering `people` on every body evaluation.
+    public private(set) var directors: [CastMember] = []
+    public private(set) var topCast: [CastMember] = []
+
+    public private(set) var similarItems: [MediaItem] = []
+
+    public private(set) var status: Status = .loading
+
+    // MARK: - Configuration
+
+    private var client: (any JellyfinClientProtocol)?
+    private var item: MediaItem?
+
+    /// Reload only when the connection or page item actually changes
+    /// (mirrors `HomeViewModel`); a failed load re-arms this so the next
+    /// appearance retries.
+    private var needsLoad = true
+    private var loadGeneration = 0
+
+    /// Crew functions that some servers stuff into a person's `role` while
+    /// still tagging `kind` as "Actor". Used to recognize crew (and exclude
+    /// them from the billed-cast list) regardless of which field carries the
+    /// credit.
+    private static let crewRoles: Set<String> = [
+        "Director", "Writer", "Producer",
+        "Executive Producer", "Co-Producer", "Co-Executive Producer",
+    ]
+
+    public init() {}
+
+    // MARK: - Loading
+
+    /// Attach the client and page item (called by the view on appearance and
+    /// when the pushed item changes). Only an actual change schedules a load.
+    public func attach(client: (any JellyfinClientProtocol)?, item: MediaItem) {
+        let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
+        let itemChanged = item.id != self.item?.id
+        self.client = client
+        self.item = item
+        if clientChanged || itemChanged {
+            needsLoad = true
+        }
+    }
+
+    /// Load the page. No-op once loaded for the current client + item.
+    public func load() async {
+        guard needsLoad else { return }
+        needsLoad = false
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        // Reset so a reused view (item.id change) doesn't show the previous
+        // item's seasons or collection contents while the new ones load.
+        detailedItem = nil
+        seasons = []
+        episodes = []
+        nextUpEpisode = nil
+        collectionItems = []
+        directors = []
+        topCast = []
+        similarItems = []
+        status = .loading
+
+        // No client means the session is still being established (or was
+        // torn down) — park at `.loading`; the stub keeps the page rendered.
+        guard let client, let item else { return }
+
+        do {
+            let detail = try await client.getMediaItem(itemId: item.id)
+            guard generation == loadGeneration else { return }
+            detailedItem = detail
+            deriveCredits()
+
+            if item.type == .series {
+                async let seasonsFetch = client.getSeasons(seriesId: item.id)
+                async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
+                async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
+                let (fetchedSeasons, fetchedEpisodes) = try await (seasonsFetch, episodesFetch)
+                // Next-up is enrichment: the Play button falls back to the
+                // first episode, so a failure here must not fail the page.
+                let nextUp = await (try? nextUpFetch) ?? nil
+                guard generation == loadGeneration else { return }
+                seasons = fetchedSeasons
+                episodes = fetchedEpisodes
+                nextUpEpisode = nextUp
+            }
+
+            if item.type == .boxSet {
+                let items = try await client.getCollectionItems(collectionId: item.id)
+                guard generation == loadGeneration else { return }
+                collectionItems = items
+            }
+
+            status = .loaded
+        } catch {
+            guard generation == loadGeneration else { return }
+            status = .failed(error.localizedDescription)
+            needsLoad = true
+        }
+
+        // More Like This is enrichment: a failure renders no shelf, never an
+        // error — and it loads even alongside a failed core so a retry that
+        // recovers doesn't wait on it.
+        let similar = await (try? client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
+        guard generation == loadGeneration else { return }
+        similarItems = similar
+    }
+
+    /// Re-run the core load now — the failed notice's Retry button.
+    public func retry() async {
+        needsLoad = true
+        await load()
+    }
+
+    /// Playback changes server-side user data this page displays — resume
+    /// position (hero Play/Resume button), watched flags on episode and
+    /// collection cards, and next-up. `load()` only re-runs when the item id
+    /// changes, so refresh in place when the player dismisses; unlike
+    /// `load()`, nothing is blanked or re-statused first, so already-rendered
+    /// shelves don't flash — which is why `try?` is right here: a failed
+    /// refresh keeps the last-good data.
+    public func refreshAfterPlayback() async {
+        guard let client, let item else { return }
+        loadGeneration += 1
+        let generation = loadGeneration
+
+        if let refreshed = try? await client.getMediaItem(itemId: item.id) {
+            guard generation == loadGeneration else { return }
+            detailedItem = refreshed
+            deriveCredits()
+        }
+
+        if item.type == .series {
+            async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
+            async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
+            let refreshedEpisodes = await (try? episodesFetch)
+            let nextUp = await (try? nextUpFetch) ?? nil
+            guard generation == loadGeneration else { return }
+            if let refreshedEpisodes {
+                episodes = refreshedEpisodes
+            }
+            nextUpEpisode = nextUp
+        }
+
+        // Watched flags on the collection cards (and the Play target's
+        // first-unwatched resolution) change with playback too.
+        if item.type == .boxSet {
+            let refreshedItems = try? await client.getCollectionItems(collectionId: item.id)
+            guard generation == loadGeneration else { return }
+            if let refreshedItems {
+                collectionItems = refreshedItems
+            }
+        }
+    }
+
+    // MARK: - Credits
+
+    /// Directors: handles both standard data (`kind == "Director"`) and
+    /// servers that report everyone as `kind == "Actor"` with the function in
+    /// `role`. Top cast: first 3 billed actors, excluding mislabeled crew.
+    private func deriveCredits() {
+        let people = detailedItem?.people ?? []
+        directors = people.filter { $0.kind == "Director" || $0.role == "Director" }
+        topCast = Array(
+            people
+                .filter { $0.kind == "Actor" && !(($0.role).map(Self.crewRoles.contains) ?? false) }
+                .prefix(3),
+        )
+    }
+}

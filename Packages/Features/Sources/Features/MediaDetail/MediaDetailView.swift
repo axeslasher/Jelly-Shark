@@ -16,23 +16,9 @@ public struct MediaDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
 
-    @State private var detailedItem: MediaItem?
-    @State private var similarItems: [MediaItem] = []
-
-    /// Series-only state: the season list, every episode in series order (one
-    /// continuous shelf spans all seasons), and the episode the hero Play
-    /// button resolves to.
-    @State private var seasons: [MediaItem] = []
-    @State private var episodes: [MediaItem] = []
-    @State private var nextUpEpisode: MediaItem?
-
-    /// BoxSet-only state: the collection's contents, in release order.
-    @State private var collectionItems: [MediaItem] = []
-
-    /// Credits derived once when the detailed item lands (see `loadContent`),
-    /// rather than re-filtering `people` on every body evaluation.
-    @State private var directors: [CastMember] = []
-    @State private var topCast: [CastMember] = []
+    /// Owns every server-side fetch and its status; this view keeps only
+    /// presentation state (scroll, focus, playback covers).
+    @State private var viewModel = MediaDetailViewModel()
 
     /// Continuous scroll progress for the hero treatment: 0 at the top, ramping to
     /// 1 once the backdrop has scrolled `Self.heroFadeDistance` points. Drives the
@@ -95,7 +81,7 @@ public struct MediaDetailView: View {
     /// The passed-in stub renders instantly; the detailed fetch (which carries
     /// cast & crew) upgrades it once it lands.
     private var displayItem: MediaItem {
-        detailedItem ?? item
+        viewModel.detailedItem ?? item
     }
 
     /// Collection pages show the span of their contents' release years in
@@ -103,7 +89,7 @@ public struct MediaDetailView: View {
     /// contents load, and for every other page type.
     private var collectionYearSpan: String? {
         guard item.type == .boxSet else { return nil }
-        let years = collectionItems.compactMap(\.productionYear)
+        let years = viewModel.collectionItems.compactMap(\.productionYear)
         guard let first = years.min(), let last = years.max() else { return nil }
         return first == last ? String(first) : "\(first)–\(last)"
     }
@@ -118,9 +104,9 @@ public struct MediaDetailView: View {
     private var playableItem: MediaItem? {
         switch item.type {
         case .series:
-            nextUpEpisode ?? episodes.first
+            viewModel.nextUpEpisode ?? viewModel.episodes.first
         case .boxSet:
-            collectionItems.first { !($0.userData?.played ?? false) } ?? collectionItems.first
+            viewModel.collectionItems.first { !($0.userData?.played ?? false) } ?? viewModel.collectionItems.first
         default:
             item
         }
@@ -139,8 +125,8 @@ public struct MediaDetailView: View {
             // Movie titles get long; a positional label reads better on the
             // button. "Play Next" only while the collection is genuinely in
             // progress — untouched or fully watched both restart at the top.
-            let watchedCount = collectionItems.count { $0.userData?.played ?? false }
-            let inProgress = watchedCount > 0 && watchedCount < collectionItems.count
+            let watchedCount = viewModel.collectionItems.count { $0.userData?.played ?? false }
+            let inProgress = watchedCount > 0 && watchedCount < viewModel.collectionItems.count
             return inProgress ? "Play Next" : "Play First"
         default:
             return displayItem.hasProgress ? "Resume" : "Play"
@@ -156,8 +142,8 @@ public struct MediaDetailView: View {
             VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 MediaDetailHeroSection(
                     item: displayItem,
-                    directors: directors,
-                    topCast: topCast,
+                    directors: viewModel.directors,
+                    topCast: viewModel.topCast,
                     yearSpanOverride: collectionYearSpan,
                     playTitle: playButtonTitle,
                     playTarget: playableItem,
@@ -182,25 +168,36 @@ public struct MediaDetailView: View {
                 // nudging the offset per row. The info section isn't focusable;
                 // it just rides along at the bottom of the page.
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                    // The core load failed: the stub hero above still renders
+                    // (title, poster, often Play), so degrade in place — the
+                    // notice sits where the missing sections would, and its
+                    // Retry button keeps this focus region reachable.
+                    if viewModel.status.isFailed {
+                        FailedShelfNotice(
+                            message: "Couldn't load details — check your connection",
+                            retry: { Task { await viewModel.retry() } },
+                        )
+                    }
+
                     // Episodes lead on series pages — they're the reason the
                     // page was opened. Renders nothing for other types.
                     EpisodesSection(
-                        seasons: seasons,
-                        episodes: episodes,
+                        seasons: viewModel.seasons,
+                        episodes: viewModel.episodes,
                         // Same target the Play button resolves to: the shelf
                         // pre-parks there and first focus lands on it.
-                        initialEpisodeId: (nextUpEpisode ?? episodes.first)?.id,
+                        initialEpisodeId: (viewModel.nextUpEpisode ?? viewModel.episodes.first)?.id,
                         isRegionFocused: focusedRegion == .shelves,
                         playbackItem: $playbackItem,
                     )
 
                     // Likewise, the contents lead on collection pages.
                     // Renders nothing for other types.
-                    CollectionItemsSection(items: collectionItems)
+                    CollectionItemsSection(items: viewModel.collectionItems)
 
                     CastShelfSection(people: displayItem.people ?? [])
 
-                    SimilarItemsSection(items: similarItems)
+                    SimilarItemsSection(items: viewModel.similarItems)
 
                     MediaInfoSection(item: displayItem)
                 }
@@ -297,7 +294,8 @@ public struct MediaDetailView: View {
         .background(alignment: .top) { heroBackground }
         .background(theme.background)
         .task(id: item.id) {
-            await loadContent()
+            viewModel.attach(client: session.client, item: item)
+            await viewModel.load()
         }
         .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
             if let client = session.client {
@@ -336,86 +334,12 @@ public struct MediaDetailView: View {
 
     // MARK: - Data
 
-    /// Crew functions that some servers stuff into a person's `role` while still
-    /// tagging `kind` as "Actor". Used to recognize crew (and exclude them from
-    /// the billed-cast list) regardless of which field carries the credit.
-    private static let crewRoles: Set<String> = [
-        "Director", "Writer", "Producer",
-        "Executive Producer", "Co-Producer", "Co-Executive Producer",
-    ]
-
-    /// Playback changes server-side user data this view displays — resume
-    /// position (hero Play/Resume button), watched flags on episode cards,
-    /// and next-up. `loadContent` only re-runs when the item id changes, so
-    /// re-fetch in place when the player dismisses; unlike `loadContent`,
-    /// nothing is blanked first, so already-rendered shelves don't flash.
+    /// Watch state moves during playback; hand the in-place refresh to the
+    /// view model once the player dismisses.
     private func refreshAfterPlayback() {
         Task {
-            guard let client = session.client else { return }
-
-            if let refreshed = try? await client.getMediaItem(itemId: item.id) {
-                detailedItem = refreshed
-            }
-
-            if item.type == .series {
-                async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
-                async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
-                if let refreshedEpisodes = await (try? episodesFetch) {
-                    episodes = refreshedEpisodes
-                }
-                nextUpEpisode = await (try? nextUpFetch) ?? nil
-            }
-
-            // Watched flags on the collection cards (and the Play target's
-            // first-unwatched resolution) change with playback too.
-            if item.type == .boxSet {
-                if let refreshedItems = try? await client.getCollectionItems(collectionId: item.id) {
-                    collectionItems = refreshedItems
-                }
-            }
+            await viewModel.refreshAfterPlayback()
         }
-    }
-
-    private func loadContent() async {
-        guard let client = session.client else { return }
-
-        // Reset per-type state so a reused view (item.id change) doesn't show
-        // the previous item's seasons or collection contents while the new
-        // ones load.
-        seasons = []
-        episodes = []
-        nextUpEpisode = nil
-        collectionItems = []
-
-        // Failures degrade gracefully: keep the passed-in stub, skip the shelf.
-        detailedItem = await (try? client.getMediaItem(itemId: item.id)) ?? item
-
-        if item.type == .series {
-            async let seasonsFetch = client.getSeasons(seriesId: item.id)
-            async let episodesFetch = client.getEpisodes(seriesId: item.id, seasonId: nil)
-            async let nextUpFetch = client.getNextUpEpisode(seriesId: item.id)
-            seasons = await ((try? seasonsFetch)) ?? []
-            episodes = await ((try? episodesFetch)) ?? []
-            nextUpEpisode = await (try? nextUpFetch) ?? nil
-        }
-
-        if item.type == .boxSet {
-            collectionItems = await (try? client.getCollectionItems(collectionId: item.id)) ?? []
-        }
-
-        // Derive the credits once per fetch instead of per body evaluation.
-        // Directors: handles both standard data (`kind == "Director"`) and servers
-        // that report everyone as `kind == "Actor"` with the function in `role`.
-        // Top cast: first 3 billed actors, excluding mislabeled crew.
-        let people = detailedItem?.people ?? []
-        directors = people.filter { $0.kind == "Director" || $0.role == "Director" }
-        topCast = Array(
-            people
-                .filter { $0.kind == "Actor" && !(($0.role).map(Self.crewRoles.contains) ?? false) }
-                .prefix(3),
-        )
-
-        similarItems = await (try? client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
     }
 }
 

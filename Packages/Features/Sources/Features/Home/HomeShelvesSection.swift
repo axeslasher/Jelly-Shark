@@ -23,6 +23,9 @@ struct HomeShelvesSection: View {
     /// Continue Watching and Next Up cards play immediately (the playback
     /// badge is the affordance); the owner presents the player.
     let onPlay: (MediaItem) -> Void
+    /// Retry action for the failed-section notices; re-runs just the failed
+    /// loads (`HomeViewModel.retryFailedSections`).
+    let onRetry: () -> Void
 
     /// Measured section width, feeding the shared poster-column math so
     /// Recently Added posters match the library grid's card size exactly.
@@ -47,7 +50,7 @@ struct HomeShelvesSection: View {
                     }
                 }
             } else if resumeStatus.isFailed {
-                FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill")
+                FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
             }
 
             if !nextUpItems.isEmpty {
@@ -59,7 +62,7 @@ struct HomeShelvesSection: View {
                     }
                 }
             } else if nextUpStatus.isFailed {
-                FailedShelfNotice(title: "Next Up", icon: "play.square.stack")
+                FailedShelfNotice(title: "Next Up", icon: "play.square.stack", retry: onRetry)
             }
 
             ForEach(latestShelves) { shelf in
@@ -74,7 +77,7 @@ struct HomeShelvesSection: View {
                 }
             }
             if latestShelves.isEmpty, latestStatus.isFailed {
-                FailedShelfNotice(title: "Recently Added", icon: "sparkles")
+                FailedShelfNotice(title: "Recently Added", icon: "sparkles", retry: onRetry)
             }
         }
         .onGeometryChange(for: CGFloat.self) { proxy in
@@ -92,33 +95,5 @@ struct HomeShelvesSection: View {
               let count = item.userData?.unplayedItemCount, count > 0
         else { return nil }
         return count
-    }
-}
-
-/// A section that failed to load: the shelf header stays (mirroring
-/// `ContentShelf`'s) with a one-line, non-focusable notice where the cards
-/// would be.
-private struct FailedShelfNotice: View {
-    @Environment(\.theme) private var theme
-
-    let title: String
-    let icon: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: SpacingTokens.headerSpacing) {
-            HStack(spacing: SpacingTokens.xs) {
-                Image(systemName: icon)
-                    .foregroundStyle(theme.accent)
-                Text(title)
-                    .jsStyle(.headline)
-                    .foregroundStyle(theme.primary)
-            }
-
-            Label("Couldn't load — check your connection", systemImage: "wifi.exclamationmark")
-                .jsStyle(.body)
-                .foregroundStyle(theme.tertiary)
-                .padding(.vertical, SpacingTokens.md)
-        }
-        .padding(.horizontal, SpacingTokens.screenPadding)
     }
 }

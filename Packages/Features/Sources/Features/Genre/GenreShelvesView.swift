@@ -7,6 +7,9 @@ import SwiftUI
 /// (`GenreCardView`) lazily loads its own backdrop.
 struct GenreShelvesView: View {
     let shelves: [GenreShelvesViewModel.Shelf]
+    let status: GenreShelvesViewModel.Status
+    /// Retry action for the failed notice (`GenreShelvesViewModel.retry`).
+    let onRetry: () -> Void
 
     var body: some View {
         ForEach(shelves) { shelf in
@@ -15,6 +18,12 @@ struct GenreShelvesView: View {
                     GenreCardView(library: shelf.library, genre: genre)
                 }
             }
+        }
+        // A partial failure still renders the surviving shelves above (the
+        // view model re-arms its own reload); the notice is for the
+        // nothing-survived case only.
+        if shelves.isEmpty, status.isFailed {
+            FailedShelfNotice(title: "Browse by genre", icon: "theatermasks.fill", retry: onRetry)
         }
     }
 }
