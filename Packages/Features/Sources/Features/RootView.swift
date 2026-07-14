@@ -16,6 +16,12 @@ public struct RootView: View {
     /// view-destination links can't be popped programmatically.
     @State private var tabPaths: [AppTab: NavigationPath] = [:]
 
+    /// The in-flight deferred tab switch (see `tabSelection`). Held so a second
+    /// tab press within the pop-settle window can cancel the first before it
+    /// commits — otherwise the stale, already-superseded target wakes last and
+    /// clobbers the selection ("I pressed Search but it jumped to Home").
+    @State private var pendingSwitch: Task<Void, Never>?
+
     public init() {}
 
     /// Wraps `selectedTab` to work around a tvOS `sidebarAdaptable` bug: if the
@@ -32,11 +38,16 @@ public struct RootView: View {
             get: { selectedTab },
             set: { newValue in
                 guard newValue != selectedTab else { return }
+                // A new selection supersedes any deferred switch still waiting
+                // on a pop; cancel it so only the latest target can commit.
+                pendingSwitch?.cancel()
+                pendingSwitch = nil
                 let outgoing = selectedTab
                 if let path = tabPaths[outgoing], !path.isEmpty {
                     tabPaths[outgoing] = NavigationPath()
-                    Task { @MainActor in
+                    pendingSwitch = Task { @MainActor in
                         try? await Task.sleep(for: .milliseconds(350))
+                        guard !Task.isCancelled else { return }
                         selectedTab = newValue
                     }
                 } else {
