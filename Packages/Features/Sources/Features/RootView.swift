@@ -107,6 +107,9 @@ public struct RootView: View {
         .withThemeEnvironment(themeManager)
         .environment(session)
         .environment(connectionViewModel)
+        .environment(\.openSettings) {
+            tabSelection.wrappedValue = .settings
+        }
         .task {
             // Attach here (not just in Settings) so a restored client is
             // published app-wide even if the user never opens Settings
@@ -164,6 +167,16 @@ public struct RootView: View {
                 }
         }
     }
+}
+
+// MARK: - Open Settings Action
+
+extension EnvironmentValues {
+    /// Switches the root TabView to the Settings tab. Views that need to
+    /// point a stranded user at Settings (e.g. Home's empty states, where
+    /// nothing else on screen is focusable and the collapsed sidebar can't
+    /// take focus — #69) call this instead of reaching into tab state.
+    @Entry var openSettings: (() -> Void)? = nil
 }
 
 // MARK: - Tab
