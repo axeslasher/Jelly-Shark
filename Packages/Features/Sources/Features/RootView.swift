@@ -112,6 +112,21 @@ public struct RootView: View {
             // published app-wide even if the user never opens Settings
             connectionViewModel.attach(session: session)
             await connectionViewModel.restoreSession()
+
+            #if DEBUG
+                // Test hook: auto-connect to a server from the environment
+                // (pass via `simctl launch` with SIMCTL_CHILD_-prefixed vars)
+                // so UI automation can reach a connected state without
+                // driving the connection form
+                if case .disconnected = connectionViewModel.state,
+                   let server = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_SERVER"]
+                {
+                    connectionViewModel.serverURL = server
+                    connectionViewModel.username = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_USER"] ?? ""
+                    connectionViewModel.password = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_PASSWORD"] ?? ""
+                    await connectionViewModel.connect()
+                }
+            #endif
         }
         // If the selected library tab disappears (disconnect clears the list,
         // or the server removed a library), fall back to Home rather than

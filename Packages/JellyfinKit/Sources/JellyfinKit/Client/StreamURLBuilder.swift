@@ -55,13 +55,27 @@ public struct StreamResolution: Sendable, Equatable {
 /// server remuxes when the codecs are compatible and transcodes otherwise,
 /// and the playlist spans the full duration so AVPlayer can seek anywhere.
 enum StreamURLBuilder {
-    /// Build an HLS universal stream URL: `/Videos/{itemId}/main.m3u8`
+    /// Audio bitrate ceiling carved out of the streaming budget when the
+    /// server re-encodes; the rest goes to video. Matches the split the
+    /// server itself computes in PlaybackInfo's TranscodingUrl.
+    static let audioBitrate = 192_000
+
+    /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
+    ///
+    /// The master playlist (not `main.m3u8`, which is the video-only media
+    /// playlist) is required for subtitles: it is the only endpoint that
+    /// advertises text subtitle tracks as WebVTT renditions AVPlayer can
+    /// select. Bitrate parameters must be sent too — without them the
+    /// server re-encodes at a tiny default resolution whenever it can't
+    /// stream-copy (e.g. subtitle burn-in).
     ///
     /// - Parameters:
     ///   - serverURL: The server base URL (path prefixes are preserved)
     ///   - accessToken: The authentication token, sent as `api_key`
     ///   - deviceId: The device identifier reported to the server
     ///   - parameters: Item and stream selection parameters
+    ///   - subtitleMethod: How the selected subtitle should be delivered
+    ///   - maxStreamingBitrate: Total streaming budget in bits per second
     ///   - eTag: Optional media source tag for cache validation
     /// - Returns: The stream URL, or nil if construction fails
     static func hlsURL(
@@ -69,6 +83,8 @@ enum StreamURLBuilder {
         accessToken: String,
         deviceId: String,
         parameters: StreamParameters,
+        subtitleMethod: SubtitleDeliveryMethod = .hls,
+        maxStreamingBitrate: Int = JellyfinClient.maxStreamingBitrate,
         eTag: String? = nil,
     ) -> URL? {
         // Append to the server URL rather than overwriting the path,
@@ -76,7 +92,7 @@ enum StreamURLBuilder {
         let endpoint = serverURL
             .appendingPathComponent("Videos")
             .appendingPathComponent(parameters.itemId)
-            .appendingPathComponent("main.m3u8")
+            .appendingPathComponent("master.m3u8")
 
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
             return nil
@@ -87,11 +103,17 @@ enum StreamURLBuilder {
             URLQueryItem(name: "DeviceId", value: deviceId),
             URLQueryItem(name: "VideoCodec", value: "hevc,h264"),
             URLQueryItem(name: "AudioCodec", value: "aac,ac3,eac3"),
-            URLQueryItem(name: "SegmentContainer", value: "mp4"),
+            // MPEG-TS, not fMP4: Jellyfin's WebVTT subtitle playlists carry
+            // X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset), which matches
+            // its TS segments. fMP4 segments start at PTS 0, so every text
+            // subtitle renders exactly 10 seconds late (verified server-side).
+            URLQueryItem(name: "SegmentContainer", value: "ts"),
             URLQueryItem(name: "MinSegments", value: "2"),
             URLQueryItem(name: "BreakOnNonKeyFrames", value: "true"),
             URLQueryItem(name: "TranscodingProtocol", value: "hls"),
-            URLQueryItem(name: "SubtitleMethod", value: "Hls"),
+            URLQueryItem(name: "SubtitleMethod", value: subtitleMethod.rawValue),
+            URLQueryItem(name: "VideoBitrate", value: String(max(maxStreamingBitrate - audioBitrate, audioBitrate))),
+            URLQueryItem(name: "AudioBitrate", value: String(audioBitrate)),
         ]
 
         if let mediaSourceId = parameters.mediaSourceId {

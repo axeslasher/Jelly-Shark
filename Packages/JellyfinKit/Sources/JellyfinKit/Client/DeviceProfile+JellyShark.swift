@@ -79,6 +79,14 @@ extension JellyfinClient {
                 // this declaration the server refuses to direct play any
                 // mp4/mov that merely CONTAINS such a track
                 JellyfinAPI.SubtitleProfile(format: "mov_text", method: .embed),
+                // External keeps SupportsDirectPlay=true for files that have
+                // text sidecars: without it the server reports
+                // SubtitleCodecNotSupported and forces a transcode even when
+                // no subtitle was requested. Selected text subs are still
+                // delivered as HLS renditions via SubtitleMethod on the
+                // stream URL.
+                JellyfinAPI.SubtitleProfile(format: "vtt", method: .external),
+                JellyfinAPI.SubtitleProfile(format: "subrip", method: .external),
                 JellyfinAPI.SubtitleProfile(format: "vtt", method: .hls),
                 JellyfinAPI.SubtitleProfile(format: "subrip", method: .hls),
                 JellyfinAPI.SubtitleProfile(format: "ass", method: .encode),
@@ -87,10 +95,12 @@ extension JellyfinClient {
                 JellyfinAPI.SubtitleProfile(format: "dvdsub", method: .encode),
             ],
             transcodingProfiles: [
+                // ts to match StreamURLBuilder's SegmentContainer — see the
+                // comment there for why fMP4 breaks HLS subtitle timing
                 JellyfinAPI.TranscodingProfile(
                     audioCodec: "aac,ac3,eac3",
                     isBreakOnNonKeyFrames: true,
-                    container: "mp4",
+                    container: "ts",
                     context: .streaming,
                     minSegments: 2,
                     protocol: .hls,
