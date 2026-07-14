@@ -114,8 +114,13 @@ struct HomeHeroSection: View {
 
     var body: some View {
         TabView(selection: selection) {
-            ForEach(items.indices, id: \.self) { pageIndex in
-                page(for: items[pageIndex], at: pageIndex)
+            // Key on element identity, not position: when `items` is replaced
+            // (single-item fallback, reconnect reload) index-based identity
+            // keeps page N's view — and its per-page @FocusState, fade
+            // choreography, and image state — attached while the content swaps
+            // underneath. The Int `.tag` stays: `selection` is a `Binding<Int>`.
+            ForEach(Array(items.enumerated()), id: \.element.id) { pageIndex, item in
+                page(for: item, at: pageIndex)
                     .tag(pageIndex)
             }
         }
@@ -441,7 +446,7 @@ struct HomeHeroSection: View {
     /// the Next button, and the auto-advance timer.
     private var pageDots: some View {
         HStack(spacing: SpacingTokens.xs) {
-            ForEach(items.indices, id: \.self) { dotIndex in
+            ForEach(Array(items.enumerated()), id: \.element.id) { dotIndex, _ in
                 Capsule()
                     .fill(dotIndex == index ? theme.accent : theme.tertiary.opacity(0.4))
                     .frame(

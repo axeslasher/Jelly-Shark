@@ -71,12 +71,19 @@ struct MediaInfoSection: View {
                         CreditEntry(label: "File Name", value: name, lineLimit: 3)
                     }
                     if !facts.isEmpty {
+                        // Pack the facts into two-per-row pairs, keyed by the
+                        // row's leading label — content identity, not position,
+                        // so a change of item doesn't reuse a row's identity for
+                        // a different fact.
+                        let rows = stride(from: 0, to: facts.count, by: 2).map { index in
+                            (leading: facts[index], trailing: index + 1 < facts.count ? facts[index + 1] : nil)
+                        }
                         Grid(alignment: .topLeading, horizontalSpacing: SpacingTokens.lg, verticalSpacing: SpacingTokens.sm) {
-                            ForEach(Array(stride(from: 0, to: facts.count, by: 2)), id: \.self) { index in
+                            ForEach(rows, id: \.leading.label) { row in
                                 GridRow {
-                                    CreditEntry(label: facts[index].label, value: facts[index].value)
-                                    if index + 1 < facts.count {
-                                        CreditEntry(label: facts[index + 1].label, value: facts[index + 1].value)
+                                    CreditEntry(label: row.leading.label, value: row.leading.value)
+                                    if let trailing = row.trailing {
+                                        CreditEntry(label: trailing.label, value: trailing.value)
                                     }
                                 }
                             }
