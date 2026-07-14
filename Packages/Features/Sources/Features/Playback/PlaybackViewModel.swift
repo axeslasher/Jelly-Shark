@@ -57,6 +57,19 @@ public final class PlaybackViewModel {
     private var timeControlObservation: NSKeyValueObservation?
     private var hasStopped = false
 
+    /// Whether the current stream has the selected subtitle burned into the
+    /// video, in which case no legible rendition exists to toggle
+    private var sessionUsesBurnIn = false
+
+    /// The current item's legible media-selection group, once loaded
+    private var legibleGroup: AVMediaSelectionGroup?
+
+    /// The legible group's options distilled for matching. Internal (not
+    /// private) so tests can seed it without a real HLS asset.
+    var legibleOptions: [LegibleOption] = []
+
+    private var mediaSelectionTask: Task<Void, Never>?
+
     // MARK: - Initialization
 
     /// - Parameters:
@@ -100,6 +113,13 @@ public final class PlaybackViewModel {
             if selectedAudioStreamIndex == nil {
                 selectedAudioStreamIndex = source.defaultAudioStreamIndex
             }
+            // Seed the server-side default subtitle (forced tracks, user
+            // profile preferences) only on fresh starts: an explicit "off"
+            // mid-session must survive rebuilds, and autoplay resets the
+            // selection before calling start() so each episode reseeds.
+            if selectedSubtitleStreamIndex == nil {
+                selectedSubtitleStreamIndex = source.defaultSubtitleStreamIndex
+            }
 
             let resolution = try client.resolveStream(
                 for: source,
@@ -112,6 +132,7 @@ public final class PlaybackViewModel {
                 ),
             )
             playMethod = resolution.playMethod
+            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "start")
 
             await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
@@ -132,6 +153,7 @@ public final class PlaybackViewModel {
         removeEndObserver()
         timeControlObservation?.invalidate()
         timeControlObservation = nil
+        clearMediaSelectionState()
 
         player?.pause()
         player = nil
@@ -159,11 +181,62 @@ public final class PlaybackViewModel {
         await rebuildStream()
     }
 
-    /// Switch subtitles to the given stream index, or nil to turn them off
+    /// Switch subtitles to the given stream index, or nil to turn them off.
+    ///
+    /// Within an HLS session the master playlist already carries every
+    /// deliverable text rendition, so most switches only need a media
+    /// selection on the current player item — no reload. Rebuilding is
+    /// reserved for transitions the playlist can't express: entering or
+    /// leaving burn-in, and targets missing from the loaded renditions.
     public func selectSubtitleStream(index: Int?) async {
         guard index != selectedSubtitleStreamIndex else { return }
+
+        let targetMatched = mediaSource?.subtitleStream(at: index)
+            .flatMap { SubtitleOptionMatcher.match($0, in: legibleOptions) } != nil
+        let canSwitchInPlace = Self.canSwitchSubtitlesInPlace(
+            hasPlayer: player != nil,
+            currentMethod: playMethod,
+            sessionUsesBurnIn: sessionUsesBurnIn,
+            targetRequiresBurnIn: mediaSource?.subtitleRequiresBurnIn(at: index) ?? false,
+            turningOff: index == nil,
+            targetMatched: targetMatched,
+        )
+
         selectedSubtitleStreamIndex = index
-        await rebuildStream()
+
+        if canSwitchInPlace {
+            applySubtitleSelection()
+            Self.logger.info("""
+            [subtitle] in-place switch "\(self.item.name, privacy: .public)" → \
+            \(index.map(String.init) ?? "off", privacy: .public)
+            """)
+            // Keep the server's session view current without a fake start
+            // report: progress now carries the stream indices
+            await reportProgress()
+        } else {
+            await rebuildStream()
+        }
+    }
+
+    /// Whether a subtitle change can be satisfied by selecting a rendition
+    /// on the current player item instead of rebuilding the stream.
+    /// Pure so the decision matrix is unit-testable without AVPlayer.
+    static func canSwitchSubtitlesInPlace(
+        hasPlayer: Bool,
+        currentMethod: PlayMethod,
+        sessionUsesBurnIn: Bool,
+        targetRequiresBurnIn: Bool,
+        turningOff: Bool,
+        targetMatched: Bool,
+    ) -> Bool {
+        // Direct play has no renditions to select; a burned-in track can
+        // only be added or removed by re-encoding
+        guard hasPlayer, currentMethod != .directPlay,
+              !sessionUsesBurnIn, !targetRequiresBurnIn
+        else {
+            return false
+        }
+        return turningOff || targetMatched
     }
 
     // MARK: - Next Episode
@@ -193,7 +266,13 @@ public final class PlaybackViewModel {
     private func beginPlayback(url: URL, resumeTicks: Int64) async {
         let playerItem = AVPlayerItem(url: url)
         let player = AVPlayer(playerItem: playerItem)
+        // The master playlist marks every text rendition AUTOSELECT=YES;
+        // left on, AVPlayer would enable subtitles from system accessibility
+        // preferences behind the app's explicit selection state
+        player.appliesMediaSelectionCriteriaAutomatically = false
         self.player = player
+
+        loadLegibleOptions(for: playerItem)
 
         if resumeTicks > 0 {
             let seconds = PlaybackTicks.seconds(fromTicks: resumeTicks)
@@ -235,6 +314,7 @@ public final class PlaybackViewModel {
         progressTask?.cancel()
         removeEndObserver()
         timeControlObservation?.invalidate()
+        clearMediaSelectionState()
         player?.pause()
         player = nil
 
@@ -267,12 +347,72 @@ public final class PlaybackViewModel {
                 ),
             )
             playMethod = resolution.playMethod
+            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "rebuild")
 
             await beginPlayback(url: resolution.url, resumeTicks: positionTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    // MARK: - Subtitle Media Selection
+
+    /// Load the legible group of the freshly created player item so text
+    /// renditions can be selected in place. Direct play is skipped: it has
+    /// no renditions, and its embedded defaults are left to the player.
+    private func loadLegibleOptions(for playerItem: AVPlayerItem) {
+        mediaSelectionTask?.cancel()
+        legibleGroup = nil
+        legibleOptions = []
+        guard playMethod != .directPlay else { return }
+
+        mediaSelectionTask = Task { [weak self] in
+            guard let group = try? await playerItem.asset.loadMediaSelectionGroup(for: .legible),
+                  !Task.isCancelled
+            else { return }
+            self?.legibleGroupDidLoad(group, for: playerItem)
+        }
+    }
+
+    private func legibleGroupDidLoad(_ group: AVMediaSelectionGroup, for playerItem: AVPlayerItem) {
+        // A rebuild may have replaced the player while the group loaded
+        guard player?.currentItem === playerItem else { return }
+
+        legibleGroup = group
+        legibleOptions = group.options.enumerated().map { position, option in
+            LegibleOption(
+                position: position,
+                displayName: option.displayName,
+                languageTag: option.extendedLanguageTag,
+            )
+        }
+        Self.logger.debug("[subtitle] legible options loaded: \(self.legibleOptions.count)")
+        applySubtitleSelection()
+    }
+
+    /// Point the player item's legible selection at the chosen subtitle
+    /// stream — or clear it, so an AUTOSELECT rendition can't stay active
+    /// against an explicit "off" or a burned-in track
+    private func applySubtitleSelection() {
+        guard let legibleGroup, let playerItem = player?.currentItem else { return }
+
+        if !sessionUsesBurnIn,
+           let target = mediaSource?.subtitleStream(at: selectedSubtitleStreamIndex),
+           let position = SubtitleOptionMatcher.match(target, in: legibleOptions),
+           legibleGroup.options.indices.contains(position)
+        {
+            playerItem.select(legibleGroup.options[position], in: legibleGroup)
+        } else {
+            playerItem.select(nil, in: legibleGroup)
+        }
+    }
+
+    private func clearMediaSelectionState() {
+        mediaSelectionTask?.cancel()
+        mediaSelectionTask = nil
+        legibleGroup = nil
+        legibleOptions = []
     }
 
     /// One line per stream resolution so a play session's delivery decisions
@@ -366,6 +506,8 @@ public final class PlaybackViewModel {
                 positionTicks: positionTicks,
                 playMethod: playMethod,
                 isPaused: player.timeControlStatus == .paused,
+                audioStreamIndex: selectedAudioStreamIndex,
+                subtitleStreamIndex: selectedSubtitleStreamIndex,
             )
             // Success at debug level — one line every heartbeat is only
             // interesting when actively diagnosing

@@ -114,10 +114,13 @@ struct HomeSkeleton: View {
 }
 
 /// Deliberate hero-shaped empty state: connected-but-empty servers get a
-/// nudge to add media; disconnected sessions get pointed at Settings. (The
-/// tab bar remains the focus target — nothing on the page itself needs it.)
+/// nudge to add media; disconnected sessions get pointed at Settings. The
+/// Settings button doubles as the page's focus anchor — with nothing else
+/// focusable, the tvOS focus engine strands the user (the collapsed sidebar
+/// can't take focus either, #69).
 struct HomeEmptyState: View {
     @Environment(\.theme) private var theme
+    @Environment(\.openSettings) private var openSettings
 
     let isConnected: Bool
     let userName: String?
@@ -136,6 +139,20 @@ struct HomeEmptyState: View {
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
                 .frame(maxWidth: HomeHeroMotion.overviewMaxWidth, alignment: .leading)
+
+            if let openSettings {
+                Button {
+                    openSettings()
+                } label: {
+                    HStack(spacing: SpacingTokens.sm) {
+                        Image(systemName: "gear")
+                        Text(isConnected ? "Open Settings" : "Connect in Settings")
+                    }
+                    .jsStyle(.headline)
+                }
+                .glassButtonStyle(tint: theme.focusFill)
+                .padding(.top, SpacingTokens.sm)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SpacingTokens.screenPadding)

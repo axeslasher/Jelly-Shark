@@ -23,7 +23,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var playbackInfoRequests: [(itemId: String, startTimeTicks: Int64?, audioStreamIndex: Int?, subtitleStreamIndex: Int?)] = []
     var streamResolutions: [(sourceId: String, parameters: StreamParameters, playMethod: PlayMethod)] = []
     var startReports: [(itemId: String, positionTicks: Int64, playMethod: PlayMethod)] = []
-    var progressReports: [(itemId: String, positionTicks: Int64, isPaused: Bool, playMethod: PlayMethod)] = []
+    var progressReports: [(itemId: String, positionTicks: Int64, isPaused: Bool, playMethod: PlayMethod, audioStreamIndex: Int?, subtitleStreamIndex: Int?)] = []
     var stopReports: [(itemId: String, positionTicks: Int64)] = []
     var nextEpisodeRequests: [String] = []
     var fetchCurrentUserCallCount = 0
@@ -240,8 +240,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks: Int64,
         playMethod: PlayMethod,
         isPaused: Bool,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?,
     ) async throws {
-        progressReports.append((itemId, positionTicks, isPaused, playMethod))
+        progressReports.append((itemId, positionTicks, isPaused, playMethod, audioStreamIndex, subtitleStreamIndex))
     }
 
     func reportPlaybackStopped(
@@ -540,8 +542,8 @@ struct PlaybackViewModelTests {
         #expect(client.startReports[0].playMethod == .transcode)
     }
 
-    @Test("Selecting a subtitle on a direct session falls back to HLS and returns on clear")
-    func subtitleSelectionLeavesAndReentersDirectPlay() async {
+    @Test("Selecting a subtitle on a direct session falls back to HLS; clearing stays in place")
+    func subtitleSelectionLeavesDirectPlay() async throws {
         let client = MockJellyfinClient()
         stubDirectPlaySource(on: client)
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
@@ -556,10 +558,18 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 3)
         #expect(client.startReports[1].playMethod == .directStream)
 
+        // Turning subtitles off inside an HLS session is an in-place media
+        // selection, not a rebuild: the session stays on HLS and the
+        // deselection is reported through progress
+        let progressCountBefore = client.progressReports.count
         await viewModel.selectSubtitleStream(index: nil)
-        #expect(client.streamResolutions.count == 3)
-        #expect(client.streamResolutions[2].playMethod == .directPlay)
-        #expect(client.startReports[2].playMethod == .directPlay)
+        #expect(client.streamResolutions.count == 2)
+        #expect(client.startReports.count == 2)
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(client.progressReports.count > progressCountBefore)
+        let lastProgress = try #require(client.progressReports.last)
+        #expect(lastProgress.subtitleStreamIndex == nil)
+        #expect(lastProgress.playMethod == .directStream)
     }
 
     @Test("Resume works on a direct-play source")
@@ -574,5 +584,186 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions[0].playMethod == .directPlay)
         #expect(client.startReports[0].positionTicks == resumeTicks)
         #expect(client.startReports[0].playMethod == .directPlay)
+    }
+
+    // MARK: - Subtitle Selection
+
+    private static let englishSrt = MediaStreamInfo(
+        index: 2,
+        type: .subtitle,
+        displayTitle: "English - Default - SUBRIP",
+        language: "eng",
+        codec: "subrip",
+        isDefault: true,
+        isTextSubtitleStream: true,
+    )
+    private static let spanishSrt = MediaStreamInfo(
+        index: 3,
+        type: .subtitle,
+        displayTitle: "Spanish - SUBRIP",
+        language: "spa",
+        codec: "subrip",
+        isTextSubtitleStream: true,
+    )
+    private static let englishPgs = MediaStreamInfo(
+        index: 4,
+        type: .subtitle,
+        displayTitle: "English - PGSSUB",
+        language: "eng",
+        codec: "pgssub",
+        isTextSubtitleStream: false,
+    )
+
+    private func stubSubtitledSource(
+        on client: MockJellyfinClient,
+        directPlay: Bool = true,
+        defaultSubtitleStreamIndex: Int? = nil,
+    ) {
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-1",
+                mediaSources: [
+                    MediaSource(
+                        id: "source-1",
+                        container: "mp4",
+                        supportsDirectPlay: directPlay,
+                        supportsDirectStream: true,
+                        supportsTranscoding: true,
+                        defaultSubtitleStreamIndex: defaultSubtitleStreamIndex,
+                        subtitleStreams: [Self.englishSrt, Self.spanishSrt, Self.englishPgs],
+                    ),
+                ],
+            ),
+        )
+    }
+
+    @Test("start() seeds the server's default subtitle selection")
+    func startSeedsDefaultSubtitle() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 2)
+        #expect(client.streamResolutions[0].parameters.subtitleStreamIndex == 2)
+        // Delivering the default subtitle needs HLS even on a
+        // direct-play-capable source
+        #expect(client.streamResolutions[0].playMethod == .directStream)
+    }
+
+    @Test("An explicit off is not re-seeded by rebuilds")
+    func explicitOffSurvivesRebuild() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: nil)
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+
+        // An audio change forces a rebuild; the explicit off must stick
+        await viewModel.selectAudioStream(index: 9)
+
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        let lastResolution = client.streamResolutions.last
+        #expect(lastResolution?.parameters.subtitleStreamIndex == Int??.some(nil))
+    }
+
+    @Test("Autoplay resets the selection so the next episode reseeds")
+    func autoplayReseedsDefaultSubtitle() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let viewModel = PlaybackViewModel(client: client, item: episode)
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: nil)
+        await viewModel.handlePlaybackEnded()
+        await viewModel.playNextEpisodeNow()
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 2)
+    }
+
+    @Test("Selecting an image subtitle transcodes for burn-in and rebuilds out of it")
+    func imageSubtitleBurnInTransitions() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(client.startReports[0].playMethod == .directPlay)
+
+        await viewModel.selectSubtitleStream(index: 4)
+        #expect(client.streamResolutions.count == 2)
+        #expect(client.streamResolutions[1].playMethod == .transcode)
+        #expect(client.startReports[1].playMethod == .transcode)
+
+        // Removing a burned-in track requires another rebuild — the video
+        // itself has the subtitles composited in
+        await viewModel.selectSubtitleStream(index: nil)
+        #expect(client.streamResolutions.count == 3)
+        #expect(client.streamResolutions[2].playMethod == .directPlay)
+        #expect(client.startReports[2].playMethod == .directPlay)
+    }
+
+    @Test("A matched text target switches in place without a rebuild")
+    func cheapSwitchBetweenTextTracks() async throws {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 2)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(client.streamResolutions[0].playMethod == .directStream)
+        let playerBefore = viewModel.player
+
+        // Simulate the legible group having loaded from the master playlist
+        viewModel.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
+        ]
+
+        await viewModel.selectSubtitleStream(index: 3)
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 3)
+        #expect(client.playbackInfoRequests.count == 1)
+        #expect(client.streamResolutions.count == 1)
+        #expect(client.startReports.count == 1)
+        #expect(viewModel.player === playerBefore)
+        let lastProgress = try #require(client.progressReports.last)
+        #expect(lastProgress.subtitleStreamIndex == 3)
+        #expect(lastProgress.playMethod == .directStream)
+    }
+
+    @Test("An unmatched text target falls back to a rebuild")
+    func unmatchedTargetRebuilds() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 2)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        // Legible options never loaded (empty) → no confident match
+        await viewModel.selectSubtitleStream(index: 3)
+
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].subtitleStreamIndex == 3)
+        #expect(client.startReports.count == 2)
+    }
+
+    @Test("In-place switch decision matrix")
+    func canSwitchInPlaceMatrix() {
+        typealias Decide = (Bool, PlayMethod, Bool, Bool, Bool, Bool) -> Bool
+        let decide: Decide = PlaybackViewModel.canSwitchSubtitlesInPlace
+
+        // (hasPlayer, currentMethod, sessionUsesBurnIn, targetRequiresBurnIn, turningOff, targetMatched)
+        #expect(decide(true, .directStream, false, false, true, false)) // off in HLS
+        #expect(decide(true, .directStream, false, false, false, true)) // matched text in HLS
+        #expect(decide(true, .transcode, false, false, false, true)) // matched text while transcoding
+        #expect(!decide(false, .directStream, false, false, true, false)) // no player
+        #expect(!decide(true, .directPlay, false, false, false, true)) // direct play has no renditions
+        #expect(!decide(true, .transcode, true, false, true, false)) // leaving burn-in
+        #expect(!decide(true, .directStream, false, true, false, true)) // entering burn-in
+        #expect(!decide(true, .directStream, false, false, false, false)) // unmatched target
     }
 }

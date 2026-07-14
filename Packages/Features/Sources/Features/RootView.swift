@@ -107,11 +107,29 @@ public struct RootView: View {
         .withThemeEnvironment(themeManager)
         .environment(session)
         .environment(connectionViewModel)
+        .environment(\.openSettings) {
+            tabSelection.wrappedValue = .settings
+        }
         .task {
             // Attach here (not just in Settings) so a restored client is
             // published app-wide even if the user never opens Settings
             connectionViewModel.attach(session: session)
             await connectionViewModel.restoreSession()
+
+            #if DEBUG
+                // Test hook: auto-connect to a server from the environment
+                // (pass via `simctl launch` with SIMCTL_CHILD_-prefixed vars)
+                // so UI automation can reach a connected state without
+                // driving the connection form
+                if case .disconnected = connectionViewModel.state,
+                   let server = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_SERVER"]
+                {
+                    connectionViewModel.serverURL = server
+                    connectionViewModel.username = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_USER"] ?? ""
+                    connectionViewModel.password = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_PASSWORD"] ?? ""
+                    await connectionViewModel.connect()
+                }
+            #endif
         }
         // If the selected library tab disappears (disconnect clears the list,
         // or the server removed a library), fall back to Home rather than
@@ -149,6 +167,16 @@ public struct RootView: View {
                 }
         }
     }
+}
+
+// MARK: - Open Settings Action
+
+extension EnvironmentValues {
+    /// Switches the root TabView to the Settings tab. Views that need to
+    /// point a stranded user at Settings (e.g. Home's empty states, where
+    /// nothing else on screen is focusable and the collapsed sidebar can't
+    /// take focus — #69) call this instead of reaching into tab state.
+    @Entry var openSettings: (() -> Void)? = nil
 }
 
 // MARK: - Tab

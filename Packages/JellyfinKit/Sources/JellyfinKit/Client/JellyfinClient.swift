@@ -184,7 +184,8 @@ public protocol JellyfinClientProtocol: Sendable {
         subtitleStreamIndex: Int?,
     ) async throws
 
-    /// Report playback progress
+    /// Report playback progress, including the current track selection so
+    /// in-place subtitle switches (no new start report) stay visible server-side
     func reportPlaybackProgress(
         itemId: String,
         mediaSourceId: String?,
@@ -192,6 +193,8 @@ public protocol JellyfinClientProtocol: Sendable {
         positionTicks: Int64,
         playMethod: PlayMethod,
         isPaused: Bool,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?,
     ) async throws
 
     /// Report that playback has stopped
@@ -884,6 +887,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 accessToken: accessToken,
                 deviceId: configuration.deviceID,
                 parameters: parameters,
+                subtitleMethod: source.subtitleRequiresBurnIn(at: parameters.subtitleStreamIndex) ? .encode : .hls,
                 eTag: source.eTag,
             )
         }
@@ -932,9 +936,12 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks: Int64,
         playMethod: PlayMethod,
         isPaused: Bool,
+        audioStreamIndex: Int?,
+        subtitleStreamIndex: Int?,
     ) async throws {
         do {
             let info = JellyfinAPI.PlaybackProgressInfo(
+                audioStreamIndex: audioStreamIndex,
                 canSeek: true,
                 isPaused: isPaused,
                 itemID: itemId,
@@ -942,6 +949,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
                 positionTicks: Int(positionTicks),
+                subtitleStreamIndex: subtitleStreamIndex,
             )
 
             _ = try await sdkClient.send(Paths.reportPlaybackProgress(info))

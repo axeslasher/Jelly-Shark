@@ -13,7 +13,7 @@ struct StreamURLBuilderTests {
         return result
     }
 
-    @Test("HLS URL has the universal endpoint path")
+    @Test("HLS URL targets the master playlist")
     func hlsPath() throws {
         let url = try #require(StreamURLBuilder.hlsURL(
             serverURL: URL(string: "https://example.com")!,
@@ -22,7 +22,9 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(itemId: "item-1"),
         ))
 
-        #expect(url.path == "/Videos/item-1/main.m3u8")
+        // master.m3u8, not main.m3u8: only the master playlist advertises
+        // subtitle renditions
+        #expect(url.path == "/Videos/item-1/master.m3u8")
     }
 
     @Test("HLS URL includes required query parameters")
@@ -45,7 +47,32 @@ struct StreamURLBuilderTests {
         #expect(query["PlaySessionId"] == "session-1")
         #expect(query["VideoCodec"] == "hevc,h264")
         #expect(query["AudioCodec"] == "aac,ac3,eac3")
+        // ts, not mp4: fMP4 segments desync Jellyfin's VTT time map by 10s
+        #expect(query["SegmentContainer"] == "ts")
         #expect(query["SubtitleMethod"] == "Hls")
+        #expect(query["VideoBitrate"] == String(JellyfinClient.maxStreamingBitrate - StreamURLBuilder.audioBitrate))
+        #expect(query["AudioBitrate"] == String(StreamURLBuilder.audioBitrate))
+    }
+
+    @Test("Subtitle delivery method is reflected in the query")
+    func subtitleMethodVariants() throws {
+        let encode = try #require(StreamURLBuilder.hlsURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: 2),
+            subtitleMethod: .encode,
+        ))
+        #expect(queryItems(of: encode)["SubtitleMethod"] == "Encode")
+
+        let hls = try #require(StreamURLBuilder.hlsURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: 2),
+            subtitleMethod: .hls,
+        ))
+        #expect(queryItems(of: hls)["SubtitleMethod"] == "Hls")
     }
 
     @Test("Stream indices are omitted when nil")
@@ -92,7 +119,7 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(itemId: "item-1"),
         ))
 
-        #expect(url.path == "/jellyfin/Videos/item-1/main.m3u8")
+        #expect(url.path == "/jellyfin/Videos/item-1/master.m3u8")
     }
 
     // MARK: - Direct play
@@ -184,6 +211,7 @@ struct PlayMethodDecisionTests {
         directPlay: Bool,
         directStream: Bool,
         defaultAudioStreamIndex: Int? = 1,
+        subtitleStreams: [MediaStreamInfo] = [],
     ) -> MediaSource {
         MediaSource(
             id: "source-1",
@@ -192,6 +220,7 @@ struct PlayMethodDecisionTests {
             supportsDirectStream: directStream,
             supportsTranscoding: true,
             defaultAudioStreamIndex: defaultAudioStreamIndex,
+            subtitleStreams: subtitleStreams,
         )
     }
 
@@ -226,6 +255,41 @@ struct PlayMethodDecisionTests {
         let source = source(directPlay: false, directStream: false)
         #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: nil) == .transcode)
         #expect(source.playMethod(audioStreamIndex: 2, subtitleStreamIndex: 3) == .transcode)
+    }
+
+    @Test("Image subtitle selection forces a transcode for burn-in")
+    func imageSubtitleBurnsIn() {
+        let source = source(
+            directPlay: true,
+            directStream: true,
+            subtitleStreams: [
+                MediaStreamInfo(index: 2, type: .subtitle, codec: "pgssub", isTextSubtitleStream: false),
+                MediaStreamInfo(index: 3, type: .subtitle, codec: "subrip", isTextSubtitleStream: true),
+            ],
+        )
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: 2) == .transcode)
+        #expect(source.subtitleRequiresBurnIn(at: 2))
+    }
+
+    @Test("Text subtitle selection remuxes rather than transcodes")
+    func textSubtitleRemuxes() {
+        let source = source(
+            directPlay: true,
+            directStream: true,
+            subtitleStreams: [
+                MediaStreamInfo(index: 3, type: .subtitle, codec: "subrip", isTextSubtitleStream: true),
+            ],
+        )
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: 3) == .directStream)
+        #expect(!source.subtitleRequiresBurnIn(at: 3))
+    }
+
+    @Test("Unknown subtitle index is treated as text")
+    func unknownSubtitleIndexFallsBackToText() {
+        let source = source(directPlay: true, directStream: true)
+        #expect(source.playMethod(audioStreamIndex: nil, subtitleStreamIndex: 9) == .directStream)
+        #expect(!source.subtitleRequiresBurnIn(at: 9))
+        #expect(!source.subtitleRequiresBurnIn(at: nil))
     }
 }
 

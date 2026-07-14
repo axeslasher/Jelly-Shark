@@ -103,14 +103,43 @@ public enum PlayMethod: Sendable, Equatable {
     case transcode
 }
 
+/// How the server should deliver a selected subtitle stream over HLS
+public enum SubtitleDeliveryMethod: String, Sendable, Equatable {
+    /// Text subtitles served as WebVTT renditions in the master playlist
+    case hls = "Hls"
+
+    /// Image subtitles burned into the video (forces a re-encode)
+    case encode = "Encode"
+}
+
 public extension MediaSource {
+    /// The subtitle stream with the given source-relative index, if any
+    func subtitleStream(at index: Int?) -> MediaStreamInfo? {
+        guard let index else { return nil }
+        return subtitleStreams.first { $0.index == index }
+    }
+
+    /// Whether delivering the given subtitle selection requires burning it
+    /// into the video. Image-based formats (PGS, VobSub) cannot be served as
+    /// HLS text renditions; the server must re-encode with them composited.
+    /// An index that doesn't resolve to a known stream is treated as text.
+    func subtitleRequiresBurnIn(at index: Int?) -> Bool {
+        guard let stream = subtitleStream(at: index) else { return false }
+        return !stream.isTextSubtitleStream
+    }
+
     /// Pick the playback method for this source given the requested tracks.
     ///
     /// Direct play requires default tracks: a static file cannot honor
     /// server-side stream selection (and AVPlayer track selection on
     /// progressive files is unreliable), so explicit choices route through
     /// the HLS endpoint where AudioStreamIndex/SubtitleStreamIndex apply.
+    /// A subtitle that needs burn-in is always a transcode: the server
+    /// re-encodes the video to composite it, whatever the flags claim.
     func playMethod(audioStreamIndex: Int?, subtitleStreamIndex: Int?) -> PlayMethod {
+        if subtitleRequiresBurnIn(at: subtitleStreamIndex) {
+            return .transcode
+        }
         let usesDefaultAudio = audioStreamIndex == nil || audioStreamIndex == defaultAudioStreamIndex
         if supportsDirectPlay, usesDefaultAudio, subtitleStreamIndex == nil {
             return .directPlay
