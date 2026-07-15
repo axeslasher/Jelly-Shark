@@ -98,16 +98,23 @@ enum StreamURLBuilder {
             return nil
         }
 
+        // fMP4 by default, MPEG-TS only when a text subtitle rides along.
+        // Apple's HLS stack decodes HEVC solely from fMP4 segments — HEVC in
+        // an MPEG-TS segment yields audio over a black screen — so fMP4 is
+        // required for every HEVC source routed through HLS. The exception is
+        // a text subtitle delivered as a WebVTT rendition: Jellyfin's VTT
+        // playlists carry X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset)
+        // that matches its TS segments, and against fMP4 (PTS 0) the subtitle
+        // renders 10s late — so that one path keeps TS and eats the HEVC cost.
+        let deliversTextSubtitle = subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
+        let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
+
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "api_key", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
             URLQueryItem(name: "VideoCodec", value: "hevc,h264"),
             URLQueryItem(name: "AudioCodec", value: "aac,ac3,eac3"),
-            // MPEG-TS, not fMP4: Jellyfin's WebVTT subtitle playlists carry
-            // X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset), which matches
-            // its TS segments. fMP4 segments start at PTS 0, so every text
-            // subtitle renders exactly 10 seconds late (verified server-side).
-            URLQueryItem(name: "SegmentContainer", value: "ts"),
+            URLQueryItem(name: "SegmentContainer", value: segmentContainer),
             URLQueryItem(name: "MinSegments", value: "2"),
             URLQueryItem(name: "BreakOnNonKeyFrames", value: "true"),
             URLQueryItem(name: "TranscodingProtocol", value: "hls"),

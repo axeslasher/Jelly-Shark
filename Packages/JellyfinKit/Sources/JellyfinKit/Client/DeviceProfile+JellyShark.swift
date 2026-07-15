@@ -95,12 +95,14 @@ extension JellyfinClient {
                 JellyfinAPI.SubtitleProfile(format: "dvdsub", method: .encode),
             ],
             transcodingProfiles: [
-                // ts to match StreamURLBuilder's SegmentContainer — see the
-                // comment there for why fMP4 breaks HLS subtitle timing
+                // Advertise both segment containers StreamURLBuilder may
+                // request: fMP4 (the default, and the only one Apple decodes
+                // HEVC from) and ts (used only when a text subtitle rides
+                // along) — see the SegmentContainer comment there.
                 JellyfinAPI.TranscodingProfile(
                     audioCodec: "aac,ac3,eac3",
                     isBreakOnNonKeyFrames: true,
-                    container: "ts",
+                    container: "mp4,ts",
                     context: .streaming,
                     minSegments: 2,
                     protocol: .hls,

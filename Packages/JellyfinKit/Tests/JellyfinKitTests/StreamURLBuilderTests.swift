@@ -47,8 +47,9 @@ struct StreamURLBuilderTests {
         #expect(query["PlaySessionId"] == "session-1")
         #expect(query["VideoCodec"] == "hevc,h264")
         #expect(query["AudioCodec"] == "aac,ac3,eac3")
-        // ts, not mp4: fMP4 segments desync Jellyfin's VTT time map by 10s
-        #expect(query["SegmentContainer"] == "ts")
+        // fMP4 when no text subtitle rides along: Apple decodes HEVC only
+        // from fMP4 segments, never MPEG-TS (audio-over-black otherwise)
+        #expect(query["SegmentContainer"] == "mp4")
         #expect(query["SubtitleMethod"] == "Hls")
         #expect(query["VideoBitrate"] == String(JellyfinClient.maxStreamingBitrate - StreamURLBuilder.audioBitrate))
         #expect(query["AudioBitrate"] == String(StreamURLBuilder.audioBitrate))
@@ -73,6 +74,28 @@ struct StreamURLBuilderTests {
             subtitleMethod: .hls,
         ))
         #expect(queryItems(of: hls)["SubtitleMethod"] == "Hls")
+    }
+
+    @Test("Segment container is TS only when a text subtitle is delivered over HLS")
+    func segmentContainerFollowsSubtitleDelivery() throws {
+        func container(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod) throws -> String? {
+            let url = try #require(StreamURLBuilder.hlsURL(
+                serverURL: URL(string: "https://example.com")!,
+                accessToken: "token",
+                deviceId: "device",
+                parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
+                subtitleMethod: subtitleMethod,
+            ))
+            return queryItems(of: url)["SegmentContainer"]
+        }
+
+        // A text subtitle as a WebVTT rendition needs TS timing alignment
+        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .hls) == "ts")
+        // No subtitle: fMP4 so HEVC video renders
+        try #expect(container(subtitleStreamIndex: nil, subtitleMethod: .hls) == "mp4")
+        // Burn-in composites into the video, leaving no rendition to time —
+        // fMP4 so the (re-encoded) HEVC still renders
+        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .encode) == "mp4")
     }
 
     @Test("Stream indices are omitted when nil")
