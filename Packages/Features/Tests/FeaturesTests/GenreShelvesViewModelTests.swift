@@ -7,6 +7,7 @@ import Testing
 @Suite("GenreShelvesViewModel")
 struct GenreShelvesViewModelTests {
     private static let movies = Library(id: "movies", name: "Films", collectionType: .movies)
+    private static let moreMovies = Library(id: "more-movies", name: "4K Films", collectionType: .movies)
     private static let shows = Library(id: "shows", name: "Series", collectionType: .tvshows)
     private static let music = Library(id: "music", name: "Music", collectionType: .music)
 
@@ -20,11 +21,13 @@ struct GenreShelvesViewModelTests {
         )
 
         let viewModel = GenreShelvesViewModel()
-        viewModel.attach(client: client, libraries: [Self.music, Self.movies, Self.shows])
+        viewModel.attach(client: client, libraries: [Self.music, Self.movies, Self.moreMovies, Self.shows])
         await viewModel.load()
 
-        // Music is not genre-capable; movies + shows are, in their library order.
-        #expect(viewModel.shelves.map(\.library.id) == ["movies", "shows"])
+        // Music is never genre-capable; TV is deliberately excluded for now
+        // (Home 60fps canary — see `genreCapable`). Movie libraries shelve in
+        // library order.
+        #expect(viewModel.shelves.map(\.library.id) == ["movies", "more-movies"])
         #expect(viewModel.status == .loaded)
     }
 
@@ -120,7 +123,7 @@ struct GenreShelvesViewModelTests {
         }
 
         let viewModel = GenreShelvesViewModel()
-        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        viewModel.attach(client: client, libraries: [Self.movies, Self.moreMovies])
         await viewModel.load()
 
         // Something survived, so no error notice — but the gap re-armed a
@@ -131,10 +134,10 @@ struct GenreShelvesViewModelTests {
         client.filterOptionsHandler = { _ in
             .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
         }
-        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        viewModel.attach(client: client, libraries: [Self.movies, Self.moreMovies])
         await viewModel.load()
 
-        #expect(viewModel.shelves.map(\.library.id) == ["movies", "shows"])
+        #expect(viewModel.shelves.map(\.library.id) == ["movies", "more-movies"])
     }
 
     // MARK: - Genre ordering & cap
