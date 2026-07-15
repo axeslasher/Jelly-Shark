@@ -12,12 +12,13 @@ struct HomeViewModelTests {
 
     // MARK: - Item factories
 
-    private func movie(_ id: String, backdrop: Bool = true) -> MediaItem {
+    private func movie(_ id: String, backdrop: Bool = true, lastPlayed: Date? = nil) -> MediaItem {
         MediaItem(
             id: id,
             name: id,
             type: .movie,
             imageTags: backdrop ? ImageTags(backdrop: "tag") : nil,
+            userData: lastPlayed.map { UserData(lastPlayedDate: $0) },
         )
     }
 
@@ -30,8 +31,20 @@ struct HomeViewModelTests {
         )
     }
 
-    private func episode(_ id: String, seriesId: String) -> MediaItem {
-        MediaItem(id: id, name: id, type: .episode, seriesId: seriesId)
+    private func episode(_ id: String, seriesId: String, lastPlayed: Date? = nil) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: id,
+            type: .episode,
+            userData: lastPlayed.map { UserData(lastPlayedDate: $0) },
+            seriesId: seriesId,
+        )
+    }
+
+    /// Deterministic engagement dates: day N since the epoch, so later days
+    /// are more recent.
+    private func day(_ offset: Int) -> Date {
+        Date(timeIntervalSince1970: Double(offset) * 86400)
     }
 
     private func boxSet(_ id: String) -> MediaItem {
@@ -101,6 +114,50 @@ struct HomeViewModelTests {
             limit: 3,
         )
         #expect(curated.map(\.id) == ["m0", "m1", "m2"])
+    }
+
+    // MARK: - Continue Watching merge (pure)
+
+    @Test("Merge interleaves resume and next-up by last engagement, newest first")
+    func mergeOrdersByMixedRecency() {
+        let merged = HomeViewModel.mergeContinueWatching(
+            resume: [movie("m-old", lastPlayed: day(1)), movie("m-new", lastPlayed: day(3))],
+            nextUp: [episode("e-newest", seriesId: "s1"), episode("e-older", seriesId: "s2")],
+            seriesLastPlayed: ["s1": day(4), "s2": day(2)],
+        )
+        #expect(merged.map(\.id) == ["e-newest", "m-new", "e-older", "m-old"])
+    }
+
+    @Test("Dateless items sink to the bottom in source order, resume first")
+    func mergeSinksMissingDates() {
+        let merged = HomeViewModel.mergeContinueWatching(
+            resume: [movie("m-dated", lastPlayed: day(1)), movie("m-dateless")],
+            nextUp: [episode("e-unknown", seriesId: "s-unmapped")],
+            seriesLastPlayed: [:],
+        )
+        #expect(merged.map(\.id) == ["m-dated", "m-dateless", "e-unknown"])
+    }
+
+    @Test("Merge dedupes by id")
+    func mergeDedupesById() {
+        let merged = HomeViewModel.mergeContinueWatching(
+            resume: [episode("e1", seriesId: "s1", lastPlayed: day(2))],
+            nextUp: [episode("e1", seriesId: "s1")],
+            seriesLastPlayed: ["s1": day(3)],
+        )
+        #expect(merged.map(\.id) == ["e1"])
+    }
+
+    @Test("seriesLastPlayedMap keeps each series' most recent play")
+    func seriesMapKeepsMostRecent() {
+        let map = HomeViewModel.seriesLastPlayedMap(from: [
+            episode("e1", seriesId: "s1", lastPlayed: day(1)),
+            episode("e2", seriesId: "s1", lastPlayed: day(5)),
+            episode("e3", seriesId: "s2", lastPlayed: day(2)),
+            episode("e4", seriesId: "s2"), // no date — contributes nothing
+            movie("m1", lastPlayed: day(9)), // no series — contributes nothing
+        ])
+        #expect(map == ["s1": day(5), "s2": day(2)])
     }
 
     // MARK: - Load statuses
@@ -591,5 +648,140 @@ struct HomeViewModelTests {
         #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
         #expect(viewModel.latestShelves.map(\.id) == ["movies"])
         #expect(viewModel.latestStatus == .loaded)
+    }
+
+    // MARK: - Merged Continue Watching lane
+
+    @Test("The merged lane orders a full load by last engagement")
+    func mergedLaneFullLoad() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1", lastPlayed: day(2))])
+        client.nextUpItemsResult = .success([episode("next-1", seriesId: "s1")])
+        client.recentlyPlayedEpisodesResult = .success([
+            episode("watched-1", seriesId: "s1", lastPlayed: day(3)),
+        ])
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1", "resume-1"])
+        #expect(viewModel.mergedContinueWatchingStatus == .loaded)
+        // Split mode reads the same load: the raw outputs stay exactly the
+        // server results, untouched by the merge.
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+        #expect(viewModel.nextUpItems.map(\.id) == ["next-1"])
+    }
+
+    @Test("One empty source leaves the other's items in the lane")
+    func mergedLaneOneSourceEmpty() async {
+        let client = MockJellyfinClient()
+        client.nextUpItemsResult = .success([episode("next-1", seriesId: "s1")])
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1"])
+        #expect(viewModel.mergedContinueWatchingStatus == .loaded)
+    }
+
+    @Test("Partial results beat an error: one failed source keeps the lane loaded")
+    func mergedLanePartialResultsBeatError() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .failure(APIError.networkError("offline"))
+        client.nextUpItemsResult = .success([episode("next-1", seriesId: "s1")])
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1"])
+        #expect(viewModel.mergedContinueWatchingStatus == .loaded)
+        // The raw status still reports the failure, so the needsLoad re-arm
+        // and retryFailedSections keep targeting the broken source.
+        #expect(viewModel.resumeStatus.isFailed)
+    }
+
+    @Test("Both sources failing fails the merged lane")
+    func mergedLaneBothFailed() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .failure(APIError.networkError("offline"))
+        client.nextUpItemsResult = .failure(APIError.networkError("offline"))
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(viewModel.mergedContinueWatchingStatus.isFailed)
+        #expect(viewModel.mergedContinueWatchingItems.isEmpty)
+    }
+
+    @Test("Both sources empty settles the merged lane at .empty")
+    func mergedLaneBothEmpty() async {
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: MockJellyfinClient())
+        #expect(viewModel.mergedContinueWatchingStatus == .empty)
+    }
+
+    @Test("A failed dates fetch degrades ordering, never the lane")
+    func mergedLaneDatesFailureDegradesGracefully() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1", lastPlayed: day(1))])
+        client.nextUpItemsResult = .success([
+            episode("next-1", seriesId: "s1"),
+            episode("next-2", seriesId: "s2"),
+        ])
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("offline"))
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        // No sort keys for next-up: dated resume items first, then next-up
+        // in server order. Statuses untouched — the dates are enrichment.
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["resume-1", "next-1", "next-2"])
+        #expect(viewModel.mergedContinueWatchingStatus == .loaded)
+        #expect(viewModel.isInitialLoading == false)
+    }
+
+    @Test("refreshUserState refreshes every merged-lane input")
+    func refreshUserStateRefreshesMergedInputs() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1", lastPlayed: day(5))])
+        client.nextUpItemsResult = .success([episode("next-1", seriesId: "s1")])
+        client.recentlyPlayedEpisodesResult = .success([
+            episode("watched-1", seriesId: "s1", lastPlayed: day(1)),
+        ])
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["resume-1", "next-1"])
+
+        // Playback finished: the series is now the freshest engagement. The
+        // new order requires the refreshed dates map, proving refreshUserState
+        // refetches it alongside resume/next-up.
+        client.nextUpItemsResult = .success([episode("next-2", seriesId: "s1")])
+        client.recentlyPlayedEpisodesResult = .success([
+            episode("next-1", seriesId: "s1", lastPlayed: day(6)),
+        ])
+        await viewModel.refreshUserState()
+
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-2", "resume-1"])
+    }
+
+    @Test("retryFailedSections refreshes the merged lane's sort keys")
+    func retryRefreshesDates() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .failure(APIError.networkError("offline"))
+        client.nextUpItemsResult = .success([episode("next-1", seriesId: "s1")])
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("offline"))
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+        #expect(viewModel.seriesLastPlayedDates.isEmpty)
+
+        client.resumeItemsResult = .success([movie("resume-1", lastPlayed: day(2))])
+        client.recentlyPlayedEpisodesResult = .success([
+            episode("watched-1", seriesId: "s1", lastPlayed: day(3)),
+        ])
+        await viewModel.retryFailedSections()
+
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1", "resume-1"])
     }
 }

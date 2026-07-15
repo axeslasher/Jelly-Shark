@@ -233,6 +233,13 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameter limit: Maximum number of episodes to return
     func getNextUpItems(limit: Int?) async throws -> [MediaItem]
 
+    /// The user's most recently played episodes across all libraries, newest
+    /// first — the recency signal for ordering Next Up entries by when their
+    /// series was last watched (a next-up episode is unwatched, so it carries
+    /// no `lastPlayedDate` of its own).
+    /// - Parameter limit: Maximum number of episodes to return
+    func getRecentlyPlayedEpisodes(limit: Int?) async throws -> [MediaItem]
+
     // MARK: - User Data
 
     /// Mark an item as played for the current user
@@ -1112,6 +1119,31 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             let response = try await sdkClient.send(
                 Paths.getNextUp(parameters: parameters),
             )
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getRecentlyPlayedEpisodes(limit: Int?) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.isRecursive = true
+            parameters.includeItemTypes = [.episode]
+            parameters.filters = [.isPlayed]
+            parameters.sortBy = [.datePlayed]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.descending]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
         } catch let error as APIError {

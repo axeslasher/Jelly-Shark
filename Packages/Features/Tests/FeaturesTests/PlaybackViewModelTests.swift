@@ -297,6 +297,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         try nextUpItemsResult.get()
     }
 
+    var recentlyPlayedEpisodesResult: Result<[MediaItem], Error> = .success([])
+
+    func getRecentlyPlayedEpisodes(limit _: Int?) async throws -> [MediaItem] {
+        try recentlyPlayedEpisodesResult.get()
+    }
+
     func markPlayed(itemId _: String) async throws {}
     func markUnplayed(itemId _: String) async throws {}
     func markFavorite(itemId _: String) async throws {}

@@ -14,6 +14,7 @@ struct HomeView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
     @Environment(ServerConnectionViewModel.self) private var connection
+    @Environment(HomePreferences.self) private var homePreferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var viewModel = HomeViewModel()
@@ -151,6 +152,9 @@ struct HomeView: View {
                 // treats it as a single page with a single scroll anchor.
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                     HomeShelvesSection(
+                        mergesContinueWatching: homePreferences.mergesContinueWatching,
+                        mergedItems: viewModel.mergedContinueWatchingItems,
+                        mergedStatus: viewModel.mergedContinueWatchingStatus,
                         resumeItems: viewModel.resumeItems,
                         nextUpItems: viewModel.nextUpItems,
                         latestShelves: viewModel.latestShelves,
@@ -296,4 +300,5 @@ private struct ScrollSnapMetrics: Equatable {
     .withThemeEnvironment()
     .environment(AppSession())
     .environment(ServerConnectionViewModel())
+    .environment(HomePreferences())
 }

@@ -2,8 +2,9 @@ import DesignSystem
 import JellyfinKit
 import SwiftUI
 
-/// The below-the-fold Home shelves: Continue Watching, Next Up, and one
-/// Recently Added row per movie/TV/collection library.
+/// The below-the-fold Home shelves: Continue Watching (one merged lane by
+/// default, or split into Continue Watching + Next Up per the Settings
+/// preference) and one Recently Added row per movie/TV/collection library.
 ///
 /// Sections degrade deliberately: a failed section keeps its header with an
 /// inline notice instead of vanishing, while an empty section (nothing to
@@ -11,6 +12,13 @@ import SwiftUI
 struct HomeShelvesSection: View {
     @Environment(AppSession.self) private var session
 
+    /// Single-lane vs two-shelf rendering — the user's Settings choice.
+    /// Both sets of inputs are always supplied (the view model loads every
+    /// source regardless), so flipping the preference re-renders instantly
+    /// without a refetch.
+    let mergesContinueWatching: Bool
+    let mergedItems: [MediaItem]
+    let mergedStatus: HomeViewModel.SectionStatus
     let resumeItems: [MediaItem]
     let nextUpItems: [MediaItem]
     let latestShelves: [HomeViewModel.LibraryShelf]
@@ -41,28 +49,45 @@ struct HomeShelvesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-            if !resumeItems.isEmpty {
-                ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
-                    ForEach(resumeItems) { item in
-                        item.playableShelfItem(client: session.client) {
-                            onPlay(item)
+            if mergesContinueWatching {
+                // One lane, both sources. Partial results beat an error: the
+                // notice only appears when nothing rendered and a source
+                // failed (mergedStatus's contract).
+                if !mergedItems.isEmpty {
+                    ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
+                        ForEach(mergedItems) { item in
+                            item.playableShelfItem(client: session.client) {
+                                onPlay(item)
+                            }
                         }
                     }
+                } else if mergedStatus.isFailed {
+                    FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
                 }
-            } else if resumeStatus.isFailed {
-                FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
-            }
+            } else {
+                if !resumeItems.isEmpty {
+                    ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
+                        ForEach(resumeItems) { item in
+                            item.playableShelfItem(client: session.client) {
+                                onPlay(item)
+                            }
+                        }
+                    }
+                } else if resumeStatus.isFailed {
+                    FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
+                }
 
-            if !nextUpItems.isEmpty {
-                ContentShelf("Next Up", icon: "play.square.stack") {
-                    ForEach(nextUpItems) { item in
-                        item.playableShelfItem(client: session.client) {
-                            onPlay(item)
+                if !nextUpItems.isEmpty {
+                    ContentShelf("Next Up", icon: "play.square.stack") {
+                        ForEach(nextUpItems) { item in
+                            item.playableShelfItem(client: session.client) {
+                                onPlay(item)
+                            }
                         }
                     }
+                } else if nextUpStatus.isFailed {
+                    FailedShelfNotice(title: "Next Up", icon: "play.square.stack", retry: onRetry)
                 }
-            } else if nextUpStatus.isFailed {
-                FailedShelfNotice(title: "Next Up", icon: "play.square.stack", retry: onRetry)
             }
 
             ForEach(latestShelves) { shelf in
