@@ -3,7 +3,8 @@ import JellyfinKit
 import Observation
 
 /// Builds the Home "Browse by genre" shelves: one per genre-capable library
-/// (movies and TV), each listing the library's genres alphabetically.
+/// (currently movies only — see `genreCapable`), each listing the library's
+/// genres alphabetically.
 ///
 /// Only the genre lists are built here (one cheap filter-options call per
 /// library); each card fetches its own representative backdrop lazily as it
@@ -39,8 +40,13 @@ public final class GenreShelvesViewModel {
         }
     }
 
-    /// Library kinds whose items are meaningfully organized by genre.
-    private static let genreCapable: Set<CollectionType> = [.movies, .tvshows]
+    /// Library kinds that get a genre row. Movies only for now: Home's
+    /// content column is deliberately non-lazy (tvOS focus), so every genre
+    /// row is built eagerly, and each card entering the viewport fetches a
+    /// sample page + backdrop — a second (TV) row doubled that scroll-time
+    /// work. Canary for Home's 60fps target; restore `.tvshows` if profiling
+    /// clears it.
+    private static let genreCapable: Set<CollectionType> = [.movies]
 
     public private(set) var shelves: [Shelf] = []
     public private(set) var status: Status = .loading
