@@ -50,6 +50,10 @@ public final class HomeViewModel {
 
     private static let resumeLimit = 16
     private static let nextUpLimit = 16
+    /// Recently played episodes fetched for the merged lane's sort keys. A
+    /// next-up series whose last watch predates this window sinks to the
+    /// bottom of the merged lane — acceptable, it's stale by definition.
+    private static let recentlyPlayedLimit = 60
     /// Global latest fetch feeding hero curation only (the shelves are per-library).
     private static let heroSourceLimit = 16
     private static let latestPerLibraryLimit = 26
@@ -60,6 +64,11 @@ public final class HomeViewModel {
     public private(set) var resumeItems: [MediaItem] = []
     public private(set) var nextUpItems: [MediaItem] = []
     public private(set) var latestShelves: [LibraryShelf] = []
+
+    /// Each series' most recent episode play date — the sort keys that let
+    /// next-up episodes (unwatched, so no `lastPlayedDate` of their own)
+    /// interleave with resume items in the merged lane.
+    public private(set) var seriesLastPlayedDates: [String: Date] = [:]
 
     public private(set) var resumeStatus: SectionStatus = .loading
     public private(set) var nextUpStatus: SectionStatus = .loading
@@ -89,6 +98,39 @@ public final class HomeViewModel {
 
     public var currentHeroItem: MediaItem? {
         heroItems.indices.contains(heroIndex) ? heroItems[heroIndex] : nil
+    }
+
+    /// The single Continue Watching lane: resume and next-up interleaved by
+    /// last-engagement recency. Computed so a preference flip re-renders from
+    /// already-loaded state (≤32 items, recompute-on-read is trivial).
+    public var mergedContinueWatchingItems: [MediaItem] {
+        Self.mergeContinueWatching(
+            resume: resumeItems,
+            nextUp: nextUpItems,
+            seriesLastPlayed: seriesLastPlayedDates,
+        )
+    }
+
+    /// Section status for the merged lane. Partial results beat an error:
+    /// items from either source render even when the other failed (the
+    /// `needsLoad` re-arm already schedules a background refetch), so the
+    /// lane only reports failure when a source failed AND nothing rendered.
+    /// The `.loading` branch is covered by `isInitialLoading`'s skeleton in
+    /// practice — `refreshUserState`/`retryFailedSections` never set it.
+    public var mergedContinueWatchingStatus: SectionStatus {
+        if resumeStatus == .loading || nextUpStatus == .loading {
+            return .loading
+        }
+        if !resumeItems.isEmpty || !nextUpItems.isEmpty {
+            return .loaded
+        }
+        if case .failed = resumeStatus {
+            return resumeStatus
+        }
+        if case .failed = nextUpStatus {
+            return nextUpStatus
+        }
+        return .empty
     }
 
     // MARK: - Configuration
@@ -152,6 +194,7 @@ public final class HomeViewModel {
             resumeItems = []
             nextUpItems = []
             latestShelves = []
+            seriesLastPlayedDates = [:]
             resumeStatus = .loading
             nextUpStatus = .loading
             latestStatus = .loading
@@ -168,7 +211,8 @@ public final class HomeViewModel {
         async let resume: Void = loadResume(client: client, generation: generation)
         async let nextUp: Void = loadNextUp(client: client, generation: generation)
         async let latest: Void = loadLatest(client: client, generation: generation)
-        _ = await (resume, nextUp, latest)
+        async let watchDates: Void = loadWatchDates(client: client, generation: generation)
+        _ = await (resume, nextUp, latest, watchDates)
 
         guard generation == loadGeneration else { return }
         if Task.isCancelled {
@@ -206,6 +250,13 @@ public final class HomeViewModel {
         }
         if shouldRetryLatest {
             await loadLatest(client: client, generation: generation)
+        }
+        // Not a section, so it has no failed status of its own to retry on —
+        // but recovered resume/next-up items need fresh sort keys for the
+        // merged lane, so it rides along with them (one deliberate fetch
+        // beyond the "only failed sections" doctrine; invisible to statuses).
+        if shouldRetryResume || shouldRetryNextUp {
+            await loadWatchDates(client: client, generation: generation)
         }
 
         guard generation == loadGeneration else { return }
@@ -250,7 +301,8 @@ public final class HomeViewModel {
         let generation = loadGeneration
         async let resume: Void = loadResume(client: client, generation: generation)
         async let nextUp: Void = loadNextUp(client: client, generation: generation)
-        _ = await (resume, nextUp)
+        async let watchDates: Void = loadWatchDates(client: client, generation: generation)
+        _ = await (resume, nextUp, watchDates)
     }
 
     private func loadResume(client: any JellyfinClientProtocol, generation: Int) async {
@@ -277,6 +329,18 @@ public final class HomeViewModel {
             nextUpItems = []
             nextUpStatus = .failed(error.localizedDescription)
         }
+    }
+
+    private func loadWatchDates(client: any JellyfinClientProtocol, generation: Int) async {
+        // `try?` is enrichment, not swallowing: the dates only order the
+        // merged lane, so a failure keeps the previous (possibly stale) map —
+        // stale dates still order better than sinking every next-up item to
+        // the bottom — and never fails a section.
+        guard let episodes = try? await client.getRecentlyPlayedEpisodes(limit: Self.recentlyPlayedLimit) else {
+            return
+        }
+        guard generation == loadGeneration else { return }
+        seriesLastPlayedDates = Self.seriesLastPlayedMap(from: episodes)
     }
 
     private func loadLatest(client: any JellyfinClientProtocol, generation: Int) async {
@@ -400,6 +464,51 @@ public final class HomeViewModel {
             }
         }
         return resolved
+    }
+
+    // MARK: - Continue Watching merge
+
+    /// Collapse recently played episodes into each series' most recent play
+    /// date. Episodes without a series or a play date contribute nothing.
+    nonisolated static func seriesLastPlayedMap(from episodes: [MediaItem]) -> [String: Date] {
+        var map: [String: Date] = [:]
+        for episode in episodes {
+            guard let seriesId = episode.seriesId,
+                  let lastPlayed = episode.userData?.lastPlayedDate
+            else { continue }
+            map[seriesId] = max(map[seriesId] ?? .distantPast, lastPlayed)
+        }
+        return map
+    }
+
+    /// Merge resume and next-up into one lane, most recently engaged first.
+    /// Resume items sort by their own `lastPlayedDate`; next-up episodes by
+    /// their series' last-watched date from `seriesLastPlayed`. Items with no
+    /// date sink to the bottom. Ties keep source order with resume before
+    /// next-up (Swift's sort stability is unspecified, so the original index
+    /// is an explicit tiebreaker). Dedupes by id — the server already keeps
+    /// the sets disjoint (`enableResumable = false`), this is belt-and-braces.
+    nonisolated static func mergeContinueWatching(
+        resume: [MediaItem],
+        nextUp: [MediaItem],
+        seriesLastPlayed: [String: Date],
+    ) -> [MediaItem] {
+        let keyed =
+            resume.enumerated().map { index, item in
+                (item: item, date: item.userData?.lastPlayedDate ?? .distantPast, index: index)
+            }
+            + nextUp.enumerated().map { index, item in
+                (
+                    item: item,
+                    date: item.seriesId.flatMap { seriesLastPlayed[$0] } ?? .distantPast,
+                    index: resume.count + index,
+                )
+            }
+
+        var seenIds: Set<String> = []
+        return keyed
+            .sorted { $0.date != $1.date ? $0.date > $1.date : $0.index < $1.index }
+            .compactMap { seenIds.insert($0.item.id).inserted ? $0.item : nil }
     }
 
     // MARK: - Hero curation

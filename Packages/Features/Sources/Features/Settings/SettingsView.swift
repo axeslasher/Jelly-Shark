@@ -6,6 +6,7 @@ public struct SettingsView: View {
     @Environment(\.theme) private var theme
     @Environment(ThemeManager.self) private var themeManager
     @Environment(ServerConnectionViewModel.self) private var connection
+    @Environment(HomePreferences.self) private var homePreferences
 
     public init() {}
 
@@ -20,6 +21,9 @@ public struct SettingsView: View {
     /// binding) so it can pop to root before a tab switch — see RootView's
     /// `tabSelection` for the tvOS bug this works around.
     public var body: some View {
+        // @Bindable so the Toggle can bind into the @Observable preferences.
+        @Bindable var homePreferences = homePreferences
+
         List {
             pageTitle("Settings")
 
@@ -47,6 +51,20 @@ public struct SettingsView: View {
                 }
             } header: {
                 sectionHeader("Appearance")
+            }
+
+            // Home Section
+            Section {
+                Toggle(isOn: $homePreferences.mergesContinueWatching) {
+                    settingsRow(
+                        icon: "popcorn.fill",
+                        title: "Combined Continue Watching",
+                        subtitle: "Fold Next Up into one shelf, sorted by recent activity",
+                    )
+                }
+                .tint(theme.accent)
+            } header: {
+                sectionHeader("Home")
             }
 
             // Playback Section
@@ -239,4 +257,5 @@ private struct ThemeRowLabel: View {
     .withThemeEnvironment()
     .environment(AppSession())
     .environment(ServerConnectionViewModel())
+    .environment(HomePreferences())
 }

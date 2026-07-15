@@ -8,6 +8,7 @@ public struct RootView: View {
     @State private var themeManager = ThemeManager.shared
     @State private var session = AppSession()
     @State private var connectionViewModel = ServerConnectionViewModel()
+    @State private var homePreferences = HomePreferences()
     @State private var selectedTab: AppTab = .home
 
     /// One navigation path per tab, owned here (the tab views don't create
@@ -130,6 +131,7 @@ public struct RootView: View {
         .withThemeEnvironment(themeManager)
         .environment(session)
         .environment(connectionViewModel)
+        .environment(homePreferences)
         .environment(\.openSettings) {
             tabSelection.wrappedValue = .settings
         }
