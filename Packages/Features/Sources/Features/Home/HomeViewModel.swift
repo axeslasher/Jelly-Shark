@@ -108,6 +108,7 @@ public final class HomeViewModel {
             resume: resumeItems,
             nextUp: nextUpItems,
             seriesLastPlayed: seriesLastPlayedDates,
+            now: Date(),
         )
     }
 
@@ -481,9 +482,20 @@ public final class HomeViewModel {
         return map
     }
 
-    /// Merge resume and next-up into one lane, most recently engaged first.
-    /// Resume items sort by their own `lastPlayedDate`; next-up episodes by
-    /// their series' last-watched date from `seriesLastPlayed`. Items with no
+    /// How recently a series must have been played for a new episode's
+    /// arrival date to count as engagement in the merged lane. Keeps a fresh
+    /// weekly episode ranked by its arrival while a new season of a show
+    /// abandoned months ago stays put — that's Recently Added's job.
+    nonisolated static let newEpisodeBoostWindow: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Merge resume and next-up into one lane, most recent event first — a
+    /// play, or a new episode arriving for a show in active rotation.
+    /// Resume items sort by their own `lastPlayedDate`. Next-up episodes sort
+    /// by their series' last-watched date from `seriesLastPlayed` (a next-up
+    /// episode is unwatched, so it has no play date of its own), raised to
+    /// the episode's `dateCreated` when the series was played within
+    /// `newEpisodeBoostWindow` of `now` — so the weekly show whose episode
+    /// just landed outranks a show merely watched yesterday. Items with no
     /// date sink to the bottom. Ties keep source order with resume before
     /// next-up (Swift's sort stability is unspecified, so the original index
     /// is an explicit tiebreaker). Dedupes by id — the server already keeps
@@ -492,17 +504,21 @@ public final class HomeViewModel {
         resume: [MediaItem],
         nextUp: [MediaItem],
         seriesLastPlayed: [String: Date],
+        now: Date,
     ) -> [MediaItem] {
         let keyed =
             resume.enumerated().map { index, item in
                 (item: item, date: item.userData?.lastPlayedDate ?? .distantPast, index: index)
             }
             + nextUp.enumerated().map { index, item in
-                (
-                    item: item,
-                    date: item.seriesId.flatMap { seriesLastPlayed[$0] } ?? .distantPast,
-                    index: resume.count + index,
-                )
+                let lastPlayed = item.seriesId.flatMap { seriesLastPlayed[$0] } ?? .distantPast
+                let isActivelyWatched = now.timeIntervalSince(lastPlayed) <= newEpisodeBoostWindow
+                let date = if isActivelyWatched, let added = item.dateCreated {
+                    max(lastPlayed, added)
+                } else {
+                    lastPlayed
+                }
+                return (item: item, date: date, index: resume.count + index)
             }
 
         var seenIds: Set<String> = []

@@ -47,6 +47,11 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// First air / theatrical release date
     public let premiereDate: Date?
 
+    /// Date the item was added to the server library. Import time by
+    /// default; the server's "use file creation date" library setting makes
+    /// it the file's creation date instead.
+    public let dateCreated: Date?
+
     /// Date the series ended (series only, when ended)
     public let endDate: Date?
 
@@ -100,6 +105,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         genres: [String]? = nil,
         studios: [String]? = nil,
         premiereDate: Date? = nil,
+        dateCreated: Date? = nil,
         endDate: Date? = nil,
         status: String? = nil,
         childCount: Int? = nil,
@@ -130,6 +136,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
         self.genres = genres
         self.studios = studios
         self.premiereDate = premiereDate
+        self.dateCreated = dateCreated
         self.endDate = endDate
         self.status = status
         self.childCount = childCount

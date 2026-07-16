@@ -31,11 +31,17 @@ struct HomeViewModelTests {
         )
     }
 
-    private func episode(_ id: String, seriesId: String, lastPlayed: Date? = nil) -> MediaItem {
+    private func episode(
+        _ id: String,
+        seriesId: String,
+        lastPlayed: Date? = nil,
+        dateAdded: Date? = nil,
+    ) -> MediaItem {
         MediaItem(
             id: id,
             name: id,
             type: .episode,
+            dateCreated: dateAdded,
             userData: lastPlayed.map { UserData(lastPlayedDate: $0) },
             seriesId: seriesId,
         )
@@ -124,6 +130,7 @@ struct HomeViewModelTests {
             resume: [movie("m-old", lastPlayed: day(1)), movie("m-new", lastPlayed: day(3))],
             nextUp: [episode("e-newest", seriesId: "s1"), episode("e-older", seriesId: "s2")],
             seriesLastPlayed: ["s1": day(4), "s2": day(2)],
+            now: day(10),
         )
         #expect(merged.map(\.id) == ["e-newest", "m-new", "e-older", "m-old"])
     }
@@ -134,6 +141,7 @@ struct HomeViewModelTests {
             resume: [movie("m-dated", lastPlayed: day(1)), movie("m-dateless")],
             nextUp: [episode("e-unknown", seriesId: "s-unmapped")],
             seriesLastPlayed: [:],
+            now: day(10),
         )
         #expect(merged.map(\.id) == ["m-dated", "m-dateless", "e-unknown"])
     }
@@ -144,8 +152,50 @@ struct HomeViewModelTests {
             resume: [episode("e1", seriesId: "s1", lastPlayed: day(2))],
             nextUp: [episode("e1", seriesId: "s1")],
             seriesLastPlayed: ["s1": day(3)],
+            now: day(10),
         )
         #expect(merged.map(\.id) == ["e1"])
+    }
+
+    @Test("A new episode of an actively watched show outranks a more recent play")
+    func mergeBoostsNewEpisodesOfActiveShows() {
+        // s1 was watched five days ago but its next episode landed today;
+        // s2's next-up file is ancient, so its play date stands. The weekly
+        // show beats the movie watched yesterday.
+        let merged = HomeViewModel.mergeContinueWatching(
+            resume: [movie("m-yesterday", lastPlayed: day(39))],
+            nextUp: [
+                episode("e-fresh", seriesId: "s1", dateAdded: day(40)),
+                episode("e-old-file", seriesId: "s2", dateAdded: day(2)),
+            ],
+            seriesLastPlayed: ["s1": day(35), "s2": day(36)],
+            now: day(40),
+        )
+        #expect(merged.map(\.id) == ["e-fresh", "m-yesterday", "e-old-file"])
+    }
+
+    @Test("A show outside the active window gets no new-episode boost")
+    func mergeIgnoresNewEpisodesOfStaleShows() {
+        // s1 was abandoned 40 days ago; its new season dropping yesterday is
+        // Recently Added's story, not this lane's — it keeps its old play date.
+        let merged = HomeViewModel.mergeContinueWatching(
+            resume: [movie("m-recent", lastPlayed: day(78))],
+            nextUp: [episode("e-new-season", seriesId: "s1", dateAdded: day(79))],
+            seriesLastPlayed: ["s1": day(40)],
+            now: day(80),
+        )
+        #expect(merged.map(\.id) == ["m-recent", "e-new-season"])
+    }
+
+    @Test("A series played exactly at the window edge still gets the boost")
+    func mergeBoostWindowIsInclusive() {
+        let merged = HomeViewModel.mergeContinueWatching(
+            resume: [movie("m-recent", lastPlayed: day(38))],
+            nextUp: [episode("e-fresh", seriesId: "s1", dateAdded: day(39))],
+            seriesLastPlayed: ["s1": day(10)], // exactly 30 days before `now`
+            now: day(40),
+        )
+        #expect(merged.map(\.id) == ["e-fresh", "m-recent"])
     }
 
     @Test("seriesLastPlayedMap keeps each series' most recent play")
