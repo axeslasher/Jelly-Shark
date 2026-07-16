@@ -48,6 +48,7 @@ extension MediaItem {
             genres: dto.genres,
             studios: dto.studios?.compactMap(\.name),
             premiereDate: dto.premiereDate,
+            dateCreated: dto.dateCreated,
             endDate: dto.endDate,
             status: dto.status,
             childCount: dto.childCount,

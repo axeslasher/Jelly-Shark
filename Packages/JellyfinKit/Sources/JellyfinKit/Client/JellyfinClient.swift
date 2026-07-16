@@ -1114,7 +1114,9 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             // resumable episodes (those already surface in Continue Watching).
             parameters.isDisableFirstEpisode = true
             parameters.enableResumable = false
-            parameters.fields = [.overview]
+            // `dateCreated` lets the merged Continue Watching lane rank a
+            // just-added episode of an actively watched show by its arrival.
+            parameters.fields = [.overview, .dateCreated]
 
             let response = try await sdkClient.send(
                 Paths.getNextUp(parameters: parameters),
