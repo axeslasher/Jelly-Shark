@@ -256,12 +256,27 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         stopReports.append((itemId, positionTicks))
     }
 
-    var trickplayManifestRequests: [String] = []
-    var trickplayManifestResult: Result<TrickplayManifest?, Error> = .success(nil)
+    var playbackExtrasRequests: [String] = []
+    var playbackExtrasResult: Result<PlaybackExtras, Error> = .success(PlaybackExtras())
 
-    func getTrickplayManifest(itemId: String) async throws -> TrickplayManifest? {
-        lock.withLock { trickplayManifestRequests.append(itemId) }
-        return try trickplayManifestResult.get()
+    func getPlaybackExtras(itemId: String) async throws -> PlaybackExtras {
+        lock.withLock { playbackExtrasRequests.append(itemId) }
+        return try playbackExtrasResult.get()
+    }
+
+    func chapterImageURL(itemId: String, chapterIndex: Int, tag: String, maxWidth: Int?) -> URL {
+        var url = serverURL
+            .appendingPathComponent("Items")
+            .appendingPathComponent(itemId)
+            .appendingPathComponent("Images")
+            .appendingPathComponent("Chapter")
+            .appendingPathComponent(String(chapterIndex))
+        var queryItems = [URLQueryItem(name: "tag", value: tag)]
+        if let maxWidth {
+            queryItems.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
+        }
+        url.append(queryItems: queryItems)
+        return url
     }
 
     func trickplayTileURL(itemId: String, width: Int, tileIndex: Int, mediaSourceId: String?) -> URL? {
@@ -571,24 +586,24 @@ struct PlaybackViewModelTests {
         (viewModel.player?.currentItem?.asset as? AVURLAsset)?.url
     }
 
-    @Test("start() requests the trickplay manifest for the item")
-    func startRequestsTrickplayManifest() async {
+    @Test("start() requests the playback extras for the item")
+    func startRequestsPlaybackExtras() async {
         let client = MockJellyfinClient()
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
 
-        #expect(client.trickplayManifestRequests == ["movie-1"])
-        // No manifest (the default stub) → the plain resolved stream plays
+        #expect(client.playbackExtrasRequests == ["movie-1"])
+        // No extras (the default stub) → the plain resolved stream plays
         #expect(assetURL(of: viewModel)?.host() == "example.com")
     }
 
     @Test("HLS playback with trickplay data interposes the loopback master")
     func trickplayInterposesMaster() async {
         let client = MockJellyfinClient()
-        client.trickplayManifestResult = .success(
-            TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
-        )
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            trickplay: TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
+        ))
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
@@ -600,10 +615,10 @@ struct PlaybackViewModelTests {
         await viewModel.stop()
     }
 
-    @Test("A trickplay fetch failure degrades to the plain stream")
-    func trickplayFailureDegrades() async {
+    @Test("A playback-extras fetch failure degrades to the plain stream")
+    func playbackExtrasFailureDegrades() async {
         let client = MockJellyfinClient()
-        client.trickplayManifestResult = .failure(APIError.generic("boom"))
+        client.playbackExtrasResult = .failure(APIError.generic("boom"))
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
@@ -616,9 +631,9 @@ struct PlaybackViewModelTests {
     func directPlaySkipsTrickplay() async {
         let client = MockJellyfinClient()
         stubDirectPlaySource(on: client)
-        client.trickplayManifestResult = .success(
-            TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
-        )
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            trickplay: TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
+        ))
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
@@ -630,18 +645,120 @@ struct PlaybackViewModelTests {
     @Test("A manifest keyed to other media sources degrades to the plain stream")
     func mismatchedManifestSourceDegrades() async {
         let client = MockJellyfinClient()
-        client.trickplayManifestResult = .success(
-            TrickplayManifest(sources: [
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            trickplay: TrickplayManifest(sources: [
                 "other-source": [makeTrickplayInfo()],
                 "another-source": [makeTrickplayInfo()],
             ]),
-        )
+        ))
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
         #expect(assetURL(of: viewModel)?.host() == "example.com")
+    }
+
+    // MARK: - Chapters & metadata
+
+    private func makeChapters() -> [Chapter] {
+        [
+            Chapter(name: "One", startTicks: 0, imageIndex: 0),
+            // 3600s into makeMovie()'s 7200s runtime
+            Chapter(name: "Two", startTicks: 36_000_000_000, imageIndex: 1),
+        ]
+    }
+
+    @Test("Chapters attach navigation markers and metadata to the player item")
+    func chaptersAttachMarkers() async throws {
+        let client = MockJellyfinClient()
+        client.playbackExtrasResult = .success(PlaybackExtras(chapters: makeChapters()))
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        let playerItem = try #require(viewModel.player?.currentItem)
+        #if os(tvOS)
+            let group = try #require(playerItem.navigationMarkerGroups.first)
+            #expect(group.title == nil)
+            #expect(group.timedNavigationMarkers?.count == 2)
+        #endif
+        #expect(!playerItem.externalMetadata.isEmpty)
+    }
+
+    @Test("A stream rebuild re-attaches markers without refetching extras")
+    func rebuildReattachesMarkers() async throws {
+        let client = MockJellyfinClient()
+        client.playbackExtrasResult = .success(PlaybackExtras(chapters: makeChapters()))
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        let originalItem = viewModel.player?.currentItem
+
+        await viewModel.selectAudioStream(index: 2)
+
+        let rebuiltItem = try #require(viewModel.player?.currentItem)
+        #expect(rebuiltItem !== originalItem)
+        #expect(client.playbackExtrasRequests == ["movie-1"])
+        #if os(tvOS)
+            #expect(rebuiltItem.navigationMarkerGroups.first?.timedNavigationMarkers?.count == 2)
+        #endif
+        #expect(!rebuiltItem.externalMetadata.isEmpty)
+    }
+
+    @Test("Autoplaying the next episode refetches extras for the new item")
+    func autoplayRefetchesExtras() async {
+        let client = MockJellyfinClient()
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let viewModel = PlaybackViewModel(client: client, item: episode)
+
+        await viewModel.start()
+        await viewModel.handlePlaybackEnded()
+        await viewModel.playNextEpisodeNow()
+
+        #expect(client.playbackExtrasRequests == ["ep-1", "ep-2"])
+    }
+
+    @Test("Cast members are published from the extras fetch")
+    func castMembersFromExtras() async {
+        let client = MockJellyfinClient()
+        let member = CastMember(id: "p1", name: "Actor", role: "Lead", kind: "Actor", primaryImageTag: nil)
+        client.playbackExtrasResult = .success(PlaybackExtras(people: [member]))
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.castMembers == [member])
+    }
+
+    @Test("A failed extras fetch falls back to the launching item's people")
+    func castMembersFallBackToItem() async {
+        let client = MockJellyfinClient()
+        client.playbackExtrasResult = .failure(APIError.generic("boom"))
+        let member = CastMember(id: "p2", name: "Actor", role: nil, kind: "Director", primaryImageTag: nil)
+        let item = MediaItem(id: "movie-1", name: "Test Movie", type: .movie, people: [member])
+        let viewModel = PlaybackViewModel(client: client, item: item)
+
+        await viewModel.start()
+
+        #expect(viewModel.castMembers == [member])
+    }
+
+    @Test("An item without runtime still plays, just without markers")
+    func missingRuntimeSkipsMarkers() async throws {
+        let client = MockJellyfinClient()
+        client.playbackExtrasResult = .success(PlaybackExtras(chapters: makeChapters()))
+        let item = MediaItem(id: "movie-1", name: "No Runtime", type: .movie)
+        let viewModel = PlaybackViewModel(client: client, item: item)
+
+        await viewModel.start()
+
+        #expect(viewModel.state == .playing)
+        let playerItem = try #require(viewModel.player?.currentItem)
+        #if os(tvOS)
+            #expect(playerItem.navigationMarkerGroups.isEmpty)
+        #endif
     }
 
     @Test("The default mock source still transcodes (existing behavior preserved)")

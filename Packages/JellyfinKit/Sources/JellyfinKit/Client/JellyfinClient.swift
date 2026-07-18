@@ -205,15 +205,29 @@ public protocol JellyfinClientProtocol: Sendable {
         positionTicks: Int64,
     ) async throws
 
-    // MARK: - Trickplay
+    // MARK: - Playback Extras
 
-    /// Fetch the trickplay (seek preview) manifest for an item
+    /// Fetch the ancillary playback data for an item: the trickplay
+    /// (seek preview) manifest and chapters
     ///
-    /// Trickplay manifests live on the item DTO, not in PlaybackInfo, so
-    /// this is a separate fields-scoped item fetch.
+    /// Both live on the item DTO, not in PlaybackInfo, so this is a single
+    /// fields-scoped item fetch shared by everything playback resolves up
+    /// front.
     /// - Parameter itemId: The item ID
-    /// - Returns: The manifest, or nil when the server has no trickplay data
-    func getTrickplayManifest(itemId: String) async throws -> TrickplayManifest?
+    /// - Returns: The extras; trickplay is nil and chapters empty when the
+    ///   server has no data
+    func getPlaybackExtras(itemId: String) async throws -> PlaybackExtras
+
+    /// Build the URL for one chapter image
+    /// (`/Items/{itemId}/Images/Chapter/{chapterIndex}`)
+    /// - Parameters:
+    ///   - itemId: The item the chapter belongs to
+    ///   - chapterIndex: The chapter's position in the server's chapter
+    ///     array (`Chapter.imageIndex`)
+    ///   - tag: The chapter's image tag (`Chapter.imageTag`)
+    ///   - maxWidth: Optional maximum width in pixels
+    /// - Returns: The chapter image URL
+    func chapterImageURL(itemId: String, chapterIndex: Int, tag: String, maxWidth: Int?) -> URL
 
     /// Build the authenticated URL for one trickplay tile sheet
     /// (`/Videos/{itemId}/Trickplay/{width}/{index}.jpg`)
@@ -287,6 +301,7 @@ public enum ImageType: String, Sendable {
     case logo = "Logo"
     case art = "Art"
     case screenshot = "Screenshot"
+    case chapter = "Chapter"
 }
 
 // MARK: - Configuration
@@ -1012,33 +1027,57 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    // MARK: - Trickplay
+    // MARK: - Playback Extras
 
-    public func getTrickplayManifest(itemId: String) async throws -> TrickplayManifest? {
+    public func getPlaybackExtras(itemId: String) async throws -> PlaybackExtras {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
         }
 
         do {
-            // Trickplay is not part of Paths.getItem's fixed response shape;
-            // the ids-filtered items endpoint is the way to request the
-            // Trickplay field explicitly.
+            // Trickplay, chapters, and people are not part of
+            // Paths.getItem's fixed response shape; the ids-filtered items
+            // endpoint is the way to request those fields explicitly.
             var parameters = Paths.GetItemsParameters()
             parameters.userID = userId
             parameters.ids = [itemId]
-            parameters.fields = [.trickplay]
+            parameters.fields = [.trickplay, .chapters, .people]
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
-            guard let dto = response.value.items?.first?.trickplay else {
-                return nil
+            guard let dto = response.value.items?.first else {
+                return PlaybackExtras()
             }
-            return TrickplayManifest(from: dto)
+            return PlaybackExtras(
+                trickplay: dto.trickplay.flatMap { TrickplayManifest(from: $0) },
+                chapters: Chapter.chapters(from: dto.chapters ?? []),
+                people: CastMember.members(from: dto.people ?? []),
+            )
         } catch let error as APIError {
             throw error
         } catch {
             throw Self.mapTransportError(error)
         }
+    }
+
+    public func chapterImageURL(itemId: String, chapterIndex: Int, tag: String, maxWidth: Int?) -> URL {
+        let endpoint = serverURL
+            .appendingPathComponent("Items")
+            .appendingPathComponent(itemId)
+            .appendingPathComponent("Images")
+            .appendingPathComponent(ImageType.chapter.rawValue)
+            .appendingPathComponent(String(chapterIndex))
+
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return endpoint
+        }
+
+        var queryItems = [URLQueryItem(name: "tag", value: tag)]
+        if let maxWidth {
+            queryItems.append(URLQueryItem(name: "maxWidth", value: String(maxWidth)))
+        }
+        components.queryItems = queryItems
+        return components.url ?? endpoint
     }
 
     public func trickplayTileURL(itemId: String, width: Int, tileIndex: Int, mediaSourceId: String?) -> URL? {

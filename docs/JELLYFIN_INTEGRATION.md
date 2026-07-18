@@ -141,9 +141,13 @@ POST /Sessions/Playing/Progress  (reportPlaybackProgress — heartbeat every 10s
 POST /Sessions/Playing/Stopped   (reportPlaybackStopped)
 - PlayMethod reports the resolved delivery: DirectPlay / DirectStream / Transcode
 
-GET /Items?ids={itemId}&fields=Trickplay          (getTrickplayManifest)
+GET /Items?ids={itemId}&fields=Trickplay,Chapters,People (getPlaybackExtras)
 GET /Videos/{itemId}/Trickplay/{width}/{index}.jpg (trickplayTileURL)
 - Seek-preview tile sheets; see "Trickplay Seek Previews" under Playback Integration
+
+GET /Items/{itemId}/Images/Chapter/{index}?tag=…   (chapterImageURL)
+- Chapter thumbnails for the player's Chapters panel; see "Chapters, Info
+  Tab & Cast Panel" under Playback Integration
 ```
 
 ### User Data — ✅ implemented
@@ -339,6 +343,7 @@ SwiftData is the intended persistence layer for caching but has **not been adopt
 - Audio + subtitle track switching (rebuilds the stream with the chosen indices; an explicit selection on a direct-play session falls back to HLS, and clearing back to defaults returns to direct play. On tvOS, surfaced via `AVPlayerViewController` transport-bar menus)
 - Episode autoplay with an "Up Next" countdown overlay (`UpNextOverlayView`)
 - Trickplay seek previews on HLS sessions — native scrub thumbnails in the system transport bar (see below)
+- Chapter markers in the tvOS Chapters panel, a populated Info tab, and a "Cast & Crew" info tab (see below)
 
 **Planned**: playback speed control, Picture-in-Picture, broader codec support.
 
@@ -350,9 +355,11 @@ source id and thumbnail width.
 
 **Endpoints used**:
 ```
-GET /Items?ids={itemId}&userId={userId}&fields=Trickplay   (getTrickplayManifest)
-- The manifest lives on the item DTO, not PlaybackInfo; adapted to
-  TrickplayManifest / TrickplayInfo (malformed entries dropped)
+GET /Items?ids={itemId}&userId={userId}&fields=Trickplay,Chapters,People  (getPlaybackExtras)
+- Trickplay manifest, chapters, and cast live on the item DTO, not
+  PlaybackInfo; one fields-scoped fetch covers all three, adapted to
+  PlaybackExtras (TrickplayManifest / TrickplayInfo / Chapter / CastMember,
+  malformed entries dropped)
 
 GET /Videos/{itemId}/Trickplay/{width}/{index}.jpg          (trickplayTileURL)
 - One tile sheet; authenticated with api_key like stream URLs. Cached via the
@@ -396,6 +403,46 @@ overlay (AVKit issues no live seeks during paused scrubbing — the player
 learns the target only at commit, so no signal exists to drive one);
 `EnableTrickplay` on the master (emits the Roku tag AVFoundation ignores);
 the iOS 27 `AVInterface*`/casting protocol family (unavailable on tvOS).
+
+### Chapters, Info Tab & Cast Panel (implemented)
+
+HLS remux/transcode streams carry none of the source file's embedded
+metadata, so the player reconstructs three AVKit surfaces from Jellyfin data
+(`PlayerMetadataFactory`, applied by `PlaybackViewModel.beginPlayback`):
+
+- **Chapter markers** (tvOS only — `AVPlayerItem.navigationMarkerGroups` does
+  not exist in the visionOS SDK): Jellyfin `ChapterInfo` → one
+  `AVNavigationMarkersGroup` (nil title = chapter list; each marker's range
+  runs to the next chapter's start, the last to the item's runtime). Attached
+  for every play method, so direct play and HLS share one chapter source.
+- **Info tab / title view**: `AVPlayerItem.externalMetadata` built from the
+  item — title, subtitle (series · S#E# for episodes, tagline otherwise),
+  overview, genres, official rating, poster artwork.
+- **Cast & Crew tab** (tvOS + visionOS): cast from the extras fetch
+  (shelf-launched items never carry the People field; the launching item is
+  only a fallback) rendered as a horizontal row of `CastCard`s in a
+  `UIHostingController`
+  (`CastInfoViewController`), attached via
+  `AVPlayerViewController.customInfoViewControllers`. Display-only — the
+  player is presented outside the tab's `NavigationStack`, so cards don't
+  navigate to `PersonDetailView`.
+
+Text metadata lands synchronously at playback start; artwork upgrades it in
+one re-set once fetches finish (`ChapterArtworkLoader`). Chapter thumbnails
+prefer the server's extracted chapter image
+(`GET /Items/{itemId}/Images/Chapter/{index}?tag=…`) and fall back to
+cropping the trickplay thumbnail at the chapter's timestamp — chapter-image
+extraction is off by default on many servers, while trickplay usually exists.
+Chapters with neither source stay title-only. All of it degrades silently:
+no chapters, no runtime, or failed fetches simply leave the panel/tab empty.
+
+**Deferred candidates** (written decisions, issue #58): playback speed —
+`AVPlayerViewController.speeds` is native, but rate > 1.0 over the universal
+HLS endpoint risks outrunning server-side transcode pacing; needs an
+empirical test before shipping. Picture-in-Picture — interacts with the
+trickplay loopback server lifecycle when backgrounded. "Skip Intro"
+contextual actions — needs the MediaSegments API surface (Jellyfin 10.10+),
+which the client doesn't fetch yet.
 
 ### Streaming (as implemented)
 - **Two delivery paths**, chosen per source by `MediaSource.playMethod(audioStreamIndex:subtitleStreamIndex:)` and resolved by `JellyfinClient.resolveStream(for:parameters:)`:
