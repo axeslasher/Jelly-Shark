@@ -202,4 +202,53 @@ enum StreamURLBuilder {
         components.queryItems = queryItems
         return components.url
     }
+
+    /// Build a trickplay tile-sheet URL:
+    /// `/Videos/{itemId}/Trickplay/{width}/{index}.jpg`
+    ///
+    /// Tile sheets require authentication, so this follows the stream-URL
+    /// pattern (`api_key` + `DeviceId`) rather than the tag-based,
+    /// unauthenticated artwork pattern.
+    ///
+    /// - Parameters:
+    ///   - serverURL: The server base URL (path prefixes are preserved)
+    ///   - accessToken: The authentication token, sent as `api_key`
+    ///   - deviceId: The device identifier reported to the server
+    ///   - itemId: The item the trickplay data belongs to
+    ///   - width: The resolution key (`TrickplayInfo.widthKey`)
+    ///   - tileIndex: The tile sheet index (`TrickplayTileLocation.tileIndex`)
+    ///   - mediaSourceId: The media source the manifest entry is keyed by
+    /// - Returns: The tile sheet URL, or nil if construction fails
+    static func trickplayTileURL(
+        serverURL: URL,
+        accessToken: String,
+        deviceId: String,
+        itemId: String,
+        width: Int,
+        tileIndex: Int,
+        mediaSourceId: String?,
+    ) -> URL? {
+        let endpoint = serverURL
+            .appendingPathComponent("Videos")
+            .appendingPathComponent(itemId)
+            .appendingPathComponent("Trickplay")
+            .appendingPathComponent(String(width))
+            .appendingPathComponent("\(tileIndex).jpg")
+
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
+
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "api_key", value: accessToken),
+            URLQueryItem(name: "DeviceId", value: deviceId),
+        ]
+
+        if let mediaSourceId {
+            queryItems.append(URLQueryItem(name: "MediaSourceId", value: mediaSourceId))
+        }
+
+        components.queryItems = queryItems
+        return components.url
+    }
 }

@@ -76,6 +76,55 @@ struct StreamURLBuilderTests {
         #expect(queryItems(of: hls)["SubtitleMethod"] == "Hls")
     }
 
+    @Test("Trickplay tile URL targets the tile sheet with auth")
+    func trickplayTileURL() throws {
+        let url = try #require(StreamURLBuilder.trickplayTileURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token-123",
+            deviceId: "device-abc",
+            itemId: "item-1",
+            width: 320,
+            tileIndex: 2,
+            mediaSourceId: "source-1",
+        ))
+
+        #expect(url.path == "/Videos/item-1/Trickplay/320/2.jpg")
+        let query = queryItems(of: url)
+        #expect(query["api_key"] == "token-123")
+        #expect(query["DeviceId"] == "device-abc")
+        #expect(query["MediaSourceId"] == "source-1")
+    }
+
+    @Test("Trickplay tile URL omits the media source when nil")
+    func trickplayTileURLWithoutMediaSource() throws {
+        let url = try #require(StreamURLBuilder.trickplayTileURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            itemId: "item-1",
+            width: 320,
+            tileIndex: 0,
+            mediaSourceId: nil,
+        ))
+
+        #expect(queryItems(of: url)["MediaSourceId"] == nil)
+    }
+
+    @Test("Trickplay tile URL preserves a server path prefix")
+    func trickplayTileURLPathPrefix() throws {
+        let url = try #require(StreamURLBuilder.trickplayTileURL(
+            serverURL: URL(string: "https://example.com/jellyfin")!,
+            accessToken: "token",
+            deviceId: "device",
+            itemId: "item-1",
+            width: 320,
+            tileIndex: 1,
+            mediaSourceId: nil,
+        ))
+
+        #expect(url.path == "/jellyfin/Videos/item-1/Trickplay/320/1.jpg")
+    }
+
     @Test("Segment container is TS only when a text subtitle is delivered over HLS")
     func segmentContainerFollowsSubtitleDelivery() throws {
         func container(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod) throws -> String? {

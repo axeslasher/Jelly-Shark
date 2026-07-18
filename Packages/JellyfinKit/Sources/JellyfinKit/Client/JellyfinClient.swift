@@ -205,6 +205,29 @@ public protocol JellyfinClientProtocol: Sendable {
         positionTicks: Int64,
     ) async throws
 
+    // MARK: - Trickplay
+
+    /// Fetch the trickplay (seek preview) manifest for an item
+    ///
+    /// Trickplay manifests live on the item DTO, not in PlaybackInfo, so
+    /// this is a separate fields-scoped item fetch.
+    /// - Parameter itemId: The item ID
+    /// - Returns: The manifest, or nil when the server has no trickplay data
+    func getTrickplayManifest(itemId: String) async throws -> TrickplayManifest?
+
+    /// Build the authenticated URL for one trickplay tile sheet
+    /// (`/Videos/{itemId}/Trickplay/{width}/{index}.jpg`)
+    ///
+    /// Called per scrub movement, so it returns nil instead of throwing
+    /// when there is no access token.
+    /// - Parameters:
+    ///   - itemId: The item the trickplay data belongs to
+    ///   - width: The resolution key (`TrickplayInfo.widthKey`)
+    ///   - tileIndex: The tile sheet index (`TrickplayTileLocation.tileIndex`)
+    ///   - mediaSourceId: The media source the manifest entry is keyed by
+    /// - Returns: The tile sheet URL, or nil when not authenticated
+    func trickplayTileURL(itemId: String, width: Int, tileIndex: Int, mediaSourceId: String?) -> URL?
+
     // MARK: - Episodes
 
     /// Fetch the episode immediately following the given episode
@@ -987,6 +1010,51 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         } catch {
             throw Self.mapTransportError(error)
         }
+    }
+
+    // MARK: - Trickplay
+
+    public func getTrickplayManifest(itemId: String) async throws -> TrickplayManifest? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            // Trickplay is not part of Paths.getItem's fixed response shape;
+            // the ids-filtered items endpoint is the way to request the
+            // Trickplay field explicitly.
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.ids = [itemId]
+            parameters.fields = [.trickplay]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+
+            guard let dto = response.value.items?.first?.trickplay else {
+                return nil
+            }
+            return TrickplayManifest(from: dto)
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func trickplayTileURL(itemId: String, width: Int, tileIndex: Int, mediaSourceId: String?) -> URL? {
+        guard let accessToken = _accessToken else {
+            return nil
+        }
+
+        return StreamURLBuilder.trickplayTileURL(
+            serverURL: serverURL,
+            accessToken: accessToken,
+            deviceId: configuration.deviceID,
+            itemId: itemId,
+            width: width,
+            tileIndex: tileIndex,
+            mediaSourceId: mediaSourceId,
+        )
     }
 
     // MARK: - Episodes

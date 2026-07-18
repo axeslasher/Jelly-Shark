@@ -1,3 +1,4 @@
+import AVFoundation
 @testable import Features
 import Foundation
 import JellyfinKit
@@ -253,6 +254,27 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks: Int64,
     ) async throws {
         stopReports.append((itemId, positionTicks))
+    }
+
+    var trickplayManifestRequests: [String] = []
+    var trickplayManifestResult: Result<TrickplayManifest?, Error> = .success(nil)
+
+    func getTrickplayManifest(itemId: String) async throws -> TrickplayManifest? {
+        lock.withLock { trickplayManifestRequests.append(itemId) }
+        return try trickplayManifestResult.get()
+    }
+
+    func trickplayTileURL(itemId: String, width: Int, tileIndex: Int, mediaSourceId: String?) -> URL? {
+        var url = serverURL
+            .appendingPathComponent("Videos")
+            .appendingPathComponent(itemId)
+            .appendingPathComponent("Trickplay")
+            .appendingPathComponent(String(width))
+            .appendingPathComponent("\(tileIndex).jpg")
+        if let mediaSourceId {
+            url.append(queryItems: [URLQueryItem(name: "MediaSourceId", value: mediaSourceId)])
+        }
+        return url
     }
 
     func getNextEpisode(after episode: MediaItem) async throws -> MediaItem? {
@@ -534,6 +556,92 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions[0].playMethod == .directPlay)
         #expect(client.startReports.count == 1)
         #expect(client.startReports[0].playMethod == .directPlay)
+    }
+
+    // MARK: - Trickplay
+
+    private func makeTrickplayInfo() -> TrickplayInfo {
+        TrickplayInfo(
+            widthKey: 320, thumbnailWidth: 320, thumbnailHeight: 180,
+            columns: 10, rows: 10, intervalMilliseconds: 10000, thumbnailCount: 60,
+        )
+    }
+
+    private func assetURL(of viewModel: PlaybackViewModel) -> URL? {
+        (viewModel.player?.currentItem?.asset as? AVURLAsset)?.url
+    }
+
+    @Test("start() requests the trickplay manifest for the item")
+    func startRequestsTrickplayManifest() async {
+        let client = MockJellyfinClient()
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(client.trickplayManifestRequests == ["movie-1"])
+        // No manifest (the default stub) → the plain resolved stream plays
+        #expect(assetURL(of: viewModel)?.host() == "example.com")
+    }
+
+    @Test("HLS playback with trickplay data interposes the loopback master")
+    func trickplayInterposesMaster() async {
+        let client = MockJellyfinClient()
+        client.trickplayManifestResult = .success(
+            TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
+        )
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.state == .playing)
+        let url = assetURL(of: viewModel)
+        #expect(url?.host() == "127.0.0.1")
+        #expect(url?.lastPathComponent == "master.m3u8")
+        await viewModel.stop()
+    }
+
+    @Test("A trickplay fetch failure degrades to the plain stream")
+    func trickplayFailureDegrades() async {
+        let client = MockJellyfinClient()
+        client.trickplayManifestResult = .failure(APIError.generic("boom"))
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.state == .playing)
+        #expect(assetURL(of: viewModel)?.host() == "example.com")
+    }
+
+    @Test("Direct play never interposes, even with trickplay data")
+    func directPlaySkipsTrickplay() async {
+        let client = MockJellyfinClient()
+        stubDirectPlaySource(on: client)
+        client.trickplayManifestResult = .success(
+            TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
+        )
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(client.streamResolutions[0].playMethod == .directPlay)
+        #expect(assetURL(of: viewModel)?.host() == "example.com")
+    }
+
+    @Test("A manifest keyed to other media sources degrades to the plain stream")
+    func mismatchedManifestSourceDegrades() async {
+        let client = MockJellyfinClient()
+        client.trickplayManifestResult = .success(
+            TrickplayManifest(sources: [
+                "other-source": [makeTrickplayInfo()],
+                "another-source": [makeTrickplayInfo()],
+            ]),
+        )
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.state == .playing)
+        #expect(assetURL(of: viewModel)?.host() == "example.com")
     }
 
     @Test("The default mock source still transcodes (existing behavior preserved)")

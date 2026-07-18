@@ -135,6 +135,14 @@ public final class PlaybackViewModel {
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "start")
 
+            // Seek previews: resolve the item's trickplay data up front so
+            // beginPlayback can interpose the I-frame rendition. Fetched even
+            // for direct play — a mid-session track switch can rebuild onto
+            // HLS. Absent data or a failed fetch just means scrubbing stays
+            // blind, exactly as before.
+            let manifest = await (try? client.getTrickplayManifest(itemId: item.id)) ?? nil
+            trickplayInfo = manifest?.info(forMediaSourceId: source.id)
+
             await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
         } catch {
             state = .failed(error.localizedDescription)
@@ -157,6 +165,8 @@ public final class PlaybackViewModel {
 
         player?.pause()
         player = nil
+        trickplayServer?.stop()
+        trickplayServer = nil
 
         // Telemetry must never block teardown
         do {
@@ -264,7 +274,7 @@ public final class PlaybackViewModel {
     // MARK: - Playback Internals
 
     private func beginPlayback(url: URL, resumeTicks: Int64) async {
-        let playerItem = AVPlayerItem(url: url)
+        let playerItem = await makePlayerItem(url: url)
         let player = AVPlayer(playerItem: playerItem)
         // The master playlist marks every text rendition AUTOSELECT=YES;
         // left on, AVPlayer would enable subtitles from system accessibility
@@ -304,6 +314,44 @@ public final class PlaybackViewModel {
         startProgressReporting()
         observeTimeControlStatus(of: player)
         observeEnd(of: playerItem)
+    }
+
+    /// The trickplay resolution for the current item's media source, when the
+    /// server has seek-preview data (resolved during `start()`)
+    private var trickplayInfo: TrickplayInfo?
+
+    /// The loopback server interposing the master playlist for the current
+    /// player item; nil when playing without seek previews
+    private var trickplayServer: TrickplayLocalServer?
+
+    /// Build the player item: plain URL for direct play, and an interposed
+    /// master serving the synthesized trickplay I-frame rendition for HLS
+    /// sessions with seek-preview data
+    private func makePlayerItem(url: URL) async -> AVPlayerItem {
+        trickplayServer?.stop()
+        trickplayServer = nil
+
+        guard playMethod != .directPlay, let info = trickplayInfo else {
+            return AVPlayerItem(url: url)
+        }
+
+        let itemId = item.id
+        let sourceId = mediaSource?.id
+        let client = client
+        let server = TrickplayLocalServer(originalMasterURL: url, info: info) { tileIndex in
+            client.trickplayTileURL(
+                itemId: itemId,
+                width: info.widthKey,
+                tileIndex: tileIndex,
+                mediaSourceId: sourceId,
+            )
+        }
+
+        guard let interposedURL = await server.start() else {
+            return AVPlayerItem(url: url)
+        }
+        trickplayServer = server
+        return AVPlayerItem(url: interposedURL)
     }
 
     private func rebuildStream() async {

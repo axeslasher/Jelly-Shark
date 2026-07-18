@@ -140,6 +140,10 @@ POST /Sessions/Playing           (reportPlaybackStart)
 POST /Sessions/Playing/Progress  (reportPlaybackProgress — heartbeat every 10s)
 POST /Sessions/Playing/Stopped   (reportPlaybackStopped)
 - PlayMethod reports the resolved delivery: DirectPlay / DirectStream / Transcode
+
+GET /Items?ids={itemId}&fields=Trickplay          (getTrickplayManifest)
+GET /Videos/{itemId}/Trickplay/{width}/{index}.jpg (trickplayTileURL)
+- Seek-preview tile sheets; see "Trickplay Seek Previews" under Playback Integration
 ```
 
 ### User Data — ✅ implemented
@@ -334,8 +338,64 @@ SwiftData is the intended persistence layer for caching but has **not been adopt
 - Resume from saved position (client-side seek — works on both paths)
 - Audio + subtitle track switching (rebuilds the stream with the chosen indices; an explicit selection on a direct-play session falls back to HLS, and clearing back to defaults returns to direct play. On tvOS, surfaced via `AVPlayerViewController` transport-bar menus)
 - Episode autoplay with an "Up Next" countdown overlay (`UpNextOverlayView`)
+- Trickplay seek previews on HLS sessions — native scrub thumbnails in the system transport bar (see below)
 
-**Planned**: playback speed control, Picture-in-Picture, seek-preview thumbnails, broader codec support.
+**Planned**: playback speed control, Picture-in-Picture, broader codec support.
+
+### Trickplay Seek Previews (implemented)
+
+Jellyfin 10.9+ generates trickplay data server-side: JPEG tile sheets (a grid
+of thumbnails per image) plus a manifest of tile geometry, keyed by media
+source id and thumbnail width.
+
+**Endpoints used**:
+```
+GET /Items?ids={itemId}&userId={userId}&fields=Trickplay   (getTrickplayManifest)
+- The manifest lives on the item DTO, not PlaybackInfo; adapted to
+  TrickplayManifest / TrickplayInfo (malformed entries dropped)
+
+GET /Videos/{itemId}/Trickplay/{width}/{index}.jpg          (trickplayTileURL)
+- One tile sheet; authenticated with api_key like stream URLs. Cached via the
+  shared URLCache with .returnCacheDataElseLoad (the server sends no
+  Cache-Control headers, so heuristic freshness would be ~zero)
+```
+
+**How presentation works** — the system scrubber renders previews only from
+HLS I-frame renditions, which Jellyfin's HLS does not provide (it advertises
+trickplay as a Roku-style `EXT-X-IMAGE-STREAM-INF`, which AVFoundation
+ignores), and AVKit has no API for injecting scrub thumbnails. The app
+bridges the gap by synthesizing the I-frame rendition client-side:
+
+1. For an HLS session whose item has trickplay data, `PlaybackViewModel`
+   starts a `TrickplayLocalServer` — a loopback-only HTTP listener on an
+   ephemeral port — and plays `http://127.0.0.1:{port}/master.m3u8`
+2. The server fetches Jellyfin's real master playlist, absolutizes every URI
+   (video/audio/subtitle playlists keep streaming directly from Jellyfin),
+   drops the Roku image tag, and appends an `mjpg` I-frame rendition
+   (`TrickplayHLSPlaylist`) — image-based trick play per HLS authoring spec
+   6.17
+3. Segment requests are served on demand: fetch the tile sheet covering the
+   thumbnail, crop the cell (`TrickplayResolver`), re-encode as JPEG, and
+   wrap it in a single-sample fMP4 fragment (`TrickplayIFrameMuxer`)
+
+The system transport bar then shows position-accurate previews while
+scrubbing, fetching segments as the cursor moves. A local HTTP server is
+required — AVFoundation's preview pipeline probes an
+`AVAssetResourceLoader`-served rendition once and silently abandons it, so a
+custom-scheme loader cannot deliver I-frame media (verified empirically).
+
+**Degradation**: items without trickplay data (or a failed manifest fetch)
+play the plain stream URL — scrubbing behaves exactly as before. If the
+interposed master fetch fails mid-session, the server 302-redirects the
+player to the origin master. A failed segment costs one preview frame.
+Direct play never interposes: tvOS already generates scrub thumbnails for
+progressive files natively.
+
+**Rejected alternatives** (full analysis on issue #59): a scrub-tracking
+overlay (AVKit issues no live seeks during paused scrubbing — the player
+learns the target only at commit, so no signal exists to drive one);
+`EnableTrickplay` on the master (emits the Roku tag AVFoundation ignores);
+the iOS 27 `AVInterface*`/casting protocol family (unavailable on tvOS).
 
 ### Streaming (as implemented)
 - **Two delivery paths**, chosen per source by `MediaSource.playMethod(audioStreamIndex:subtitleStreamIndex:)` and resolved by `JellyfinClient.resolveStream(for:parameters:)`:
