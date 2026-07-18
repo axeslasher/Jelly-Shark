@@ -38,6 +38,10 @@ public final class PlaybackViewModel {
     /// The next episode, set at end of playback to drive the Up Next overlay
     public private(set) var nextEpisode: MediaItem?
 
+    /// Cast and crew for the player's info tab (resolved during `start()` —
+    /// the launching item often lacks the People field)
+    public private(set) var castMembers: [CastMember] = []
+
     /// Currently selected audio stream index
     public private(set) var selectedAudioStreamIndex: Int?
 
@@ -135,13 +139,19 @@ public final class PlaybackViewModel {
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "start")
 
-            // Seek previews: resolve the item's trickplay data up front so
-            // beginPlayback can interpose the I-frame rendition. Fetched even
-            // for direct play — a mid-session track switch can rebuild onto
-            // HLS. Absent data or a failed fetch just means scrubbing stays
-            // blind, exactly as before.
-            let manifest = await (try? client.getTrickplayManifest(itemId: item.id)) ?? nil
-            trickplayInfo = manifest?.info(forMediaSourceId: source.id)
+            // Playback extras: resolve trickplay and chapters up front so
+            // beginPlayback can interpose the I-frame rendition and attach
+            // navigation markers. Trickplay is fetched even for direct play —
+            // a mid-session track switch can rebuild onto HLS. Absent data or
+            // a failed fetch just means scrubbing stays blind and the
+            // chapter panel stays empty, exactly as before.
+            let extras = await (try? client.getPlaybackExtras(itemId: item.id)) ?? nil
+            trickplayInfo = extras?.trickplay?.info(forMediaSourceId: source.id)
+            chapters = extras?.chapters ?? []
+            // The launching item is the fallback: shelf items rarely carry
+            // People, but a detail-page item does even when the fetch fails
+            let extrasPeople = extras?.people ?? []
+            castMembers = extrasPeople.isEmpty ? (item.people ?? []) : extrasPeople
 
             await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
         } catch {
@@ -167,6 +177,8 @@ public final class PlaybackViewModel {
         player = nil
         trickplayServer?.stop()
         trickplayServer = nil
+        metadataArtworkTask?.cancel()
+        metadataArtworkTask = nil
 
         // Telemetry must never block teardown
         do {
@@ -180,6 +192,11 @@ public final class PlaybackViewModel {
         } catch {
             Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
         }
+    }
+
+    /// Headshot URL for the player's cast tab (the view has no client access)
+    public func headshotURL(for member: CastMember) -> URL? {
+        client.headshotURL(for: member)
     }
 
     // MARK: - Track Selection
@@ -282,6 +299,7 @@ public final class PlaybackViewModel {
         player.appliesMediaSelectionCriteriaAutomatically = false
         self.player = player
 
+        applyPlayerMetadata(to: playerItem)
         loadLegibleOptions(for: playerItem)
 
         if resumeTicks > 0 {
@@ -320,9 +338,122 @@ public final class PlaybackViewModel {
     /// server has seek-preview data (resolved during `start()`)
     private var trickplayInfo: TrickplayInfo?
 
+    /// The current item's chapters (resolved during `start()`), empty when
+    /// the server reports none
+    private var chapters: [Chapter] = []
+
     /// The loopback server interposing the master playlist for the current
     /// player item; nil when playing without seek previews
     private var trickplayServer: TrickplayLocalServer?
+
+    /// In-flight artwork enrichment (chapter thumbnails + poster) for the
+    /// current player item
+    private var metadataArtworkTask: Task<Void, Never>?
+
+    /// Attach chapter markers and Info-tab metadata to a fresh player item,
+    /// then enrich both with artwork off the critical path
+    ///
+    /// HLS remux/transcode streams carry none of the source file's embedded
+    /// metadata, so the Chapters panel and Info tab are reconstructed from
+    /// Jellyfin data. Text lands synchronously — chapters are usable as soon
+    /// as the transport bar appears — and thumbnails upgrade the markers in
+    /// one re-set when their fetches finish.
+    private func applyPlayerMetadata(to playerItem: AVPlayerItem) {
+        playerItem.externalMetadata = PlayerMetadataFactory.externalMetadata(for: item)
+
+        #if os(tvOS)
+            if let duration = itemDurationSeconds,
+               let group = PlayerMetadataFactory.navigationMarkerGroup(
+                   chapters: chapters,
+                   durationSeconds: duration,
+               )
+            {
+                playerItem.navigationMarkerGroups = [group]
+            }
+        #endif
+
+        startMetadataEnrichment(for: playerItem)
+    }
+
+    private var itemDurationSeconds: Double? {
+        item.runTimeTicks.map { PlaybackTicks.seconds(fromTicks: $0) }
+    }
+
+    private func startMetadataEnrichment(for playerItem: AVPlayerItem) {
+        metadataArtworkTask?.cancel()
+        metadataArtworkTask = nil
+
+        let posterURL = client.posterURL(for: item)
+        guard !chapters.isEmpty || posterURL != nil else { return }
+
+        let chapters = chapters
+        let info = trickplayInfo
+        let itemId = item.id
+        let mediaSourceId = mediaSource?.id
+        let client = client
+
+        metadataArtworkTask = Task { [weak self, weak playerItem] in
+            let chapterArtwork = await ChapterArtworkLoader.loadArtwork(
+                for: chapters,
+                chapterImageURL: { chapter in
+                    chapter.imageTag.map {
+                        client.chapterImageURL(
+                            itemId: itemId,
+                            chapterIndex: chapter.imageIndex,
+                            tag: $0,
+                            maxWidth: 320,
+                        )
+                    }
+                },
+                trickplayInfo: info,
+                trickplayTileURL: { tileIndex in
+                    guard let info else { return nil }
+                    return client.trickplayTileURL(
+                        itemId: itemId,
+                        width: info.widthKey,
+                        tileIndex: tileIndex,
+                        mediaSourceId: mediaSourceId,
+                    )
+                },
+            )
+            let posterData = await ChapterArtworkLoader.imageData(from: posterURL)
+
+            guard !Task.isCancelled, let self, let playerItem else { return }
+            self.applyEnrichedMetadata(
+                chapterArtwork: chapterArtwork,
+                posterData: posterData,
+                to: playerItem,
+            )
+        }
+    }
+
+    private func applyEnrichedMetadata(
+        chapterArtwork: [Int: Data],
+        posterData: Data?,
+        to playerItem: AVPlayerItem,
+    ) {
+        // A rebuild or episode change may have swapped the item mid-fetch
+        guard player?.currentItem === playerItem else { return }
+        guard !chapterArtwork.isEmpty || posterData != nil else { return }
+
+        playerItem.externalMetadata = PlayerMetadataFactory.externalMetadata(
+            for: item,
+            artworkData: posterData,
+        )
+
+        #if os(tvOS)
+            if !chapterArtwork.isEmpty,
+               let duration = itemDurationSeconds,
+               let group = PlayerMetadataFactory.navigationMarkerGroup(
+                   chapters: chapters,
+                   durationSeconds: duration,
+                   artwork: chapterArtwork,
+               )
+            {
+                playerItem.navigationMarkerGroups = [group]
+            }
+        #endif
+    }
 
     /// Build the player item: plain URL for direct play, and an interposed
     /// master serving the synthesized trickplay I-frame rendition for HLS
@@ -363,6 +494,8 @@ public final class PlaybackViewModel {
         removeEndObserver()
         timeControlObservation?.invalidate()
         clearMediaSelectionState()
+        metadataArtworkTask?.cancel()
+        metadataArtworkTask = nil
         player?.pause()
         player = nil
 

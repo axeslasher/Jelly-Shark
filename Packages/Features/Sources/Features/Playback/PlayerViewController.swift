@@ -16,21 +16,51 @@
         let subtitleStreams: [MediaStreamInfo]
         let selectedAudioIndex: Int?
         let selectedSubtitleIndex: Int?
+        let people: [CastMember]
+        let headshotURL: (CastMember) -> URL?
         let onSelectAudio: (Int) -> Void
         let onSelectSubtitle: (Int?) -> Void
 
-        func makeUIViewController(context _: Context) -> AVPlayerViewController {
+        /// Caches the cast tab so SwiftUI updates don't rebuild it — AVKit
+        /// re-lays out its info tabs whenever the array is reassigned, which
+        /// would flicker (and drop focus from) an open panel
+        final class Coordinator {
+            var castViewController: CastInfoViewController?
+            var castPeople: [CastMember] = []
+        }
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator()
+        }
+
+        func makeUIViewController(context: Context) -> AVPlayerViewController {
             let controller = AVPlayerViewController()
             controller.player = player
             configureMenus(for: controller)
+            configureCastTab(for: controller, coordinator: context.coordinator)
             return controller
         }
 
-        func updateUIViewController(_ controller: AVPlayerViewController, context _: Context) {
+        func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
             if controller.player !== player {
                 controller.player = player
             }
             configureMenus(for: controller)
+            configureCastTab(for: controller, coordinator: context.coordinator)
+        }
+
+        private func configureCastTab(for controller: AVPlayerViewController, coordinator: Coordinator) {
+            // The coordinator starts with empty people, matching AVKit's
+            // default empty tab array, so the first pass with no cast is a
+            // no-op rather than a reassignment
+            guard coordinator.castPeople != people else {
+                return
+            }
+            coordinator.castPeople = people
+            coordinator.castViewController = people.isEmpty
+                ? nil
+                : CastInfoViewController(people: people, headshotURL: headshotURL)
+            controller.customInfoViewControllers = coordinator.castViewController.map { [$0] } ?? []
         }
 
         private func configureMenus(for controller: AVPlayerViewController) {

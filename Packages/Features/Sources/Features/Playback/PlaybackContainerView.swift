@@ -71,6 +71,8 @@ public struct PlaybackContainerView: View {
                     subtitleStreams: viewModel.mediaSource?.subtitleStreams ?? [],
                     selectedAudioIndex: viewModel.selectedAudioStreamIndex,
                     selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
+                    people: viewModel.castMembers,
+                    headshotURL: { viewModel.headshotURL(for: $0) },
                     onSelectAudio: { index in
                         Task { await viewModel.selectAudioStream(index: index) }
                     },
