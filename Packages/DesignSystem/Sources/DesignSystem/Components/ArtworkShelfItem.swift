@@ -279,12 +279,14 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     @ViewBuilder
     private var synopsisText: some View {
         if let synopsis {
-            Text(synopsis)
-                .jsStyle(.body)
-                .foregroundStyle(theme.secondary)
-                .lineLimit(6, reservesSpace: true)
-                .multilineTextAlignment(.leading)
-                .frame(width: width, alignment: .leading)
+            ShelfCaption {
+                Text(synopsis)
+                    .jsStyle(.body)
+                    .foregroundStyle(theme.secondary)
+                    .lineLimit(6, reservesSpace: true)
+                    .multilineTextAlignment(.leading)
+                    .frame(width: width, alignment: .leading)
+            }
         }
     }
 
@@ -302,22 +304,25 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     }
 
     private var titleText: some View {
-        Text(title)
-            .jsStyle(.title)
-            .foregroundStyle(theme.primary)
-            .lineLimit(1)
-            .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
+        ShelfCaption {
+            Text(title)
+                .jsStyle(.title)
+                .foregroundStyle(theme.primary)
+                .lineLimit(1)
+                .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
+        }
     }
 
     private var subtitleText: some View {
         // Reserve the second line even when empty so cards with one vs. two
         // caption lines stay aligned across a row.
-        Text(subtitle ?? " ")
-            .jsStyle(.body, .emphasized)
-            .foregroundStyle(theme.secondary)
-            .lineLimit(1)
-            .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
-            .opacity(subtitle == nil ? 0 : 1)
+        ShelfCaption(isPlaceholder: subtitle == nil) {
+            Text(subtitle ?? " ")
+                .jsStyle(.body, .emphasized)
+                .foregroundStyle(theme.secondary)
+                .lineLimit(1)
+                .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
+        }
     }
 }
 

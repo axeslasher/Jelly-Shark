@@ -78,6 +78,15 @@ public enum MotionTokens {
     /// Scale factor for pressed state
     public static let pressedScale: CGFloat = 0.98
 
+    /// Opacity of a shelf card's captions while the card is unfocused; focused
+    /// captions render at full strength.
+    ///
+    /// The accessibility wall is just under 0.5 — every theme's caption roles
+    /// still clear WCAG AA (4.5:1) at 0.5 and fail by 0.45, with Horror's
+    /// already-translucent `secondary` the first to go. `ThemeCatalogTests`
+    /// guards this, so raising the dim is a one-line change here.
+    public static let captionIdleOpacity: Double = 0.6
+
     /// Focus animation
     public static var focusAnimation: Animation {
         .spring(response: 0.3, dampingFraction: 0.7)
