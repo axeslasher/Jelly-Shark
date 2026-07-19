@@ -233,11 +233,19 @@ public final class PlaybackViewModel {
         selectedSubtitleStreamIndex = index
 
         if canSwitchInPlace {
-            applySubtitleSelection()
-            Self.logger.info("""
-            [subtitle] in-place switch "\(self.item.name, privacy: .public)" → \
-            \(index.map(String.init) ?? "off", privacy: .public)
-            """)
+            if applySubtitleSelection() {
+                Self.logger.info("""
+                [subtitle] in-place switch "\(self.item.name, privacy: .public)" → \
+                \(index.map(String.init) ?? "off", privacy: .public)
+                """)
+            } else {
+                // canSwitchInPlace implied a live item, but the player can
+                // be torn down between the decision and the selection
+                Self.logger.warning("""
+                [subtitle] in-place switch to \
+                \(index.map(String.init) ?? "off", privacy: .public) had no live item to apply to
+                """)
+            }
             // Keep the server's session view current without a fake start
             // report: progress now carries the stream indices
             await reportProgress()
@@ -254,14 +262,18 @@ public final class PlaybackViewModel {
     /// carrying one before and after. Its shape depends on that: TS/H.264
     /// while a WebVTT rendition rides along (Jellyfin's VTT carries
     /// `X-TIMESTAMP-MAP=MPEGTS:900000`, which only lines up against TS), and
-    /// fMP4/HEVC otherwise. Turning a subtitle on or off crosses that line,
-    /// and the loaded player item cannot express the change.
+    /// fMP4 (HEVC passthrough allowed) otherwise. Turning a subtitle on or
+    /// off crosses that line, and the loaded player item cannot express the
+    /// change.
     ///
     /// `targetMatched` alone is not enough to tell them apart. The master
     /// playlist advertises every text rendition whether or not one was
     /// requested, so a target matches even on an unsubtitled fMP4 stream —
     /// and selecting it there renders every cue exactly 10s late. Hence the
-    /// explicit `currentlyDeliveringTextSubtitle` gate.
+    /// explicit `currentlyDeliveringTextSubtitle` gate. At the call site that
+    /// parameter is merely "a subtitle index is selected" — also true of a
+    /// burned-in track; the burn-in guards below are what narrow it to text
+    /// delivery.
     static func canSwitchSubtitlesInPlace(
         hasPlayer: Bool,
         currentMethod: PlayMethod,
@@ -565,10 +577,21 @@ public final class PlaybackViewModel {
         guard playMethod != .directPlay else { return }
 
         mediaSelectionTask = Task { [weak self] in
-            guard let group = try? await playerItem.asset.loadMediaSelectionGroup(for: .legible),
-                  !Task.isCancelled
-            else { return }
-            self?.legibleGroupDidLoad(group, for: playerItem)
+            do {
+                guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .legible) else {
+                    // Normal on a stream with no legible renditions
+                    Self.logger.debug("[subtitle] stream carries no legible group")
+                    return
+                }
+                guard !Task.isCancelled else { return }
+                self?.legibleGroupDidLoad(group, for: playerItem)
+            } catch {
+                // The root of the subtitle pipeline: if this load fails, no
+                // rendition can ever be selected and every diagnostic
+                // downstream is unreachable, so record the cause at a
+                // persisted level
+                Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
+            }
         }
     }
 
@@ -591,8 +614,10 @@ public final class PlaybackViewModel {
     /// Point the player item's legible selection at the chosen subtitle
     /// stream — or clear it, so an AUTOSELECT rendition can't stay active
     /// against an explicit "off" or a burned-in track
-    private func applySubtitleSelection() {
-        guard let legibleGroup, let playerItem = player?.currentItem else { return }
+    /// - Returns: Whether a live player item was there to apply to
+    @discardableResult
+    private func applySubtitleSelection() -> Bool {
+        guard let legibleGroup, let playerItem = player?.currentItem else { return false }
 
         if !sessionUsesBurnIn,
            let target = mediaSource?.subtitleStream(at: selectedSubtitleStreamIndex),
@@ -604,17 +629,27 @@ public final class PlaybackViewModel {
             [subtitle] selected rendition \(position, privacy: .public) \
             for stream \(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)
             """)
+        } else if !sessionUsesBurnIn, let index = selectedSubtitleStreamIndex {
+            playerItem.select(nil, in: legibleGroup)
+            // A selected stream with no matching rendition is a failure, not
+            // an "off": the menu shows subtitles on while no cues render.
+            // Warning-level so a field sysdiagnose records it — .debug is not
+            // persisted to the log store
+            let target = mediaSource?.subtitleStream(at: index)
+            Self.logger.warning("""
+            [subtitle] no rendition matched stream \(index, privacy: .public) \
+            "\(target?.displayTitle ?? target?.language ?? "unknown", privacy: .public)" — \
+            subtitles will not render (options: \
+            \(self.legibleOptions.map(\.displayName).joined(separator: ", "), privacy: .public))
+            """)
         } else {
             playerItem.select(nil, in: legibleGroup)
-            // Distinguishes a deliberate "off" from a failed match: the menu
-            // shows the app's selected index either way, so a silent miss
-            // reads to the user as "subtitles are on but do not appear"
             Self.logger.debug("""
-            [subtitle] cleared rendition for stream \
-            \(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public) \
-            (burnIn=\(self.sessionUsesBurnIn, privacy: .public) options=\(self.legibleOptions.count, privacy: .public))
+            [subtitle] cleared rendition (deliberate off, \
+            burnIn=\(self.sessionUsesBurnIn, privacy: .public))
             """)
         }
+        return true
     }
 
     private func clearMediaSelectionState() {

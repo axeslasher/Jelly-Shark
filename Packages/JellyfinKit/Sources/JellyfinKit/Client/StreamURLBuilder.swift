@@ -70,12 +70,15 @@ enum StreamURLBuilder {
     /// It is also required unconditionally by trickplay. `TrickplayLocalServer`
     /// works by interposing on this playlist and appending a synthesized
     /// I-frame rendition, which only a *master* playlist can carry. Handing it
-    /// a media playlist instead produces a file with both media- and
-    /// master-playlist tags, which crashes MediaToolbox outright
-    /// (`FigMediaPlaylistGetTargetDuration` on a null playlist) rather than
-    /// failing gracefully. So do not make this endpoint conditional: the
-    /// competing native subtitle picker that `master.m3u8` provokes is
-    /// suppressed in the player instead, via `allowedSubtitleOptionLanguages`.
+    /// a media playlist used to produce a file with both media- and
+    /// master-playlist tags, which crashed MediaToolbox outright
+    /// (`FigMediaPlaylistGetTargetDuration` on a null playlist);
+    /// `TrickplayHLSPlaylist.rewriteMaster` now refuses non-master input, but
+    /// the refusal costs trickplay for the whole session. So do not make this
+    /// endpoint conditional: the competing native subtitle picker that
+    /// `master.m3u8` provokes is tolerated instead — suppressing it latches
+    /// AVKit's subtitles off (see #91 and the note in
+    /// `PlayerViewController.configureMenus`).
     ///
     /// Bitrate parameters must be sent too — without them the server
     /// re-encodes at a tiny default resolution whenever it can't stream-copy

@@ -55,10 +55,13 @@ final class TrickplayLocalServer: @unchecked Sendable {
     ///   - info: The trickplay resolution to synthesize the rendition from
     ///   - tileURL: Maps a tile-sheet index to its authenticated URL
     ///     (`JellyfinClientProtocol.trickplayTileURL`)
+    ///   - protocolClasses: Test seam — `URLProtocol` stubs standing in for
+    ///     the Jellyfin origin
     init(
         originalMasterURL: URL,
         info: TrickplayInfo,
         tileURL: @escaping @Sendable (Int) -> URL?,
+        protocolClasses: [AnyClass]? = nil,
     ) {
         self.originalMasterURL = originalMasterURL
         self.info = info
@@ -67,6 +70,9 @@ final class TrickplayLocalServer: @unchecked Sendable {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = .shared
         configuration.requestCachePolicy = .returnCacheDataElseLoad
+        if let protocolClasses {
+            configuration.protocolClasses = protocolClasses
+        }
         session = URLSession(configuration: configuration)
     }
 
@@ -219,7 +225,11 @@ final class TrickplayLocalServer: @unchecked Sendable {
                 iframePlaylistURI: "/iframe.m3u8",
                 info: info,
             ) else {
-                // Not a master playlist, so there is nothing to interpose on
+                // A media playlist where a master was expected is a
+                // server-shape regression (this input used to crash
+                // MediaToolbox) — name it before the generic catch below
+                // reduces it to a URL error code
+                Self.logger.warning("[server] origin response is not a master playlist (no #EXT-X-STREAM-INF); refusing to interpose")
                 throw URLError(.cannotParseResponse)
             }
             send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)

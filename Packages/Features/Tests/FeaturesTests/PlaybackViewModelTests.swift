@@ -798,11 +798,10 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 3)
         #expect(client.startReports[1].playMethod == .directStream)
 
-        // Turning subtitles off rebuilds rather than deselecting in place.
-        // This test previously asserted the opposite; staying put is what
-        // stranded a session on the subtitle-shaped stream (TS/H.264)
-        // after the subtitle was gone. Rebuilding also wins back direct play
-        // of the original file, which HLS was only ever a detour from.
+        // Turning subtitles off rebuilds rather than deselecting in place:
+        // staying put strands the session on the subtitle-shaped stream
+        // (TS/H.264), and rebuilding wins back direct play of the original
+        // file, which HLS was only ever a detour from.
         await viewModel.selectSubtitleStream(index: nil)
         #expect(viewModel.selectedSubtitleStreamIndex == nil)
         #expect(client.streamResolutions.count == 3)
@@ -995,11 +994,38 @@ struct PlaybackViewModelTests {
         await viewModel.selectSubtitleStream(index: nil)
 
         // Turning off is not a rendition change but a stream-shape change:
-        // TS/H.264 → fMP4/HEVC. Deselecting in place would leave
-        // an HEVC source stranded on a TS stream, which renders black.
+        // TS/H.264 → fMP4 (HEVC passthrough). Deselecting in place would
+        // strand the session on the subtitle-shaped stream — for an HEVC
+        // source, a needless H.264 re-encode with no way back to passthrough.
         #expect(viewModel.selectedSubtitleStreamIndex == nil)
         #expect(client.streamResolutions.count == 2)
         #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == Int??.some(nil))
+        #expect(client.startReports.count == 2)
+        #expect(viewModel.player !== playerBefore)
+    }
+
+    @Test("Turning a text subtitle on rebuilds even with renditions loaded")
+    func turningOnRebuildsDespiteLoadedRenditions() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: nil)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        let playerBefore = viewModel.player
+
+        // The master playlist advertises text renditions even on an
+        // unsubtitled stream, so the target genuinely matches — selecting
+        // it in place here is exactly the 10s-late-cues trap
+        viewModel.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
+        ]
+
+        await viewModel.selectSubtitleStream(index: 2)
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 2)
+        #expect(client.streamResolutions.count == 2)
+        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 2)
         #expect(client.startReports.count == 2)
         #expect(viewModel.player !== playerBefore)
     }
@@ -1030,7 +1056,7 @@ struct PlaybackViewModelTests {
         #expect(decide(true, .transcode, false, false, true, true)) // text → text while transcoding
         #expect(!decide(false, .directStream, false, false, true, true)) // no player
         #expect(!decide(true, .directPlay, false, false, true, true)) // direct play has no renditions
-        #expect(!decide(true, .transcode, true, false, true, false)) // leaving burn-in
+        #expect(!decide(true, .transcode, true, false, true, true)) // leaving burn-in blocks on its own
         #expect(!decide(true, .directStream, false, true, true, true)) // entering burn-in
         #expect(!decide(true, .directStream, false, false, true, false)) // unmatched target
     }
@@ -1049,7 +1075,7 @@ struct PlaybackViewModelTests {
         }
 
         // Turning off: the stream it would leave behind is TS/H.264, and an
-        // unsubtitled session belongs on fMP4/HEVC
+        // unsubtitled session belongs on fMP4 (HEVC passthrough)
         #expect(!decide(currentlyDelivering: true, targetMatched: false))
 
         // Turning on: the crucial case. The master playlist advertises text

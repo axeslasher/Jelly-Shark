@@ -28,9 +28,9 @@ struct StreamURLBuilderTests {
 
         // Unconditional, and deliberately so. main.m3u8 would suppress the
         // competing native subtitle picker, but trickplay interposes on the
-        // master playlist to append an I-frame rendition and crashes
-        // MediaToolbox given a media playlist. The picker is suppressed in
-        // the player instead.
+        // master playlist to append an I-frame rendition, which only a master
+        // playlist can carry. The native picker is left in place — suppressing
+        // it latches AVKit's subtitles off (see #91).
         try #expect(path(subtitleStreamIndex: 2) == "/Videos/item-1/master.m3u8")
         try #expect(path(subtitleStreamIndex: nil) == "/Videos/item-1/master.m3u8")
         try #expect(path(subtitleStreamIndex: 2, subtitleMethod: .encode) == "/Videos/item-1/master.m3u8")
