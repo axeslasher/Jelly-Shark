@@ -60,14 +60,21 @@ enum StreamURLBuilder {
     /// server itself computes in PlaybackInfo's TranscodingUrl.
     static let audioBitrate = 192_000
 
-    /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
+    /// Build an HLS universal stream URL:
+    /// `/Videos/{itemId}/{main|master}.m3u8`
     ///
-    /// The master playlist (not `main.m3u8`, which is the video-only media
-    /// playlist) is required for subtitles: it is the only endpoint that
-    /// advertises text subtitle tracks as WebVTT renditions AVPlayer can
-    /// select. Bitrate parameters must be sent too — without them the
-    /// server re-encodes at a tiny default resolution whenever it can't
-    /// stream-copy (e.g. subtitle burn-in).
+    /// The playlist choice is deliberate. `master.m3u8` is the only endpoint
+    /// that advertises text subtitle tracks as WebVTT renditions AVPlayer can
+    /// select, so it is required when we are delivering one — but advertising
+    /// those renditions also makes `AVPlayerViewController` grow its own
+    /// subtitle picker, which bypasses the view model entirely. So we request
+    /// the video-only `main.m3u8` by default and escalate to `master.m3u8`
+    /// only on the text-subtitle path, leaving the app's menu as the single
+    /// authoritative control everywhere else.
+    ///
+    /// Bitrate parameters must be sent too — without them the server
+    /// re-encodes at a tiny default resolution whenever it can't stream-copy
+    /// (e.g. subtitle burn-in).
     ///
     /// - Parameters:
     ///   - serverURL: The server base URL (path prefixes are preserved)
@@ -87,17 +94,6 @@ enum StreamURLBuilder {
         maxStreamingBitrate: Int = JellyfinClient.maxStreamingBitrate,
         eTag: String? = nil,
     ) -> URL? {
-        // Append to the server URL rather than overwriting the path,
-        // so servers hosted under a path prefix (e.g. /jellyfin) keep working
-        let endpoint = serverURL
-            .appendingPathComponent("Videos")
-            .appendingPathComponent(parameters.itemId)
-            .appendingPathComponent("master.m3u8")
-
-        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
-            return nil
-        }
-
         // fMP4 by default, MPEG-TS only when a text subtitle rides along.
         // Apple's HLS stack decodes HEVC solely from fMP4 segments — HEVC in
         // an MPEG-TS segment yields audio over a black screen — so fMP4 is
@@ -105,14 +101,32 @@ enum StreamURLBuilder {
         // a text subtitle delivered as a WebVTT rendition: Jellyfin's VTT
         // playlists carry X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset)
         // that matches its TS segments, and against fMP4 (PTS 0) the subtitle
-        // renders 10s late — so that one path keeps TS and eats the HEVC cost.
+        // renders 10s late — so that one path keeps TS.
         let deliversTextSubtitle = subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
         let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
+
+        // HEVC cannot ride in TS on Apple, so the subtitled path asks for
+        // H.264 outright: it is the only codec that plays from TS *and* keeps
+        // WebVTT timing aligned. H.264 sources still stream-copy; HEVC sources
+        // pay a genuine re-encode, which is the cost of that combination
+        // working at all. Off this path, HEVC passes through untouched.
+        let videoCodec = deliversTextSubtitle ? "h264" : "hevc,h264"
+
+        // Append to the server URL rather than overwriting the path,
+        // so servers hosted under a path prefix (e.g. /jellyfin) keep working
+        let endpoint = serverURL
+            .appendingPathComponent("Videos")
+            .appendingPathComponent(parameters.itemId)
+            .appendingPathComponent(deliversTextSubtitle ? "master.m3u8" : "main.m3u8")
+
+        guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
+            return nil
+        }
 
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "api_key", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
-            URLQueryItem(name: "VideoCodec", value: "hevc,h264"),
+            URLQueryItem(name: "VideoCodec", value: videoCodec),
             URLQueryItem(name: "AudioCodec", value: "aac,ac3,eac3"),
             URLQueryItem(name: "SegmentContainer", value: segmentContainer),
             URLQueryItem(name: "MinSegments", value: "2"),

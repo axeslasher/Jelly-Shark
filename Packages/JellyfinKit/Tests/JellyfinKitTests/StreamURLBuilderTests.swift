@@ -13,18 +13,48 @@ struct StreamURLBuilderTests {
         return result
     }
 
-    @Test("HLS URL targets the master playlist")
+    @Test("HLS URL escalates to the master playlist only for a text subtitle")
     func hlsPath() throws {
-        let url = try #require(StreamURLBuilder.hlsURL(
-            serverURL: URL(string: "https://example.com")!,
-            accessToken: "token-123",
-            deviceId: "device-abc",
-            parameters: StreamParameters(itemId: "item-1"),
-        ))
+        func path(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod = .hls) throws -> String {
+            let url = try #require(StreamURLBuilder.hlsURL(
+                serverURL: URL(string: "https://example.com")!,
+                accessToken: "token-123",
+                deviceId: "device-abc",
+                parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
+                subtitleMethod: subtitleMethod,
+            ))
+            return url.path
+        }
 
-        // master.m3u8, not main.m3u8: only the master playlist advertises
-        // subtitle renditions
-        #expect(url.path == "/Videos/item-1/master.m3u8")
+        // Only the master playlist advertises WebVTT subtitle renditions —
+        // and advertising them also grows a competing native picker, so it is
+        // requested only when a text subtitle is actually being delivered
+        try #expect(path(subtitleStreamIndex: 2) == "/Videos/item-1/master.m3u8")
+        try #expect(path(subtitleStreamIndex: nil) == "/Videos/item-1/main.m3u8")
+        // Burn-in composites into the video: no rendition to advertise
+        try #expect(path(subtitleStreamIndex: 2, subtitleMethod: .encode) == "/Videos/item-1/main.m3u8")
+    }
+
+    @Test("Video codec is forced to H.264 only when a text subtitle is delivered")
+    func videoCodecFollowsSubtitleDelivery() throws {
+        func codec(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod = .hls) throws -> String? {
+            let url = try #require(StreamURLBuilder.hlsURL(
+                serverURL: URL(string: "https://example.com")!,
+                accessToken: "token",
+                deviceId: "device",
+                parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
+                subtitleMethod: subtitleMethod,
+            ))
+            return queryItems(of: url)["VideoCodec"]
+        }
+
+        // The text-subtitle path is pinned to TS for WebVTT timing, and HEVC
+        // cannot ride in TS on Apple — so H.264 is the only workable codec,
+        // even though HEVC sources then pay a real re-encode
+        try #expect(codec(subtitleStreamIndex: 2) == "h264")
+        // Everywhere else HEVC passes through and stream-copies
+        try #expect(codec(subtitleStreamIndex: nil) == "hevc,h264")
+        try #expect(codec(subtitleStreamIndex: 2, subtitleMethod: .encode) == "hevc,h264")
     }
 
     @Test("HLS URL includes required query parameters")
@@ -191,7 +221,7 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(itemId: "item-1"),
         ))
 
-        #expect(url.path == "/jellyfin/Videos/item-1/master.m3u8")
+        #expect(url.path == "/jellyfin/Videos/item-1/main.m3u8")
     }
 
     // MARK: - Direct play

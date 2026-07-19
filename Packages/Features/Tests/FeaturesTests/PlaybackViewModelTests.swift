@@ -782,8 +782,8 @@ struct PlaybackViewModelTests {
         #expect(client.startReports[0].playMethod == .transcode)
     }
 
-    @Test("Selecting a subtitle on a direct session falls back to HLS; clearing stays in place")
-    func subtitleSelectionLeavesDirectPlay() async throws {
+    @Test("Selecting a subtitle on a direct session falls back to HLS; clearing returns to it")
+    func subtitleSelectionLeavesDirectPlay() async {
         let client = MockJellyfinClient()
         stubDirectPlaySource(on: client)
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
@@ -798,18 +798,18 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 3)
         #expect(client.startReports[1].playMethod == .directStream)
 
-        // Turning subtitles off inside an HLS session is an in-place media
-        // selection, not a rebuild: the session stays on HLS and the
-        // deselection is reported through progress
-        let progressCountBefore = client.progressReports.count
+        // Turning subtitles off rebuilds rather than deselecting in place.
+        // This test previously asserted the opposite; staying put is what
+        // stranded a session on the subtitle-shaped stream (master/TS/H.264)
+        // after the subtitle was gone. Rebuilding also wins back direct play
+        // of the original file, which HLS was only ever a detour from.
         await viewModel.selectSubtitleStream(index: nil)
-        #expect(client.streamResolutions.count == 2)
-        #expect(client.startReports.count == 2)
         #expect(viewModel.selectedSubtitleStreamIndex == nil)
-        #expect(client.progressReports.count > progressCountBefore)
-        let lastProgress = try #require(client.progressReports.last)
-        #expect(lastProgress.subtitleStreamIndex == nil)
-        #expect(lastProgress.playMethod == .directStream)
+        #expect(client.streamResolutions.count == 3)
+        #expect(client.streamResolutions[2].playMethod == .directPlay)
+        #expect(client.streamResolutions[2].parameters.subtitleStreamIndex == Int??.some(nil))
+        #expect(client.startReports.count == 3)
+        #expect(client.startReports[2].playMethod == .directPlay)
     }
 
     @Test("Resume works on a direct-play source")
@@ -976,6 +976,34 @@ struct PlaybackViewModelTests {
         #expect(lastProgress.playMethod == .directStream)
     }
 
+    @Test("Turning a text subtitle off rebuilds even with renditions loaded")
+    func turningOffRebuildsDespiteLoadedRenditions() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 2)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+        let playerBefore = viewModel.player
+
+        // Same state as the in-place switch above: the master playlist's
+        // renditions have loaded, so a *switch* would be free
+        viewModel.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
+        ]
+
+        await viewModel.selectSubtitleStream(index: nil)
+
+        // Turning off is not a rendition change but a stream-shape change:
+        // master/TS/H.264 → main/fMP4/HEVC. Deselecting in place would leave
+        // an HEVC source stranded on a TS stream, which renders black.
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(client.streamResolutions.count == 2)
+        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == Int??.some(nil))
+        #expect(client.startReports.count == 2)
+        #expect(viewModel.player !== playerBefore)
+    }
+
     @Test("An unmatched text target falls back to a rebuild")
     func unmatchedTargetRebuilds() async {
         let client = MockJellyfinClient()
@@ -993,17 +1021,30 @@ struct PlaybackViewModelTests {
 
     @Test("In-place switch decision matrix")
     func canSwitchInPlaceMatrix() {
-        typealias Decide = (Bool, PlayMethod, Bool, Bool, Bool, Bool) -> Bool
+        typealias Decide = (Bool, PlayMethod, Bool, Bool, Bool) -> Bool
         let decide: Decide = PlaybackViewModel.canSwitchSubtitlesInPlace
 
-        // (hasPlayer, currentMethod, sessionUsesBurnIn, targetRequiresBurnIn, turningOff, targetMatched)
-        #expect(decide(true, .directStream, false, false, true, false)) // off in HLS
-        #expect(decide(true, .directStream, false, false, false, true)) // matched text in HLS
-        #expect(decide(true, .transcode, false, false, false, true)) // matched text while transcoding
-        #expect(!decide(false, .directStream, false, false, true, false)) // no player
-        #expect(!decide(true, .directPlay, false, false, false, true)) // direct play has no renditions
-        #expect(!decide(true, .transcode, true, false, true, false)) // leaving burn-in
-        #expect(!decide(true, .directStream, false, true, false, true)) // entering burn-in
-        #expect(!decide(true, .directStream, false, false, false, false)) // unmatched target
+        // (hasPlayer, currentMethod, sessionUsesBurnIn, targetRequiresBurnIn, targetMatched)
+        #expect(decide(true, .directStream, false, false, true)) // matched text in HLS
+        #expect(decide(true, .transcode, false, false, true)) // matched text while transcoding
+        #expect(!decide(false, .directStream, false, false, true)) // no player
+        #expect(!decide(true, .directPlay, false, false, true)) // direct play has no renditions
+        #expect(!decide(true, .transcode, true, false, false)) // leaving burn-in
+        #expect(!decide(true, .directStream, false, true, true)) // entering burn-in
+        #expect(!decide(true, .directStream, false, false, false)) // unmatched target
+    }
+
+    @Test("Turning subtitles off rebuilds rather than switching in place")
+    func turningSubtitlesOffRebuilds() {
+        // Turning off is never a match, so it can never switch in place: the
+        // stream it would leave behind is master/TS/H.264, and an unsubtitled
+        // session belongs on main/fMP4/HEVC. Staying would strand it.
+        #expect(!PlaybackViewModel.canSwitchSubtitlesInPlace(
+            hasPlayer: true,
+            currentMethod: .directStream,
+            sessionUsesBurnIn: false,
+            targetRequiresBurnIn: false,
+            targetMatched: false,
+        ))
     }
 }

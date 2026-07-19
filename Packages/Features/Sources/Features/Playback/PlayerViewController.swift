@@ -110,6 +110,20 @@
                 }
 
                 controller.transportBarCustomMenuItems = menus
+
+                // Belt and suspenders alongside the main.m3u8 default: an
+                // empty allow-list removes the system's own subtitle picker,
+                // so the app's menu above is the single control even when the
+                // asset does expose legible renditions (a direct-play file
+                // with embedded tracks, or the master playlist we request
+                // while delivering a text subtitle). The system picker flips
+                // a rendition straight onto the current stream, bypassing
+                // `selectSubtitleStream` and the rebuild it may owe.
+                //
+                // tvOS-only API, and subtitles-only: AVKit exposes no
+                // equivalent allow-list for audio, so a direct-play file's
+                // embedded audio tracks can still be switched natively.
+                controller.allowedSubtitleOptionLanguages = []
             #endif
         }
     }
