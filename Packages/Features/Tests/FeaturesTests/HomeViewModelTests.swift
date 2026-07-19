@@ -652,6 +652,8 @@ struct HomeViewModelTests {
 
         viewModel.setPaused(true, reason: .focused)
         let snapshot = viewModel.advanceRequests
+        // Safe fixed sleep: this asserts nothing happens, so a loaded machine can
+        // only make it more true. Polling cannot prove a negative.
         try? await Task.sleep(for: .milliseconds(100))
         #expect(viewModel.advanceRequests == snapshot)
 
@@ -668,6 +670,8 @@ struct HomeViewModelTests {
         let viewModel = HomeViewModel(autoAdvanceInterval: .milliseconds(20))
         await load(viewModel, client: client)
 
+        // Safe fixed sleep: asserts the timer never fires — a negative that
+        // polling cannot establish, and that load only reinforces.
         try? await Task.sleep(for: .milliseconds(100))
         #expect(viewModel.advanceRequests == 0)
     }
