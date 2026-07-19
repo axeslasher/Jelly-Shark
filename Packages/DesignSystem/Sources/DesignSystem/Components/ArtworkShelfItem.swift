@@ -31,6 +31,28 @@ public enum PlaybackBadge: Equatable {
     case inProgress(Double, remaining: String?)
 }
 
+/// One entry in a shelf card's long-press context menu. The design system
+/// only renders the label; what the actions are (mark watched, view details…)
+/// is the feature layer's business.
+public struct ShelfMenuAction: Identifiable {
+    public let id: String
+    public let title: String
+    public let systemImage: String
+    public let action: @MainActor () -> Void
+
+    public init(
+        id: String? = nil,
+        title: String,
+        systemImage: String,
+        action: @escaping @MainActor () -> Void,
+    ) {
+        self.id = id ?? title
+        self.title = title
+        self.systemImage = systemImage
+        self.action = action
+    }
+}
+
 public struct ArtworkShelfItem<Value: Hashable>: View {
     private let url: URL?
     private let blurHash: String?
@@ -45,6 +67,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private let progress: Double?
     private let playbackBadge: PlaybackBadge?
     private let countBadge: Int?
+    private let menuActions: [ShelfMenuAction]
     private let value: Value?
     private let action: (() -> Void)?
 
@@ -64,6 +87,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         progress: Double? = nil,
         playbackBadge: PlaybackBadge? = nil,
         countBadge: Int? = nil,
+        menuActions: [ShelfMenuAction] = [],
         value: Value,
     ) {
         self.action = nil
@@ -80,6 +104,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.progress = progress
         self.playbackBadge = playbackBadge
         self.countBadge = countBadge
+        self.menuActions = menuActions
         self.value = value
     }
 
@@ -100,6 +125,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         progress: Double? = nil,
         playbackBadge: PlaybackBadge? = nil,
         countBadge: Int? = nil,
+        menuActions: [ShelfMenuAction] = [],
         action: @escaping () -> Void,
     ) where Value == Bool {
         self.url = url
@@ -115,6 +141,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.progress = progress
         self.playbackBadge = playbackBadge
         self.countBadge = countBadge
+        self.menuActions = menuActions
         self.value = nil
         self.action = action
     }
@@ -136,6 +163,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         #else
         .buttonStyle(.plain)
         #endif
+        .shelfContextMenu(menuActions)
     }
 
     @ViewBuilder
@@ -290,5 +318,23 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .lineLimit(1)
             .frame(width: width, alignment: Alignment(horizontal: captionAlignment, vertical: .center))
             .opacity(subtitle == nil ? 0 : 1)
+    }
+}
+
+private extension View {
+    /// Long-press context menu for a shelf card. Gated on emptiness rather
+    /// than passing an empty menu, so cards without actions keep exactly the
+    /// interaction behavior they had before menus existed.
+    @ViewBuilder
+    func shelfContextMenu(_ actions: [ShelfMenuAction]) -> some View {
+        if actions.isEmpty {
+            self
+        } else {
+            contextMenu {
+                ForEach(actions) { entry in
+                    Button(entry.title, systemImage: entry.systemImage, action: entry.action)
+                }
+            }
+        }
     }
 }

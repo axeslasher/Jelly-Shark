@@ -31,6 +31,10 @@ struct HomeShelvesSection: View {
     /// Continue Watching and Next Up cards play immediately (the playback
     /// badge is the affordance); the owner presents the player.
     let onPlay: (MediaItem) -> Void
+    /// Long-press menu handlers per item (view details / watched / favorite),
+    /// built by the owner. The poster builder drops View Details itself
+    /// (selecting a poster already navigates).
+    let menu: (MediaItem) -> ShelfMenuHandlers
     /// Retry action for the failed-section notices; re-runs just the failed
     /// loads (`HomeViewModel.retryFailedSections`).
     let onRetry: () -> Void
@@ -56,7 +60,7 @@ struct HomeShelvesSection: View {
                 if !mergedItems.isEmpty {
                     ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(mergedItems) { item in
-                            item.playableShelfItem(client: session.client) {
+                            item.playableShelfItem(client: session.client, menu: menu(item)) {
                                 onPlay(item)
                             }
                         }
@@ -68,7 +72,7 @@ struct HomeShelvesSection: View {
                 if !resumeItems.isEmpty {
                     ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(resumeItems) { item in
-                            item.playableShelfItem(client: session.client) {
+                            item.playableShelfItem(client: session.client, menu: menu(item)) {
                                 onPlay(item)
                             }
                         }
@@ -80,7 +84,7 @@ struct HomeShelvesSection: View {
                 if !nextUpItems.isEmpty {
                     ContentShelf("Next Up", icon: "play.square.stack") {
                         ForEach(nextUpItems) { item in
-                            item.playableShelfItem(client: session.client) {
+                            item.playableShelfItem(client: session.client, menu: menu(item)) {
                                 onPlay(item)
                             }
                         }
@@ -97,6 +101,7 @@ struct HomeShelvesSection: View {
                             client: session.client,
                             width: posterWidth,
                             countBadge: unwatchedBadge(for: item, in: shelf),
+                            menu: menu(item),
                         )
                     }
                 }

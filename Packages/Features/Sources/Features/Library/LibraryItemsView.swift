@@ -111,10 +111,21 @@ struct LibraryItemsView: View {
             spacing: SpacingTokens.cardGap,
         ) {
             ForEach(viewModel.items) { item in
-                item.posterShelfItem(client: session.client, width: layout.width)
-                    .onAppear {
-                        viewModel.loadMoreIfNeeded(currentItem: item)
-                    }
+                item.posterShelfItem(
+                    client: session.client,
+                    width: layout.width,
+                    menu: ShelfMenuHandlers(
+                        setPlayed: { played in
+                            Task { await viewModel.setPlayed(played, for: item) }
+                        },
+                        setFavorite: { favorite in
+                            Task { await viewModel.setFavorite(favorite, for: item) }
+                        },
+                    ),
+                )
+                .onAppear {
+                    viewModel.loadMoreIfNeeded(currentItem: item)
+                }
             }
 
             if viewModel.isLoadingMore {

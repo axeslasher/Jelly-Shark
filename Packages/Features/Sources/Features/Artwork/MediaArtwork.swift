@@ -87,6 +87,74 @@ extension JellyfinClientProtocol {
     }
 }
 
+/// The owning screen's handlers for a shelf card's long-press context menu.
+/// Each nil handler omits its menu entry, so reused cards stay contextual
+/// (e.g. no View Details on a card whose select already navigates).
+struct ShelfMenuHandlers {
+    /// Navigate to the item's detail page — the only path to detail from
+    /// cards that play on select.
+    var viewDetails: (@MainActor () -> Void)?
+    /// Apply the given watched state (the menu derives "Mark Watched" vs
+    /// "Mark Unwatched" from the item's current state).
+    var setPlayed: (@MainActor (Bool) -> Void)?
+    /// Apply the given favorite state.
+    var setFavorite: (@MainActor (Bool) -> Void)?
+
+    init(
+        viewDetails: (@MainActor () -> Void)? = nil,
+        setPlayed: (@MainActor (Bool) -> Void)? = nil,
+        setFavorite: (@MainActor (Bool) -> Void)? = nil,
+    ) {
+        self.viewDetails = viewDetails
+        self.setPlayed = setPlayed
+        self.setFavorite = setFavorite
+    }
+
+    /// Copy without the View Details entry, for cards that already navigate
+    /// on select (posters) where the entry would be redundant.
+    var withoutViewDetails: ShelfMenuHandlers {
+        var copy = self
+        copy.viewDetails = nil
+        return copy
+    }
+}
+
+extension MediaItem {
+    /// Maps the handlers onto concrete menu entries, deriving the toggle
+    /// labels from this item's current user data.
+    @MainActor
+    func shelfMenuActions(_ handlers: ShelfMenuHandlers?) -> [ShelfMenuAction] {
+        guard let handlers else { return [] }
+        var actions: [ShelfMenuAction] = []
+        if let setPlayed = handlers.setPlayed {
+            let played = userData?.played == true
+            actions.append(ShelfMenuAction(
+                title: played ? "Mark Unwatched" : "Mark Watched",
+                systemImage: played ? "eye.slash.fill" : "eye.fill",
+            ) {
+                setPlayed(!played)
+            })
+        }
+        if let viewDetails = handlers.viewDetails {
+            actions.append(ShelfMenuAction(
+                title: "View Details",
+                systemImage: "info.circle.text.page.fill",
+                action: viewDetails,
+            ))
+        }
+        if let setFavorite = handlers.setFavorite {
+            let favorite = userData?.isFavorite == true
+            actions.append(ShelfMenuAction(
+                title: favorite ? "Unfavorite" : "Favorite",
+                systemImage: favorite ? "heart.slash.fill" : "heart.fill",
+            ) {
+                setFavorite(!favorite)
+            })
+        }
+        return actions
+    }
+}
+
 /// Shelf/grid card builders that map a `MediaItem` onto the design system's
 /// `ArtworkShelfItem`, supplying the artwork URL, two-line caption, and progress.
 /// Navigation is value-based: the card pushes the item itself, and the enclosing
@@ -101,6 +169,7 @@ extension MediaItem {
         client: JellyfinClientProtocol?,
         width: CGFloat = 200,
         countBadge: Int? = nil,
+        menu: ShelfMenuHandlers? = nil,
     ) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
@@ -111,6 +180,7 @@ extension MediaItem {
             width: width,
             progress: progressPercentage,
             countBadge: countBadge,
+            menuActions: shelfMenuActions(menu?.withoutViewDetails),
             value: self,
         )
     }
@@ -128,6 +198,7 @@ extension MediaItem {
         client: JellyfinClientProtocol?,
         width: CGFloat = 440,
         showsSeriesName: Bool = false,
+        menu: ShelfMenuHandlers? = nil,
         onPlay: @escaping () -> Void,
     ) -> some View {
         ArtworkShelfItem(
@@ -146,6 +217,7 @@ extension MediaItem {
             aspectRatio: 16.0 / 9.0,
             width: width,
             playbackBadge: playbackBadge,
+            menuActions: shelfMenuActions(menu),
             action: onPlay,
         )
     }
@@ -173,6 +245,7 @@ extension MediaItem {
     func playableShelfItem(
         client: JellyfinClientProtocol?,
         width: CGFloat = 440,
+        menu: ShelfMenuHandlers? = nil,
         onPlay: @escaping () -> Void,
     ) -> some View {
         ArtworkShelfItem(
@@ -189,6 +262,7 @@ extension MediaItem {
             aspectRatio: 16.0 / 9.0,
             width: width,
             playbackBadge: playbackBadge,
+            menuActions: shelfMenuActions(menu),
             action: onPlay,
         )
     }

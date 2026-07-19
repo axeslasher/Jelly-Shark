@@ -277,6 +277,46 @@ public final class LibraryItemsViewModel {
         await loadTask?.value
     }
 
+    // MARK: - User-Data Actions
+
+    /// Optimistically apply a watched-state change from a card's long-press
+    /// menu, then persist; revert on failure. The grid is not re-filtered:
+    /// even under a watched/unwatched filter, collapsing the card mid-browse
+    /// would yank focus — the next reload applies the server's truth.
+    public func setPlayed(_ played: Bool, for item: MediaItem) async {
+        guard let client else { return }
+        replaceInGrid(item.settingPlayed(played))
+        do {
+            if played {
+                try await client.markPlayed(itemId: item.id)
+            } else {
+                try await client.markUnplayed(itemId: item.id)
+            }
+        } catch {
+            replaceInGrid(item)
+        }
+    }
+
+    /// Optimistically apply a favorite change from a card's long-press menu,
+    /// then persist; revert on failure.
+    public func setFavorite(_ favorite: Bool, for item: MediaItem) async {
+        guard let client else { return }
+        replaceInGrid(item.settingFavorite(favorite))
+        do {
+            if favorite {
+                try await client.markFavorite(itemId: item.id)
+            } else {
+                try await client.unmarkFavorite(itemId: item.id)
+            }
+        } catch {
+            replaceInGrid(item)
+        }
+    }
+
+    private func replaceInGrid(_ item: MediaItem) {
+        items = items.map { $0.id == item.id ? item : $0 }
+    }
+
     // MARK: - Loading
 
     /// Recompute which filter values still yield results for each menu,

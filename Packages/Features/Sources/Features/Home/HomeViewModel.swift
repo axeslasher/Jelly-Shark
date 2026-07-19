@@ -306,6 +306,58 @@ public final class HomeViewModel {
         _ = await (resume, nextUp, watchDates)
     }
 
+    // MARK: - User-Data Actions
+
+    /// Optimistically apply a watched-state change from a shelf card's menu,
+    /// then persist; revert on failure. Success also refreshes the lanes
+    /// whose membership the change moves (a watched item leaves Continue
+    /// Watching; a watched episode advances Next Up).
+    public func setPlayed(_ played: Bool, for item: MediaItem) async {
+        guard let client else { return }
+        replaceInSections(item.settingPlayed(played))
+        do {
+            if played {
+                try await client.markPlayed(itemId: item.id)
+            } else {
+                try await client.markUnplayed(itemId: item.id)
+            }
+            await refreshUserState()
+        } catch {
+            replaceInSections(item)
+        }
+    }
+
+    /// Optimistically apply a favorite change from a shelf card's menu, then
+    /// persist; revert on failure. Favorites don't move lane membership, so
+    /// no refresh.
+    public func setFavorite(_ favorite: Bool, for item: MediaItem) async {
+        guard let client else { return }
+        replaceInSections(item.settingFavorite(favorite))
+        do {
+            if favorite {
+                try await client.markFavorite(itemId: item.id)
+            } else {
+                try await client.unmarkFavorite(itemId: item.id)
+            }
+        } catch {
+            replaceInSections(item)
+        }
+    }
+
+    /// Swap the item (by id) into every section that carries it, so a card's
+    /// badge and menu labels update in place wherever it appears.
+    private func replaceInSections(_ item: MediaItem) {
+        func swapping(_ items: [MediaItem]) -> [MediaItem] {
+            items.map { $0.id == item.id ? item : $0 }
+        }
+        heroItems = swapping(heroItems)
+        resumeItems = swapping(resumeItems)
+        nextUpItems = swapping(nextUpItems)
+        latestShelves = latestShelves.map {
+            LibraryShelf(library: $0.library, items: swapping($0.items))
+        }
+    }
+
     private func loadResume(client: any JellyfinClientProtocol, generation: Int) async {
         do {
             let items = try await client.getResumeItems(limit: Self.resumeLimit)

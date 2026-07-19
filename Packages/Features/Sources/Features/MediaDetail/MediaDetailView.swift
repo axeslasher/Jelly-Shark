@@ -15,6 +15,7 @@ import SwiftUI
 public struct MediaDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
+    @Environment(\.pushMediaDetail) private var pushMediaDetail
 
     /// Owns every server-side fetch and its status; this view keeps only
     /// presentation state (scroll, focus, playback covers).
@@ -188,6 +189,17 @@ public struct MediaDetailView: View {
                         // pre-parks there and first focus lands on it.
                         initialEpisodeId: (viewModel.nextUpEpisode ?? viewModel.episodes.first)?.id,
                         isRegionFocused: focusedRegion == .shelves,
+                        menu: { episode in
+                            ShelfMenuHandlers(
+                                viewDetails: { pushMediaDetail?(episode) },
+                                setPlayed: { played in
+                                    Task { await viewModel.setPlayed(played, for: episode) }
+                                },
+                                setFavorite: { favorite in
+                                    Task { await viewModel.setFavorite(favorite, for: episode) }
+                                },
+                            )
+                        },
                         playbackItem: $playbackItem,
                     )
 

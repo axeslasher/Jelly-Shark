@@ -340,10 +340,35 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         try recentlyPlayedEpisodesResult.get()
     }
 
-    func markPlayed(itemId _: String) async throws {}
-    func markUnplayed(itemId _: String) async throws {}
-    func markFavorite(itemId _: String) async throws {}
-    func unmarkFavorite(itemId _: String) async throws {}
+    /// Recorded user-data mutations, as ("played"/"unplayed"/"favorite"/
+    /// "unfavorite", itemId); `userDataError` makes them all throw
+    var userDataCalls: [(action: String, itemId: String)] = []
+    var userDataError: Error?
+
+    private func recordUserData(_ action: String, _ itemId: String) throws {
+        try lock.withLock {
+            userDataCalls.append((action, itemId))
+            if let userDataError {
+                throw userDataError
+            }
+        }
+    }
+
+    func markPlayed(itemId: String) async throws {
+        try recordUserData("played", itemId)
+    }
+
+    func markUnplayed(itemId: String) async throws {
+        try recordUserData("unplayed", itemId)
+    }
+
+    func markFavorite(itemId: String) async throws {
+        try recordUserData("favorite", itemId)
+    }
+
+    func unmarkFavorite(itemId: String) async throws {
+        try recordUserData("unfavorite", itemId)
+    }
 }
 
 // MARK: - Tests

@@ -570,6 +570,42 @@ struct LibraryItemsViewModelTests {
         #expect(viewModel.state == .loaded)
         #expect(viewModel.filterOptions == .empty)
     }
+
+    // MARK: - User-data actions (card menus)
+
+    @Test("setPlayed flips the grid card optimistically and persists")
+    func setPlayedFlipsCard() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = makeViewModel(client: client)
+        await viewModel.loadInitial()
+
+        await viewModel.setPlayed(true, for: viewModel.items[1])
+
+        #expect(client.userDataCalls.map(\.action) == ["played"])
+        #expect(client.userDataCalls.map(\.itemId) == ["item-1"])
+        #expect(viewModel.items[1].userData?.played == true)
+        // The grid keeps its shape — only the one card changed
+        #expect(viewModel.items.map(\.id) == ["item-0", "item-1", "item-2"])
+        #expect(viewModel.items[0].userData?.played != true)
+    }
+
+    @Test("setFavorite reverts the card when the server call fails")
+    func setFavoriteRevertsOnFailure() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = makeViewModel(client: client)
+        await viewModel.loadInitial()
+
+        client.userDataError = APIError.networkError("offline")
+        await viewModel.setFavorite(true, for: viewModel.items[0])
+
+        #expect(viewModel.items[0].userData?.isFavorite != true)
+    }
 }
 
 /// A reusable async gate: `wait()` suspends until `open()` is called.

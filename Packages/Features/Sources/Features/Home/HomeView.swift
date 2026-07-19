@@ -16,6 +16,7 @@ struct HomeView: View {
     @Environment(ServerConnectionViewModel.self) private var connection
     @Environment(HomePreferences.self) private var homePreferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.pushMediaDetail) private var pushMediaDetail
 
     @State private var viewModel = HomeViewModel()
     @State private var genreShelves = GenreShelvesViewModel()
@@ -167,6 +168,17 @@ struct HomeView: View {
                         showsResumeHeader: viewModel.currentHeroItem == nil
                             || scrollProgress >= HomeHeroMotion.shelfHeaderReveal,
                         onPlay: { playbackItem = $0 },
+                        menu: { item in
+                            ShelfMenuHandlers(
+                                viewDetails: { pushMediaDetail?(item) },
+                                setPlayed: { played in
+                                    Task { await viewModel.setPlayed(played, for: item) }
+                                },
+                                setFavorite: { favorite in
+                                    Task { await viewModel.setFavorite(favorite, for: item) }
+                                },
+                            )
+                        },
                         onRetry: { Task { await viewModel.retryFailedSections() } },
                     )
 
