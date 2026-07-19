@@ -111,20 +111,15 @@
 
                 controller.transportBarCustomMenuItems = menus
 
-                // An empty allow-list removes the system's own subtitle
-                // picker, leaving the app's menu above as the single control.
-                // This is the whole defense, not a backstop: every HLS session
-                // requests the master playlist (trickplay interposes on it),
-                // and a master playlist advertises the WebVTT renditions that
-                // make AVPlayerViewController grow a picker of its own. That
-                // picker flips a rendition straight onto the current stream,
-                // bypassing `selectSubtitleStream` and the rebuild it owes
-                // when the container and codec have to change with it.
-                //
-                // tvOS-only API, and subtitles-only: AVKit exposes no
-                // equivalent allow-list for audio, so a direct-play file's
-                // embedded audio tracks can still be switched natively.
-                controller.allowedSubtitleOptionLanguages = []
+                // The system's own subtitle picker is deliberately left in
+                // place. Suppressing it (`allowedSubtitleOptionLanguages = []`)
+                // was tried and reverted: AVKit owns subtitle *display* state
+                // independently of the player item's media selection, so the
+                // app's menu cannot actually take ownership — clearing the
+                // legible selection latches AVKit off, and a later
+                // programmatic re-select does not clear that latch. The
+                // system picker is then the only way to get subtitles back,
+                // which makes suppressing it strictly worse. See #91.
             #endif
         }
     }
