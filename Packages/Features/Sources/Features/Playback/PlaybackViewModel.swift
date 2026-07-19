@@ -600,8 +600,20 @@ public final class PlaybackViewModel {
            legibleGroup.options.indices.contains(position)
         {
             playerItem.select(legibleGroup.options[position], in: legibleGroup)
+            Self.logger.debug("""
+            [subtitle] selected rendition \(position, privacy: .public) \
+            for stream \(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)
+            """)
         } else {
             playerItem.select(nil, in: legibleGroup)
+            // Distinguishes a deliberate "off" from a failed match: the menu
+            // shows the app's selected index either way, so a silent miss
+            // reads to the user as "subtitles are on but do not appear"
+            Self.logger.debug("""
+            [subtitle] cleared rendition for stream \
+            \(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public) \
+            (burnIn=\(self.sessionUsesBurnIn, privacy: .public) options=\(self.legibleOptions.count, privacy: .public))
+            """)
         }
     }
 
