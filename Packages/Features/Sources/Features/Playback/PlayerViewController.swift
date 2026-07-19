@@ -111,14 +111,15 @@
 
                 controller.transportBarCustomMenuItems = menus
 
-                // Belt and suspenders alongside the main.m3u8 default: an
-                // empty allow-list removes the system's own subtitle picker,
-                // so the app's menu above is the single control even when the
-                // asset does expose legible renditions (a direct-play file
-                // with embedded tracks, or the master playlist we request
-                // while delivering a text subtitle). The system picker flips
-                // a rendition straight onto the current stream, bypassing
-                // `selectSubtitleStream` and the rebuild it may owe.
+                // An empty allow-list removes the system's own subtitle
+                // picker, leaving the app's menu above as the single control.
+                // This is the whole defense, not a backstop: every HLS session
+                // requests the master playlist (trickplay interposes on it),
+                // and a master playlist advertises the WebVTT renditions that
+                // make AVPlayerViewController grow a picker of its own. That
+                // picker flips a rendition straight onto the current stream,
+                // bypassing `selectSubtitleStream` and the rebuild it owes
+                // when the container and codec have to change with it.
                 //
                 // tvOS-only API, and subtitles-only: AVKit exposes no
                 // equivalent allow-list for audio, so a direct-play file's

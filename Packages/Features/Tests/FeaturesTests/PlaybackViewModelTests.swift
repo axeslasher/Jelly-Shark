@@ -800,7 +800,7 @@ struct PlaybackViewModelTests {
 
         // Turning subtitles off rebuilds rather than deselecting in place.
         // This test previously asserted the opposite; staying put is what
-        // stranded a session on the subtitle-shaped stream (master/TS/H.264)
+        // stranded a session on the subtitle-shaped stream (TS/H.264)
         // after the subtitle was gone. Rebuilding also wins back direct play
         // of the original file, which HLS was only ever a detour from.
         await viewModel.selectSubtitleStream(index: nil)
@@ -995,7 +995,7 @@ struct PlaybackViewModelTests {
         await viewModel.selectSubtitleStream(index: nil)
 
         // Turning off is not a rendition change but a stream-shape change:
-        // master/TS/H.264 → main/fMP4/HEVC. Deselecting in place would leave
+        // TS/H.264 → fMP4/HEVC. Deselecting in place would leave
         // an HEVC source stranded on a TS stream, which renders black.
         #expect(viewModel.selectedSubtitleStreamIndex == nil)
         #expect(client.streamResolutions.count == 2)
@@ -1037,8 +1037,8 @@ struct PlaybackViewModelTests {
     @Test("Turning subtitles off rebuilds rather than switching in place")
     func turningSubtitlesOffRebuilds() {
         // Turning off is never a match, so it can never switch in place: the
-        // stream it would leave behind is master/TS/H.264, and an unsubtitled
-        // session belongs on main/fMP4/HEVC. Staying would strand it.
+        // stream it would leave behind is TS/H.264, and an unsubtitled
+        // session belongs on fMP4/HEVC. Staying would strand it.
         #expect(!PlaybackViewModel.canSwitchSubtitlesInPlace(
             hasPlayer: true,
             currentMethod: .directStream,

@@ -13,7 +13,7 @@ struct StreamURLBuilderTests {
         return result
     }
 
-    @Test("HLS URL escalates to the master playlist only for a text subtitle")
+    @Test("HLS URL always targets the master playlist")
     func hlsPath() throws {
         func path(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod = .hls) throws -> String {
             let url = try #require(StreamURLBuilder.hlsURL(
@@ -26,13 +26,14 @@ struct StreamURLBuilderTests {
             return url.path
         }
 
-        // Only the master playlist advertises WebVTT subtitle renditions —
-        // and advertising them also grows a competing native picker, so it is
-        // requested only when a text subtitle is actually being delivered
+        // Unconditional, and deliberately so. main.m3u8 would suppress the
+        // competing native subtitle picker, but trickplay interposes on the
+        // master playlist to append an I-frame rendition and crashes
+        // MediaToolbox given a media playlist. The picker is suppressed in
+        // the player instead.
         try #expect(path(subtitleStreamIndex: 2) == "/Videos/item-1/master.m3u8")
-        try #expect(path(subtitleStreamIndex: nil) == "/Videos/item-1/main.m3u8")
-        // Burn-in composites into the video: no rendition to advertise
-        try #expect(path(subtitleStreamIndex: 2, subtitleMethod: .encode) == "/Videos/item-1/main.m3u8")
+        try #expect(path(subtitleStreamIndex: nil) == "/Videos/item-1/master.m3u8")
+        try #expect(path(subtitleStreamIndex: 2, subtitleMethod: .encode) == "/Videos/item-1/master.m3u8")
     }
 
     @Test("Video codec is forced to H.264 only when a text subtitle is delivered")
@@ -221,7 +222,7 @@ struct StreamURLBuilderTests {
             parameters: StreamParameters(itemId: "item-1"),
         ))
 
-        #expect(url.path == "/jellyfin/Videos/item-1/main.m3u8")
+        #expect(url.path == "/jellyfin/Videos/item-1/master.m3u8")
     }
 
     // MARK: - Direct play

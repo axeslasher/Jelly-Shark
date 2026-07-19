@@ -213,12 +213,15 @@ final class TrickplayLocalServer: @unchecked Sendable {
                 throw URLError(.cannotDecodeContentData)
             }
 
-            let rewritten = TrickplayHLSPlaylist.rewriteMaster(
+            guard let rewritten = TrickplayHLSPlaylist.rewriteMaster(
                 text,
                 originalURL: originalMasterURL,
                 iframePlaylistURI: "/iframe.m3u8",
                 info: info,
-            )
+            ) else {
+                // Not a master playlist, so there is nothing to interpose on
+                throw URLError(.cannotParseResponse)
+            }
             send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
         } catch {
             // Playback must survive a trickplay failure: bounce the player

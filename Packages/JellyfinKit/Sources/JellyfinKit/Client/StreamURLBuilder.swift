@@ -60,17 +60,22 @@ enum StreamURLBuilder {
     /// server itself computes in PlaybackInfo's TranscodingUrl.
     static let audioBitrate = 192_000
 
-    /// Build an HLS universal stream URL:
-    /// `/Videos/{itemId}/{main|master}.m3u8`
+    /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
     ///
-    /// The playlist choice is deliberate. `master.m3u8` is the only endpoint
-    /// that advertises text subtitle tracks as WebVTT renditions AVPlayer can
-    /// select, so it is required when we are delivering one — but advertising
-    /// those renditions also makes `AVPlayerViewController` grow its own
-    /// subtitle picker, which bypasses the view model entirely. So we request
-    /// the video-only `main.m3u8` by default and escalate to `master.m3u8`
-    /// only on the text-subtitle path, leaving the app's menu as the single
-    /// authoritative control everywhere else.
+    /// The master playlist (not `main.m3u8`, which is the video-only media
+    /// playlist) is required for subtitles: it is the only endpoint that
+    /// advertises text subtitle tracks as WebVTT renditions AVPlayer can
+    /// select.
+    ///
+    /// It is also required unconditionally by trickplay. `TrickplayLocalServer`
+    /// works by interposing on this playlist and appending a synthesized
+    /// I-frame rendition, which only a *master* playlist can carry. Handing it
+    /// a media playlist instead produces a file with both media- and
+    /// master-playlist tags, which crashes MediaToolbox outright
+    /// (`FigMediaPlaylistGetTargetDuration` on a null playlist) rather than
+    /// failing gracefully. So do not make this endpoint conditional: the
+    /// competing native subtitle picker that `master.m3u8` provokes is
+    /// suppressed in the player instead, via `allowedSubtitleOptionLanguages`.
     ///
     /// Bitrate parameters must be sent too — without them the server
     /// re-encodes at a tiny default resolution whenever it can't stream-copy
@@ -117,7 +122,7 @@ enum StreamURLBuilder {
         let endpoint = serverURL
             .appendingPathComponent("Videos")
             .appendingPathComponent(parameters.itemId)
-            .appendingPathComponent(deliversTextSubtitle ? "master.m3u8" : "main.m3u8")
+            .appendingPathComponent("master.m3u8")
 
         guard var components = URLComponents(url: endpoint, resolvingAgainstBaseURL: false) else {
             return nil

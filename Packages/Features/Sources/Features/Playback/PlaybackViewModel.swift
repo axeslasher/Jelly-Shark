@@ -214,8 +214,8 @@ public final class PlaybackViewModel {
     /// current player item — the loaded master playlist already carries both
     /// renditions, so no reload is needed. Everything else rebuilds: entering
     /// or leaving burn-in, targets missing from the loaded renditions, and
-    /// turning subtitles on or off at all, which changes the playlist,
-    /// segment container, and video codec together.
+    /// turning subtitles on or off at all, which changes the segment
+    /// container and video codec together.
     public func selectSubtitleStream(index: Int?) async {
         guard index != selectedSubtitleStreamIndex else { return }
 
@@ -250,12 +250,12 @@ public final class PlaybackViewModel {
     /// Pure so the decision matrix is unit-testable without AVPlayer.
     ///
     /// Only a switch *between* text subtitles qualifies. Turning one on or off
-    /// crosses the stream's shape — `main.m3u8`/fMP4/HEVC when unsubtitled,
-    /// `master.m3u8`/TS/H.264 when subtitled — and the loaded player item
-    /// cannot express that change. Switching in place across it would strand
-    /// the session on the wrong stream: an unsubtitled HEVC source left on TS
-    /// plays black, and a subtitle turned off would keep paying for an H.264
-    /// re-encode the source no longer needs.
+    /// crosses the stream's shape — fMP4/HEVC when unsubtitled, TS/H.264 when
+    /// subtitled — and the loaded player item cannot express that change.
+    /// Switching in place across it would strand the session on the wrong
+    /// stream: an unsubtitled HEVC source left on TS plays black, and a
+    /// subtitle turned off would keep paying for an H.264 re-encode the
+    /// source no longer needs.
     static func canSwitchSubtitlesInPlace(
         hasPlayer: Bool,
         currentMethod: PlayMethod,

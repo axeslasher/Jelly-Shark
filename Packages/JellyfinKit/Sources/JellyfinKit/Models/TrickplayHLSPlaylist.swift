@@ -20,13 +20,24 @@ public enum TrickplayHLSPlaylist {
     ///   - iframePlaylistURI: URI for the synthesized I-frame media playlist
     ///     (relative to the interposed master, e.g. `/iframe.m3u8`)
     ///   - info: The trickplay resolution backing the I-frame rendition
-    /// - Returns: The rewritten playlist text
+    /// - Returns: The rewritten playlist text, or nil if the input is not a
+    ///   master playlist and therefore cannot carry an I-frame rendition
     public static func rewriteMaster(
         _ master: String,
         originalURL: URL,
         iframePlaylistURI: String,
         info: TrickplayInfo,
-    ) -> String {
+    ) -> String? {
+        // Only a master playlist can carry `EXT-X-I-FRAME-STREAM-INF`.
+        // Appending one to a media playlist yields a file with both media-
+        // and master-playlist tags, which does not merely fail to parse —
+        // MediaToolbox reads a null media playlist and crashes the app
+        // (`FigMediaPlaylistGetTargetDuration`, EXC_BAD_ACCESS). Refusing
+        // here turns that into a graceful fall back to the origin stream.
+        guard master.contains("#EXT-X-STREAM-INF") else {
+            return nil
+        }
+
         var lines = master
             .split(separator: "\n", omittingEmptySubsequences: false)
             // Drop the Roku-style image rendition: AVFoundation ignores it at
