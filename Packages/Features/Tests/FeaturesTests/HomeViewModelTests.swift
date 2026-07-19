@@ -838,4 +838,60 @@ struct HomeViewModelTests {
 
         #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1", "resume-1"])
     }
+
+    // MARK: - User-data actions (shelf card menus)
+
+    @Test("setPlayed persists, then refreshes lane membership")
+    func setPlayedRefreshesLanes() async {
+        let client = MockJellyfinClient()
+        let item = movie("resume-1", lastPlayed: day(1))
+        client.resumeItemsResult = .success([item])
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+
+        // Once marked watched the server drops it from resume; the refresh
+        // that follows the successful call applies that membership change.
+        client.resumeItemsResult = .success([])
+        await viewModel.setPlayed(true, for: item)
+
+        #expect(client.userDataCalls.map(\.action) == ["played"])
+        #expect(client.userDataCalls.map(\.itemId) == ["resume-1"])
+        #expect(viewModel.resumeItems.isEmpty)
+    }
+
+    @Test("setPlayed reverts the optimistic flip when the server call fails")
+    func setPlayedRevertsOnFailure() async {
+        let client = MockJellyfinClient()
+        let item = movie("resume-1", lastPlayed: day(1))
+        client.resumeItemsResult = .success([item])
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        client.userDataError = APIError.networkError("offline")
+        await viewModel.setPlayed(true, for: item)
+
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+        #expect(viewModel.resumeItems[0].userData?.played != true)
+    }
+
+    @Test("setFavorite flips the card in place without touching the lanes")
+    func setFavoriteFlipsInPlace() async {
+        let client = MockJellyfinClient()
+        let item = movie("resume-1", lastPlayed: day(1))
+        client.resumeItemsResult = .success([item])
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        // Poison the lane fetches: a favorite change must not refetch them.
+        client.resumeItemsResult = .failure(APIError.networkError("no refresh expected"))
+        await viewModel.setFavorite(true, for: item)
+
+        #expect(client.userDataCalls.map(\.action) == ["favorite"])
+        #expect(viewModel.resumeItems[0].userData?.isFavorite == true)
+
+        client.userDataError = APIError.networkError("offline")
+        await viewModel.setFavorite(false, for: viewModel.resumeItems[0])
+        #expect(viewModel.resumeItems[0].userData?.isFavorite == true)
+    }
 }

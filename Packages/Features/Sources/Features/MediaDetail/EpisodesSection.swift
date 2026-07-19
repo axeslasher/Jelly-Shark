@@ -37,6 +37,10 @@ struct EpisodesSection: View {
     /// region tracking). The rising edge steers first focus onto the parked
     /// episode — the engine can't be trusted to find it on its own.
     let isRegionFocused: Bool
+    /// Long-press menu handlers per episode (view details / watched /
+    /// favorite), built by the owner. Episode cards play on select, so the
+    /// menu is the only path from here to an episode's own detail page.
+    let menu: (MediaItem) -> ShelfMenuHandlers
     /// Clicking an episode card plays it immediately via the owner's player
     @Binding var playbackItem: MediaItem?
 
@@ -223,7 +227,11 @@ struct EpisodesSection: View {
         ScrollView(.horizontal) {
             LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
                 ForEach(episodes) { episode in
-                    episode.episodeShelfItem(client: session.client, width: Self.episodeCardWidth) {
+                    episode.episodeShelfItem(
+                        client: session.client,
+                        width: Self.episodeCardWidth,
+                        menu: menu(episode),
+                    ) {
                         playbackItem = episode
                     }
                     .focused($focusedEpisodeId, equals: episode.id)

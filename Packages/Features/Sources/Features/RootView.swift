@@ -135,6 +135,11 @@ public struct RootView: View {
         .environment(\.openSettings) {
             tabSelection.wrappedValue = .settings
         }
+        .environment(\.pushMediaDetail) { item in
+            var path = tabPaths[selectedTab, default: NavigationPath()]
+            path.append(item)
+            tabPaths[selectedTab] = path
+        }
         .task {
             // Attach here (not just in Settings) so a restored client is
             // published app-wide even if the user never opens Settings
@@ -219,6 +224,12 @@ extension EnvironmentValues {
     /// nothing else on screen is focusable and the collapsed sidebar can't
     /// take focus — #69) call this instead of reaching into tab state.
     @Entry var openSettings: (() -> Void)? = nil
+
+    /// Pushes a media item's detail page onto the current tab's stack.
+    /// Provided by `RootView` (owner of the per-tab paths) for actions that
+    /// can't be a `NavigationLink` — e.g. "View Details" in a shelf card's
+    /// long-press menu, where selecting the card itself plays instead.
+    @Entry var pushMediaDetail: ((MediaItem) -> Void)? = nil
 }
 
 // MARK: - Tab

@@ -71,8 +71,10 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
     /// Tags for various images
     public let imageTags: ImageTags?
 
-    /// User-specific data (watch status, favorite, etc.)
-    public let userData: UserData?
+    /// User-specific data (watch status, favorite, etc.). Mutable so
+    /// optimistic user-data updates (`settingPlayed`/`settingFavorite`) can
+    /// copy-and-modify without restating the whole memberwise init.
+    public var userData: UserData?
 
     /// Series information (for episodes)
     public let seriesId: String?
@@ -358,6 +360,43 @@ public struct UserData: Sendable, Equatable, Hashable {
         self.played = played
         self.lastPlayedDate = lastPlayedDate
         self.unplayedItemCount = unplayedItemCount
+    }
+}
+
+// MARK: - User-Data Updates
+
+public extension MediaItem {
+    /// Copy with the watched state the server will report after
+    /// `markPlayed`/`markUnplayed`: both directions clear resume progress,
+    /// and a played container has nothing unwatched left. Marking a
+    /// container *unplayed* makes every child unwatched, but the count isn't
+    /// known locally — nil hides the unwatched badge until a refresh
+    /// supplies the real number.
+    func settingPlayed(_ played: Bool) -> MediaItem {
+        var copy = self
+        copy.userData = UserData(
+            playbackPositionTicks: nil,
+            playCount: userData?.playCount,
+            isFavorite: userData?.isFavorite ?? false,
+            played: played,
+            lastPlayedDate: userData?.lastPlayedDate,
+            unplayedItemCount: played ? 0 : nil,
+        )
+        return copy
+    }
+
+    /// Copy with the favorite flag flipped; all other user data untouched.
+    func settingFavorite(_ favorite: Bool) -> MediaItem {
+        var copy = self
+        copy.userData = UserData(
+            playbackPositionTicks: userData?.playbackPositionTicks,
+            playCount: userData?.playCount,
+            isFavorite: favorite,
+            played: userData?.played ?? false,
+            lastPlayedDate: userData?.lastPlayedDate,
+            unplayedItemCount: userData?.unplayedItemCount,
+        )
+        return copy
     }
 }
 

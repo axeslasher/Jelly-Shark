@@ -203,6 +203,57 @@ public final class MediaDetailViewModel {
         }
     }
 
+    // MARK: - User-Data Actions
+
+    /// Optimistically apply a watched-state change from an episode card's
+    /// long-press menu, then persist; on success run the same in-place
+    /// refresh as a finished playback, since watched flags move next-up and
+    /// the hero's Play target. Reverts on failure.
+    public func setPlayed(_ played: Bool, for target: MediaItem) async {
+        guard let client else { return }
+        replaceInSections(target.settingPlayed(played))
+        do {
+            if played {
+                try await client.markPlayed(itemId: target.id)
+            } else {
+                try await client.markUnplayed(itemId: target.id)
+            }
+            await refreshAfterPlayback()
+        } catch {
+            replaceInSections(target)
+        }
+    }
+
+    /// Optimistically apply a favorite change from an episode card's
+    /// long-press menu, then persist; revert on failure.
+    public func setFavorite(_ favorite: Bool, for target: MediaItem) async {
+        guard let client else { return }
+        replaceInSections(target.settingFavorite(favorite))
+        do {
+            if favorite {
+                try await client.markFavorite(itemId: target.id)
+            } else {
+                try await client.unmarkFavorite(itemId: target.id)
+            }
+        } catch {
+            replaceInSections(target)
+        }
+    }
+
+    /// Swap the item (by id) into every section that carries it, so a card's
+    /// badge and menu labels update in place wherever it appears.
+    private func replaceInSections(_ target: MediaItem) {
+        func swapping(_ items: [MediaItem]) -> [MediaItem] {
+            items.map { $0.id == target.id ? target : $0 }
+        }
+        episodes = swapping(episodes)
+        collectionItems = swapping(collectionItems)
+        similarItems = swapping(similarItems)
+        if nextUpEpisode?.id == target.id {
+            nextUpEpisode = target
+        }
+    }
+
     // MARK: - Credits
 
     /// Directors: handles both standard data (`kind == "Director"`) and

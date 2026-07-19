@@ -251,4 +251,43 @@ struct MediaDetailViewModelTests {
         #expect(viewModel.episodes.map(\.id) == ["e1", "e2"])
         #expect(viewModel.nextUpEpisode?.id == "e2")
     }
+
+    // MARK: - User-data actions (episode card menus)
+
+    @Test("setPlayed persists and refreshes next-up like a finished playback")
+    func setPlayedRefreshesNextUp() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["s1"] = series("s1")
+        client.episodesResult = .success([episode("e1", seriesId: "s1"), episode("e2", seriesId: "s1")])
+        client.nextUpEpisodesBySeries["s1"] = episode("e1", seriesId: "s1")
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: series("s1"))
+        #expect(viewModel.nextUpEpisode?.id == "e1")
+
+        // Watching e1 "by decree" advances the server's next-up to e2.
+        client.nextUpEpisodesBySeries["s1"] = episode("e2", seriesId: "s1")
+        await viewModel.setPlayed(true, for: viewModel.episodes[0])
+
+        #expect(client.userDataCalls.map(\.action) == ["played"])
+        #expect(client.userDataCalls.map(\.itemId) == ["e1"])
+        #expect(viewModel.nextUpEpisode?.id == "e2")
+    }
+
+    @Test("setFavorite flips the episode in place and reverts on failure")
+    func setFavoriteFlipsEpisode() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["s1"] = series("s1")
+        client.episodesResult = .success([episode("e1", seriesId: "s1")])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: series("s1"))
+
+        await viewModel.setFavorite(true, for: viewModel.episodes[0])
+        #expect(viewModel.episodes[0].userData?.isFavorite == true)
+
+        client.userDataError = APIError.networkError("offline")
+        await viewModel.setFavorite(false, for: viewModel.episodes[0])
+        #expect(viewModel.episodes[0].userData?.isFavorite == true)
+    }
 }
