@@ -65,9 +65,24 @@ enum StreamURLBuilder {
     /// The master playlist (not `main.m3u8`, which is the video-only media
     /// playlist) is required for subtitles: it is the only endpoint that
     /// advertises text subtitle tracks as WebVTT renditions AVPlayer can
-    /// select. Bitrate parameters must be sent too — without them the
-    /// server re-encodes at a tiny default resolution whenever it can't
-    /// stream-copy (e.g. subtitle burn-in).
+    /// select.
+    ///
+    /// It is also required unconditionally by trickplay. `TrickplayLocalServer`
+    /// works by interposing on this playlist and appending a synthesized
+    /// I-frame rendition, which only a *master* playlist can carry. Handing it
+    /// a media playlist used to produce a file with both media- and
+    /// master-playlist tags, which crashed MediaToolbox outright
+    /// (`FigMediaPlaylistGetTargetDuration` on a null playlist);
+    /// `TrickplayHLSPlaylist.rewriteMaster` now refuses non-master input, but
+    /// the refusal costs trickplay for the whole session. So do not make this
+    /// endpoint conditional: the competing native subtitle picker that
+    /// `master.m3u8` provokes is tolerated instead — suppressing it latches
+    /// AVKit's subtitles off (see #91 and the note in
+    /// `PlayerViewController.configureMenus`).
+    ///
+    /// Bitrate parameters must be sent too — without them the server
+    /// re-encodes at a tiny default resolution whenever it can't stream-copy
+    /// (e.g. subtitle burn-in).
     ///
     /// - Parameters:
     ///   - serverURL: The server base URL (path prefixes are preserved)
@@ -87,6 +102,24 @@ enum StreamURLBuilder {
         maxStreamingBitrate: Int = JellyfinClient.maxStreamingBitrate,
         eTag: String? = nil,
     ) -> URL? {
+        // fMP4 by default, MPEG-TS only when a text subtitle rides along.
+        // Apple's HLS stack decodes HEVC solely from fMP4 segments — HEVC in
+        // an MPEG-TS segment yields audio over a black screen — so fMP4 is
+        // required for every HEVC source routed through HLS. The exception is
+        // a text subtitle delivered as a WebVTT rendition: Jellyfin's VTT
+        // playlists carry X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset)
+        // that matches its TS segments, and against fMP4 (PTS 0) the subtitle
+        // renders 10s late — so that one path keeps TS.
+        let deliversTextSubtitle = subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
+        let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
+
+        // HEVC cannot ride in TS on Apple, so the subtitled path asks for
+        // H.264 outright: it is the only codec that plays from TS *and* keeps
+        // WebVTT timing aligned. H.264 sources still stream-copy; HEVC sources
+        // pay a genuine re-encode, which is the cost of that combination
+        // working at all. Off this path, HEVC passes through untouched.
+        let videoCodec = deliversTextSubtitle ? "h264" : "hevc,h264"
+
         // Append to the server URL rather than overwriting the path,
         // so servers hosted under a path prefix (e.g. /jellyfin) keep working
         let endpoint = serverURL
@@ -98,21 +131,10 @@ enum StreamURLBuilder {
             return nil
         }
 
-        // fMP4 by default, MPEG-TS only when a text subtitle rides along.
-        // Apple's HLS stack decodes HEVC solely from fMP4 segments — HEVC in
-        // an MPEG-TS segment yields audio over a black screen — so fMP4 is
-        // required for every HEVC source routed through HLS. The exception is
-        // a text subtitle delivered as a WebVTT rendition: Jellyfin's VTT
-        // playlists carry X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset)
-        // that matches its TS segments, and against fMP4 (PTS 0) the subtitle
-        // renders 10s late — so that one path keeps TS and eats the HEVC cost.
-        let deliversTextSubtitle = subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
-        let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
-
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "api_key", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
-            URLQueryItem(name: "VideoCodec", value: "hevc,h264"),
+            URLQueryItem(name: "VideoCodec", value: videoCodec),
             URLQueryItem(name: "AudioCodec", value: "aac,ac3,eac3"),
             URLQueryItem(name: "SegmentContainer", value: segmentContainer),
             URLQueryItem(name: "MinSegments", value: "2"),

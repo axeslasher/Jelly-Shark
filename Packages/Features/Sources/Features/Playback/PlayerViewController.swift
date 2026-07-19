@@ -110,6 +110,16 @@
                 }
 
                 controller.transportBarCustomMenuItems = menus
+
+                // The system's own subtitle picker is deliberately left in
+                // place. Suppressing it (`allowedSubtitleOptionLanguages = []`)
+                // was tried and reverted: AVKit owns subtitle *display* state
+                // independently of the player item's media selection, so the
+                // app's menu cannot actually take ownership — clearing the
+                // legible selection latches AVKit off, and a later
+                // programmatic re-select does not clear that latch. The
+                // system picker is then the only way to get subtitles back,
+                // which makes suppressing it strictly worse. See #91.
             #endif
         }
     }

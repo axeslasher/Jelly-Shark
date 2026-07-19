@@ -144,81 +144,96 @@ struct TrickplayIFrameMuxerTests {
 struct TrickplayHLSPlaylistTests {
     private let masterURL = URL(string: "https://example.com/jellyfin/Videos/item-1/master.m3u8?api_key=tok")!
 
-    @Test("Plain URI lines are resolved against the master URL")
-    func absolutizesURILines() {
-        let master = """
-        #EXTM3U
-        #EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="avc1.42401F",RESOLUTION=1280x720
-        main.m3u8?api_key=tok&VideoCodec=h264
-        """
-        let rewritten = TrickplayHLSPlaylist.rewriteMaster(
+    /// Rewrite and unwrap, for the cases that supply a genuine master playlist
+    private func rewrite(_ master: String, info: TrickplayInfo) throws -> String {
+        try #require(TrickplayHLSPlaylist.rewriteMaster(
             master,
             originalURL: masterURL,
             iframePlaylistURI: "custom://iframe.m3u8",
+            info: info,
+        ))
+    }
+
+    @Test("Plain URI lines are resolved against the master URL")
+    func absolutizesURILines() throws {
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="avc1.42401F",RESOLUTION=1280x720
+            main.m3u8?api_key=tok&VideoCodec=h264
+            """,
             info: sampleInfo,
         )
         #expect(rewritten.contains("\nhttps://example.com/jellyfin/Videos/item-1/main.m3u8?api_key=tok&VideoCodec=h264\n"))
     }
 
     @Test("URI attributes in tag lines are resolved in place")
-    func absolutizesURIAttributes() {
-        let master = """
-        #EXTM3U
-        #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",URI="subs.m3u8?index=3"
-        #EXT-X-STREAM-INF:BANDWIDTH=1000
-        main.m3u8
-        """
-        let rewritten = TrickplayHLSPlaylist.rewriteMaster(
-            master,
-            originalURL: masterURL,
-            iframePlaylistURI: "custom://iframe.m3u8",
+    func absolutizesURIAttributes() throws {
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",URI="subs.m3u8?index=3"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000
+            main.m3u8
+            """,
             info: sampleInfo,
         )
         #expect(rewritten.contains("URI=\"https://example.com/jellyfin/Videos/item-1/subs.m3u8?index=3\""))
     }
 
     @Test("The Roku-style image rendition is dropped from the rewrite")
-    func dropsImageStreamInf() {
-        let master = """
-        #EXTM3U
-        #EXT-X-IMAGE-STREAM-INF:BANDWIDTH=4170,RESOLUTION=320x180,CODECS="jpeg",URI="Trickplay/320/tiles.m3u8"
-        #EXT-X-STREAM-INF:BANDWIDTH=1000
-        main.m3u8
-        """
-        let rewritten = TrickplayHLSPlaylist.rewriteMaster(
-            master,
-            originalURL: masterURL,
-            iframePlaylistURI: "custom://iframe.m3u8",
+    func dropsImageStreamInf() throws {
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-IMAGE-STREAM-INF:BANDWIDTH=4170,RESOLUTION=320x180,CODECS="jpeg",URI="Trickplay/320/tiles.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000
+            main.m3u8
+            """,
             info: sampleInfo,
         )
         #expect(!rewritten.contains("EXT-X-IMAGE-STREAM-INF"))
     }
 
     @Test("The mjpg I-frame rendition is appended with the info's geometry")
-    func appendsIFrameTag() {
-        let rewritten = TrickplayHLSPlaylist.rewriteMaster(
-            "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nmain.m3u8\n",
-            originalURL: masterURL,
-            iframePlaylistURI: "custom://iframe.m3u8",
-            info: sampleInfo,
-        )
+    func appendsIFrameTag() throws {
+        let rewritten = try rewrite("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nmain.m3u8\n", info: sampleInfo)
         let expected = "#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=4170,CODECS=\"mjpg\",RESOLUTION=320x180,URI=\"custom://iframe.m3u8\""
         #expect(rewritten.hasSuffix(expected + "\n"))
     }
 
     @Test("A missing server bandwidth falls back to a nominal value")
-    func bandwidthFallback() {
+    func bandwidthFallback() throws {
         let info = TrickplayInfo(
             widthKey: 320, thumbnailWidth: 320, thumbnailHeight: 180,
             columns: 10, rows: 10, intervalMilliseconds: 10000, thumbnailCount: 60,
         )
-        let rewritten = TrickplayHLSPlaylist.rewriteMaster(
-            "#EXTM3U\n",
+        let rewritten = try rewrite("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nmain.m3u8\n", info: info)
+        #expect(rewritten.contains("BANDWIDTH=50000"))
+    }
+
+    @Test("A media playlist is refused rather than turned into an invalid hybrid")
+    func refusesMediaPlaylist() {
+        // The exact shape that crashed the app: appending an I-frame rendition
+        // to Jellyfin's main.m3u8 produced a file carrying both media- and
+        // master-playlist tags, and MediaToolbox dereferenced a null media
+        // playlist parsing it (FigMediaPlaylistGetTargetDuration).
+        let mediaPlaylist = """
+        #EXTM3U
+        #EXT-X-VERSION:7
+        #EXT-X-TARGETDURATION:6
+        #EXT-X-MEDIA-SEQUENCE:0
+        #EXT-X-PLAYLIST-TYPE:VOD
+        #EXTINF:6.000000,
+        hls1/main/0.mp4
+        #EXT-X-ENDLIST
+        """
+        #expect(TrickplayHLSPlaylist.rewriteMaster(
+            mediaPlaylist,
             originalURL: masterURL,
             iframePlaylistURI: "custom://iframe.m3u8",
-            info: info,
-        )
-        #expect(rewritten.contains("BANDWIDTH=50000"))
+            info: sampleInfo,
+        ) == nil)
     }
 
     @Test("I-frame media playlist lists one discrete segment per thumbnail")
