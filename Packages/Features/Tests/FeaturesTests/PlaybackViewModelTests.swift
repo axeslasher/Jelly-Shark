@@ -428,8 +428,17 @@ struct PlaybackViewModelTests {
         #expect(viewModel.player == nil)
     }
 
+    /// Poll until the condition holds (bounded), so timer-driven assertions stay
+    /// fast when healthy and tolerant when the machine is loaded. A fixed sleep
+    /// would measure wall-clock the test does not control, which flakes on CI.
+    private func waitUntil(_ condition: () -> Bool) async {
+        for _ in 0 ..< 500 where !condition() {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+    }
+
     @Test("Progress is reported periodically")
-    func progressReporting() async throws {
+    func progressReporting() async {
         let client = MockJellyfinClient()
         let viewModel = PlaybackViewModel(
             client: client,
@@ -438,7 +447,7 @@ struct PlaybackViewModelTests {
         )
 
         await viewModel.start()
-        try await Task.sleep(for: .milliseconds(200))
+        await waitUntil { client.progressReports.count >= 2 }
         await viewModel.stop()
 
         #expect(client.progressReports.count >= 2)
