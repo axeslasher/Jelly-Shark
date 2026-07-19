@@ -1021,30 +1021,43 @@ struct PlaybackViewModelTests {
 
     @Test("In-place switch decision matrix")
     func canSwitchInPlaceMatrix() {
-        typealias Decide = (Bool, PlayMethod, Bool, Bool, Bool) -> Bool
+        typealias Decide = (Bool, PlayMethod, Bool, Bool, Bool, Bool) -> Bool
         let decide: Decide = PlaybackViewModel.canSwitchSubtitlesInPlace
 
-        // (hasPlayer, currentMethod, sessionUsesBurnIn, targetRequiresBurnIn, targetMatched)
-        #expect(decide(true, .directStream, false, false, true)) // matched text in HLS
-        #expect(decide(true, .transcode, false, false, true)) // matched text while transcoding
-        #expect(!decide(false, .directStream, false, false, true)) // no player
-        #expect(!decide(true, .directPlay, false, false, true)) // direct play has no renditions
-        #expect(!decide(true, .transcode, true, false, false)) // leaving burn-in
-        #expect(!decide(true, .directStream, false, true, true)) // entering burn-in
-        #expect(!decide(true, .directStream, false, false, false)) // unmatched target
+        // (hasPlayer, currentMethod, sessionUsesBurnIn, targetRequiresBurnIn,
+        //  currentlyDeliveringTextSubtitle, targetMatched)
+        #expect(decide(true, .directStream, false, false, true, true)) // text → text in HLS
+        #expect(decide(true, .transcode, false, false, true, true)) // text → text while transcoding
+        #expect(!decide(false, .directStream, false, false, true, true)) // no player
+        #expect(!decide(true, .directPlay, false, false, true, true)) // direct play has no renditions
+        #expect(!decide(true, .transcode, true, false, true, false)) // leaving burn-in
+        #expect(!decide(true, .directStream, false, true, true, true)) // entering burn-in
+        #expect(!decide(true, .directStream, false, false, true, false)) // unmatched target
     }
 
-    @Test("Turning subtitles off rebuilds rather than switching in place")
-    func turningSubtitlesOffRebuilds() {
-        // Turning off is never a match, so it can never switch in place: the
-        // stream it would leave behind is TS/H.264, and an unsubtitled
-        // session belongs on fMP4/HEVC. Staying would strand it.
-        #expect(!PlaybackViewModel.canSwitchSubtitlesInPlace(
-            hasPlayer: true,
-            currentMethod: .directStream,
-            sessionUsesBurnIn: false,
-            targetRequiresBurnIn: false,
-            targetMatched: false,
-        ))
+    @Test("Crossing between subtitled and unsubtitled always rebuilds")
+    func crossingSubtitleStateRebuilds() {
+        func decide(currentlyDelivering: Bool, targetMatched: Bool) -> Bool {
+            PlaybackViewModel.canSwitchSubtitlesInPlace(
+                hasPlayer: true,
+                currentMethod: .directStream,
+                sessionUsesBurnIn: false,
+                targetRequiresBurnIn: false,
+                currentlyDeliveringTextSubtitle: currentlyDelivering,
+                targetMatched: targetMatched,
+            )
+        }
+
+        // Turning off: the stream it would leave behind is TS/H.264, and an
+        // unsubtitled session belongs on fMP4/HEVC
+        #expect(!decide(currentlyDelivering: true, targetMatched: false))
+
+        // Turning on: the crucial case. The master playlist advertises text
+        // renditions even when none was requested, so the target *does* match
+        // on an unsubtitled fMP4 stream — and selecting it there puts every
+        // cue 10s late, because Jellyfin's VTT is mapped to MPEGTS:900000.
+        // Matching is therefore not sufficient; the stream must already be
+        // carrying a subtitle.
+        #expect(!decide(currentlyDelivering: false, targetMatched: true))
     }
 }

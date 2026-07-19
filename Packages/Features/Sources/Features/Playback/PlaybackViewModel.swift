@@ -226,6 +226,7 @@ public final class PlaybackViewModel {
             currentMethod: playMethod,
             sessionUsesBurnIn: sessionUsesBurnIn,
             targetRequiresBurnIn: mediaSource?.subtitleRequiresBurnIn(at: index) ?? false,
+            currentlyDeliveringTextSubtitle: selectedSubtitleStreamIndex != nil,
             targetMatched: targetMatched,
         )
 
@@ -249,18 +250,24 @@ public final class PlaybackViewModel {
     /// on the current player item instead of rebuilding the stream.
     /// Pure so the decision matrix is unit-testable without AVPlayer.
     ///
-    /// Only a switch *between* text subtitles qualifies. Turning one on or off
-    /// crosses the stream's shape — fMP4/HEVC when unsubtitled, TS/H.264 when
-    /// subtitled — and the loaded player item cannot express that change.
-    /// Switching in place across it would strand the session on the wrong
-    /// stream: an unsubtitled HEVC source left on TS plays black, and a
-    /// subtitle turned off would keep paying for an H.264 re-encode the
-    /// source no longer needs.
+    /// Only a switch *between* text subtitles qualifies — the stream must be
+    /// carrying one before and after. Its shape depends on that: TS/H.264
+    /// while a WebVTT rendition rides along (Jellyfin's VTT carries
+    /// `X-TIMESTAMP-MAP=MPEGTS:900000`, which only lines up against TS), and
+    /// fMP4/HEVC otherwise. Turning a subtitle on or off crosses that line,
+    /// and the loaded player item cannot express the change.
+    ///
+    /// `targetMatched` alone is not enough to tell them apart. The master
+    /// playlist advertises every text rendition whether or not one was
+    /// requested, so a target matches even on an unsubtitled fMP4 stream —
+    /// and selecting it there renders every cue exactly 10s late. Hence the
+    /// explicit `currentlyDeliveringTextSubtitle` gate.
     static func canSwitchSubtitlesInPlace(
         hasPlayer: Bool,
         currentMethod: PlayMethod,
         sessionUsesBurnIn: Bool,
         targetRequiresBurnIn: Bool,
+        currentlyDeliveringTextSubtitle: Bool,
         targetMatched: Bool,
     ) -> Bool {
         // Direct play has no renditions to select; a burned-in track can
@@ -270,9 +277,9 @@ public final class PlaybackViewModel {
         else {
             return false
         }
-        // Implies a text subtitle is already loaded and stays loaded, so the
-        // container and codec are unchanged. Turning off never matches.
-        return targetMatched
+        // Both ends must be a text subtitle: turning off never matches, and
+        // turning on has no rendition-bearing stream to switch within
+        return currentlyDeliveringTextSubtitle && targetMatched
     }
 
     // MARK: - Next Episode
