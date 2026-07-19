@@ -174,6 +174,24 @@ struct ThemeCatalogTests {
             }
         }
 
+        @Test("Caption text still meets AA when dimmed to its idle opacity")
+        func idleCaptionContrast() {
+            // Shelf cards dim their captions while unfocused, so the dimmed
+            // state — not the focused one — is the weakest link for legibility.
+            for theme in ThemeCatalogTests.allThemes {
+                for (label, text) in [("primary", theme.primary), ("secondary", theme.secondary)] {
+                    let dimmed = text.opacity(MotionTokens.captionIdleOpacity)
+                    for (backdropName, backdrop) in [
+                        ("background", theme.background),
+                        ("surface", theme.surface),
+                    ] {
+                        let ratio = WCAG.contrastRatio(dimmed, on: backdrop)
+                        #expect(ratio >= 4.5, "\(theme.id) \(label)@idle/\(backdropName): \(ratio)")
+                    }
+                }
+            }
+        }
+
         @Test("Accents meet non-text contrast (3:1) on background and surface")
         func accentContrast() {
             for theme in ThemeCatalogTests.allThemes {

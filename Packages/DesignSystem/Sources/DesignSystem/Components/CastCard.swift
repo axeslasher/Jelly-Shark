@@ -92,20 +92,23 @@ public struct CastCard<Value: Hashable>: View {
     }
 
     private var nameText: some View {
-        Text(name)
-            .jsStyle(.title)
-            .foregroundStyle(theme.primary)
-            .lineLimit(1)
-            .frame(width: width)
+        ShelfCaption {
+            Text(name)
+                .jsStyle(.title)
+                .foregroundStyle(theme.primary)
+                .lineLimit(1)
+                .frame(width: width)
+        }
     }
 
     private var roleText: some View {
         // Reserve the second line even when empty so cards stay aligned across a row.
-        Text(role ?? " ")
-            .jsStyle(.body)
-            .foregroundStyle(theme.secondary)
-            .lineLimit(1)
-            .frame(width: width)
-            .opacity(role == nil ? 0 : 1)
+        ShelfCaption(isPlaceholder: role == nil) {
+            Text(role ?? " ")
+                .jsStyle(.body)
+                .foregroundStyle(theme.secondary)
+                .lineLimit(1)
+                .frame(width: width)
+        }
     }
 }
