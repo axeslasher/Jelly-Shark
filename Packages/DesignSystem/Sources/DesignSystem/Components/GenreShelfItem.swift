@@ -65,6 +65,7 @@ private struct GenreCardContent: View {
 
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Time the card gained focus, so the drift starts at zero on focus-in
     /// (offsets are `sin(phase)`, so blobs ease out from rest with no pop). `nil`
@@ -129,9 +130,10 @@ private struct GenreCardContent: View {
 
     @ViewBuilder
     private var gradientBackground: some View {
-        if let focusStart {
+        if let focusStart, !reduceMotion {
             // Only the focused card ticks. `context.date` advances the drift;
-            // offsets are zero at focus-in and grow smoothly.
+            // offsets are zero at focus-in and grow smoothly. Reduce Motion skips
+            // the TimelineView entirely and holds the static wash.
             TimelineView(.animation) { context in
                 blobs(elapsed: context.date.timeIntervalSince(focusStart))
             }
