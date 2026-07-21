@@ -191,8 +191,8 @@ public final class PlaybackViewModel {
 
         player?.pause()
         player = nil
-        trickplayServer?.stop()
-        trickplayServer = nil
+        localServer?.stop()
+        localServer = nil
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
 
@@ -388,8 +388,9 @@ public final class PlaybackViewModel {
     private var chapters: [Chapter] = []
 
     /// The loopback server interposing the master playlist for the current
-    /// player item; nil when playing without seek previews
-    private var trickplayServer: TrickplayLocalServer?
+    /// player item (trickplay + subtitle-playlist rewriting); nil on direct
+    /// play or when the listener could not start
+    private var localServer: PlaybackLocalServer?
 
     /// In-flight artwork enrichment (chapter thumbnails + poster) for the
     /// current player item
@@ -504,18 +505,20 @@ public final class PlaybackViewModel {
     /// master serving the synthesized trickplay I-frame rendition for HLS
     /// sessions with seek-preview data
     private func makePlayerItem(url: URL) async -> AVPlayerItem {
-        trickplayServer?.stop()
-        trickplayServer = nil
+        localServer?.stop()
+        localServer = nil
 
-        guard playMethod != .directPlay, let info = trickplayInfo else {
+        guard playMethod != .directPlay else {
             return AVPlayerItem(url: url)
         }
 
         let itemId = item.id
         let sourceId = mediaSource?.id
         let client = client
-        let server = TrickplayLocalServer(originalMasterURL: url, info: info) { tileIndex in
-            client.trickplayTileURL(
+        let info = trickplayInfo
+        let server = PlaybackLocalServer(originalMasterURL: url, info: info) { tileIndex in
+            guard let info else { return nil }
+            return client.trickplayTileURL(
                 itemId: itemId,
                 width: info.widthKey,
                 tileIndex: tileIndex,
@@ -526,7 +529,7 @@ public final class PlaybackViewModel {
         guard let interposedURL = await server.start() else {
             return AVPlayerItem(url: url)
         }
-        trickplayServer = server
+        localServer = server
         return AVPlayerItem(url: interposedURL)
     }
 

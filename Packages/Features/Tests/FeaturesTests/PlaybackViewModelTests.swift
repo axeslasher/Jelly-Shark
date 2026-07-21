@@ -628,8 +628,11 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(client.playbackExtrasRequests == ["movie-1"])
-        // No extras (the default stub) → the plain resolved stream plays
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        // No extras (the default stub) → the loopback server still
+        // interposes: subtitle-playlist rewriting needs it on every HLS
+        // session, trickplay or not
+        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        await viewModel.stop()
     }
 
     @Test("HLS playback with trickplay data interposes the loopback master")
@@ -649,7 +652,7 @@ struct PlaybackViewModelTests {
         await viewModel.stop()
     }
 
-    @Test("A playback-extras fetch failure degrades to the plain stream")
+    @Test("A playback-extras fetch failure still interposes, minus thumbnails")
     func playbackExtrasFailureDegrades() async {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .failure(APIError.generic("boom"))
@@ -658,7 +661,8 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        await viewModel.stop()
     }
 
     @Test("Direct play never interposes, even with trickplay data")
@@ -676,7 +680,7 @@ struct PlaybackViewModelTests {
         #expect(assetURL(of: viewModel)?.host() == "example.com")
     }
 
-    @Test("A manifest keyed to other media sources degrades to the plain stream")
+    @Test("A manifest keyed to other media sources interposes without thumbnails")
     func mismatchedManifestSourceDegrades() async {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .success(PlaybackExtras(
@@ -690,7 +694,8 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        await viewModel.stop()
     }
 
     // MARK: - Chapters & metadata

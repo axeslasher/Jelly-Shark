@@ -6,20 +6,34 @@ import Network
 import OSLog
 import UniformTypeIdentifiers
 
-/// A loopback HTTP server that gives the system player native scrub
-/// thumbnails by interposing the HLS master playlist
+/// A loopback HTTP server that interposes on the HLS master playlist for
+/// two jobs AVFoundation cannot do against Jellyfin directly: native scrub
+/// thumbnails and correctly-timed text subtitles on fMP4.
 ///
-/// tvOS renders seek previews only from HLS I-frame renditions, which
-/// Jellyfin's HLS does not provide (its trickplay is JPEG tile sheets behind
-/// a Roku-style tag AVFoundation ignores). A custom-scheme
-/// `AVAssetResourceLoader` cannot bridge the gap either: AVFoundation's
-/// preview pipeline probes a loader-served rendition once and then silently
-/// abandons it — I-frame media must be reachable over real HTTP. So playback
-/// points at this server instead:
+/// **Trickplay.** tvOS renders seek previews only from HLS I-frame
+/// renditions, which Jellyfin's HLS does not provide (its trickplay is JPEG
+/// tile sheets behind a Roku-style tag AVFoundation ignores). A
+/// custom-scheme `AVAssetResourceLoader` cannot bridge the gap either:
+/// AVFoundation's preview pipeline probes a loader-served rendition once
+/// and then silently abandons it — I-frame media must be reachable over
+/// real HTTP.
 ///
+/// **Subtitles.** Jellyfin stamps `X-TIMESTAMP-MAP=MPEGTS:900000` onto its
+/// WebVTT via an `AddVttTimeMap=true` parameter it puts on every segment
+/// URI in the subtitle media playlist. That map only aligns against TS
+/// video segments; on fMP4 every cue lands 10s late. Stripping the
+/// parameter yields identical cues in real media time (see
+/// `SubtitleHLSPlaylist` and issue #90), so the subtitle *playlist* is
+/// proxied while the VTT bodies still stream straight from Jellyfin.
+///
+/// Routes:
 /// - `/master.m3u8`: fetches the real master from Jellyfin, absolutizes its
-///   URIs, and appends an `mjpg` I-frame rendition (`TrickplayHLSPlaylist`);
-///   video/audio/subtitle playlists keep streaming directly from Jellyfin
+///   URIs, redirects subtitle renditions to `/subs/{n}.m3u8`, and — when
+///   trickplay data exists — appends an `mjpg` I-frame rendition
+///   (`TrickplayHLSPlaylist`); video/audio playlists keep streaming
+///   directly from Jellyfin
+/// - `/subs/{n}.m3u8`: fetches the origin subtitle playlist and rewrites
+///   its segment URIs (`SubtitleHLSPlaylist`)
 /// - `/iframe.m3u8`, `/init.mp4`: generated locally from the trickplay
 ///   manifest (`TrickplayIFrameMuxer`)
 /// - `/seg{n}.m4s`: fetches the tile sheet covering thumbnail *n* (cached
@@ -27,14 +41,17 @@ import UniformTypeIdentifiers
 ///   fMP4 fragment
 ///
 /// The listener binds an ephemeral port on the loopback interface only.
-/// Failures degrade silently: if the server cannot start, playback uses the
-/// original URL; if the master fetch fails mid-session, the player is
-/// redirected to the origin; a failed segment costs one preview frame.
-final class TrickplayLocalServer: @unchecked Sendable {
-    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Trickplay")
+/// Failures are tiered by what they would silently break: a failed
+/// thumbnail segment costs one preview frame; a master whose rewrite is
+/// refused (not a master playlist — it carries no subtitle renditions)
+/// 302s to the origin so playback survives; but a failed origin fetch of
+/// the master or a subtitle playlist answers 502, because the silent
+/// alternative is playback with subtitles rendered 10 seconds late.
+final class PlaybackLocalServer: @unchecked Sendable {
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
     private let originalMasterURL: URL
-    private let info: TrickplayInfo
+    private let info: TrickplayInfo?
     private let tileURL: @Sendable (Int) -> URL?
 
     /// Tile fetches ride the shared URLCache; Jellyfin serves tiles without
@@ -42,9 +59,13 @@ final class TrickplayLocalServer: @unchecked Sendable {
     /// data must be preferred explicitly
     private let session: URLSession
 
-    private let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.trickplay-server")
+    private let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.playback-server")
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
+
+    /// Origin URLs of the subtitle renditions the served master redirected
+    /// to `/subs/{n}.m3u8`, index-aligned; refreshed on every master serve
+    private var subtitleOriginURLs: [URL] = []
 
     /// The last decoded tile sheet, so consecutive segments re-crop without
     /// re-decoding (one sheet covers columns × rows thumbnails)
@@ -52,14 +73,15 @@ final class TrickplayLocalServer: @unchecked Sendable {
 
     /// - Parameters:
     ///   - originalMasterURL: The real HLS master URL resolved for playback
-    ///   - info: The trickplay resolution to synthesize the rendition from
+    ///   - info: The trickplay resolution to synthesize the I-frame
+    ///     rendition from; nil serves subtitles only, no seek previews
     ///   - tileURL: Maps a tile-sheet index to its authenticated URL
     ///     (`JellyfinClientProtocol.trickplayTileURL`)
     ///   - protocolClasses: Test seam — `URLProtocol` stubs standing in for
     ///     the Jellyfin origin
     init(
         originalMasterURL: URL,
-        info: TrickplayInfo,
+        info: TrickplayInfo?,
         tileURL: @escaping @Sendable (Int) -> URL?,
         protocolClasses: [AnyClass]? = nil,
     ) {
@@ -125,7 +147,8 @@ final class TrickplayLocalServer: @unchecked Sendable {
             return nil
         }
 
-        Self.logger.info("[server] listening on 127.0.0.1:\(port) (width=\(self.info.widthKey), thumbnails=\(self.info.thumbnailCount))")
+        let trickplay = info.map { "width=\($0.widthKey), thumbnails=\($0.thumbnailCount)" } ?? "none"
+        Self.logger.info("[server] listening on 127.0.0.1:\(port) (trickplay: \(trickplay, privacy: .public))")
         return URL(string: "http://127.0.0.1:\(port)/master.m3u8")
     }
 
@@ -191,8 +214,16 @@ final class TrickplayLocalServer: @unchecked Sendable {
         case "/master.m3u8":
             await serveMaster(on: connection)
         case "/iframe.m3u8":
-            send(body: Data(iframePlaylist().utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+            guard let info else {
+                send(status: "404 Not Found", on: connection)
+                return
+            }
+            send(body: Data(iframePlaylist(info: info).utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
         case "/init.mp4":
+            guard let info else {
+                send(status: "404 Not Found", on: connection)
+                return
+            }
             let segment = TrickplayIFrameMuxer.initializationSegment(
                 thumbnailWidth: info.thumbnailWidth,
                 thumbnailHeight: info.thumbnailHeight,
@@ -200,8 +231,10 @@ final class TrickplayLocalServer: @unchecked Sendable {
             )
             send(body: segment, contentType: "video/mp4", on: connection)
         default:
-            if let index = segmentIndex(fromPath: path) {
-                await serveSegment(thumbnailIndex: index, on: connection)
+            if let index = subtitleIndex(fromPath: path) {
+                await serveSubtitlePlaylist(index: index, on: connection)
+            } else if let info, let index = segmentIndex(fromPath: path) {
+                await serveSegment(thumbnailIndex: index, info: info, on: connection)
             } else {
                 send(status: "404 Not Found", on: connection)
             }
@@ -209,43 +242,92 @@ final class TrickplayLocalServer: @unchecked Sendable {
     }
 
     private func serveMaster(on connection: NWConnection) async {
+        let data: Data
         do {
             var request = URLRequest(url: originalMasterURL)
             // The master reflects live stream parameters; never reuse a
             // stale copy from the artwork cache
             request.cachePolicy = .reloadIgnoringLocalCacheData
-            let (data, _) = try await session.data(for: request)
-            guard let text = String(data: data, encoding: .utf8) else {
-                throw URLError(.cannotDecodeContentData)
-            }
-
-            guard let rewrite = TrickplayHLSPlaylist.rewriteMaster(
-                text,
-                originalURL: originalMasterURL,
-                iframePlaylistURI: "/iframe.m3u8",
-                info: info,
-            ) else {
-                // A media playlist where a master was expected is a
-                // server-shape regression (this input used to crash
-                // MediaToolbox) — name it before the generic catch below
-                // reduces it to a URL error code
-                Self.logger.warning("[server] origin response is not a master playlist (no #EXT-X-STREAM-INF); refusing to interpose")
-                throw URLError(.cannotParseResponse)
-            }
-            send(body: Data(rewrite.playlist.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+            (data, _) = try await session.data(for: request)
         } catch {
-            // Playback must survive a trickplay failure: bounce the player
-            // to the real master and give up on thumbnails for this session
-            Self.logger.warning("[server] master rewrite failed, redirecting to origin: \(error, privacy: .public)")
-            send(status: "302 Found", headers: ["Location": originalMasterURL.absoluteString], on: connection)
+            // The origin is unreachable from the proxy. A redirect might
+            // keep playback alive, but subtitles ride through this server
+            // now, and a silent bounce to the origin would restore the 10s
+            // timestamp offset — fail loudly instead.
+            Self.logger.warning("[server] master fetch failed: \(error, privacy: .public)")
+            send(status: "502 Bad Gateway", on: connection)
+            return
         }
+
+        guard let text = String(data: data, encoding: .utf8),
+              let rewrite = TrickplayHLSPlaylist.rewriteMaster(
+                  text,
+                  originalURL: originalMasterURL,
+                  iframePlaylistURI: "/iframe.m3u8",
+                  info: info,
+                  localSubtitleURI: { "/subs/\($0).m3u8" },
+              )
+        else {
+            // A media playlist where a master was expected is a
+            // server-shape regression (this input used to crash
+            // MediaToolbox). It cannot be interposed on — but it also
+            // carries no subtitle renditions, so bouncing the player to
+            // the origin is safe: playback survives, thumbnails are given
+            // up, and no mistimed subtitle can result.
+            Self.logger.warning("[server] origin response is not a master playlist (no #EXT-X-STREAM-INF); redirecting to origin")
+            send(status: "302 Found", headers: ["Location": originalMasterURL.absoluteString], on: connection)
+            return
+        }
+
+        queue.sync { subtitleOriginURLs = rewrite.subtitleOriginURLs }
+        send(body: Data(rewrite.playlist.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
     }
 
-    private func iframePlaylist() -> String {
+    private func iframePlaylist(info: TrickplayInfo) -> String {
         TrickplayHLSPlaylist.iframePlaylist(
             info: info,
             initializationURI: "/init.mp4",
         ) { "/seg\($0).m4s" }
+    }
+
+    // MARK: - Subtitles
+
+    private func subtitleIndex(fromPath path: String) -> Int? {
+        guard path.hasPrefix("/subs/"), path.hasSuffix(".m3u8") else {
+            return nil
+        }
+        return Int(path.dropFirst(6).dropLast(5))
+    }
+
+    private func serveSubtitlePlaylist(index: Int, on connection: NWConnection) async {
+        let origin = queue.sync {
+            subtitleOriginURLs.indices.contains(index) ? subtitleOriginURLs[index] : nil
+        }
+        guard let origin else {
+            Self.logger.warning("[server] no subtitle origin recorded for /subs/\(index)")
+            send(status: "404 Not Found", on: connection)
+            return
+        }
+
+        do {
+            var request = URLRequest(url: origin)
+            // Session-scoped like the master; never reuse a stale copy
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, response) = try await session.data(for: request)
+            if let http = response as? HTTPURLResponse, !(200 ..< 300 ~= http.statusCode) {
+                throw URLError(.badServerResponse)
+            }
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw URLError(.cannotDecodeContentData)
+            }
+            let rewritten = SubtitleHLSPlaylist.rewrite(text, originalURL: origin)
+            send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+        } catch {
+            // Failing loudly drops cues on screen; a silent fallback to
+            // the origin playlist would render them 10 seconds late
+            Self.logger.warning("[server] subtitle playlist \(index) failed: \(error, privacy: .public)")
+            send(status: "502 Bad Gateway", on: connection)
+        }
     }
 
     // MARK: - Segments
@@ -257,7 +339,7 @@ final class TrickplayLocalServer: @unchecked Sendable {
         return Int(path.dropFirst(4).dropLast(4))
     }
 
-    private func serveSegment(thumbnailIndex: Int, on connection: NWConnection) async {
+    private func serveSegment(thumbnailIndex: Int, info: TrickplayInfo, on connection: NWConnection) async {
         let location = TrickplayResolver.location(ofThumbnail: thumbnailIndex, info: info)
         do {
             let sheet = try await tileSheet(at: location.tileIndex)
