@@ -145,13 +145,13 @@ struct TrickplayHLSPlaylistTests {
     private let masterURL = URL(string: "https://example.com/jellyfin/Videos/item-1/master.m3u8?api_key=tok")!
 
     /// Rewrite and unwrap, for the cases that supply a genuine master playlist
-    private func rewrite(_ master: String, info: TrickplayInfo) throws -> String {
+    private func rewrite(_ master: String, info: TrickplayInfo?) throws -> String {
         try #require(TrickplayHLSPlaylist.rewriteMaster(
             master,
             originalURL: masterURL,
             iframePlaylistURI: "custom://iframe.m3u8",
             info: info,
-        ))
+        )).playlist
     }
 
     @Test("Plain URI lines are resolved against the master URL")
@@ -234,6 +234,64 @@ struct TrickplayHLSPlaylistTests {
             iframePlaylistURI: "custom://iframe.m3u8",
             info: sampleInfo,
         ) == nil)
+    }
+
+    @Test("A nil info rewrites without appending an I-frame rendition")
+    func nilInfoSkipsIFrame() throws {
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-IMAGE-STREAM-INF:BANDWIDTH=4170,RESOLUTION=320x180,CODECS="jpeg",URI="Trickplay/320/tiles.m3u8"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000
+            main.m3u8
+            """,
+            info: nil,
+        )
+        #expect(!rewritten.contains("EXT-X-I-FRAME-STREAM-INF"))
+        #expect(!rewritten.contains("EXT-X-IMAGE-STREAM-INF"))
+        #expect(rewritten.contains("https://example.com/jellyfin/Videos/item-1/main.m3u8"))
+    }
+
+    @Test("Subtitle renditions are redirected to local routes and collected")
+    func redirectsSubtitleRenditions() throws {
+        let result = try #require(TrickplayHLSPlaylist.rewriteMaster(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,URI="item-1/Subtitles/2/subtitles.m3u8?SegmentLength=30&ApiKey=tok"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="Spanish",URI="item-1/Subtitles/3/subtitles.m3u8?SegmentLength=30&ApiKey=tok"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES="subs"
+            main.m3u8
+            """,
+            originalURL: masterURL,
+            iframePlaylistURI: "custom://iframe.m3u8",
+            info: sampleInfo,
+            localSubtitleURI: { "/subs/\($0).m3u8" },
+        ))
+        #expect(result.playlist.contains("NAME=\"English\",DEFAULT=YES,URI=\"/subs/0.m3u8\""))
+        #expect(result.playlist.contains("NAME=\"Spanish\",URI=\"/subs/1.m3u8\""))
+        #expect(result.subtitleOriginURLs.map(\.absoluteString) == [
+            "https://example.com/jellyfin/Videos/item-1/item-1/Subtitles/2/subtitles.m3u8?SegmentLength=30&ApiKey=tok",
+            "https://example.com/jellyfin/Videos/item-1/item-1/Subtitles/3/subtitles.m3u8?SegmentLength=30&ApiKey=tok",
+        ])
+        // Non-subtitle lines still absolutize to the origin
+        #expect(result.playlist.contains("https://example.com/jellyfin/Videos/item-1/main.m3u8"))
+    }
+
+    @Test("Without a local route, subtitle renditions absolutize to origin")
+    func subtitleRenditionsAbsolutizeByDefault() throws {
+        let result = try #require(TrickplayHLSPlaylist.rewriteMaster(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",URI="subs.m3u8?index=3"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000
+            main.m3u8
+            """,
+            originalURL: masterURL,
+            iframePlaylistURI: "custom://iframe.m3u8",
+            info: sampleInfo,
+        ))
+        #expect(result.playlist.contains("URI=\"https://example.com/jellyfin/Videos/item-1/subs.m3u8?index=3\""))
+        #expect(result.subtitleOriginURLs.isEmpty)
     }
 
     @Test("I-frame media playlist lists one discrete segment per thumbnail")

@@ -219,7 +219,7 @@ final class TrickplayLocalServer: @unchecked Sendable {
                 throw URLError(.cannotDecodeContentData)
             }
 
-            guard let rewritten = TrickplayHLSPlaylist.rewriteMaster(
+            guard let rewrite = TrickplayHLSPlaylist.rewriteMaster(
                 text,
                 originalURL: originalMasterURL,
                 iframePlaylistURI: "/iframe.m3u8",
@@ -232,7 +232,7 @@ final class TrickplayLocalServer: @unchecked Sendable {
                 Self.logger.warning("[server] origin response is not a master playlist (no #EXT-X-STREAM-INF); refusing to interpose")
                 throw URLError(.cannotParseResponse)
             }
-            send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+            send(body: Data(rewrite.playlist.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
         } catch {
             // Playback must survive a trickplay failure: bounce the player
             // to the real master and give up on thumbnails for this session
