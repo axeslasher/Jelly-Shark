@@ -236,6 +236,33 @@ struct TrickplayHLSPlaylistTests {
         ) == nil)
     }
 
+    @Test("Stream-inf lines gain CLOSED-CAPTIONS=NONE when unspecified")
+    func stampsClosedCaptionsNone() throws {
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="hvc1.1.4.L120.B0,mp4a.40.2",RESOLUTION=1920x1080
+            main.m3u8
+            """,
+            info: nil,
+        )
+        #expect(rewritten.contains("RESOLUTION=1920x1080,CLOSED-CAPTIONS=NONE\n"))
+    }
+
+    @Test("An existing CLOSED-CAPTIONS attribute is left alone")
+    func preservesExistingClosedCaptions() throws {
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,CLOSED-CAPTIONS="cc"
+            main.m3u8
+            """,
+            info: nil,
+        )
+        #expect(rewritten.contains("CLOSED-CAPTIONS=\"cc\"\n"))
+        #expect(!rewritten.contains("CLOSED-CAPTIONS=NONE"))
+    }
+
     @Test("A nil info rewrites without appending an I-frame rendition")
     func nilInfoSkipsIFrame() throws {
         let rewritten = try rewrite(

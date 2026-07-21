@@ -73,6 +73,15 @@ public enum TrickplayHLSPlaylist {
                     let local = localSubtitleURI(subtitleOriginURLs.count - 1)
                     return line.replacingCharacters(in: range, with: local)
                 }
+                // Jellyfin omits the CLOSED-CAPTIONS attribute, and an
+                // unspecified value makes AVFoundation assume embedded CC
+                // might exist — synthesizing a phantom legible option that
+                // grows a native subtitle picker even on streams with no
+                // subtitles at all (seen on burn-in sessions, whose masters
+                // advertise no renditions). Declare NONE explicitly.
+                if line.hasPrefix("#EXT-X-STREAM-INF"), !line.contains("CLOSED-CAPTIONS") {
+                    return absolutize(line: line, against: originalURL) + ",CLOSED-CAPTIONS=NONE"
+                }
                 return absolutize(line: line, against: originalURL)
             }
 
