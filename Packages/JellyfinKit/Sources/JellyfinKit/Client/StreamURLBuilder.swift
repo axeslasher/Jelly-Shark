@@ -67,18 +67,13 @@ enum StreamURLBuilder {
     /// advertises text subtitle tracks as WebVTT renditions AVPlayer can
     /// select.
     ///
-    /// It is also required unconditionally by trickplay. `TrickplayLocalServer`
-    /// works by interposing on this playlist and appending a synthesized
-    /// I-frame rendition, which only a *master* playlist can carry. Handing it
-    /// a media playlist used to produce a file with both media- and
-    /// master-playlist tags, which crashed MediaToolbox outright
-    /// (`FigMediaPlaylistGetTargetDuration` on a null playlist);
-    /// `TrickplayHLSPlaylist.rewriteMaster` now refuses non-master input, but
-    /// the refusal costs trickplay for the whole session. So do not make this
-    /// endpoint conditional: the competing native subtitle picker that
-    /// `master.m3u8` provokes is tolerated instead — suppressing it latches
-    /// AVKit's subtitles off (see #91 and the note in
-    /// `PlayerViewController.configureMenus`).
+    /// It is also required unconditionally by the loopback interposer.
+    /// `PlaybackLocalServer` works on this playlist: it appends a synthesized
+    /// I-frame rendition (which only a *master* playlist can carry — handing
+    /// it a media playlist used to crash MediaToolbox outright,
+    /// `FigMediaPlaylistGetTargetDuration` on a null playlist) and redirects
+    /// subtitle renditions through its map-stripping routes. So do not make
+    /// this endpoint conditional.
     ///
     /// Bitrate parameters must be sent too — without them the server
     /// re-encodes at a tiny default resolution whenever it can't stream-copy
@@ -90,6 +85,9 @@ enum StreamURLBuilder {
     ///   - deviceId: The device identifier reported to the server
     ///   - parameters: Item and stream selection parameters
     ///   - subtitleMethod: How the selected subtitle should be delivered
+    ///   - assumeInterposer: Whether `PlaybackLocalServer` will carry this
+    ///     session (the normal case); false is the degraded path when the
+    ///     loopback listener could not start
     ///   - maxStreamingBitrate: Total streaming budget in bits per second
     ///   - eTag: Optional media source tag for cache validation
     /// - Returns: The stream URL, or nil if construction fails
@@ -99,25 +97,26 @@ enum StreamURLBuilder {
         deviceId: String,
         parameters: StreamParameters,
         subtitleMethod: SubtitleDeliveryMethod = .hls,
+        assumeInterposer: Bool = true,
         maxStreamingBitrate: Int = JellyfinClient.maxStreamingBitrate,
         eTag: String? = nil,
     ) -> URL? {
-        // fMP4 by default, MPEG-TS only when a text subtitle rides along.
-        // Apple's HLS stack decodes HEVC solely from fMP4 segments — HEVC in
-        // an MPEG-TS segment yields audio over a black screen — so fMP4 is
-        // required for every HEVC source routed through HLS. The exception is
-        // a text subtitle delivered as a WebVTT rendition: Jellyfin's VTT
-        // playlists carry X-TIMESTAMP-MAP=MPEGTS:900000 (a 10s PTS offset)
-        // that matches its TS segments, and against fMP4 (PTS 0) the subtitle
-        // renders 10s late — so that one path keeps TS.
-        let deliversTextSubtitle = subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
+        // fMP4 always: Apple's HLS stack decodes HEVC solely from fMP4
+        // segments (HEVC in MPEG-TS yields audio over a black screen).
+        // Jellyfin's WebVTT timestamp map, which once forced TS + H.264
+        // whenever a text subtitle rode along, is stripped by
+        // PlaybackLocalServer's subtitle-playlist rewrite — so text
+        // subtitles align on fMP4 and the stream shape no longer depends on
+        // subtitle state at all (#90).
+        //
+        // The one exception is the degraded path: if the loopback listener
+        // could not start, nothing strips the map, so a text subtitle falls
+        // back to the old shape — TS segments with H.264 (stream-copy for
+        // H.264 sources, a real re-encode for HEVC) — where the map's 10s
+        // offset lines up with TS PTS and cues stay correctly timed.
+        let deliversTextSubtitle = !assumeInterposer
+            && subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
         let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
-
-        // HEVC cannot ride in TS on Apple, so the subtitled path asks for
-        // H.264 outright: it is the only codec that plays from TS *and* keeps
-        // WebVTT timing aligned. H.264 sources still stream-copy; HEVC sources
-        // pay a genuine re-encode, which is the cost of that combination
-        // working at all. Off this path, HEVC passes through untouched.
         let videoCodec = deliversTextSubtitle ? "h264" : "hevc,h264"
 
         // Append to the server URL rather than overwriting the path,
@@ -154,7 +153,14 @@ enum StreamURLBuilder {
         if let audioStreamIndex = parameters.audioStreamIndex {
             queryItems.append(URLQueryItem(name: "AudioStreamIndex", value: String(audioStreamIndex)))
         }
-        if let subtitleStreamIndex = parameters.subtitleStreamIndex {
+        // Burn-in needs the index (the server composites that exact track),
+        // and so does the degraded text path (the app owns delivery there).
+        // On the normal text path AVKit owns selection and the master
+        // advertises every text rendition regardless, so the index is
+        // omitted — subtitle state can never change the stream shape.
+        if let subtitleStreamIndex = parameters.subtitleStreamIndex,
+           subtitleMethod == .encode || !assumeInterposer
+        {
             queryItems.append(URLQueryItem(name: "SubtitleStreamIndex", value: String(subtitleStreamIndex)))
         }
         if let eTag {

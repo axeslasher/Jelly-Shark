@@ -209,7 +209,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try playbackInfoResult.get()
     }
 
-    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+    func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        assumeInterposer _: Bool,
+    ) throws -> StreamResolution {
         // Route through the real decision rule so tests exercise it end to end
         let method = source.playMethod(
             audioStreamIndex: parameters.audioStreamIndex,

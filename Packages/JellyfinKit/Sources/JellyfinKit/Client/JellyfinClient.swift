@@ -169,9 +169,17 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameters:
     ///   - source: The media source chosen from PlaybackInfo
     ///   - parameters: Item and stream selection parameters
+    ///   - assumeInterposer: Whether the loopback server will carry this
+    ///     session's playlists (the normal case); pass false only on the
+    ///     degraded path after the listener failed to start, which restores
+    ///     the app-owned TS/H.264 subtitle delivery
     /// - Returns: The stream URL paired with the play method to report
     /// - Throws: `APIError.notAuthenticated` if there is no access token
-    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution
+    func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        assumeInterposer: Bool,
+    ) throws -> StreamResolution
 
     /// Report that playback has started
     func reportPlaybackStart(
@@ -290,6 +298,13 @@ public protocol JellyfinClientProtocol: Sendable {
 
     /// Remove an item from the current user's favorites
     func unmarkFavorite(itemId: String) async throws
+}
+
+public extension JellyfinClientProtocol {
+    /// The normal path: assume the loopback interposer carries the session
+    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+        try resolveStream(for: source, parameters: parameters, assumeInterposer: true)
+    }
 }
 
 /// Image types available from Jellyfin
@@ -906,7 +921,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+    public func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        assumeInterposer: Bool,
+    ) throws -> StreamResolution {
         guard let accessToken = _accessToken else {
             throw APIError.notAuthenticated
         }
@@ -933,6 +952,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 deviceId: configuration.deviceID,
                 parameters: parameters,
                 subtitleMethod: source.subtitleRequiresBurnIn(at: parameters.subtitleStreamIndex) ? .encode : .hls,
+                assumeInterposer: assumeInterposer,
                 eTag: source.eTag,
             )
         }
