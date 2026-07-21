@@ -46,6 +46,20 @@ enum SubtitleOptionMatcher {
         return nil
     }
 
+    /// The reverse direction: the stream whose forward match lands on the
+    /// selected option position, or nil unless exactly one does. Running the
+    /// forward matcher per stream keeps both directions agreeing by
+    /// construction — a stream the forward pass can't place can't be
+    /// reconciled either.
+    static func streamIndex(
+        forSelectedPosition position: Int,
+        streams: [MediaStreamInfo],
+        options: [LegibleOption],
+    ) -> Int? {
+        let hits = streams.filter { match($0, in: options) == position }
+        return hits.count == 1 ? hits[0].index : nil
+    }
+
     /// Normalize a language tag to a comparable base form: Jellyfin streams
     /// carry ISO-639-2 codes ("eng") while AVFoundation options report
     /// BCP-47 tags ("en"), so both sides map through alpha-2 when known.

@@ -169,9 +169,17 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameters:
     ///   - source: The media source chosen from PlaybackInfo
     ///   - parameters: Item and stream selection parameters
+    ///   - assumeInterposer: Whether the loopback server will carry this
+    ///     session's playlists (the normal case); pass false only on the
+    ///     degraded path after the listener failed to start, which restores
+    ///     the app-owned TS/H.264 subtitle delivery
     /// - Returns: The stream URL paired with the play method to report
     /// - Throws: `APIError.notAuthenticated` if there is no access token
-    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution
+    func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        assumeInterposer: Bool,
+    ) throws -> StreamResolution
 
     /// Report that playback has started
     func reportPlaybackStart(
@@ -290,6 +298,18 @@ public protocol JellyfinClientProtocol: Sendable {
 
     /// Remove an item from the current user's favorites
     func unmarkFavorite(itemId: String) async throws
+}
+
+public extension JellyfinClientProtocol {
+    /// The normal path: assume the loopback interposer carries the session
+    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+        try resolveStream(for: source, parameters: parameters, assumeInterposer: true)
+    }
+
+    /// Tear down the server-side transcode for a play session. Default
+    /// no-op so conformances that never transcode need not care; the real
+    /// client sends `DELETE /Videos/ActiveEncodings`.
+    func stopEncoding(playSessionId _: String) async {}
 }
 
 /// Image types available from Jellyfin
@@ -906,7 +926,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+    public func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        assumeInterposer: Bool,
+    ) throws -> StreamResolution {
         guard let accessToken = _accessToken else {
             throw APIError.notAuthenticated
         }
@@ -933,6 +957,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 deviceId: configuration.deviceID,
                 parameters: parameters,
                 subtitleMethod: source.subtitleRequiresBurnIn(at: parameters.subtitleStreamIndex) ? .encode : .hls,
+                assumeInterposer: assumeInterposer,
                 eTag: source.eTag,
             )
         }
@@ -942,6 +967,17 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         return StreamResolution(url: url, playMethod: method)
+    }
+
+    /// Ask the server to stop the transcode backing a play session. A
+    /// rebuild abandons its old PlaySessionId without a stopped report, so
+    /// without this the orphaned ffmpeg runs until the server's idle
+    /// timeout. Fire-and-forget: failure only delays that cleanup.
+    public func stopEncoding(playSessionId: String) async {
+        _ = try? await sdkClient.send(Paths.stopEncodingProcess(
+            deviceID: configuration.deviceID,
+            playSessionID: playSessionId,
+        ))
     }
 
     public func reportPlaybackStart(

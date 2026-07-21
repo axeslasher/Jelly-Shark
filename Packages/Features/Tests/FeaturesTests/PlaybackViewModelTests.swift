@@ -209,7 +209,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try playbackInfoResult.get()
     }
 
-    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
+    func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        assumeInterposer _: Bool,
+    ) throws -> StreamResolution {
         // Route through the real decision rule so tests exercise it end to end
         let method = source.playMethod(
             audioStreamIndex: parameters.audioStreamIndex,
@@ -628,8 +632,11 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(client.playbackExtrasRequests == ["movie-1"])
-        // No extras (the default stub) → the plain resolved stream plays
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        // No extras (the default stub) → the loopback server still
+        // interposes: subtitle-playlist rewriting needs it on every HLS
+        // session, trickplay or not
+        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        await viewModel.stop()
     }
 
     @Test("HLS playback with trickplay data interposes the loopback master")
@@ -649,7 +656,7 @@ struct PlaybackViewModelTests {
         await viewModel.stop()
     }
 
-    @Test("A playback-extras fetch failure degrades to the plain stream")
+    @Test("A playback-extras fetch failure still interposes, minus thumbnails")
     func playbackExtrasFailureDegrades() async {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .failure(APIError.generic("boom"))
@@ -658,7 +665,8 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        await viewModel.stop()
     }
 
     @Test("Direct play never interposes, even with trickplay data")
@@ -676,7 +684,7 @@ struct PlaybackViewModelTests {
         #expect(assetURL(of: viewModel)?.host() == "example.com")
     }
 
-    @Test("A manifest keyed to other media sources degrades to the plain stream")
+    @Test("A manifest keyed to other media sources interposes without thumbnails")
     func mismatchedManifestSourceDegrades() async {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .success(PlaybackExtras(
@@ -690,7 +698,8 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        await viewModel.stop()
     }
 
     // MARK: - Chapters & metadata
@@ -901,25 +910,40 @@ struct PlaybackViewModelTests {
         )
     }
 
-    @Test("start() seeds the server's default subtitle selection")
-    func startSeedsDefaultSubtitle() async {
+    @Test("A text default is not seeded — AVKit owns text subtitles")
+    func startLeavesTextDefaultToAVKit() async {
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
 
-        #expect(viewModel.selectedSubtitleStreamIndex == 2)
-        #expect(client.streamResolutions[0].parameters.subtitleStreamIndex == 2)
-        // Delivering the default subtitle needs HLS even on a
-        // direct-play-capable source
-        #expect(client.streamResolutions[0].playMethod == .directStream)
+        // The master advertises the rendition DEFAULT=YES; AVKit plus the
+        // viewer's system caption preference decide auto-on natively, and
+        // reconciliation adopts whatever it picks
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(client.streamResolutions[0].parameters.subtitleStreamIndex == Int??.some(nil))
+        #expect(client.streamResolutions[0].playMethod == .directPlay)
+    }
+
+    @Test("A burn-in default is seeded — only the app can honor it")
+    func startSeedsBurnInDefault() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.streamResolutions[0].parameters.subtitleStreamIndex == 4)
+        // Burn-in composites server-side, which is always a transcode
+        #expect(client.streamResolutions[0].playMethod == .transcode)
     }
 
     @Test("An explicit off is not re-seeded by rebuilds")
     func explicitOffSurvivesRebuild() async {
         let client = MockJellyfinClient()
-        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
 
         await viewModel.start()
@@ -937,7 +961,7 @@ struct PlaybackViewModelTests {
     @Test("Autoplay resets the selection so the next episode reseeds")
     func autoplayReseedsDefaultSubtitle() async {
         let client = MockJellyfinClient()
-        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
         let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
         let viewModel = PlaybackViewModel(client: client, item: episode)
@@ -947,7 +971,7 @@ struct PlaybackViewModelTests {
         await viewModel.handlePlaybackEnded()
         await viewModel.playNextEpisodeNow()
 
-        #expect(viewModel.selectedSubtitleStreamIndex == 2)
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
     }
 
     @Test("Selecting an image subtitle transcodes for burn-in and rebuilds out of it")
@@ -972,65 +996,13 @@ struct PlaybackViewModelTests {
         #expect(client.startReports[2].playMethod == .directPlay)
     }
 
-    @Test("A matched text target switches in place without a rebuild")
-    func cheapSwitchBetweenTextTracks() async throws {
-        let client = MockJellyfinClient()
-        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 2)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
-
-        await viewModel.start()
-        #expect(client.streamResolutions[0].playMethod == .directStream)
-        let playerBefore = viewModel.player
-
-        // Simulate the legible group having loaded from the master playlist
-        viewModel.legibleOptions = [
-            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
-            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
-        ]
-
-        await viewModel.selectSubtitleStream(index: 3)
-
-        #expect(viewModel.selectedSubtitleStreamIndex == 3)
-        #expect(client.playbackInfoRequests.count == 1)
-        #expect(client.streamResolutions.count == 1)
-        #expect(client.startReports.count == 1)
-        #expect(viewModel.player === playerBefore)
-        let lastProgress = try #require(client.progressReports.last)
-        #expect(lastProgress.subtitleStreamIndex == 3)
-        #expect(lastProgress.playMethod == .directStream)
-    }
-
-    @Test("Turning a text subtitle off rebuilds even with renditions loaded")
-    func turningOffRebuildsDespiteLoadedRenditions() async {
-        let client = MockJellyfinClient()
-        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 2)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
-
-        await viewModel.start()
-        let playerBefore = viewModel.player
-
-        // Same state as the in-place switch above: the master playlist's
-        // renditions have loaded, so a *switch* would be free
-        viewModel.legibleOptions = [
-            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
-            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
-        ]
-
-        await viewModel.selectSubtitleStream(index: nil)
-
-        // Turning off is not a rendition change but a stream-shape change:
-        // TS/H.264 → fMP4 (HEVC passthrough). Deselecting in place would
-        // strand the session on the subtitle-shaped stream — for an HEVC
-        // source, a needless H.264 re-encode with no way back to passthrough.
-        #expect(viewModel.selectedSubtitleStreamIndex == nil)
-        #expect(client.streamResolutions.count == 2)
-        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == Int??.some(nil))
-        #expect(client.startReports.count == 2)
-        #expect(viewModel.player !== playerBefore)
-    }
-
-    @Test("Turning a text subtitle on rebuilds even with renditions loaded")
-    func turningOnRebuildsDespiteLoadedRenditions() async {
+    @Test("Every app-menu subtitle change rebuilds the stream")
+    func appMenuSubtitleChangesRebuild() async {
+        // Post-#90 the app's menu carries only burn-in tracks, and burning
+        // a track in or out of the video is always a server-side re-encode.
+        // There is no in-place path left — and none may be added that calls
+        // select(nil) on the legible group, which latches AVKit's subtitle
+        // display off process-wide (#91).
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: nil)
         let viewModel = PlaybackViewModel(client: client, item: makeMovie())
@@ -1038,77 +1010,13 @@ struct PlaybackViewModelTests {
         await viewModel.start()
         let playerBefore = viewModel.player
 
-        // The master playlist advertises text renditions even on an
-        // unsubtitled stream, so the target genuinely matches — selecting
-        // it in place here is exactly the 10s-late-cues trap
-        viewModel.legibleOptions = [
-            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
-            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
-        ]
+        await viewModel.selectSubtitleStream(index: 4)
 
-        await viewModel.selectSubtitleStream(index: 2)
-
-        #expect(viewModel.selectedSubtitleStreamIndex == 2)
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.playbackInfoRequests.count == 2)
         #expect(client.streamResolutions.count == 2)
-        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 2)
+        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 4)
         #expect(client.startReports.count == 2)
         #expect(viewModel.player !== playerBefore)
-    }
-
-    @Test("An unmatched text target falls back to a rebuild")
-    func unmatchedTargetRebuilds() async {
-        let client = MockJellyfinClient()
-        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 2)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
-
-        await viewModel.start()
-        // Legible options never loaded (empty) → no confident match
-        await viewModel.selectSubtitleStream(index: 3)
-
-        #expect(client.playbackInfoRequests.count == 2)
-        #expect(client.playbackInfoRequests[1].subtitleStreamIndex == 3)
-        #expect(client.startReports.count == 2)
-    }
-
-    @Test("In-place switch decision matrix")
-    func canSwitchInPlaceMatrix() {
-        typealias Decide = (Bool, PlayMethod, Bool, Bool, Bool, Bool) -> Bool
-        let decide: Decide = PlaybackViewModel.canSwitchSubtitlesInPlace
-
-        // (hasPlayer, currentMethod, sessionUsesBurnIn, targetRequiresBurnIn,
-        //  currentlyDeliveringTextSubtitle, targetMatched)
-        #expect(decide(true, .directStream, false, false, true, true)) // text → text in HLS
-        #expect(decide(true, .transcode, false, false, true, true)) // text → text while transcoding
-        #expect(!decide(false, .directStream, false, false, true, true)) // no player
-        #expect(!decide(true, .directPlay, false, false, true, true)) // direct play has no renditions
-        #expect(!decide(true, .transcode, true, false, true, true)) // leaving burn-in blocks on its own
-        #expect(!decide(true, .directStream, false, true, true, true)) // entering burn-in
-        #expect(!decide(true, .directStream, false, false, true, false)) // unmatched target
-    }
-
-    @Test("Crossing between subtitled and unsubtitled always rebuilds")
-    func crossingSubtitleStateRebuilds() {
-        func decide(currentlyDelivering: Bool, targetMatched: Bool) -> Bool {
-            PlaybackViewModel.canSwitchSubtitlesInPlace(
-                hasPlayer: true,
-                currentMethod: .directStream,
-                sessionUsesBurnIn: false,
-                targetRequiresBurnIn: false,
-                currentlyDeliveringTextSubtitle: currentlyDelivering,
-                targetMatched: targetMatched,
-            )
-        }
-
-        // Turning off: the stream it would leave behind is TS/H.264, and an
-        // unsubtitled session belongs on fMP4 (HEVC passthrough)
-        #expect(!decide(currentlyDelivering: true, targetMatched: false))
-
-        // Turning on: the crucial case. The master playlist advertises text
-        // renditions even when none was requested, so the target *does* match
-        // on an unsubtitled fMP4 stream — and selecting it there puts every
-        // cue 10s late, because Jellyfin's VTT is mapped to MPEGTS:900000.
-        // Matching is therefore not sufficient; the stream must already be
-        // carrying a subtitle.
-        #expect(!decide(currentlyDelivering: false, targetMatched: true))
     }
 }

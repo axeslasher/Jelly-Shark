@@ -84,7 +84,17 @@
                     ))
                 }
 
-                if !subtitleStreams.isEmpty {
+                // AVKit's native picker owns text subtitles — they are HLS
+                // renditions it can select directly, correctly timed via the
+                // loopback server's playlist rewrite (#90). The app's menu
+                // carries only what AVKit structurally cannot: burn-in
+                // (image) tracks, which exist solely as a server-side
+                // re-encode. When a source has none, no app menu appears at
+                // all. The app must never programmatically clear the legible
+                // selection: that latches AVKit's subtitle display off
+                // process-wide (#91).
+                let burnInStreams = subtitleStreams.filter { !$0.isTextSubtitleStream }
+                if !burnInStreams.isEmpty {
                     var actions: [UIAction] = [
                         UIAction(
                             title: "Off",
@@ -93,33 +103,27 @@
                             onSelectSubtitle(nil)
                         },
                     ]
-                    actions += subtitleStreams.map { stream in
+                    actions += burnInStreams.map { stream in
                         UIAction(
-                            title: stream.displayTitle ?? stream.language ?? "Track \(stream.index)",
+                            title: BurnInSubtitleLabel.title(for: stream),
                             state: stream.index == selectedSubtitleIndex ? .on : .off,
                         ) { _ in
                             onSelectSubtitle(stream.index)
                         }
                     }
+                    // Distinct name and glyph from AVKit's own picker (which
+                    // renders the captions bubble): at transport-bar size the
+                    // two menus are told apart by icon alone
                     menus.append(UIMenu(
-                        title: "Subtitles",
-                        image: UIImage(systemName: "captions.bubble"),
+                        title: "Image Subtitles",
+                        subtitle: "Requires reload",
+                        image: UIImage(systemName: "text.below.photo"),
                         options: [.singleSelection],
                         children: actions,
                     ))
                 }
 
                 controller.transportBarCustomMenuItems = menus
-
-                // The system's own subtitle picker is deliberately left in
-                // place. Suppressing it (`allowedSubtitleOptionLanguages = []`)
-                // was tried and reverted: AVKit owns subtitle *display* state
-                // independently of the player item's media selection, so the
-                // app's menu cannot actually take ownership — clearing the
-                // legible selection latches AVKit off, and a later
-                // programmatic re-select does not clear that latch. The
-                // system picker is then the only way to get subtitles back,
-                // which makes suppressing it strictly worse. See #91.
             #endif
         }
     }

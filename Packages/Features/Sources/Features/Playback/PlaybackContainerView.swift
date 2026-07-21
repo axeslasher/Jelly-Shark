@@ -94,15 +94,17 @@ public struct PlaybackContainerView: View {
     }
 
     #if os(visionOS)
-        /// Audio and subtitle pickers for visionOS, where AVKit's
-        /// tvOS-only transport-bar menus are unavailable. The system
-        /// player's own media-selection button can't be used either: it
-        /// only sees AVPlayer-level tracks, not server-side options like
-        /// burn-in subtitles or alternate audio that need a stream rebuild.
+        /// Audio and burn-in subtitle pickers for visionOS, where AVKit's
+        /// tvOS-only transport-bar menus are unavailable. Text subtitles are
+        /// deliberately absent: they are HLS renditions the system player's
+        /// own media-selection UI handles natively (#90). This overlay
+        /// carries only the server-side options AVKit cannot see — alternate
+        /// audio and burn-in subtitle tracks, which need a stream rebuild.
         @ViewBuilder
         private var trackSelectionMenu: some View {
             let audioStreams = viewModel.mediaSource?.audioStreams ?? []
-            let subtitleStreams = viewModel.mediaSource?.subtitleStreams ?? []
+            let subtitleStreams = (viewModel.mediaSource?.subtitleStreams ?? [])
+                .filter { !$0.isTextSubtitleStream }
 
             if audioStreams.count > 1 || !subtitleStreams.isEmpty {
                 Menu {
@@ -115,10 +117,10 @@ public struct PlaybackContainerView: View {
                         .pickerStyle(.menu)
                     }
                     if !subtitleStreams.isEmpty {
-                        Picker("Subtitles", selection: subtitleSelection) {
+                        Picker("Image Subtitles", selection: subtitleSelection) {
                             Text("Off").tag(Int?.none)
                             ForEach(subtitleStreams, id: \.index) { stream in
-                                Text(trackTitle(for: stream)).tag(Int?.some(stream.index))
+                                Text(BurnInSubtitleLabel.title(for: stream)).tag(Int?.some(stream.index))
                             }
                         }
                         .pickerStyle(.menu)

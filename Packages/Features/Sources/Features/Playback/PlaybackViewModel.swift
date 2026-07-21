@@ -72,7 +72,22 @@ public final class PlaybackViewModel {
     /// private) so tests can seed it without a real HLS asset.
     var legibleOptions: [LegibleOption] = []
 
+    /// The current item's audible media-selection group, once loaded
+    private var audibleGroup: AVMediaSelectionGroup?
+
+    /// The audible group's options distilled for matching. Internal (not
+    /// private) so tests can seed it without a real asset.
+    var audibleOptions: [AudibleOption] = []
+
     private var mediaSelectionTask: Task<Void, Never>?
+
+    /// Whether native-picker reconciliation may run. Disarmed on every new
+    /// player item until the selection groups and their distilled options
+    /// have loaded — a change notification arriving before then could not
+    /// be mapped to a Jellyfin stream index.
+    private var mediaSelectionReconcileArmed = false
+
+    private var mediaSelectionObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
@@ -117,11 +132,17 @@ public final class PlaybackViewModel {
             if selectedAudioStreamIndex == nil {
                 selectedAudioStreamIndex = source.defaultAudioStreamIndex
             }
-            // Seed the server-side default subtitle (forced tracks, user
-            // profile preferences) only on fresh starts: an explicit "off"
-            // mid-session must survive rebuilds, and autoplay resets the
-            // selection before calling start() so each episode reseeds.
-            if selectedSubtitleStreamIndex == nil {
+            // Seed the server default only when it is a burn-in track — the
+            // app is the only thing that can honor those (the server must
+            // composite them). A text default is deliberately NOT seeded:
+            // AVKit owns text subtitles, and the master playlist's
+            // DEFAULT=YES flag plus the viewer's system caption preference
+            // decide auto-on natively. Seeding only on fresh starts keeps an
+            // explicit mid-session "off" alive across rebuilds; autoplay
+            // resets the selection so each episode reseeds.
+            if selectedSubtitleStreamIndex == nil,
+               source.subtitleRequiresBurnIn(at: source.defaultSubtitleStreamIndex)
+            {
                 selectedSubtitleStreamIndex = source.defaultSubtitleStreamIndex
             }
 
@@ -175,8 +196,8 @@ public final class PlaybackViewModel {
 
         player?.pause()
         player = nil
-        trickplayServer?.stop()
-        trickplayServer = nil
+        localServer?.stop()
+        localServer = nil
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
 
@@ -191,6 +212,12 @@ public final class PlaybackViewModel {
             Self.logger.info("[report] stopped ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
         } catch {
             Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+        }
+
+        // Belt to the stopped report's suspenders: release the transcode
+        // explicitly (Swiftfin does the same on teardown)
+        if playMethod != .directPlay, let playSessionId {
+            await client.stopEncoding(playSessionId: playSessionId)
         }
     }
 
@@ -210,88 +237,21 @@ public final class PlaybackViewModel {
 
     /// Switch subtitles to the given stream index, or nil to turn them off.
     ///
-    /// Switching between two text subtitles is a media selection on the
-    /// current player item — the loaded master playlist already carries both
-    /// renditions, so no reload is needed. Everything else rebuilds: entering
-    /// or leaving burn-in, targets missing from the loaded renditions, and
-    /// turning subtitles on or off at all, which changes the segment
-    /// container and video codec together.
+    /// This is the app-menu path, and post-#90 the app's menu carries only
+    /// burn-in (image) tracks — AVKit's native picker owns text subtitles,
+    /// selecting renditions directly on the player item, and the view model
+    /// merely observes it (`reconcileMediaSelection`). Every change made
+    /// here is a stream-shape change (a track burned in or out of the video
+    /// by the server), so it always rebuilds.
+    ///
+    /// Critically, no path ever calls `select(nil)` on the legible group
+    /// anymore: AVKit latches its subtitle display off when it observes
+    /// that clear, and the latch is process-global — it survives full
+    /// recreation of the item, player, and player view controller (#91).
     public func selectSubtitleStream(index: Int?) async {
         guard index != selectedSubtitleStreamIndex else { return }
-
-        let targetMatched = mediaSource?.subtitleStream(at: index)
-            .flatMap { SubtitleOptionMatcher.match($0, in: legibleOptions) } != nil
-        let canSwitchInPlace = Self.canSwitchSubtitlesInPlace(
-            hasPlayer: player != nil,
-            currentMethod: playMethod,
-            sessionUsesBurnIn: sessionUsesBurnIn,
-            targetRequiresBurnIn: mediaSource?.subtitleRequiresBurnIn(at: index) ?? false,
-            currentlyDeliveringTextSubtitle: selectedSubtitleStreamIndex != nil,
-            targetMatched: targetMatched,
-        )
-
         selectedSubtitleStreamIndex = index
-
-        if canSwitchInPlace {
-            if applySubtitleSelection() {
-                Self.logger.info("""
-                [subtitle] in-place switch "\(self.item.name, privacy: .public)" → \
-                \(index.map(String.init) ?? "off", privacy: .public)
-                """)
-            } else {
-                // canSwitchInPlace implied a live item, but the player can
-                // be torn down between the decision and the selection
-                Self.logger.warning("""
-                [subtitle] in-place switch to \
-                \(index.map(String.init) ?? "off", privacy: .public) had no live item to apply to
-                """)
-            }
-            // Keep the server's session view current without a fake start
-            // report: progress now carries the stream indices
-            await reportProgress()
-        } else {
-            await rebuildStream()
-        }
-    }
-
-    /// Whether a subtitle change can be satisfied by selecting a rendition
-    /// on the current player item instead of rebuilding the stream.
-    /// Pure so the decision matrix is unit-testable without AVPlayer.
-    ///
-    /// Only a switch *between* text subtitles qualifies — the stream must be
-    /// carrying one before and after. Its shape depends on that: TS/H.264
-    /// while a WebVTT rendition rides along (Jellyfin's VTT carries
-    /// `X-TIMESTAMP-MAP=MPEGTS:900000`, which only lines up against TS), and
-    /// fMP4 (HEVC passthrough allowed) otherwise. Turning a subtitle on or
-    /// off crosses that line, and the loaded player item cannot express the
-    /// change.
-    ///
-    /// `targetMatched` alone is not enough to tell them apart. The master
-    /// playlist advertises every text rendition whether or not one was
-    /// requested, so a target matches even on an unsubtitled fMP4 stream —
-    /// and selecting it there renders every cue exactly 10s late. Hence the
-    /// explicit `currentlyDeliveringTextSubtitle` gate. At the call site that
-    /// parameter is merely "a subtitle index is selected" — also true of a
-    /// burned-in track; the burn-in guards below are what narrow it to text
-    /// delivery.
-    static func canSwitchSubtitlesInPlace(
-        hasPlayer: Bool,
-        currentMethod: PlayMethod,
-        sessionUsesBurnIn: Bool,
-        targetRequiresBurnIn: Bool,
-        currentlyDeliveringTextSubtitle: Bool,
-        targetMatched: Bool,
-    ) -> Bool {
-        // Direct play has no renditions to select; a burned-in track can
-        // only be added or removed by re-encoding
-        guard hasPlayer, currentMethod != .directPlay,
-              !sessionUsesBurnIn, !targetRequiresBurnIn
-        else {
-            return false
-        }
-        // Both ends must be a text subtitle: turning off never matches, and
-        // turning on has no rendition-bearing stream to switch within
-        return currentlyDeliveringTextSubtitle && targetMatched
+        await rebuildStream()
     }
 
     // MARK: - Next Episode
@@ -328,7 +288,7 @@ public final class PlaybackViewModel {
         self.player = player
 
         applyPlayerMetadata(to: playerItem)
-        loadLegibleOptions(for: playerItem)
+        loadMediaSelectionOptions(for: playerItem)
 
         if resumeTicks > 0 {
             let seconds = PlaybackTicks.seconds(fromTicks: resumeTicks)
@@ -360,6 +320,7 @@ public final class PlaybackViewModel {
         startProgressReporting()
         observeTimeControlStatus(of: player)
         observeEnd(of: playerItem)
+        observeMediaSelection(of: playerItem)
     }
 
     /// The trickplay resolution for the current item's media source, when the
@@ -371,8 +332,9 @@ public final class PlaybackViewModel {
     private var chapters: [Chapter] = []
 
     /// The loopback server interposing the master playlist for the current
-    /// player item; nil when playing without seek previews
-    private var trickplayServer: TrickplayLocalServer?
+    /// player item (trickplay + subtitle-playlist rewriting); nil on direct
+    /// play or when the listener could not start
+    private var localServer: PlaybackLocalServer?
 
     /// In-flight artwork enrichment (chapter thumbnails + poster) for the
     /// current player item
@@ -487,18 +449,32 @@ public final class PlaybackViewModel {
     /// master serving the synthesized trickplay I-frame rendition for HLS
     /// sessions with seek-preview data
     private func makePlayerItem(url: URL) async -> AVPlayerItem {
-        trickplayServer?.stop()
-        trickplayServer = nil
+        localServer?.stop()
+        localServer = nil
 
-        guard playMethod != .directPlay, let info = trickplayInfo else {
+        guard playMethod != .directPlay else {
             return AVPlayerItem(url: url)
         }
 
         let itemId = item.id
         let sourceId = mediaSource?.id
         let client = client
-        let server = TrickplayLocalServer(originalMasterURL: url, info: info) { tileIndex in
-            client.trickplayTileURL(
+        let info = trickplayInfo
+        // Jellyfin advertises image (PGS) subtitle streams as renditions it
+        // cannot serve as text; the proxy drops them so AVKit's picker only
+        // offers subtitles that can actually render
+        let unservable = Set(
+            (mediaSource?.subtitleStreams ?? [])
+                .filter { !$0.isTextSubtitleStream }
+                .compactMap(\.displayTitle),
+        )
+        let server = PlaybackLocalServer(
+            originalMasterURL: url,
+            info: info,
+            unservableSubtitleNames: unservable,
+        ) { tileIndex in
+            guard let info else { return nil }
+            return client.trickplayTileURL(
                 itemId: itemId,
                 width: info.widthKey,
                 tileIndex: tileIndex,
@@ -507,9 +483,31 @@ public final class PlaybackViewModel {
         }
 
         guard let interposedURL = await server.start() else {
+            // Degraded path: nothing will strip the WebVTT timestamp map,
+            // so re-resolve with the interposer assumption off — a
+            // delivered text subtitle falls back to TS + H.264, where the
+            // map's offset aligns and cues stay correctly timed (slower for
+            // HEVC sources, but never silently 10s late)
+            Self.logger.warning("[server] loopback listener unavailable; falling back to origin delivery")
+            if let source = mediaSource,
+               let fallback = try? client.resolveStream(
+                   for: source,
+                   parameters: StreamParameters(
+                       itemId: item.id,
+                       mediaSourceId: source.id,
+                       playSessionId: playSessionId,
+                       audioStreamIndex: selectedAudioStreamIndex,
+                       subtitleStreamIndex: selectedSubtitleStreamIndex,
+                   ),
+                   assumeInterposer: false,
+               )
+            {
+                playMethod = fallback.playMethod
+                return AVPlayerItem(url: fallback.url)
+            }
             return AVPlayerItem(url: url)
         }
-        trickplayServer = server
+        localServer = server
         return AVPlayerItem(url: interposedURL)
     }
 
@@ -517,6 +515,13 @@ public final class PlaybackViewModel {
         guard player != nil else { return }
 
         let positionTicks = currentPositionTicks()
+
+        // The old session gets no stopped report (the new one sends a fresh
+        // start), so explicitly release its server-side transcode rather
+        // than leaving an orphaned ffmpeg until the idle timeout
+        if playMethod != .directPlay, let oldSession = playSessionId {
+            await client.stopEncoding(playSessionId: oldSession)
+        }
 
         progressTask?.cancel()
         removeEndObserver()
@@ -565,33 +570,73 @@ public final class PlaybackViewModel {
         }
     }
 
-    // MARK: - Subtitle Media Selection
+    // MARK: - Media Selection
 
-    /// Load the legible group of the freshly created player item so text
-    /// renditions can be selected in place. Direct play is skipped: it has
-    /// no renditions, and its embedded defaults are left to the player.
-    private func loadLegibleOptions(for playerItem: AVPlayerItem) {
+    /// Load the media-selection groups of the freshly created player item.
+    ///
+    /// The legible group backs in-place text-rendition selection, so it is
+    /// skipped on direct play (no renditions; the embedded defaults are left
+    /// to the player). The audible group exists purely for reconciling
+    /// native-picker changes (#89) and loads everywhere — a direct-played
+    /// file's embedded tracks are exactly what the native audio picker
+    /// switches behind the app's back.
+    private func loadMediaSelectionOptions(for playerItem: AVPlayerItem) {
         mediaSelectionTask?.cancel()
         legibleGroup = nil
         legibleOptions = []
-        guard playMethod != .directPlay else { return }
+        audibleGroup = nil
+        audibleOptions = []
+        mediaSelectionReconcileArmed = false
 
         mediaSelectionTask = Task { [weak self] in
-            do {
-                guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .legible) else {
-                    // Normal on a stream with no legible renditions
-                    Self.logger.debug("[subtitle] stream carries no legible group")
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                self?.legibleGroupDidLoad(group, for: playerItem)
-            } catch {
-                // The root of the subtitle pipeline: if this load fails, no
-                // rendition can ever be selected and every diagnostic
-                // downstream is unreachable, so record the cause at a
-                // persisted level
-                Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
+            await self?.loadAudibleGroup(for: playerItem)
+            if self?.playMethod != .directPlay {
+                await self?.loadLegibleGroup(for: playerItem)
             }
+            guard let self, !Task.isCancelled,
+                  self.player?.currentItem === playerItem else { return }
+            // Arm only once the groups and their distilled options are in
+            // place — a notification arriving before then could not be
+            // mapped to a stream index anyway
+            self.mediaSelectionReconcileArmed = true
+        }
+    }
+
+    private func loadAudibleGroup(for playerItem: AVPlayerItem) async {
+        do {
+            guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .audible) else {
+                Self.logger.debug("[audio] stream carries no audible group")
+                return
+            }
+            guard !Task.isCancelled, player?.currentItem === playerItem else { return }
+            audibleGroup = group
+            audibleOptions = group.options.enumerated().map { position, option in
+                AudibleOption(
+                    position: position,
+                    displayName: option.displayName,
+                    languageTag: option.extendedLanguageTag,
+                )
+            }
+        } catch {
+            Self.logger.warning("[audio] audible group load failed: \(error, privacy: .public)")
+        }
+    }
+
+    private func loadLegibleGroup(for playerItem: AVPlayerItem) async {
+        do {
+            guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .legible) else {
+                // Normal on a stream with no legible renditions
+                Self.logger.debug("[subtitle] stream carries no legible group")
+                return
+            }
+            guard !Task.isCancelled else { return }
+            legibleGroupDidLoad(group, for: playerItem)
+        } catch {
+            // The root of the subtitle pipeline: if this load fails, no
+            // rendition can ever be selected and every diagnostic
+            // downstream is unreachable, so record the cause at a
+            // persisted level
+            Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
         }
     }
 
@@ -608,48 +653,14 @@ public final class PlaybackViewModel {
             )
         }
         Self.logger.debug("[subtitle] legible options loaded: \(self.legibleOptions.count)")
-        applySubtitleSelection()
-    }
-
-    /// Point the player item's legible selection at the chosen subtitle
-    /// stream — or clear it, so an AUTOSELECT rendition can't stay active
-    /// against an explicit "off" or a burned-in track
-    /// - Returns: Whether a live player item was there to apply to
-    @discardableResult
-    private func applySubtitleSelection() -> Bool {
-        guard let legibleGroup, let playerItem = player?.currentItem else { return false }
-
-        if !sessionUsesBurnIn,
-           let target = mediaSource?.subtitleStream(at: selectedSubtitleStreamIndex),
-           let position = SubtitleOptionMatcher.match(target, in: legibleOptions),
-           legibleGroup.options.indices.contains(position)
-        {
-            playerItem.select(legibleGroup.options[position], in: legibleGroup)
-            Self.logger.debug("""
-            [subtitle] selected rendition \(position, privacy: .public) \
-            for stream \(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)
-            """)
-        } else if !sessionUsesBurnIn, let index = selectedSubtitleStreamIndex {
-            playerItem.select(nil, in: legibleGroup)
-            // A selected stream with no matching rendition is a failure, not
-            // an "off": the menu shows subtitles on while no cues render.
-            // Warning-level so a field sysdiagnose records it — .debug is not
-            // persisted to the log store
-            let target = mediaSource?.subtitleStream(at: index)
-            Self.logger.warning("""
-            [subtitle] no rendition matched stream \(index, privacy: .public) \
-            "\(target?.displayTitle ?? target?.language ?? "unknown", privacy: .public)" — \
-            subtitles will not render (options: \
-            \(self.legibleOptions.map(\.displayName).joined(separator: ", "), privacy: .public))
-            """)
-        } else {
-            playerItem.select(nil, in: legibleGroup)
-            Self.logger.debug("""
-            [subtitle] cleared rendition (deliberate off, \
-            burnIn=\(self.sessionUsesBurnIn, privacy: .public))
-            """)
-        }
-        return true
+        // Deliberately no selection is applied. AVKit owns text subtitles:
+        // its picker, the rendition's DEFAULT/AUTOSELECT flags, and the
+        // viewer's system caption preference decide what renders. The app
+        // used to select and clear here — and the clear (`select(nil)`)
+        // latched AVKit's subtitle display off process-wide, surviving full
+        // player recreation (#91). The group and options are kept solely so
+        // `reconcileMediaSelection` can map AVKit's choices back to
+        // Jellyfin stream indices for menus and reporting.
     }
 
     private func clearMediaSelectionState() {
@@ -657,6 +668,182 @@ public final class PlaybackViewModel {
         mediaSelectionTask = nil
         legibleGroup = nil
         legibleOptions = []
+        audibleGroup = nil
+        audibleOptions = []
+        mediaSelectionReconcileArmed = false
+        removeMediaSelectionObserver()
+    }
+
+    // MARK: - Native-Picker Reconciliation
+
+    /// What a reconcile pass should do with one track type's stored index
+    enum ReconcileDecision: Equatable {
+        case noChange
+        case update(Int?)
+        /// A selection exists but no stream can be confidently matched;
+        /// state is left untouched and the miss is logged
+        case unmatched
+    }
+
+    private func observeMediaSelection(of playerItem: AVPlayerItem) {
+        removeMediaSelectionObserver()
+        mediaSelectionObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.mediaSelectionDidChangeNotification,
+            object: playerItem,
+            queue: .main,
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.reconcileMediaSelection()
+            }
+        }
+    }
+
+    private func removeMediaSelectionObserver() {
+        if let mediaSelectionObserver {
+            NotificationCenter.default.removeObserver(mediaSelectionObserver)
+        }
+        mediaSelectionObserver = nil
+    }
+
+    /// Adopt a native-picker track change into view-model state.
+    ///
+    /// AVKit's transport-bar pickers flip renditions directly on the player
+    /// item, bypassing `selectAudioStream`/`selectSubtitleStream` — without
+    /// this, the app's menu checkmarks and playback reporting go stale
+    /// (#89). Reconciliation is write-only: it never selects and never
+    /// rebuilds, so the app's own programmatic selection echoes back here,
+    /// finds state already matching, and stops — no feedback cycle is
+    /// possible by construction.
+    private func reconcileMediaSelection() async {
+        guard mediaSelectionReconcileArmed,
+              let playerItem = player?.currentItem else { return }
+        let selection = playerItem.currentMediaSelection
+        var changed = false
+
+        if let group = legibleGroup {
+            let position = selection.selectedMediaOption(in: group)
+                .flatMap { group.options.firstIndex(of: $0) }
+            let decision = Self.subtitleReconcileDecision(
+                selectedPosition: position,
+                currentIndex: selectedSubtitleStreamIndex,
+                sessionUsesBurnIn: sessionUsesBurnIn,
+                streams: mediaSource?.subtitleStreams ?? [],
+                options: legibleOptions,
+            )
+            switch decision {
+            case let .update(index):
+                selectedSubtitleStreamIndex = index
+                changed = true
+                Self.logger.info("""
+                [subtitle] reconciled native selection → \
+                \(index.map(String.init) ?? "off", privacy: .public)
+                """)
+            case .unmatched:
+                Self.logger.warning("""
+                [subtitle] native selection at position \
+                \(position.map(String.init) ?? "nil", privacy: .public) \
+                matches no stream — menu and reporting may be stale
+                """)
+            case .noChange:
+                break
+            }
+        }
+
+        // A lone audible option is a muxed transcode rendition: the native
+        // picker has nothing to offer, and its metadata (displayName
+        // "Unknown", no language) matches no Jellyfin stream — reconciling
+        // it would warn on every notification for a switch nobody can make
+        if let group = audibleGroup, audibleOptions.count > 1 {
+            let option = selection.selectedMediaOption(in: group)
+                .flatMap { group.options.firstIndex(of: $0) }
+                .flatMap { position in audibleOptions.first { $0.position == position } }
+            let decision = Self.audioReconcileDecision(
+                selectedOption: option,
+                currentIndex: selectedAudioStreamIndex,
+                streams: mediaSource?.audioStreams ?? [],
+                options: audibleOptions,
+            )
+            switch decision {
+            case let .update(index):
+                // Direct write: reconcile must never route through
+                // `selectAudioStream`, which would rebuild the stream the
+                // native picker just switched in place
+                selectedAudioStreamIndex = index
+                changed = true
+                Self.logger.info("""
+                [audio] reconciled native selection → \
+                \(index.map(String.init) ?? "default", privacy: .public)
+                """)
+            case .unmatched:
+                Self.logger.warning("""
+                [audio] native selection \
+                "\(option?.displayName ?? "?", privacy: .public)" matches no \
+                stream — menu and reporting may be stale
+                """)
+            case .noChange:
+                break
+            }
+        }
+
+        // One heartbeat so the server's session view follows the switch
+        if changed {
+            await reportProgress()
+        }
+    }
+
+    /// Decide how a legible-selection change maps onto the stored subtitle
+    /// index. Pure so the matrix is unit-testable without AVPlayer.
+    static func subtitleReconcileDecision(
+        selectedPosition: Int?,
+        currentIndex: Int?,
+        sessionUsesBurnIn: Bool,
+        streams: [MediaStreamInfo],
+        options: [LegibleOption],
+    ) -> ReconcileDecision {
+        // Burn-in renders inside the video; the legible selection carries
+        // no user intent there
+        guard !sessionUsesBurnIn else { return .noChange }
+
+        guard let selectedPosition else {
+            return currentIndex == nil ? .noChange : .update(nil)
+        }
+
+        // If the stored stream already explains the rendition on screen,
+        // stop — the common echo of the app's own apply, and the safe
+        // answer when the reverse match below would be ambiguous
+        if let currentIndex,
+           let current = streams.first(where: { $0.index == currentIndex }),
+           SubtitleOptionMatcher.match(current, in: options) == selectedPosition
+        {
+            return .noChange
+        }
+
+        guard let index = SubtitleOptionMatcher.streamIndex(
+            forSelectedPosition: selectedPosition,
+            streams: streams,
+            options: options,
+        ) else { return .unmatched }
+        return index == currentIndex ? .noChange : .update(index)
+    }
+
+    /// Decide how an audible-selection change maps onto the stored audio
+    /// index. Pure so the matrix is unit-testable without AVPlayer.
+    static func audioReconcileDecision(
+        selectedOption: AudibleOption?,
+        currentIndex: Int?,
+        streams: [MediaStreamInfo],
+        options: [AudibleOption],
+    ) -> ReconcileDecision {
+        // Audio is never legitimately deselected; a nil here is a loading
+        // transient, not intent
+        guard let selectedOption else { return .noChange }
+
+        guard let index = AudioOptionMatcher.streamIndex(
+            forSelectedOption: selectedOption,
+            streams: streams,
+            options: options,
+        ) else { return .unmatched }
+        return index == currentIndex ? .noChange : .update(index)
     }
 
     /// One line per stream resolution so a play session's delivery decisions

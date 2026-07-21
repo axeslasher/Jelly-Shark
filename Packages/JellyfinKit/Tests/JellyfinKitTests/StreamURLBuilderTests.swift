@@ -36,26 +36,35 @@ struct StreamURLBuilderTests {
         try #expect(path(subtitleStreamIndex: 2, subtitleMethod: .encode) == "/Videos/item-1/master.m3u8")
     }
 
-    @Test("Video codec is forced to H.264 only when a text subtitle is delivered")
+    @Test("Video codec allows HEVC everywhere; only the degraded text path forces H.264")
     func videoCodecFollowsSubtitleDelivery() throws {
-        func codec(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod = .hls) throws -> String? {
+        func codec(
+            subtitleStreamIndex: Int?,
+            subtitleMethod: SubtitleDeliveryMethod = .hls,
+            assumeInterposer: Bool = true,
+        ) throws -> String? {
             let url = try #require(StreamURLBuilder.hlsURL(
                 serverURL: URL(string: "https://example.com")!,
                 accessToken: "token",
                 deviceId: "device",
                 parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
                 subtitleMethod: subtitleMethod,
+                assumeInterposer: assumeInterposer,
             ))
             return queryItems(of: url)["VideoCodec"]
         }
 
-        // The text-subtitle path is pinned to TS for WebVTT timing, and HEVC
-        // cannot ride in TS on Apple — so H.264 is the only workable codec,
-        // even though HEVC sources then pay a real re-encode
-        try #expect(codec(subtitleStreamIndex: 2) == "h264")
-        // Everywhere else HEVC passes through and stream-copies
+        // The loopback interposer strips the WebVTT timestamp map, so text
+        // subtitles align on fMP4 and HEVC passes through everywhere
+        try #expect(codec(subtitleStreamIndex: 2) == "hevc,h264")
         try #expect(codec(subtitleStreamIndex: nil) == "hevc,h264")
-        try #expect(codec(subtitleStreamIndex: 2, subtitleMethod: .encode) == "hevc,h264")
+        // Burn-in is always a re-encode; offering HEVC invites a software
+        // HEVC encode too slow to ever deliver segments
+        try #expect(codec(subtitleStreamIndex: 2, subtitleMethod: .encode) == "h264")
+        // Degraded path (no interposer): the map survives, so a text
+        // subtitle is pinned to TS, where only H.264 plays on Apple
+        try #expect(codec(subtitleStreamIndex: 2, assumeInterposer: false) == "h264")
+        try #expect(codec(subtitleStreamIndex: nil, assumeInterposer: false) == "hevc,h264")
     }
 
     @Test("HLS URL includes required query parameters")
@@ -156,26 +165,32 @@ struct StreamURLBuilderTests {
         #expect(url.path == "/jellyfin/Videos/item-1/Trickplay/320/1.jpg")
     }
 
-    @Test("Segment container is TS only when a text subtitle is delivered over HLS")
+    @Test("Segment container is fMP4 everywhere; only the degraded text path keeps TS")
     func segmentContainerFollowsSubtitleDelivery() throws {
-        func container(subtitleStreamIndex: Int?, subtitleMethod: SubtitleDeliveryMethod) throws -> String? {
+        func container(
+            subtitleStreamIndex: Int?,
+            subtitleMethod: SubtitleDeliveryMethod,
+            assumeInterposer: Bool = true,
+        ) throws -> String? {
             let url = try #require(StreamURLBuilder.hlsURL(
                 serverURL: URL(string: "https://example.com")!,
                 accessToken: "token",
                 deviceId: "device",
                 parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
                 subtitleMethod: subtitleMethod,
+                assumeInterposer: assumeInterposer,
             ))
             return queryItems(of: url)["SegmentContainer"]
         }
 
-        // A text subtitle as a WebVTT rendition needs TS timing alignment
-        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .hls) == "ts")
-        // No subtitle: fMP4 so HEVC video renders
+        // The interposer strips the WebVTT timestamp map, so text subtitles
+        // align on fMP4 and the container never depends on subtitle state
+        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .hls) == "mp4")
         try #expect(container(subtitleStreamIndex: nil, subtitleMethod: .hls) == "mp4")
-        // Burn-in composites into the video, leaving no rendition to time —
-        // fMP4 so the (re-encoded) HEVC still renders
         try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .encode) == "mp4")
+        // Degraded path: the map survives, so a delivered text subtitle
+        // needs TS for its timing to align
+        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .hls, assumeInterposer: false) == "ts")
     }
 
     @Test("Stream indices are omitted when nil")
@@ -209,8 +224,33 @@ struct StreamURLBuilderTests {
 
         let query = queryItems(of: url)
         #expect(query["AudioStreamIndex"] == "1")
-        #expect(query["SubtitleStreamIndex"] == "3")
+        // A text subtitle index is NOT sent on the normal path: AVKit owns
+        // text selection, the master advertises every rendition regardless,
+        // and omitting it keeps the stream shape independent of subtitles
+        #expect(query["SubtitleStreamIndex"] == nil)
         #expect(query["Tag"] == "etag-9")
+    }
+
+    @Test("The subtitle index is sent for burn-in and on the degraded path")
+    func subtitleIndexFollowsOwnership() throws {
+        func index(subtitleMethod: SubtitleDeliveryMethod, assumeInterposer: Bool) throws -> String? {
+            let url = try #require(StreamURLBuilder.hlsURL(
+                serverURL: URL(string: "https://example.com")!,
+                accessToken: "token",
+                deviceId: "device",
+                parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: 3),
+                subtitleMethod: subtitleMethod,
+                assumeInterposer: assumeInterposer,
+            ))
+            return queryItems(of: url)["SubtitleStreamIndex"]
+        }
+
+        // Burn-in: the server composites exactly this track
+        try #expect(index(subtitleMethod: .encode, assumeInterposer: true) == "3")
+        // Degraded text path: the app owns delivery, so the index rides along
+        try #expect(index(subtitleMethod: .hls, assumeInterposer: false) == "3")
+        // Normal text path: AVKit owns selection
+        try #expect(index(subtitleMethod: .hls, assumeInterposer: true) == nil)
     }
 
     @Test("Server path prefix is preserved")
