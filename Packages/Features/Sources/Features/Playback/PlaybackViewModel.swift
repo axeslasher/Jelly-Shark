@@ -454,7 +454,19 @@ public final class PlaybackViewModel {
         let sourceId = mediaSource?.id
         let client = client
         let info = trickplayInfo
-        let server = PlaybackLocalServer(originalMasterURL: url, info: info) { tileIndex in
+        // Jellyfin advertises image (PGS) subtitle streams as renditions it
+        // cannot serve as text; the proxy drops them so AVKit's picker only
+        // offers subtitles that can actually render
+        let unservable = Set(
+            (mediaSource?.subtitleStreams ?? [])
+                .filter { !$0.isTextSubtitleStream }
+                .compactMap(\.displayTitle),
+        )
+        let server = PlaybackLocalServer(
+            originalMasterURL: url,
+            info: info,
+            unservableSubtitleNames: unservable,
+        ) { tileIndex in
             guard let info else { return nil }
             return client.trickplayTileURL(
                 itemId: itemId,

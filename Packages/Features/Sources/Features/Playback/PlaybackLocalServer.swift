@@ -52,6 +52,12 @@ final class PlaybackLocalServer: @unchecked Sendable {
 
     private let originalMasterURL: URL
     private let info: TrickplayInfo?
+
+    /// Rendition NAMEs the master rewrite removes: Jellyfin advertises
+    /// image (PGS) subtitle streams as renditions it cannot serve as text,
+    /// and their NAME mirrors the stream's DisplayTitle
+    private let unservableSubtitleNames: Set<String>
+
     private let tileURL: @Sendable (Int) -> URL?
 
     /// Tile fetches ride the shared URLCache; Jellyfin serves tiles without
@@ -82,11 +88,13 @@ final class PlaybackLocalServer: @unchecked Sendable {
     init(
         originalMasterURL: URL,
         info: TrickplayInfo?,
+        unservableSubtitleNames: Set<String> = [],
         tileURL: @escaping @Sendable (Int) -> URL?,
         protocolClasses: [AnyClass]? = nil,
     ) {
         self.originalMasterURL = originalMasterURL
         self.info = info
+        self.unservableSubtitleNames = unservableSubtitleNames
         self.tileURL = tileURL
 
         let configuration = URLSessionConfiguration.default
@@ -266,6 +274,7 @@ final class PlaybackLocalServer: @unchecked Sendable {
                   iframePlaylistURI: "/iframe.m3u8",
                   info: info,
                   localSubtitleURI: { "/subs/\($0).m3u8" },
+                  dropSubtitleNames: unservableSubtitleNames,
               )
         else {
             // A media playlist where a master was expected is a

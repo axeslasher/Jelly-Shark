@@ -117,7 +117,14 @@ enum StreamURLBuilder {
         let deliversTextSubtitle = !assumeInterposer
             && subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
         let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
-        let videoCodec = deliversTextSubtitle ? "h264" : "hevc,h264"
+
+        // Burn-in never stream-copies — the server must re-encode to
+        // composite the track — and offering HEVC there invites a software
+        // HEVC encode too slow to ever deliver segments (observed on
+        // device: burn-in sessions came back hvc1 and hung at position 0
+        // indefinitely, on every item tried). H.264 encodes fast and the
+        // bitrate budget keeps quality; passthrough paths still offer HEVC.
+        let videoCodec = (deliversTextSubtitle || subtitleMethod == .encode) ? "h264" : "hevc,h264"
 
         // Append to the server URL rather than overwriting the path,
         // so servers hosted under a path prefix (e.g. /jellyfin) keep working

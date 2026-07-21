@@ -58,7 +58,9 @@ struct StreamURLBuilderTests {
         // subtitles align on fMP4 and HEVC passes through everywhere
         try #expect(codec(subtitleStreamIndex: 2) == "hevc,h264")
         try #expect(codec(subtitleStreamIndex: nil) == "hevc,h264")
-        try #expect(codec(subtitleStreamIndex: 2, subtitleMethod: .encode) == "hevc,h264")
+        // Burn-in is always a re-encode; offering HEVC invites a software
+        // HEVC encode too slow to ever deliver segments
+        try #expect(codec(subtitleStreamIndex: 2, subtitleMethod: .encode) == "h264")
         // Degraded path (no interposer): the map survives, so a text
         // subtitle is pinned to TS, where only H.264 plays on Apple
         try #expect(codec(subtitleStreamIndex: 2, assumeInterposer: false) == "h264")

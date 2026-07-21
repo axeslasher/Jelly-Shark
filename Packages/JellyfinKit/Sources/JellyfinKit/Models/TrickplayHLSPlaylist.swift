@@ -37,6 +37,10 @@ public enum TrickplayHLSPlaylist {
     ///     data still need the subtitle interposition)
     ///   - localSubtitleURI: Maps the n-th subtitle rendition to a local
     ///     route; nil leaves subtitle URIs absolutized to the origin
+    ///   - dropSubtitleNames: Rendition NAMEs to remove outright — Jellyfin
+    ///     advertises image (PGS) subtitle streams as renditions it cannot
+    ///     actually serve as text, and the rendition NAME mirrors the
+    ///     stream's DisplayTitle, so the caller can identify them
     /// - Returns: The rewrite, or nil if the input is not a master playlist
     ///   and therefore cannot be interposed on
     public static func rewriteMaster(
@@ -45,6 +49,7 @@ public enum TrickplayHLSPlaylist {
         iframePlaylistURI: String,
         info: TrickplayInfo?,
         localSubtitleURI: ((Int) -> String)? = nil,
+        dropSubtitleNames: Set<String> = [],
     ) -> MasterRewrite? {
         // Only a master playlist can carry `EXT-X-I-FRAME-STREAM-INF`.
         // Appending one to a media playlist yields a file with both media-
@@ -63,8 +68,14 @@ public enum TrickplayHLSPlaylist {
             // Drop the Roku-style image rendition: AVFoundation ignores it at
             // best, and the synthesized I-frame rendition replaces it
             .filter { !$0.hasPrefix("#EXT-X-IMAGE-STREAM-INF") }
-            .map { rawLine -> String in
+            .compactMap { rawLine -> String? in
                 let line = String(rawLine)
+                if isSubtitleRendition(line),
+                   let name = attributeValue("NAME", in: line),
+                   dropSubtitleNames.contains(name)
+                {
+                    return nil
+                }
                 if let localSubtitleURI, isSubtitleRendition(line),
                    let range = uriAttributeRange(in: line),
                    let origin = URL(string: String(line[range]), relativeTo: originalURL)
@@ -106,6 +117,17 @@ public enum TrickplayHLSPlaylist {
 
     private static func isSubtitleRendition(_ line: String) -> Bool {
         line.hasPrefix("#EXT-X-MEDIA") && line.contains("TYPE=SUBTITLES")
+    }
+
+    /// The value inside the quotes of a `NAME="..."`-style attribute
+    private static func attributeValue(_ name: String, in line: String) -> String? {
+        guard let attribute = line.range(of: name + "=\"") else {
+            return nil
+        }
+        guard let closingQuote = line.range(of: "\"", range: attribute.upperBound ..< line.endIndex) else {
+            return nil
+        }
+        return String(line[attribute.upperBound ..< closingQuote.lowerBound])
     }
 
     /// The I-frame media playlist for a trickplay resolution: one discrete

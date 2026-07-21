@@ -236,6 +236,29 @@ struct TrickplayHLSPlaylistTests {
         ) == nil)
     }
 
+    @Test("Renditions named for unservable streams are dropped")
+    func dropsUnservableSubtitleRenditions() throws {
+        let result = try #require(TrickplayHLSPlaylist.rewriteMaster(
+            """
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English - Default - PGSSUB",URI="item-1/Subtitles/2/subtitles.m3u8?ApiKey=tok"
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English - SUBRIP",URI="item-1/Subtitles/3/subtitles.m3u8?ApiKey=tok"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES="subs"
+            main.m3u8
+            """,
+            originalURL: masterURL,
+            iframePlaylistURI: "custom://iframe.m3u8",
+            info: nil,
+            localSubtitleURI: { "/subs/\($0).m3u8" },
+            dropSubtitleNames: ["English - Default - PGSSUB"],
+        ))
+        #expect(!result.playlist.contains("PGSSUB"))
+        // The surviving text rendition takes local index 0
+        #expect(result.playlist.contains("NAME=\"English - SUBRIP\",URI=\"/subs/0.m3u8\""))
+        #expect(result.subtitleOriginURLs.count == 1)
+        #expect(result.subtitleOriginURLs[0].absoluteString.contains("/Subtitles/3/"))
+    }
+
     @Test("Stream-inf lines gain CLOSED-CAPTIONS=NONE when unspecified")
     func stampsClosedCaptionsNone() throws {
         let rewritten = try rewrite(
