@@ -105,15 +105,19 @@
                     ]
                     actions += burnInStreams.map { stream in
                         UIAction(
-                            title: stream.displayTitle ?? stream.language ?? "Track \(stream.index)",
+                            title: BurnInSubtitleLabel.title(for: stream),
                             state: stream.index == selectedSubtitleIndex ? .on : .off,
                         ) { _ in
                             onSelectSubtitle(stream.index)
                         }
                     }
+                    // Distinct name and glyph from AVKit's own picker (which
+                    // renders the captions bubble): at transport-bar size the
+                    // two menus are told apart by icon alone
                     menus.append(UIMenu(
-                        title: "Subtitles",
-                        image: UIImage(systemName: "captions.bubble"),
+                        title: "Image Subtitles",
+                        subtitle: "Requires reload",
+                        image: UIImage(systemName: "text.below.photo"),
                         options: [.singleSelection],
                         children: actions,
                     ))

@@ -117,10 +117,10 @@ public struct PlaybackContainerView: View {
                         .pickerStyle(.menu)
                     }
                     if !subtitleStreams.isEmpty {
-                        Picker("Subtitles", selection: subtitleSelection) {
+                        Picker("Image Subtitles", selection: subtitleSelection) {
                             Text("Off").tag(Int?.none)
                             ForEach(subtitleStreams, id: \.index) { stream in
-                                Text(trackTitle(for: stream)).tag(Int?.some(stream.index))
+                                Text(BurnInSubtitleLabel.title(for: stream)).tag(Int?.some(stream.index))
                             }
                         }
                         .pickerStyle(.menu)
