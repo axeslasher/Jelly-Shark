@@ -72,7 +72,23 @@ public final class PlaybackViewModel {
     /// private) so tests can seed it without a real HLS asset.
     var legibleOptions: [LegibleOption] = []
 
+    /// The current item's audible media-selection group, once loaded
+    private var audibleGroup: AVMediaSelectionGroup?
+
+    /// The audible group's options distilled for matching. Internal (not
+    /// private) so tests can seed it without a real asset.
+    var audibleOptions: [AudibleOption] = []
+
     private var mediaSelectionTask: Task<Void, Never>?
+
+    /// Whether native-picker reconciliation may run. Disarmed on every new
+    /// player item until the app's own initial selection pass completes:
+    /// AVFoundation announces its own default picks while the item loads,
+    /// and adopting those as user intent would feed them back into
+    /// `applySubtitleSelection` against an explicit "off".
+    private var mediaSelectionReconcileArmed = false
+
+    private var mediaSelectionObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
@@ -328,7 +344,7 @@ public final class PlaybackViewModel {
         self.player = player
 
         applyPlayerMetadata(to: playerItem)
-        loadLegibleOptions(for: playerItem)
+        loadMediaSelectionOptions(for: playerItem)
 
         if resumeTicks > 0 {
             let seconds = PlaybackTicks.seconds(fromTicks: resumeTicks)
@@ -360,6 +376,7 @@ public final class PlaybackViewModel {
         startProgressReporting()
         observeTimeControlStatus(of: player)
         observeEnd(of: playerItem)
+        observeMediaSelection(of: playerItem)
     }
 
     /// The trickplay resolution for the current item's media source, when the
@@ -565,33 +582,74 @@ public final class PlaybackViewModel {
         }
     }
 
-    // MARK: - Subtitle Media Selection
+    // MARK: - Media Selection
 
-    /// Load the legible group of the freshly created player item so text
-    /// renditions can be selected in place. Direct play is skipped: it has
-    /// no renditions, and its embedded defaults are left to the player.
-    private func loadLegibleOptions(for playerItem: AVPlayerItem) {
+    /// Load the media-selection groups of the freshly created player item.
+    ///
+    /// The legible group backs in-place text-rendition selection, so it is
+    /// skipped on direct play (no renditions; the embedded defaults are left
+    /// to the player). The audible group exists purely for reconciling
+    /// native-picker changes (#89) and loads everywhere — a direct-played
+    /// file's embedded tracks are exactly what the native audio picker
+    /// switches behind the app's back.
+    private func loadMediaSelectionOptions(for playerItem: AVPlayerItem) {
         mediaSelectionTask?.cancel()
         legibleGroup = nil
         legibleOptions = []
-        guard playMethod != .directPlay else { return }
+        audibleGroup = nil
+        audibleOptions = []
+        mediaSelectionReconcileArmed = false
 
         mediaSelectionTask = Task { [weak self] in
-            do {
-                guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .legible) else {
-                    // Normal on a stream with no legible renditions
-                    Self.logger.debug("[subtitle] stream carries no legible group")
-                    return
-                }
-                guard !Task.isCancelled else { return }
-                self?.legibleGroupDidLoad(group, for: playerItem)
-            } catch {
-                // The root of the subtitle pipeline: if this load fails, no
-                // rendition can ever be selected and every diagnostic
-                // downstream is unreachable, so record the cause at a
-                // persisted level
-                Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
+            await self?.loadAudibleGroup(for: playerItem)
+            if self?.playMethod != .directPlay {
+                await self?.loadLegibleGroup(for: playerItem)
             }
+            guard let self, !Task.isCancelled,
+                  self.player?.currentItem === playerItem else { return }
+            // Arm only once the app's own selection has been applied
+            // (`legibleGroupDidLoad` → `applySubtitleSelection`); earlier
+            // change notifications are AVFoundation's default picks, not
+            // user intent
+            self.mediaSelectionReconcileArmed = true
+        }
+    }
+
+    private func loadAudibleGroup(for playerItem: AVPlayerItem) async {
+        do {
+            guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .audible) else {
+                Self.logger.debug("[audio] stream carries no audible group")
+                return
+            }
+            guard !Task.isCancelled, player?.currentItem === playerItem else { return }
+            audibleGroup = group
+            audibleOptions = group.options.enumerated().map { position, option in
+                AudibleOption(
+                    position: position,
+                    displayName: option.displayName,
+                    languageTag: option.extendedLanguageTag,
+                )
+            }
+        } catch {
+            Self.logger.warning("[audio] audible group load failed: \(error, privacy: .public)")
+        }
+    }
+
+    private func loadLegibleGroup(for playerItem: AVPlayerItem) async {
+        do {
+            guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .legible) else {
+                // Normal on a stream with no legible renditions
+                Self.logger.debug("[subtitle] stream carries no legible group")
+                return
+            }
+            guard !Task.isCancelled else { return }
+            legibleGroupDidLoad(group, for: playerItem)
+        } catch {
+            // The root of the subtitle pipeline: if this load fails, no
+            // rendition can ever be selected and every diagnostic
+            // downstream is unreachable, so record the cause at a
+            // persisted level
+            Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
         }
     }
 
@@ -657,6 +715,182 @@ public final class PlaybackViewModel {
         mediaSelectionTask = nil
         legibleGroup = nil
         legibleOptions = []
+        audibleGroup = nil
+        audibleOptions = []
+        mediaSelectionReconcileArmed = false
+        removeMediaSelectionObserver()
+    }
+
+    // MARK: - Native-Picker Reconciliation
+
+    /// What a reconcile pass should do with one track type's stored index
+    enum ReconcileDecision: Equatable {
+        case noChange
+        case update(Int?)
+        /// A selection exists but no stream can be confidently matched;
+        /// state is left untouched and the miss is logged
+        case unmatched
+    }
+
+    private func observeMediaSelection(of playerItem: AVPlayerItem) {
+        removeMediaSelectionObserver()
+        mediaSelectionObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.mediaSelectionDidChangeNotification,
+            object: playerItem,
+            queue: .main,
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.reconcileMediaSelection()
+            }
+        }
+    }
+
+    private func removeMediaSelectionObserver() {
+        if let mediaSelectionObserver {
+            NotificationCenter.default.removeObserver(mediaSelectionObserver)
+        }
+        mediaSelectionObserver = nil
+    }
+
+    /// Adopt a native-picker track change into view-model state.
+    ///
+    /// AVKit's transport-bar pickers flip renditions directly on the player
+    /// item, bypassing `selectAudioStream`/`selectSubtitleStream` — without
+    /// this, the app's menu checkmarks and playback reporting go stale
+    /// (#89). Reconciliation is write-only: it never selects and never
+    /// rebuilds, so the app's own programmatic selection echoes back here,
+    /// finds state already matching, and stops — no feedback cycle is
+    /// possible by construction.
+    private func reconcileMediaSelection() async {
+        guard mediaSelectionReconcileArmed,
+              let playerItem = player?.currentItem else { return }
+        let selection = playerItem.currentMediaSelection
+        var changed = false
+
+        if let group = legibleGroup {
+            let position = selection.selectedMediaOption(in: group)
+                .flatMap { group.options.firstIndex(of: $0) }
+            let decision = Self.subtitleReconcileDecision(
+                selectedPosition: position,
+                currentIndex: selectedSubtitleStreamIndex,
+                sessionUsesBurnIn: sessionUsesBurnIn,
+                streams: mediaSource?.subtitleStreams ?? [],
+                options: legibleOptions,
+            )
+            switch decision {
+            case let .update(index):
+                selectedSubtitleStreamIndex = index
+                changed = true
+                Self.logger.info("""
+                [subtitle] reconciled native selection → \
+                \(index.map(String.init) ?? "off", privacy: .public)
+                """)
+            case .unmatched:
+                Self.logger.warning("""
+                [subtitle] native selection at position \
+                \(position.map(String.init) ?? "nil", privacy: .public) \
+                matches no stream — menu and reporting may be stale
+                """)
+            case .noChange:
+                break
+            }
+        }
+
+        // A lone audible option is a muxed transcode rendition: the native
+        // picker has nothing to offer, and its metadata (displayName
+        // "Unknown", no language) matches no Jellyfin stream — reconciling
+        // it would warn on every notification for a switch nobody can make
+        if let group = audibleGroup, audibleOptions.count > 1 {
+            let option = selection.selectedMediaOption(in: group)
+                .flatMap { group.options.firstIndex(of: $0) }
+                .flatMap { position in audibleOptions.first { $0.position == position } }
+            let decision = Self.audioReconcileDecision(
+                selectedOption: option,
+                currentIndex: selectedAudioStreamIndex,
+                streams: mediaSource?.audioStreams ?? [],
+                options: audibleOptions,
+            )
+            switch decision {
+            case let .update(index):
+                // Direct write: reconcile must never route through
+                // `selectAudioStream`, which would rebuild the stream the
+                // native picker just switched in place
+                selectedAudioStreamIndex = index
+                changed = true
+                Self.logger.info("""
+                [audio] reconciled native selection → \
+                \(index.map(String.init) ?? "default", privacy: .public)
+                """)
+            case .unmatched:
+                Self.logger.warning("""
+                [audio] native selection \
+                "\(option?.displayName ?? "?", privacy: .public)" matches no \
+                stream — menu and reporting may be stale
+                """)
+            case .noChange:
+                break
+            }
+        }
+
+        // One heartbeat so the server's session view follows the switch
+        if changed {
+            await reportProgress()
+        }
+    }
+
+    /// Decide how a legible-selection change maps onto the stored subtitle
+    /// index. Pure so the matrix is unit-testable without AVPlayer.
+    static func subtitleReconcileDecision(
+        selectedPosition: Int?,
+        currentIndex: Int?,
+        sessionUsesBurnIn: Bool,
+        streams: [MediaStreamInfo],
+        options: [LegibleOption],
+    ) -> ReconcileDecision {
+        // Burn-in renders inside the video; the legible selection carries
+        // no user intent there
+        guard !sessionUsesBurnIn else { return .noChange }
+
+        guard let selectedPosition else {
+            return currentIndex == nil ? .noChange : .update(nil)
+        }
+
+        // If the stored stream already explains the rendition on screen,
+        // stop — the common echo of the app's own apply, and the safe
+        // answer when the reverse match below would be ambiguous
+        if let currentIndex,
+           let current = streams.first(where: { $0.index == currentIndex }),
+           SubtitleOptionMatcher.match(current, in: options) == selectedPosition
+        {
+            return .noChange
+        }
+
+        guard let index = SubtitleOptionMatcher.streamIndex(
+            forSelectedPosition: selectedPosition,
+            streams: streams,
+            options: options,
+        ) else { return .unmatched }
+        return index == currentIndex ? .noChange : .update(index)
+    }
+
+    /// Decide how an audible-selection change maps onto the stored audio
+    /// index. Pure so the matrix is unit-testable without AVPlayer.
+    static func audioReconcileDecision(
+        selectedOption: AudibleOption?,
+        currentIndex: Int?,
+        streams: [MediaStreamInfo],
+        options: [AudibleOption],
+    ) -> ReconcileDecision {
+        // Audio is never legitimately deselected; a nil here is a loading
+        // transient, not intent
+        guard let selectedOption else { return .noChange }
+
+        guard let index = AudioOptionMatcher.streamIndex(
+            forSelectedOption: selectedOption,
+            streams: streams,
+            options: options,
+        ) else { return .unmatched }
+        return index == currentIndex ? .noChange : .update(index)
     }
 
     /// One line per stream resolution so a play session's delivery decisions
