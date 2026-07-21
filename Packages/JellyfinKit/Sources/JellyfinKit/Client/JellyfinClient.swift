@@ -305,6 +305,11 @@ public extension JellyfinClientProtocol {
     func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
         try resolveStream(for: source, parameters: parameters, assumeInterposer: true)
     }
+
+    /// Tear down the server-side transcode for a play session. Default
+    /// no-op so conformances that never transcode need not care; the real
+    /// client sends `DELETE /Videos/ActiveEncodings`.
+    func stopEncoding(playSessionId _: String) async {}
 }
 
 /// Image types available from Jellyfin
@@ -962,6 +967,17 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         return StreamResolution(url: url, playMethod: method)
+    }
+
+    /// Ask the server to stop the transcode backing a play session. A
+    /// rebuild abandons its old PlaySessionId without a stopped report, so
+    /// without this the orphaned ffmpeg runs until the server's idle
+    /// timeout. Fire-and-forget: failure only delays that cleanup.
+    public func stopEncoding(playSessionId: String) async {
+        _ = try? await sdkClient.send(Paths.stopEncodingProcess(
+            deviceID: configuration.deviceID,
+            playSessionID: playSessionId,
+        ))
     }
 
     public func reportPlaybackStart(

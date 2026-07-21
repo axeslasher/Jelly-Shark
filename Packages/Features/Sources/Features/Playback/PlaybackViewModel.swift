@@ -213,6 +213,12 @@ public final class PlaybackViewModel {
         } catch {
             Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
         }
+
+        // Belt to the stopped report's suspenders: release the transcode
+        // explicitly (Swiftfin does the same on teardown)
+        if playMethod != .directPlay, let playSessionId {
+            await client.stopEncoding(playSessionId: playSessionId)
+        }
     }
 
     /// Headshot URL for the player's cast tab (the view has no client access)
@@ -509,6 +515,13 @@ public final class PlaybackViewModel {
         guard player != nil else { return }
 
         let positionTicks = currentPositionTicks()
+
+        // The old session gets no stopped report (the new one sends a fresh
+        // start), so explicitly release its server-side transcode rather
+        // than leaving an orphaned ffmpeg until the idle timeout
+        if playMethod != .directPlay, let oldSession = playSessionId {
+            await client.stopEncoding(playSessionId: oldSession)
+        }
 
         progressTask?.cancel()
         removeEndObserver()
