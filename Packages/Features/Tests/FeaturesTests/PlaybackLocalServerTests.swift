@@ -53,16 +53,22 @@ private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate {
 // the subtitle cases depend on it persisting across two sequential requests
 @Suite(.serialized)
 struct PlaybackLocalServerTests {
-    private let originURL = URL(string: "https://origin.example/Videos/item-1/master.m3u8")!
+    /// The fMP4/HEVC path: the WebVTT timestamp map is stripped for zero-based
+    /// fMP4 timing. The container query is what PlaybackLocalServer reads to
+    /// decide whether to strip.
+    private let originURL = URL(string: "https://origin.example/Videos/item-1/master.m3u8?SegmentContainer=mp4")!
+
+    /// The TS/H.264 path: the map aligns against TS PTS and must be kept.
+    private let originURLTS = URL(string: "https://origin.example/Videos/item-1/master.m3u8?SegmentContainer=ts")!
 
     private let sampleInfo = TrickplayInfo(
         widthKey: 320, thumbnailWidth: 320, thumbnailHeight: 180,
         columns: 10, rows: 10, intervalMilliseconds: 10000, thumbnailCount: 60,
     )
 
-    private func makeServer(info: TrickplayInfo?) -> PlaybackLocalServer {
+    private func makeServer(info: TrickplayInfo?, masterURL: URL? = nil) -> PlaybackLocalServer {
         PlaybackLocalServer(
-            originalMasterURL: originURL,
+            originalMasterURL: masterURL ?? originURL,
             info: info,
             tileURL: { _ in nil },
             protocolClasses: [StubOriginProtocol.self],
@@ -152,6 +158,36 @@ struct PlaybackLocalServerTests {
             "https://origin.example/Videos/item-1/item-1/source-1/Subtitles/2/stream.vtt?"
                 + "CopyTimestamps=true&StartPositionTicks=0&EndPositionTicks=300000000&ApiKey=tok",
         ))
+    }
+
+    @Test("On the TS/H.264 path the subtitle time map is kept, not stripped")
+    func subtitlePlaylistKeepsTimeMapOnTS() async throws {
+        StubOriginProtocol.responses = [
+            "master.m3u8": Data("""
+            #EXTM3U
+            #EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="item-1/source-1/Subtitles/2/subtitles.m3u8?SegmentLength=30&ApiKey=tok",LANGUAGE="eng"
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,SUBTITLES="subs"
+            main.m3u8
+            """.utf8),
+            "subtitles.m3u8": Data("""
+            #EXTM3U
+            #EXT-X-TARGETDURATION:30
+            #EXT-X-PLAYLIST-TYPE:VOD
+            #EXTINF:30,
+            stream.vtt?CopyTimestamps=true&AddVttTimeMap=true&StartPositionTicks=0&EndPositionTicks=300000000&ApiKey=tok
+            #EXT-X-ENDLIST
+            """.utf8),
+        ]
+
+        let server = makeServer(info: nil, masterURL: originURLTS)
+        defer { server.stop() }
+        let localURL = try #require(await server.start())
+
+        _ = try await get("master.m3u8", from: localURL)
+        let (subsData, _) = try await get("subs/0.m3u8", from: localURL)
+        let subs = String(decoding: subsData, as: UTF8.self)
+        // On TS the map lines cues up; stripping it would push them 10s early
+        #expect(subs.contains("AddVttTimeMap=true"))
     }
 
     @Test("A failed subtitle playlist fetch answers 502")

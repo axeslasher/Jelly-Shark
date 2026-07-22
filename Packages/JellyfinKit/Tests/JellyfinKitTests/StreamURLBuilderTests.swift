@@ -36,10 +36,11 @@ struct StreamURLBuilderTests {
         try #expect(path(subtitleStreamIndex: 2, subtitleMethod: .encode) == "/Videos/item-1/master.m3u8")
     }
 
-    @Test("Video codec allows HEVC everywhere; only the degraded text path forces H.264")
-    func videoCodecFollowsSubtitleDelivery() throws {
+    @Test("Video codec is H.264 except HEVC passthrough")
+    func videoCodecFollowsSourceCodec() throws {
         func codec(
-            subtitleStreamIndex: Int?,
+            sourceVideoCodec: String?,
+            subtitleStreamIndex: Int? = nil,
             subtitleMethod: SubtitleDeliveryMethod = .hls,
             assumeInterposer: Bool = true,
         ) throws -> String? {
@@ -50,21 +51,27 @@ struct StreamURLBuilderTests {
                 parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
                 subtitleMethod: subtitleMethod,
                 assumeInterposer: assumeInterposer,
+                sourceVideoCodec: sourceVideoCodec,
             ))
             return queryItems(of: url)["VideoCodec"]
         }
 
-        // The loopback interposer strips the WebVTT timestamp map, so text
-        // subtitles align on fMP4 and HEVC passes through everywhere
-        try #expect(codec(subtitleStreamIndex: 2) == "hevc,h264")
-        try #expect(codec(subtitleStreamIndex: nil) == "hevc,h264")
-        // Burn-in is always a re-encode; offering HEVC invites a software
-        // HEVC encode too slow to ever deliver segments
-        try #expect(codec(subtitleStreamIndex: 2, subtitleMethod: .encode) == "h264")
-        // Degraded path (no interposer): the map survives, so a text
-        // subtitle is pinned to TS, where only H.264 plays on Apple
-        try #expect(codec(subtitleStreamIndex: 2, assumeInterposer: false) == "h264")
-        try #expect(codec(subtitleStreamIndex: nil, assumeInterposer: false) == "hevc,h264")
+        // HEVC passes through in fMP4 (Apple decodes HEVC only from fMP4);
+        // both codec spellings the server may report are treated as HEVC
+        try #expect(codec(sourceVideoCodec: "hevc") == "hevc,h264")
+        try #expect(codec(sourceVideoCodec: "h265") == "hevc,h264")
+        try #expect(codec(sourceVideoCodec: "hevc", subtitleStreamIndex: 2) == "hevc,h264")
+        // H.264 and other/unknown codecs stream as H.264 in TS (a copy for
+        // H.264), whose segments don't trigger the fMP4 copy skip
+        try #expect(codec(sourceVideoCodec: "h264") == "h264")
+        try #expect(codec(sourceVideoCodec: nil) == "h264")
+        // Burn-in is always a re-encode to H.264, even for an HEVC source
+        try #expect(codec(sourceVideoCodec: "hevc", subtitleStreamIndex: 2, subtitleMethod: .encode) == "h264")
+        // Degraded path (no interposer) + text subtitle on HEVC: pinned to
+        // H.264/TS so the WebVTT map aligns without stripping
+        try #expect(codec(sourceVideoCodec: "hevc", subtitleStreamIndex: 2, assumeInterposer: false) == "h264")
+        // ...but HEVC with no subtitle on the degraded path still passes through
+        try #expect(codec(sourceVideoCodec: "hevc", assumeInterposer: false) == "hevc,h264")
     }
 
     @Test("HLS URL includes required query parameters")
@@ -78,6 +85,7 @@ struct StreamURLBuilderTests {
                 mediaSourceId: "source-1",
                 playSessionId: "session-1",
             ),
+            sourceVideoCodec: "hevc",
         ))
 
         let query = queryItems(of: url)
@@ -85,10 +93,10 @@ struct StreamURLBuilderTests {
         #expect(query["DeviceId"] == "device-abc")
         #expect(query["MediaSourceId"] == "source-1")
         #expect(query["PlaySessionId"] == "session-1")
+        // An HEVC source passes through in fMP4 (Apple decodes HEVC only from
+        // fMP4 segments, never MPEG-TS — audio-over-black otherwise)
         #expect(query["VideoCodec"] == "hevc,h264")
         #expect(query["AudioCodec"] == "aac,ac3,eac3")
-        // fMP4 when no text subtitle rides along: Apple decodes HEVC only
-        // from fMP4 segments, never MPEG-TS (audio-over-black otherwise)
         #expect(query["SegmentContainer"] == "mp4")
         #expect(query["SubtitleMethod"] == "Hls")
         #expect(query["VideoBitrate"] == String(JellyfinClient.maxStreamingBitrate - StreamURLBuilder.audioBitrate))
@@ -165,11 +173,12 @@ struct StreamURLBuilderTests {
         #expect(url.path == "/jellyfin/Videos/item-1/Trickplay/320/1.jpg")
     }
 
-    @Test("Segment container is fMP4 everywhere; only the degraded text path keeps TS")
-    func segmentContainerFollowsSubtitleDelivery() throws {
+    @Test("Segment container is TS except HEVC passthrough (fMP4)")
+    func segmentContainerFollowsSourceCodec() throws {
         func container(
-            subtitleStreamIndex: Int?,
-            subtitleMethod: SubtitleDeliveryMethod,
+            sourceVideoCodec: String?,
+            subtitleStreamIndex: Int? = nil,
+            subtitleMethod: SubtitleDeliveryMethod = .hls,
             assumeInterposer: Bool = true,
         ) throws -> String? {
             let url = try #require(StreamURLBuilder.hlsURL(
@@ -179,18 +188,23 @@ struct StreamURLBuilderTests {
                 parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
                 subtitleMethod: subtitleMethod,
                 assumeInterposer: assumeInterposer,
+                sourceVideoCodec: sourceVideoCodec,
             ))
             return queryItems(of: url)["SegmentContainer"]
         }
 
-        // The interposer strips the WebVTT timestamp map, so text subtitles
-        // align on fMP4 and the container never depends on subtitle state
-        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .hls) == "mp4")
-        try #expect(container(subtitleStreamIndex: nil, subtitleMethod: .hls) == "mp4")
-        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .encode) == "mp4")
-        // Degraded path: the map survives, so a delivered text subtitle
-        // needs TS for its timing to align
-        try #expect(container(subtitleStreamIndex: 2, subtitleMethod: .hls, assumeInterposer: false) == "ts")
+        // HEVC needs fMP4; that fMP4 stream-copy is what still skips (tracked
+        // separately), but fMP4 is the only container Apple decodes HEVC from
+        try #expect(container(sourceVideoCodec: "hevc") == "mp4")
+        try #expect(container(sourceVideoCodec: "h265") == "mp4")
+        try #expect(container(sourceVideoCodec: "hevc", subtitleStreamIndex: 2) == "mp4")
+        // H.264 (and unknown) use TS, whose copy segments cleanly — fixes the skip
+        try #expect(container(sourceVideoCodec: "h264") == "ts")
+        try #expect(container(sourceVideoCodec: nil) == "ts")
+        // Burn-in re-encodes to H.264, delivered in TS
+        try #expect(container(sourceVideoCodec: "hevc", subtitleStreamIndex: 2, subtitleMethod: .encode) == "ts")
+        // Degraded HEVC + text subtitle: TS so the WebVTT map aligns untouched
+        try #expect(container(sourceVideoCodec: "hevc", subtitleStreamIndex: 2, assumeInterposer: false) == "ts")
     }
 
     @Test("Stream indices are omitted when nil")

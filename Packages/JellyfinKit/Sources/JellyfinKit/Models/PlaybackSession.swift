@@ -30,6 +30,10 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
     /// Container format (e.g., "mkv", "mp4")
     public let container: String?
 
+    /// Codec of the primary video stream (e.g., "hevc", "h264"), used to pick
+    /// the HLS segment container (HEVC → fMP4, else → TS)
+    public let videoCodec: String?
+
     /// Whether the source can be played directly without server processing
     public let supportsDirectPlay: Bool
 
@@ -63,6 +67,7 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
     public init(
         id: String,
         container: String? = nil,
+        videoCodec: String? = nil,
         supportsDirectPlay: Bool = false,
         supportsDirectStream: Bool = false,
         supportsTranscoding: Bool = false,
@@ -76,6 +81,7 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
     ) {
         self.id = id
         self.container = container
+        self.videoCodec = videoCodec
         self.supportsDirectPlay = supportsDirectPlay
         self.supportsDirectStream = supportsDirectStream
         self.supportsTranscoding = supportsTranscoding

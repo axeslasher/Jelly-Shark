@@ -958,6 +958,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 parameters: parameters,
                 subtitleMethod: source.subtitleRequiresBurnIn(at: parameters.subtitleStreamIndex) ? .encode : .hls,
                 assumeInterposer: assumeInterposer,
+                sourceVideoCodec: source.videoCodec,
                 eTag: source.eTag,
             )
         }
