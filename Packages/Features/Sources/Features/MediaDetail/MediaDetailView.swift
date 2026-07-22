@@ -2,6 +2,33 @@ import DesignSystem
 import JellyfinKit
 import SwiftUI
 
+/// Title + SF Symbol for the hero Play button on plain (movie / episode)
+/// pages — the series and collection labels are computed separately.
+///
+/// `playedOverride` is the optimistic watched toggle. Marking watched *or*
+/// unwatched clears the server-side resume position, so a pending override
+/// supersedes the item's stored progress: watched reads "Replay" (with the
+/// circular-arrow icon the played shelf badge uses), unwatched drops straight
+/// to "Play" (never a stale "Resume"). Absent an override, a fully-watched
+/// item still reads "Replay", an in-progress one "Resume".
+enum HeroPlayLabel {
+    static func label(
+        playedOverride: Bool?,
+        played: Bool,
+        hasProgress: Bool,
+    ) -> (title: String, systemImage: String) {
+        let replay = (title: "Replay", systemImage: "arrow.counterclockwise")
+        let play = (title: "Play", systemImage: "play.fill")
+        if let playedOverride {
+            return playedOverride ? replay : play
+        }
+        if played {
+            return replay
+        }
+        return hasProgress ? (title: "Resume", systemImage: "play.fill") : play
+    }
+}
+
 /// Detail view for a media item.
 ///
 /// Mirrors `HomeView`'s hero treatment: a full-bleed backdrop that melts into the
@@ -73,6 +100,12 @@ public struct MediaDetailView: View {
 
     @State private var isPresentingOverview = false
 
+    /// Optimistic watched state for the hero's own item, owned here because
+    /// two views must agree on it: the hero's eye toggle (which writes it) and
+    /// the Play-button label below (which reads it for "Watch Again" / "Play").
+    /// `nil` until the user taps; reverted by the hero on a failed server call.
+    @State private var heroPlayedOverride: Bool?
+
     let item: MediaItem
 
     public init(item: MediaItem) {
@@ -113,24 +146,29 @@ public struct MediaDetailView: View {
         }
     }
 
-    /// Play-button title: series pages name their target episode
-    /// ("Resume S2E4"), collection pages their target movie ("Play Jaws 2");
-    /// everything else keeps plain Play/Resume.
-    private var playButtonTitle: String {
+    /// Play-button title + icon: series pages name their target episode
+    /// ("Resume S2E4"), collection pages their target movie ("Play Jaws 2") —
+    /// both keep the play glyph; everything else is Play / Resume / Replay
+    /// (see `HeroPlayLabel`), where Replay swaps in the circular-arrow icon.
+    private var playButtonLabel: (title: String, systemImage: String) {
         switch item.type {
         case .series:
-            guard let episode = playableItem, episode.type == .episode else { return "Play" }
+            guard let episode = playableItem, episode.type == .episode else { return ("Play", "play.fill") }
             let verb = episode.hasProgress ? "Resume" : "Play"
-            return episode.episodeCode.map { "\(verb) \($0)" } ?? verb
+            return (episode.episodeCode.map { "\(verb) \($0)" } ?? verb, "play.fill")
         case .boxSet:
             // Movie titles get long; a positional label reads better on the
             // button. "Play Next" only while the collection is genuinely in
             // progress — untouched or fully watched both restart at the top.
             let watchedCount = viewModel.collectionItems.count { $0.userData?.played ?? false }
             let inProgress = watchedCount > 0 && watchedCount < viewModel.collectionItems.count
-            return inProgress ? "Play Next" : "Play First"
+            return (inProgress ? "Play Next" : "Play First", "play.fill")
         default:
-            return displayItem.hasProgress ? "Resume" : "Play"
+            return HeroPlayLabel.label(
+                playedOverride: heroPlayedOverride,
+                played: displayItem.userData?.played ?? false,
+                hasProgress: displayItem.hasProgress,
+            )
         }
     }
 
@@ -146,10 +184,12 @@ public struct MediaDetailView: View {
                     directors: viewModel.directors,
                     topCast: viewModel.topCast,
                     yearSpanOverride: collectionYearSpan,
-                    playTitle: playButtonTitle,
+                    playTitle: playButtonLabel.title,
+                    playIcon: playButtonLabel.systemImage,
                     playTarget: playableItem,
                     playbackItem: $playbackItem,
                     isPresentingOverview: $isPresentingOverview,
+                    playedOverride: $heroPlayedOverride,
                 )
                 // Drift the hero lockup as it scrolls, in lockstep with the
                 // backdrop's melt/dim/blur. Offset only — no opacity fade: fading
