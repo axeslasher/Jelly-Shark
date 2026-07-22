@@ -13,13 +13,16 @@ import SwiftUI
 ///
 /// Focus choreography (tvOS): the shelf pre-parks on the most relevant episode
 /// (`initialEpisodeId` — the same next-up logic as the hero Play button), and
-/// the anchor row starts invisible (opacity-0 controls are unfocusable on
-/// tvOS, and the row only becomes a focus section once revealed, so the hidden
-/// row can't dead-end the engine's search). The first entry into the region is
-/// steered programmatically onto that episode via `isRegionFocused`; the
-/// anchors then fade/slide in and stay. Entering the pill row from outside is
-/// redirected to the *active* season's pill rather than the geometrically
-/// nearest one, and re-focusing the active pill doesn't re-anchor the shelf.
+/// the anchor row starts hidden — its reveal is driven by the owner's scroll
+/// progress (`showsSeasonAnchors`), which is 0 while the hero owns the screen.
+/// Hidden means unfocusable (opacity-0 controls can't take focus on tvOS, and
+/// the row only becomes a focus section once revealed), so the engine's first
+/// press down from the hero can't dead-end on the pills; the region entry is
+/// steered programmatically onto the parked episode via `isRegionFocused`. Once
+/// the scroll commits to the shelves the anchors fade/slide in. Entering the
+/// pill row from outside is redirected to the *active* season's pill rather than
+/// the geometrically nearest one, and re-focusing the active pill doesn't
+/// re-anchor the shelf.
 ///
 /// Renders nothing while the series' seasons haven't loaded, so the call site
 /// can mount it unconditionally.
@@ -37,6 +40,12 @@ struct EpisodesSection: View {
     /// region tracking). The rising edge steers first focus onto the parked
     /// episode — the engine can't be trusted to find it on its own.
     let isRegionFocused: Bool
+    /// Whether the season-anchor row is revealed, driven by the owner's scroll
+    /// progress (hidden while the hero owns the screen, faded in once the scroll
+    /// commits to the shelves). While hidden the row is unfocusable, so the
+    /// focus engine's first press down from the hero flows past it to the parked
+    /// episode instead of dead-ending on the pills.
+    let showsSeasonAnchors: Bool
     /// Long-press menu handlers per episode (view details / watched /
     /// favorite), built by the owner. Episode cards play on select, so the
     /// menu is the only path from here to an episode's own detail page.
@@ -62,16 +71,6 @@ struct EpisodesSection: View {
 
     /// Pending debounced anchor jump (see `onChange(of: focusedSeasonId)`).
     @State private var anchorTask: Task<Void, Never>?
-
-    // The anchor row starts hidden on tvOS (making it unfocusable) so the
-    // first press down from the hero lands on the pre-parked episode; it
-    // reveals once an episode has focus and stays. Other platforms have no
-    // focus-driven entry to choreograph, so the row is always visible there.
-    #if os(tvOS)
-        @State private var anchorsRevealed = false
-    #else
-        @State private var anchorsRevealed = true
-    #endif
 
     /// How long a pill must hold focus before the shelf anchors to it —
     /// traversing the pill row shouldn't fire a jump per pill passed through.
@@ -99,7 +98,7 @@ struct EpisodesSection: View {
                 // downward search from the hero.
                 Group {
                     #if os(tvOS)
-                        if anchorsRevealed {
+                        if showsSeasonAnchors {
                             seasonAnchors.focusSection()
                         } else {
                             seasonAnchors
@@ -108,8 +107,9 @@ struct EpisodesSection: View {
                         seasonAnchors
                     #endif
                 }
-                .opacity(anchorsRevealed ? 1 : 0)
-                .offset(y: anchorsRevealed ? 0 : SpacingTokens.md)
+                .opacity(showsSeasonAnchors ? 1 : 0)
+                .offset(y: showsSeasonAnchors ? 0 : SpacingTokens.md)
+                .animation(theme.animation, value: showsSeasonAnchors)
 
                 episodeShelf
             }
@@ -136,17 +136,13 @@ struct EpisodesSection: View {
                     scrollToSeason(seasonId)
                 }
             }
-            // Follow the scroll: an episode gaining focus hands its season
-            // the accent (in either direction) and reveals the anchor row.
+            // Follow the scroll: an episode gaining focus hands its season the
+            // accent (in either direction). The anchor row's reveal is driven by
+            // the owner's scroll progress (`showsSeasonAnchors`), not by focus.
             .onChange(of: focusedEpisodeId) { _, episodeId in
                 guard let episodeId else { return }
                 if let seasonId = episodes.first(where: { $0.id == episodeId })?.seasonId {
                     currentSeasonId = seasonId
-                }
-                if !anchorsRevealed {
-                    withAnimation(theme.animation) {
-                        anchorsRevealed = true
-                    }
                 }
             }
             // First entry into the below-fold region: steer focus onto the
@@ -155,7 +151,7 @@ struct EpisodesSection: View {
             // Post-reveal entries are left to the engine — the pills are
             // focusable by then and intercept on purpose.
             .onChange(of: isRegionFocused) { _, entered in
-                guard entered, !anchorsRevealed, focusedEpisodeId == nil else { return }
+                guard entered, !showsSeasonAnchors, focusedEpisodeId == nil else { return }
                 focusedEpisodeId = initialEpisodeId
             }
             // Pre-park the shelf on the most relevant episode (unanimated —
@@ -164,7 +160,7 @@ struct EpisodesSection: View {
             // actually in the shelf.
             .task(id: initialEpisodeId) {
                 guard let initialEpisodeId,
-                      focusedEpisodeId == nil, !anchorsRevealed,
+                      focusedEpisodeId == nil, !showsSeasonAnchors,
                       let index = episodes.firstIndex(where: { $0.id == initialEpisodeId })
                 else { return }
                 currentSeasonId = episodes[index].seasonId

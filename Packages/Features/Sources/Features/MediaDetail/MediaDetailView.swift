@@ -70,6 +70,20 @@ public struct MediaDetailView: View {
     /// toward the shelves.
     private static let heroFadeThreshold: CGFloat = 60
 
+    /// Dead-band (points) for the tvOS region snap: focus settles within this of
+    /// an anchor don't re-fire the snap, so it stops racing the focus engine's
+    /// own reveal scroll. Mirrors `HomeHeroMotion.snapSlack`.
+    private static let snapSlack: CGFloat = 24
+
+    /// How close (points) the scroll must come to `shelvesAnchor` before a
+    /// series' season-anchor row reveals. Keyed off the raw offset's *arrival at
+    /// the shelves*, not `scrollProgress` — progress saturates ~350pt in (a
+    /// distance tuned for the hero melt, far short of the shelves), so keying the
+    /// reveal to it resolves the fade mid-scroll. Arrival-keyed, the row fades in
+    /// *after* the scroll settles, like Home's Continue Watching header. Larger =
+    /// more lead before the anchor (earlier reveal).
+    private static let seasonAnchorRevealSlack: CGFloat = 120
+
     /// Which page of the detail view owns focus on tvOS: the hero lockup or the
     /// shelves below it. Scrolling there is focus-driven, so instead of letting
     /// the engine settle at whatever offset barely reveals the focused element,
@@ -89,6 +103,11 @@ public struct MediaDetailView: View {
 
     /// Handle for the two-anchor snap; only written on tvOS.
     @State private var scrollPosition = ScrollPosition(edge: .top)
+
+    /// Raw scroll offset in points (`contentOffset.y + contentInsets.top`, 0 at
+    /// rest). The tvOS region snap's guards compare against this — `scrollProgress`
+    /// saturates at 1 well before the shelves anchor, so it can't drive them.
+    @State private var scrollOffset: CGFloat = 0
 
     /// Pending region snap (see `onChange(of: focusedRegion)`).
     @State private var regionSnapTask: Task<Void, Never>?
@@ -126,6 +145,14 @@ public struct MediaDetailView: View {
         let years = viewModel.collectionItems.compactMap(\.productionYear)
         guard let first = years.min(), let last = years.max() else { return nil }
         return first == last ? String(first) : "\(first)–\(last)"
+    }
+
+    /// Where the shelves' top parks on the tvOS region snap: the hero is exactly
+    /// one container tall, so the shelves start one container plus one section gap
+    /// into the content. Kept as MediaDetail's own expression (small inset,
+    /// full-viewport hero) — not Home's fractional formula.
+    private var shelvesAnchor: CGFloat {
+        snapMetrics.containerHeight + SpacingTokens.sectionSpacing - snapMetrics.topInset
     }
 
     /// What the hero Play button actually plays: series pages resolve to the
@@ -229,6 +256,16 @@ public struct MediaDetailView: View {
                         // pre-parks there and first focus lands on it.
                         initialEpisodeId: (viewModel.nextUpEpisode ?? viewModel.episodes.first)?.id,
                         isRegionFocused: focusedRegion == .shelves,
+                        // Hidden while the hero owns the screen (so tvOS focus
+                        // flows past it to the parked episode); fades in only once
+                        // the scroll has essentially arrived at the shelves anchor
+                        // — a beat *after* the settle, not mid-melt. The
+                        // containerHeight gate suppresses a false reveal before the
+                        // geometry is measured (which would also skip the steer).
+                        // Still a derived Bool, so the section re-renders only when
+                        // it flips.
+                        showsSeasonAnchors: snapMetrics.containerHeight > 0
+                            && scrollOffset >= shelvesAnchor - Self.seasonAnchorRevealSlack,
                         menu: { episode in
                             ShelfMenuHandlers(
                                 viewDetails: { pushMediaDetail?(episode) },
@@ -247,7 +284,16 @@ public struct MediaDetailView: View {
                     // Renders nothing for other types.
                     CollectionItemsSection(items: viewModel.collectionItems)
 
-                    CastShelfSection(people: displayItem.people ?? [])
+                    // On pages with no leading section (movies, episodes) the
+                    // focus engine can skip the cast row and grab More Like This;
+                    // steer first focus onto cast. Gated off when episodes or a
+                    // collection lead (those steer their own first focus), so the
+                    // two steers never both fire.
+                    CastShelfSection(
+                        people: displayItem.people ?? [],
+                        isRegionFocused: focusedRegion == .shelves,
+                        steersFirstFocus: viewModel.seasons.isEmpty && viewModel.collectionItems.isEmpty,
+                    )
 
                     SimilarItemsSection(items: viewModel.similarItems)
 
@@ -258,105 +304,99 @@ public struct MediaDetailView: View {
                 .focused($focusedRegion, equals: .shelves)
                 #endif
             }
-            // Each section (hero, shelves) becomes a snap target so the scroll
-            // settles aligned to a section boundary rather than mid-content.
-            // Paired with the viewport-tall hero, this gives a clean hero →
-            // shelves snap.
+            // No scroll-target snapping: the content scrolls freely, matching
+            // HomeView. `.viewAligned` here (with only a hero + shelves target)
+            // is what made the page fight the user — flinging blew past the
+            // cast/similar rows and every settle snapped to one of two anchors.
+            // visionOS now scrolls continuously; tvOS keeps its own focus-region
+            // snap below (by geometry, never `scrollTargetLayout`, which hijacks
+            // Siri Remote pans on hardware).
             //
-            // tvOS is fully excluded from the scroll-target machinery: on
-            // hardware (Siri Remote pan gestures — a path the simulator's
-            // arrow keys never exercise) the target layout lets the pan drive
-            // the scroll view directly, blowing past focusable content with
-            // focus left behind. The tvOS focus-region snap below scrolls by
-            // geometry instead of by id, so it doesn't need the marker.
-            #if os(visionOS)
-            .scrollTargetLayout()
-            #endif
             // Bottom-only padding: a top inset would push the viewport-tall,
             // bottom-anchored hero below the fold, guaranteeing the focus engine
             // scrolls (and blurs the backdrop) the moment focus lands on Play.
             .padding(.bottom, SpacingTokens.md)
         }
         .scrollClipDisabled()
-        #if os(visionOS)
-            .scrollTargetBehavior(.viewAligned)
-        #endif
         #if os(tvOS)
-        .scrollPosition($scrollPosition)
-        // The tvOS counterpart of `.viewAligned`: when focus crosses the
-        // hero/shelves boundary, snap to that region's anchor instead of the
-        // focus engine's minimal-reveal offset. The page always reads as either
-        // "hero, perfectly framed" (progress 0, crisp backdrop) or "shelves from
-        // the top" (progress 1, dimmed wash) — never somewhere in between. When
-        // the shelves outgrow one viewport (info section, tall shelves), the
-        // focus engine still nudges further down as focus descends; this anchor
-        // only defines where the page *arrives*.
-        .onChange(of: focusedRegion) { _, region in
-            regionSnapTask?.cancel()
-            guard let region else { return }
-            regionSnapTask = Task {
-                // Let the focus engine finish its own reveal scroll (and any
-                // in-region focus steering) first, then assert the page
-                // anchor over it — otherwise the engine's settle wins the
-                // race and the page parks at an in-between offset.
-                try? await Task.sleep(for: .milliseconds(80))
-                guard !Task.isCancelled else { return }
-                withAnimation(theme.animation) {
-                    if region == .hero {
-                        scrollPosition.scrollTo(edge: .top)
-                    } else {
-                        // By geometry, not id: the hero is exactly one
-                        // container tall, so the shelves start one container
-                        // plus one section gap into the content. (Id-based
-                        // scrolls need `scrollTargetLayout`, which is what
-                        // hijacks Siri Remote pans on hardware.)
-                        scrollPosition.scrollTo(
-                            y: snapMetrics.containerHeight + SpacingTokens.sectionSpacing - snapMetrics.topInset,
-                        )
+            .scrollPosition($scrollPosition)
+            // When focus crosses the hero/shelves boundary, park the scroll at that
+            // region's anchor (by geometry, not id — id targets need
+            // `scrollTargetLayout`, which hijacks Siri Remote pans). The `snapSlack`
+            // dead-band and directional guards (mirroring HomeView) keep this from
+            // re-firing and racing the focus engine: the hero snap only pulls up when
+            // meaningfully scrolled down, and the shelves snap only ever pulls *down*
+            // to the anchor — never yanks the page back up out from under a focused
+            // row deeper in the shelves (the scroll-jack).
+            .onChange(of: focusedRegion) { _, region in
+                regionSnapTask?.cancel()
+                guard let region else { return }
+                regionSnapTask = Task {
+                    // Let the focus engine finish its own reveal scroll (and any
+                    // in-region focus steering) first, then assert the page
+                    // anchor over it — otherwise the engine's settle wins the
+                    // race and the page parks at an in-between offset.
+                    try? await Task.sleep(for: .milliseconds(80))
+                    guard !Task.isCancelled else { return }
+                    switch region {
+                    case .hero:
+                        guard scrollOffset > Self.snapSlack else { return }
+                        withAnimation(theme.animation) {
+                            scrollPosition.scrollTo(edge: .top)
+                        }
+                    case .shelves:
+                        guard scrollOffset < shelvesAnchor - Self.snapSlack else { return }
+                        withAnimation(theme.animation) {
+                            scrollPosition.scrollTo(y: shelvesAnchor)
+                        }
                     }
                 }
             }
-        }
         #endif
-        // Map the live scroll offset to 0...1 so the hero treatment animates with
-        // the scroll. `contentOffset.y + contentInsets.top` is 0 at rest and grows
-        // as the content scrolls up; no `withAnimation` here — the scroll itself
-        // provides the continuity. The threshold dead-bands small focus-engine
-        // settles so they never start the fade. Redundant writes are skipped so
-        // scrolling past the fold (where the clamp pins progress at 1) stops
-        // invalidating.
-        // Capture the geometry the tvOS shelves snap needs: the shelves' top
-        // sits one viewport-tall hero plus one section gap into the content.
-        .onScrollGeometryChange(for: ScrollSnapMetrics.self) { geometry in
-            ScrollSnapMetrics(
-                containerHeight: geometry.containerSize.height,
-                topInset: geometry.contentInsets.top,
-            )
-        } action: { _, metrics in
-            snapMetrics = metrics
-        }
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentOffset.y + geometry.contentInsets.top
-        } action: { _, offset in
-            let progress = min(max((offset - Self.heroFadeThreshold) / Self.heroFadeDistance, 0), 1)
-            if progress != scrollProgress {
-                scrollProgress = progress
+            // Map the live scroll offset to 0...1 so the hero treatment animates with
+            // the scroll. `contentOffset.y + contentInsets.top` is 0 at rest and grows
+            // as the content scrolls up; no `withAnimation` here — the scroll itself
+            // provides the continuity. The threshold dead-bands small focus-engine
+            // settles so they never start the fade. Redundant writes are skipped so
+            // scrolling past the fold (where the clamp pins progress at 1) stops
+            // invalidating.
+            // Capture the geometry the tvOS shelves snap needs: the shelves' top
+            // sits one viewport-tall hero plus one section gap into the content.
+            .onScrollGeometryChange(for: ScrollSnapMetrics.self) { geometry in
+                ScrollSnapMetrics(
+                    containerHeight: geometry.containerSize.height,
+                    topInset: geometry.contentInsets.top,
+                )
+            } action: { _, metrics in
+                snapMetrics = metrics
             }
-        }
-        .background(alignment: .top) { heroBackground }
-        .background(theme.background)
-        .task(id: item.id) {
-            viewModel.attach(client: session.client, item: item)
-            await viewModel.load()
-        }
-        .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
-            if let client = session.client {
-                PlaybackContainerView(client: client, item: target)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y + geometry.contentInsets.top
+            } action: { _, offset in
+                // Raw offset drives the tvOS region-snap guards (which compare
+                // points); keep it before the progress clamp saturates it.
+                if offset != scrollOffset {
+                    scrollOffset = offset
+                }
+                let progress = min(max((offset - Self.heroFadeThreshold) / Self.heroFadeDistance, 0), 1)
+                if progress != scrollProgress {
+                    scrollProgress = progress
+                }
             }
-        }
-        .fullScreenCover(isPresented: $isPresentingOverview) {
-            overviewOverlay
-        }
+            .background(alignment: .top) { heroBackground }
+            .background(theme.background)
+            .task(id: item.id) {
+                viewModel.attach(client: session.client, item: item)
+                await viewModel.load()
+            }
+            .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
+                if let client = session.client {
+                    PlaybackContainerView(client: client, item: target)
+                }
+            }
+            .fullScreenCover(isPresented: $isPresentingOverview) {
+                overviewOverlay
+            }
     }
 
     private var overviewOverlay: OverviewOverlay {
