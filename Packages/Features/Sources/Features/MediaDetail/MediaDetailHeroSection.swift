@@ -17,19 +17,26 @@ struct MediaDetailHeroSection: View {
     /// compute a better one — collection pages pass the span of their
     /// contents' release years ("1984–2024"). Nil falls back to the item's.
     let yearSpanOverride: String?
-    /// Play-button title, computed by the owner ("Play", "Resume",
+    /// Play-button title, computed by the owner ("Play", "Resume", "Replay",
     /// "Resume S2E4" on series pages)
     let playTitle: String
+    /// SF Symbol for the Play button, computed by the owner alongside the
+    /// title — "play.fill" for Play/Resume, "arrow.counterclockwise" for Replay.
+    let playIcon: String
     /// What the Play button plays — nil (button disabled) while a series page
     /// hasn't resolved its playable episode yet
     let playTarget: MediaItem?
     @Binding var playbackItem: MediaItem?
     @Binding var isPresentingOverview: Bool
+    /// Optimistic watched override, bound to the owner: the hero's eye toggle
+    /// writes it and the owner's Play-button label reads it, so both agree on
+    /// the pending state. While `nil`, the button reflects fetched `userData`;
+    /// a tap sets it and it reverts on a failed server call.
+    @Binding var playedOverride: Bool?
 
-    /// Optimistic local overrides for the watched / favorite toggles. While `nil`,
-    /// the buttons reflect Jellyfin's fetched `userData`; a tap sets the override
-    /// immediately and is cleared/reverted based on the server response.
-    @State private var playedOverride: Bool?
+    /// Optimistic favorite override — purely hero-local (nothing outside the
+    /// hero depends on it). While `nil` the button reflects fetched `userData`;
+    /// a tap sets it and reverts on failure.
     @State private var favoriteOverride: Bool?
 
     /// Watched state shown by the button: the pending optimistic value if any,
@@ -144,7 +151,7 @@ struct MediaDetailHeroSection: View {
             playbackItem = playTarget
         } label: {
             HStack(spacing: SpacingTokens.sm) {
-                Image(systemName: "play.fill")
+                Image(systemName: playIcon)
                 Text(playTitle)
             }
             .jsStyle(.headline)
