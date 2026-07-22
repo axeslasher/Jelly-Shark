@@ -98,33 +98,40 @@ enum StreamURLBuilder {
         parameters: StreamParameters,
         subtitleMethod: SubtitleDeliveryMethod = .hls,
         assumeInterposer: Bool = true,
+        sourceVideoCodec: String? = nil,
         maxStreamingBitrate: Int = JellyfinClient.maxStreamingBitrate,
         eTag: String? = nil,
     ) -> URL? {
-        // fMP4 always: Apple's HLS stack decodes HEVC solely from fMP4
-        // segments (HEVC in MPEG-TS yields audio over a black screen).
-        // Jellyfin's WebVTT timestamp map, which once forced TS + H.264
-        // whenever a text subtitle rode along, is stripped by
-        // PlaybackLocalServer's subtitle-playlist rewrite — so text
-        // subtitles align on fMP4 and the stream shape no longer depends on
-        // subtitle state at all (#90).
+        // The segment container is chosen by the SOURCE video codec, because
+        // Jellyfin's fMP4 stream-*copy* segments on the source's keyframes and
+        // yields irregular fragments AVPlayer hitches on (a periodic skip).
         //
-        // The one exception is the degraded path: if the loopback listener
-        // could not start, nothing strips the map, so a text subtitle falls
-        // back to the old shape — TS segments with H.264 (stream-copy for
-        // H.264 sources, a real re-encode for HEVC) — where the map's 10s
-        // offset lines up with TS PTS and cues stay correctly timed.
-        let deliversTextSubtitle = !assumeInterposer
+        // - Non-HEVC (H.264 and everything else): MPEG-TS. A TS copy segments
+        //   cleanly and plays smooth; anything the server cannot copy is
+        //   transcoded to H.264, which TS carries fine.
+        // - HEVC: fMP4. Apple's HLS stack decodes HEVC solely from fMP4 (HEVC
+        //   in MPEG-TS is audio over a black screen, #73), so HEVC stays an
+        //   fMP4 passthrough. That path still shows the copy-fragment skip; a
+        //   smooth HEVC path requires a re-encode and is tracked separately.
+        //
+        // Container also drives WebVTT timestamp-map handling: Jellyfin's map
+        // aligns cues against TS PTS, so on TS it is kept as-is while on fMP4
+        // (zero-based) PlaybackLocalServer strips it (#90). On the degraded
+        // path (no interposer to strip), an HEVC text-subtitle session is
+        // therefore pinned to TS + H.264, where the map lines up untouched.
+        // Match both spellings the server may report ("hevc" and "h265"), so
+        // an HEVC source is never mistaken for one to re-encode into H.264.
+        let sourceIsHEVC = ["hevc", "h265"].contains {
+            sourceVideoCodec?.caseInsensitiveCompare($0) == .orderedSame
+        }
+        let degradedHEVCSubtitle = sourceIsHEVC && !assumeInterposer
             && subtitleMethod == .hls && parameters.subtitleStreamIndex != nil
-        let segmentContainer = deliversTextSubtitle ? "ts" : "mp4"
-
-        // Burn-in never stream-copies — the server must re-encode to
-        // composite the track — and offering HEVC there invites a software
-        // HEVC encode too slow to ever deliver segments (observed on
-        // device: burn-in sessions came back hvc1 and hung at position 0
-        // indefinitely, on every item tried). H.264 encodes fast and the
-        // bitrate budget keeps quality; passthrough paths still offer HEVC.
-        let videoCodec = (deliversTextSubtitle || subtitleMethod == .encode) ? "h264" : "hevc,h264"
+        // Burn-in always re-encodes to composite the track; offering HEVC there
+        // invites a software HEVC encode too slow to deliver segments (observed:
+        // hvc1 burn-in sessions hung at position 0 indefinitely).
+        let hevcPassthrough = sourceIsHEVC && subtitleMethod != .encode && !degradedHEVCSubtitle
+        let segmentContainer = hevcPassthrough ? "mp4" : "ts"
+        let videoCodec = hevcPassthrough ? "hevc,h264" : "h264"
 
         // Append to the server URL rather than overwriting the path,
         // so servers hosted under a path prefix (e.g. /jellyfin) keep working

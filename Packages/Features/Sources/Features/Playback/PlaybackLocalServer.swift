@@ -20,11 +20,12 @@ import UniformTypeIdentifiers
 ///
 /// **Subtitles.** Jellyfin stamps `X-TIMESTAMP-MAP=MPEGTS:900000` onto its
 /// WebVTT via an `AddVttTimeMap=true` parameter it puts on every segment
-/// URI in the subtitle media playlist. That map only aligns against TS
-/// video segments; on fMP4 every cue lands 10s late. Stripping the
-/// parameter yields identical cues in real media time (see
-/// `SubtitleHLSPlaylist` and issue #90), so the subtitle *playlist* is
-/// proxied while the VTT bodies still stream straight from Jellyfin.
+/// URI in the subtitle media playlist. That map aligns against TS video
+/// segments; on fMP4 every cue lands 10s late. So the subtitle *playlist*
+/// is proxied (the VTT bodies still stream straight from Jellyfin) and the
+/// map is stripped only on the fMP4/HEVC path (`videoSegmentsAreFMP4`);
+/// on the TS/H.264 path it is kept so cues stay aligned (see
+/// `SubtitleHLSPlaylist` and issue #90).
 ///
 /// Routes:
 /// - `/master.m3u8`: fetches the real master from Jellyfin, absolutizes its
@@ -46,7 +47,9 @@ import UniformTypeIdentifiers
 /// refused (not a master playlist — it carries no subtitle renditions)
 /// 302s to the origin so playback survives; but a failed origin fetch of
 /// the master or a subtitle playlist answers 502, because the silent
-/// alternative is playback with subtitles rendered 10 seconds late.
+/// alternative on the fMP4/HEVC path is subtitles rendered 10 seconds late
+/// (the timestamp map is stripped only there; on TS a fallback would time
+/// correctly, but failing loudly stays uniform across both paths).
 final class PlaybackLocalServer: @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
@@ -329,7 +332,11 @@ final class PlaybackLocalServer: @unchecked Sendable {
             guard let text = String(data: data, encoding: .utf8) else {
                 throw URLError(.cannotDecodeContentData)
             }
-            let rewritten = SubtitleHLSPlaylist.rewrite(text, originalURL: origin)
+            let rewritten = SubtitleHLSPlaylist.rewrite(
+                text,
+                originalURL: origin,
+                stripTimestampMap: videoSegmentsAreFMP4,
+            )
             send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
         } catch {
             // Failing loudly drops cues on screen; a silent fallback to
@@ -337,6 +344,17 @@ final class PlaybackLocalServer: @unchecked Sendable {
             Self.logger.warning("[server] subtitle playlist \(index) failed: \(error, privacy: .public)")
             send(status: "502 Bad Gateway", on: connection)
         }
+    }
+
+    /// Whether the video segments are fMP4 (the HEVC path, `SegmentContainer=mp4`).
+    /// Only then does Jellyfin's WebVTT `X-TIMESTAMP-MAP` need stripping; on TS
+    /// (the H.264 path) the map aligns cues correctly and is kept. Derived from
+    /// the resolved master URL the session was built with.
+    private var videoSegmentsAreFMP4: Bool {
+        URLComponents(url: originalMasterURL, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name.caseInsensitiveCompare("SegmentContainer") == .orderedSame }?
+            .value?.caseInsensitiveCompare("mp4") == .orderedSame
     }
 
     // MARK: - Segments

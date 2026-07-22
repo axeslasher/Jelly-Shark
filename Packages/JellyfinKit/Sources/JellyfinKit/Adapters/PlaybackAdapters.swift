@@ -27,10 +27,12 @@ extension MediaSource {
         guard let id = info.id else { return nil }
 
         let streams = info.mediaStreams?.map { MediaStreamInfo(from: $0) } ?? []
+        let videoCodec = info.mediaStreams?.first { $0.type == .video }?.codec
 
         self.init(
             id: id,
             container: info.container,
+            videoCodec: videoCodec,
             supportsDirectPlay: info.isSupportsDirectPlay ?? false,
             supportsDirectStream: info.isSupportsDirectStream ?? false,
             supportsTranscoding: info.isSupportsTranscoding ?? false,

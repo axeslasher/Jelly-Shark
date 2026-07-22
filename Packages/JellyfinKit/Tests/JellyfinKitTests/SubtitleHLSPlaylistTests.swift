@@ -25,6 +25,7 @@ struct SubtitleHLSPlaylistTests {
             #EXT-X-ENDLIST
             """,
             originalURL: playlistURL,
+            stripTimestampMap: true,
         )
 
         #expect(!rewritten.contains("AddVttTimeMap"))
@@ -45,7 +46,7 @@ struct SubtitleHLSPlaylistTests {
         stream.vtt?AddVttTimeMap=true&ApiKey=tok
         #EXT-X-ENDLIST
         """
-        let rewritten = SubtitleHLSPlaylist.rewrite(input, originalURL: playlistURL)
+        let rewritten = SubtitleHLSPlaylist.rewrite(input, originalURL: playlistURL, stripTimestampMap: true)
 
         #expect(rewritten.hasPrefix("#EXTM3U\n#EXT-X-TARGETDURATION:30\n#EXTINF:30,\n"))
         #expect(rewritten.hasSuffix("#EXT-X-ENDLIST"))
@@ -56,9 +57,24 @@ struct SubtitleHLSPlaylistTests {
         let rewritten = SubtitleHLSPlaylist.rewrite(
             "#EXTM3U\nstream.vtt?CopyTimestamps=true&AddVttTimeMap=true&ApiKey=tok\n#EXT-X-ENDLIST",
             originalURL: playlistURL,
+            stripTimestampMap: true,
         )
         #expect(rewritten.contains("CopyTimestamps=true"))
         #expect(rewritten.contains("ApiKey=tok"))
+    }
+
+    @Test("AddVttTimeMap is kept when not stripping (TS/H.264 path)")
+    func keepsTimeMapWhenNotStripping() {
+        // On TS the video PTS carries the same offset the map encodes, so the
+        // map must survive for cues to stay aligned
+        let rewritten = SubtitleHLSPlaylist.rewrite(
+            "#EXTM3U\nstream.vtt?CopyTimestamps=true&AddVttTimeMap=true&ApiKey=tok\n#EXT-X-ENDLIST",
+            originalURL: playlistURL,
+            stripTimestampMap: false,
+        )
+        #expect(rewritten.contains("AddVttTimeMap=true"))
+        // Segment URIs are still absolutized to the origin
+        #expect(rewritten.contains("https://example.com/jellyfin/Videos/item-1/source-1/Subtitles/2/stream.vtt?"))
     }
 
     @Test("A segment without the parameter still absolutizes")
@@ -66,6 +82,7 @@ struct SubtitleHLSPlaylistTests {
         let rewritten = SubtitleHLSPlaylist.rewrite(
             "#EXTM3U\nstream.vtt?ApiKey=tok\n#EXT-X-ENDLIST",
             originalURL: playlistURL,
+            stripTimestampMap: true,
         )
         #expect(rewritten.contains(
             "https://example.com/jellyfin/Videos/item-1/source-1/Subtitles/2/stream.vtt?ApiKey=tok",
@@ -77,6 +94,7 @@ struct SubtitleHLSPlaylistTests {
         let rewritten = SubtitleHLSPlaylist.rewrite(
             "#EXTM3U\nhttps://other.example.com/seg.vtt?AddVttTimeMap=true&A=1\n#EXT-X-ENDLIST",
             originalURL: playlistURL,
+            stripTimestampMap: true,
         )
         #expect(rewritten.contains("https://other.example.com/seg.vtt?A=1"))
     }
