@@ -14,8 +14,24 @@ struct MediaDetailViewModelTests {
         MediaItem(id: id, name: id, type: .series)
     }
 
-    private func episode(_ id: String, seriesId: String) -> MediaItem {
-        MediaItem(id: id, name: id, type: .episode, seriesId: seriesId)
+    private func episode(
+        _ id: String,
+        seriesId: String,
+        seasonId: String? = nil,
+        primary: Bool = false,
+        seriesBackdrop: Bool = false,
+    ) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: id,
+            type: .episode,
+            imageTags: primary ? ImageTags(primary: "tag") : nil,
+            seriesId: seriesId,
+            seasonId: seasonId,
+            parentArtwork: seriesBackdrop
+                ? ParentArtwork(backdropItemId: seriesId, backdropImageTag: "tag")
+                : nil,
+        )
     }
 
     private func boxSet(_ id: String) -> MediaItem {
@@ -164,6 +180,161 @@ struct MediaDetailViewModelTests {
         #expect(viewModel.nextUpEpisode == nil)
         // The Play button's `episodes.first` fallback stays available.
         #expect(viewModel.episodes.map(\.id) == ["e1"])
+    }
+
+    // MARK: - Episodes
+
+    @Test("An episode loads its season shelf and series item with the detail")
+    func episodeLoadsSeasonAndSeries() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["e2"] = episode("e2", seriesId: "s1", seasonId: "season-2")
+        client.mediaItemsById["s1"] = series("s1")
+        client.episodesResult = .success([
+            episode("e1", seriesId: "s1", seasonId: "season-2"),
+            episode("e2", seriesId: "s1", seasonId: "season-2"),
+            episode("e3", seriesId: "s1", seasonId: "season-2"),
+        ])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: episode("e2", seriesId: "s1", seasonId: "season-2"))
+
+        #expect(viewModel.status == .loaded)
+        #expect(viewModel.seasonEpisodes.map(\.id) == ["e1", "e2", "e3"])
+        #expect(viewModel.seriesItem?.id == "s1")
+        #expect(client.episodesRequests == ["s1"])
+    }
+
+    @Test("A failed season fetch fails an episode page")
+    func episodeSeasonFailureFails() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["e1"] = episode("e1", seriesId: "s1")
+        client.episodesResult = .failure(APIError.networkError("offline"))
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: episode("e1", seriesId: "s1"))
+
+        #expect(viewModel.status.isFailed)
+    }
+
+    @Test("A failed series fetch is enrichment — Go to Series just stays disabled")
+    func episodeSeriesFetchIsEnrichment() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["e1"] = episode("e1", seriesId: "s1")
+        client.mediaItemFailureIds = ["s1"]
+        client.episodesResult = .success([episode("e1", seriesId: "s1")])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: episode("e1", seriesId: "s1"))
+
+        #expect(viewModel.status == .loaded)
+        #expect(viewModel.seriesItem == nil)
+        #expect(viewModel.seasonEpisodes.map(\.id) == ["e1"])
+    }
+
+    @Test("An episode page never fetches More Like This")
+    func episodeSkipsSimilar() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["e1"] = episode("e1", seriesId: "s1")
+        client.episodesResult = .success([episode("e1", seriesId: "s1")])
+        // Would populate the shelf if the fetch ran.
+        client.similarItemsResult = .success([movie("m1")])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: episode("e1", seriesId: "s1"))
+
+        #expect(viewModel.similarItems.isEmpty)
+        #expect(!viewModel.isSimilarLoading)
+    }
+
+    @Test("A post-playback refresh updates the season shelf in place")
+    func episodeRefreshUpdatesSeasonShelf() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["e1"] = episode("e1", seriesId: "s1")
+        client.episodesResult = .success([episode("e1", seriesId: "s1")])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: episode("e1", seriesId: "s1"))
+
+        var watched = episode("e1", seriesId: "s1")
+        watched.userData = UserData(played: true)
+        client.episodesResult = .success([watched])
+        await viewModel.refreshAfterPlayback()
+
+        #expect(viewModel.seasonEpisodes.first?.userData?.played == true)
+    }
+
+    @Test("An episode hero with a wide-enough primary rides its own still")
+    func episodeHeroUsesWidePrimary() async {
+        let client = MockJellyfinClient()
+        let page = episode("e1", seriesId: "s1", primary: true, seriesBackdrop: true)
+        client.mediaItemsById["e1"] = page
+        client.episodesResult = .success([page])
+        // Exactly the floor width: the rule is inclusive (≥ 1080).
+        client.imageInfosById["e1"] = [ItemImageInfo(imageType: .primary, width: 1080, height: 608)]
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: page)
+
+        #expect(viewModel.heroBackdropURL(for: page)?.path() == "/Items/e1/Images/Primary")
+    }
+
+    @Test("A narrow primary falls back to the series backdrop, never the thumb")
+    func episodeHeroNarrowPrimaryFallsBack() async {
+        let client = MockJellyfinClient()
+        let page = episode("e1", seriesId: "s1", primary: true, seriesBackdrop: true)
+        client.mediaItemsById["e1"] = page
+        client.episodesResult = .success([page])
+        client.imageInfosById["e1"] = [ItemImageInfo(imageType: .primary, width: 720, height: 405)]
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: page)
+
+        #expect(viewModel.heroBackdropURL(for: page)?.path() == "/Items/s1/Images/Backdrop")
+    }
+
+    @Test("A failed image-info lookup keeps the series backdrop")
+    func episodeHeroInfoFailureFallsBack() async {
+        let client = MockJellyfinClient()
+        let page = episode("e1", seriesId: "s1", primary: true, seriesBackdrop: true)
+        client.mediaItemsById["e1"] = page
+        client.episodesResult = .success([page])
+        client.imageInfoFailureIds = ["e1"]
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: page)
+
+        #expect(viewModel.status == .loaded)
+        #expect(viewModel.heroBackdropURL(for: page)?.path() == "/Items/s1/Images/Backdrop")
+    }
+
+    @Test("An episode without a primary never asks for image info")
+    func episodeHeroNoPrimarySkipsInfo() async {
+        let client = MockJellyfinClient()
+        let page = episode("e1", seriesId: "s1", seriesBackdrop: true)
+        client.mediaItemsById["e1"] = page
+        client.episodesResult = .success([page])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: page)
+
+        #expect(client.imageInfoRequests.isEmpty)
+        #expect(viewModel.heroBackdropURL(for: page)?.path() == "/Items/s1/Images/Backdrop")
+    }
+
+    @Test("setFavorite flips a season-shelf sibling in place")
+    func episodeSetFavoriteFlipsSibling() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["e1"] = episode("e1", seriesId: "s1")
+        client.episodesResult = .success([
+            episode("e1", seriesId: "s1"),
+            episode("e2", seriesId: "s1"),
+        ])
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: episode("e1", seriesId: "s1"))
+
+        await viewModel.setFavorite(true, for: viewModel.seasonEpisodes[1])
+        #expect(viewModel.seasonEpisodes[1].userData?.isFavorite == true)
     }
 
     // MARK: - Collections

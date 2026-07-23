@@ -10,6 +10,7 @@ import SwiftUI
 struct MediaDetailHeroSection: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
+    @Environment(\.pushMediaDetail) private var pushMediaDetail
 
     /// Owns the watched/favorite toggles' optimistic state and server calls.
     let viewModel: MediaDetailViewModel
@@ -50,6 +51,14 @@ struct MediaDetailHeroSection: View {
         return genres.prefix(3).joined(separator: " · ")
     }
 
+    /// Episode pages wear their position in the show as an eyebrow directly
+    /// over the episode title in the overview lockup — "Season 2 · Episode 4"
+    /// in the credits column's label treatment. Nil (renders nothing) for
+    /// every other type.
+    private var episodeEyebrow: String? {
+        item.seasonEpisodeText
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.lg) {
             titleTreatment
@@ -62,7 +71,7 @@ struct MediaDetailHeroSection: View {
                     }
                 }
                 VStack(alignment: .leading, spacing: SpacingTokens.md) {
-                    if item.overview != nil || item.tagline != nil {
+                    if item.overview != nil || heroTagline != nil || episodeEyebrow != nil {
                         overviewSection
                     }
                     MediaMetadataRow(
@@ -118,6 +127,10 @@ struct MediaDetailHeroSection: View {
     /// its transparent margins are cropped away, so every logo sits flush
     /// against the box's bottom-left corner instead of floating on whatever
     /// padding the artwork baked in.
+    ///
+    /// Episode pages keep the inherited series logo — the lockup reads as the
+    /// show (the eyebrow places the episode in it, and the episode's own name
+    /// headlines the overview).
     @ViewBuilder
     private var titleTreatment: some View {
         if let client = session.client, let url = client.logoURL(for: item) {
@@ -139,7 +152,10 @@ struct MediaDetailHeroSection: View {
     }
 
     private var titleText: some View {
-        Text(item.name)
+        // An episode lockup still reads as the show when the series logo is
+        // missing — the series name, not the episode title (that headlines
+        // the overview). Mirrors the Home hero.
+        Text(item.type == .episode ? (item.seriesName ?? item.name) : item.name)
             .jsStyle(.display)
             .foregroundStyle(theme.primary)
     }
@@ -185,7 +201,31 @@ struct MediaDetailHeroSection: View {
             ) {
                 Task { await viewModel.toggleHeroFavorite() }
             }
+
+            // The path up from an episode to its show — disabled until the
+            // view model's series fetch lands (the pushed page needs a real
+            // series item, not a synthesized stub).
+            if item.type == .episode {
+                CircleActionButton(
+                    systemImage: "square.stack",
+                    title: "Go to Series",
+                    tint: theme.primary,
+                    isEnabled: viewModel.seriesItem != nil,
+                ) {
+                    if let series = viewModel.seriesItem {
+                        pushMediaDetail?(series)
+                    }
+                }
+            }
         }
+    }
+
+    /// What headlines the overview in the tagline slot: episodes put their
+    /// own title there (the lockup above reads as the show, so this is where
+    /// the viewer learns WHICH episode this page is); everything else keeps
+    /// its marketing tagline.
+    private var heroTagline: String? {
+        item.type == .episode ? item.name : item.tagline
     }
 
     /// Truncated overview. The description truncates on
@@ -195,7 +235,7 @@ struct MediaDetailHeroSection: View {
         Button {
             isPresentingOverview = true
         } label: {
-            OverviewLabel(tagline: item.tagline, overview: item.overview)
+            OverviewLabel(eyebrow: episodeEyebrow, tagline: heroTagline, overview: item.overview)
         }
         .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
     }

@@ -99,14 +99,25 @@ struct MediaInfoSection: View {
 
     private var informationEntries: [(label: String, value: String)] {
         var entries: [(String, String)] = []
+        // Episodes lead with where they sit in their show.
+        if item.type == .episode {
+            if let series = item.seriesName {
+                entries.append(("Series", series))
+            }
+            if let season = item.parentIndexNumber, let episode = item.indexNumber {
+                entries.append(("Episode", "Season \(season), Episode \(episode)"))
+            }
+        }
         if let studios = item.studios, !studios.isEmpty {
             entries.append((studios.count > 1 ? "Studios" : "Studio", studios.formatted(.list(type: .and))))
         }
         if let premiereDate = item.premiereDate {
-            entries.append((
-                item.type == .series ? "First Aired" : "Released",
-                premiereDate.formatted(date: .long, time: .omitted),
-            ))
+            let label = switch item.type {
+            case .series: "First Aired"
+            case .episode: "Aired"
+            default: "Released"
+            }
+            entries.append((label, premiereDate.formatted(date: .long, time: .omitted)))
         }
         if item.type == .series, let status = item.status {
             entries.append(("Status", status))
