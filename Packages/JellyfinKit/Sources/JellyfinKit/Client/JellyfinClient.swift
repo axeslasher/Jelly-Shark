@@ -131,6 +131,14 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: The image URL
     func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL
 
+    /// Fetch metadata for the images an item carries — type and pixel
+    /// dimensions (GET /Items/{itemId}/Images), so callers can judge whether
+    /// an image can fill a large slot before requesting it
+    /// - Parameter itemId: The item ID
+    /// - Returns: One entry per stored image; types the facade doesn't model
+    ///   are omitted
+    func getImageInfo(itemId: String) async throws -> [ItemImageInfo]
+
     // MARK: - Resume
 
     /// Fetch items the user is currently watching (resume playback)
@@ -820,6 +828,19 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         return components.url ?? serverURL
+    }
+
+    public func getImageInfo(itemId: String) async throws -> [ItemImageInfo] {
+        do {
+            let response = try await sdkClient.send(
+                Paths.getItemImageInfos(itemID: itemId),
+            )
+            return response.value.compactMap { ItemImageInfo(from: $0) }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
     }
 
     // MARK: - Resume

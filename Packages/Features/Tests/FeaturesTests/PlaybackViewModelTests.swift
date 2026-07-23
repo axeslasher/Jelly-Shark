@@ -142,8 +142,28 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try searchResult.get()
     }
 
-    func getImageURL(itemId _: String, imageType _: ImageType, maxWidth _: Int?, maxHeight _: Int?) -> URL {
+    func getImageURL(itemId: String, imageType: ImageType, maxWidth _: Int?, maxHeight _: Int?) -> URL {
+        // Real-shaped path so tests can assert WHICH image a view model chose
         serverURL
+            .appendingPathComponent("Items")
+            .appendingPathComponent(itemId)
+            .appendingPathComponent("Images")
+            .appendingPathComponent(imageType.rawValue)
+    }
+
+    /// Image-info responses by item id; ids absent from the map serve []
+    var imageInfosById: [String: [ItemImageInfo]] = [:]
+    var imageInfoFailureIds: Set<String> = []
+    var imageInfoRequests: [String] = []
+
+    func getImageInfo(itemId: String) async throws -> [ItemImageInfo] {
+        try lock.withLock {
+            imageInfoRequests.append(itemId)
+            if imageInfoFailureIds.contains(itemId) {
+                throw APIError.generic("Image info fetch failed")
+            }
+            return imageInfosById[itemId] ?? []
+        }
     }
 
     func getPerson(personId _: String) async throws -> Person {

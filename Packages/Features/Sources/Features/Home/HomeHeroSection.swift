@@ -327,6 +327,18 @@ struct HomeHeroSection: View {
                     videoRange: nil,
                     audioFormat: nil,
                 )
+                // An episode hero names its episode where the detail hero
+                // puts the tagline: a headline directly over the description
+                // (same treatment as `OverviewLabel`). The lockup above reads
+                // as the show, so this is where the viewer learns WHICH
+                // episode just arrived.
+                if item.type == .episode {
+                    Text(item.name)
+                        .jsStyle(.headline)
+                        .foregroundStyle(theme.primary)
+                        .lineLimit(1)
+                        .frame(maxWidth: HomeHeroMotion.overviewMaxWidth, alignment: .leading)
+                }
                 if let overview = item.overview {
                     Text(overview)
                         .jsStyle(.overview)
@@ -368,7 +380,10 @@ struct HomeHeroSection: View {
     }
 
     private func titleText(for item: MediaItem) -> some View {
-        Text(item.name)
+        // An episode hero still reads as the show: when the series logo is
+        // missing, fall back to the series name, not the episode title (that
+        // lives in the caption line).
+        Text(item.type == .episode ? (item.seriesName ?? item.name) : item.name)
             .jsStyle(.display)
             .foregroundStyle(theme.primary)
     }
@@ -435,7 +450,10 @@ struct HomeHeroSection: View {
         } label: {
             HStack(spacing: SpacingTokens.sm) {
                 Image(systemName: "play.fill")
-                Text(item.hasProgress ? "Resume" : "Play")
+                // An episode hero wears its episode code: the lockup reads as
+                // the show (series logo), so the button says which episode
+                // this slot plays.
+                Text(item.episodeCode ?? (item.hasProgress ? "Resume" : "Play"))
             }
             .jsStyle(.headline)
         }

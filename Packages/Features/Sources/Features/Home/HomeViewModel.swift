@@ -61,6 +61,13 @@ public final class HomeViewModel {
     // MARK: - Outputs
 
     public private(set) var heroItems: [MediaItem] = []
+
+    /// Episode hero ids whose own primary still passed the
+    /// `heroEpisodePrimaryMinWidth` check during curation. Members render
+    /// that still as the hero backdrop; other episode heroes use the series
+    /// backdrop (see `heroBackdropURL(for:)`).
+    private var episodePrimaryHeroIds: Set<String> = []
+
     public private(set) var resumeItems: [MediaItem] = []
     public private(set) var nextUpItems: [MediaItem] = []
     public private(set) var latestShelves: [LibraryShelf] = []
@@ -78,8 +85,9 @@ public final class HomeViewModel {
     public private(set) var heroIndex = 0
 
     /// What the hero Play button should start for the current hero item:
-    /// the item itself for movies, the next-up (or first) episode for series,
-    /// nil while resolving or for unplayable items (box sets).
+    /// the item itself for movies and episodes, the next-up (or first)
+    /// episode for series, nil while resolving or for unplayable items
+    /// (box sets).
     public private(set) var heroPlayTarget: MediaItem?
 
     /// True until the load settles EVERY section — all-or-nothing on
@@ -98,6 +106,35 @@ public final class HomeViewModel {
 
     public var currentHeroItem: MediaItem? {
         heroItems.indices.contains(heroIndex) ? heroItems[heroIndex] : nil
+    }
+
+    /// The backdrop the hero should render for an item. Episodes whose
+    /// primary still passed the width check ride that still; other episode
+    /// heroes go straight to the inherited series backdrop (skipping
+    /// `backdropURL`'s thumb fallback — a low-res thumb stretched across the
+    /// marquee is exactly what the width rule exists to prevent). Everything
+    /// else keeps the standard backdrop resolution.
+    public func heroBackdropURL(for item: MediaItem) -> URL? {
+        guard let client else { return nil }
+        if episodePrimaryHeroIds.contains(item.id) {
+            return client.getImageURL(itemId: item.id, imageType: .primary, maxWidth: 1920, maxHeight: nil)
+        }
+        if item.type == .episode,
+           let parentId = item.parentArtwork?.backdropItemId,
+           item.parentArtwork?.backdropImageTag != nil
+        {
+            return client.getImageURL(itemId: parentId, imageType: .backdrop, maxWidth: 1920, maxHeight: nil)
+        }
+        return client.backdropURL(for: item)
+    }
+
+    /// Placeholder hash matching `heroBackdropURL(for:)`'s image choice.
+    /// (Inherited series backdrops carry no hash — `ParentArtwork` has none —
+    /// so those render through the plain placeholder.)
+    public func heroBackdropBlurHash(for item: MediaItem) -> String? {
+        episodePrimaryHeroIds.contains(item.id)
+            ? item.imageTags?.primaryBlurHash
+            : item.backdropBlurHash
     }
 
     /// The single Continue Watching lane: resume and next-up interleaved by
@@ -192,6 +229,7 @@ public final class HomeViewModel {
             // rather than `.empty`: pre-marking empty made "Nothing here yet"
             // flash in the beat between connecting and the real load.
             heroItems = []
+            episodePrimaryHeroIds = []
             resumeItems = []
             nextUpItems = []
             latestShelves = []
@@ -410,13 +448,24 @@ public final class HomeViewModel {
 
         do {
             let latest = try await heroSource
-            guard generation == loadGeneration else { return }
-            latestShelves = shelves
-            heroItems = Self.curateHeroItems(
+            var curated = Self.curateHeroItems(
                 from: latest,
                 hasBackdrop: { client.backdropURL(for: $0) != nil },
                 limit: heroLimit,
             )
+            let primaryIds = await Self.resolveEpisodePrimaryHeroIds(
+                in: curated,
+                minWidth: Self.heroEpisodePrimaryMinWidth,
+                imageInfo: client.getImageInfo(itemId:),
+            )
+            // An episode whose still failed the width check needs the series
+            // backdrop behind it; with neither it can't carry the hero.
+            curated.removeAll { $0.type == .episode && !primaryIds.contains($0.id) && !Self.hasSeriesBackdrop($0) }
+
+            guard generation == loadGeneration else { return }
+            latestShelves = shelves
+            episodePrimaryHeroIds = primaryIds
+            heroItems = curated
             // A partial library failure still shows what survived, but re-arms
             // the load so the next appearance refetches the missing rows.
             // (`load()` only ever re-sets this to true at its end, so setting
@@ -434,6 +483,7 @@ public final class HomeViewModel {
         } catch {
             guard generation == loadGeneration else { return }
             latestShelves = shelves
+            episodePrimaryHeroIds = []
             heroItems = []
             if shelfError != nil {
                 needsLoad = true
@@ -581,8 +631,21 @@ public final class HomeViewModel {
 
     // MARK: - Hero curation
 
+    /// Minimum pixel width for an episode's primary still to carry the hero
+    /// backdrop; narrower stills fall back to the series backdrop instead of
+    /// stretching across the marquee.
+    nonisolated static let heroEpisodePrimaryMinWidth = 1080
+
     /// Distills the latest additions into a small marquee set: feature-worthy
-    /// types only, must have a backdrop, one slot per title/series, newest first.
+    /// types only, must have hero-capable artwork, one slot per title/series,
+    /// newest first.
+    ///
+    /// Episodes ride in on their series' behalf — a lone new arrival of a
+    /// followed show is often the most relevant thing on the server (multi-
+    /// episode additions come back from `/Latest` grouped as a series item
+    /// instead). An episode needs a series to dedupe under, plus either its
+    /// own primary still (width-checked afterwards by
+    /// `episodePrimaryHeroIds`) or an inherited series backdrop.
     nonisolated static func curateHeroItems(
         from latest: [MediaItem],
         hasBackdrop: (MediaItem) -> Bool,
@@ -594,10 +657,16 @@ public final class HomeViewModel {
 
         for item in latest {
             guard curated.count < limit else { break }
-            // `/Latest` already groups new episodes into their series; drop
-            // strays — an episode isn't marquee material.
-            guard item.type == .movie || item.type == .series || item.type == .boxSet else { continue }
-            guard hasBackdrop(item) else { continue }
+            switch item.type {
+            case .movie, .series, .boxSet:
+                guard hasBackdrop(item) else { continue }
+            case .episode:
+                guard item.seriesId != nil,
+                      item.imageTags?.primary != nil || Self.hasSeriesBackdrop(item)
+                else { continue }
+            default:
+                continue
+            }
             guard seenIds.insert(item.id).inserted else { continue }
 
             let seriesKey = item.type == .series ? item.id : item.seriesId
@@ -607,6 +676,43 @@ public final class HomeViewModel {
             curated.append(item)
         }
         return curated
+    }
+
+    /// Whether the episode inherits a series backdrop it can fall back to.
+    private nonisolated static func hasSeriesBackdrop(_ item: MediaItem) -> Bool {
+        item.parentArtwork?.backdropItemId != nil && item.parentArtwork?.backdropImageTag != nil
+    }
+
+    /// The ids of curated episodes whose own primary still is wide enough
+    /// (`minWidth`) to carry the marquee, checked concurrently against the
+    /// server's stored dimensions. A failed lookup — or one reporting no
+    /// primary width — just leaves the episode on its series-backdrop
+    /// fallback, so this never fails the section.
+    nonisolated static func resolveEpisodePrimaryHeroIds(
+        in items: [MediaItem],
+        minWidth: Int,
+        imageInfo: @escaping @Sendable (String) async throws -> [ItemImageInfo],
+    ) async -> Set<String> {
+        let candidates = items.filter { $0.type == .episode && $0.imageTags?.primary != nil }
+        guard !candidates.isEmpty else { return [] }
+
+        return await withTaskGroup(of: String?.self) { group in
+            for item in candidates {
+                group.addTask {
+                    guard let infos = try? await imageInfo(item.id),
+                          let width = infos.first(where: { $0.imageType == .primary })?.width
+                    else { return nil }
+                    return width >= minWidth ? item.id : nil
+                }
+            }
+            var ids: Set<String> = []
+            for await id in group {
+                if let id {
+                    ids.insert(id)
+                }
+            }
+            return ids
+        }
     }
 
     // MARK: - Hero paging
@@ -694,10 +800,11 @@ public final class HomeViewModel {
 
     // MARK: - Hero play target
 
-    /// Resolve what Play should start for the current hero item. Movies play
-    /// directly; series resolve to their next-up episode (or first episode for
-    /// never-started series, per `getNextUpEpisode`); box sets don't play —
-    /// their details button is the way in.
+    /// Resolve what Play should start for the current hero item. Movies and
+    /// episodes play directly (an episode hero IS the thing to play — no
+    /// next-up resolution); series resolve to their next-up episode (or first
+    /// episode for never-started series, per `getNextUpEpisode`); box sets
+    /// don't play — their details button is the way in.
     private func resolveHeroPlayTarget() {
         playTargetTask?.cancel()
         playTargetTask = nil
@@ -710,7 +817,7 @@ public final class HomeViewModel {
         }
 
         switch item.type {
-        case .movie:
+        case .movie, .episode:
             playTargets[item.id] = item
             heroPlayTarget = item
         case .series:
