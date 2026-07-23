@@ -3,13 +3,16 @@ import JellyfinKit
 import SwiftUI
 
 /// The above-the-fold lockup: title treatment, actions, overview, metadata, and
-/// credits. Owns the optimistic watched/favorite state — it's purely hero-local
-/// UI state, and keeping it here (with narrow value/binding inputs and no closure
-/// inputs) lets SwiftUI skip this body during scroll.
+/// credits. The optimistic watched/favorite state lives on the view model (so
+/// its revert-on-failure path is testable); inputs stay narrow values, bindings,
+/// and the stable view-model reference — no closure inputs — so SwiftUI can
+/// skip this body during scroll.
 struct MediaDetailHeroSection: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
 
+    /// Owns the watched/favorite toggles' optimistic state and server calls.
+    let viewModel: MediaDetailViewModel
     let item: MediaItem
     let directors: [CastMember]
     let topCast: [CastMember]
@@ -28,27 +31,17 @@ struct MediaDetailHeroSection: View {
     let playTarget: MediaItem?
     @Binding var playbackItem: MediaItem?
     @Binding var isPresentingOverview: Bool
-    /// Optimistic watched override, bound to the owner: the hero's eye toggle
-    /// writes it and the owner's Play-button label reads it, so both agree on
-    /// the pending state. While `nil`, the button reflects fetched `userData`;
-    /// a tap sets it and it reverts on a failed server call.
-    @Binding var playedOverride: Bool?
 
-    /// Optimistic favorite override — purely hero-local (nothing outside the
-    /// hero depends on it). While `nil` the button reflects fetched `userData`;
-    /// a tap sets it and reverts on failure.
-    @State private var favoriteOverride: Bool?
-
-    /// Watched state shown by the button: the pending optimistic value if any,
-    /// otherwise Jellyfin's stored status for this item.
+    /// Watched state shown by the button: the view model's pending optimistic
+    /// value if any, otherwise Jellyfin's stored status for this item.
     private var isPlayed: Bool {
-        playedOverride ?? item.userData?.played ?? false
+        viewModel.heroIsPlayed
     }
 
     /// Favorite state shown by the button: optimistic value if any, otherwise
     /// Jellyfin's stored status.
     private var isFavorite: Bool {
-        favoriteOverride ?? item.userData?.isFavorite ?? false
+        viewModel.heroIsFavorite
     }
 
     /// Up to three genres as a single subdued line ("Crime · Drama · Thriller")
@@ -104,6 +97,11 @@ struct MediaDetailHeroSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, SpacingTokens.screenPadding)
         .padding(.bottom, SpacingTokens.md)
+        // Animate exactly the toggle-driven updates (button icons/labels, the
+        // owner's Play label) — the moved-to-view-model equivalent of the old
+        // `withAnimation` around each optimistic flip.
+        .animation(theme.animation, value: viewModel.heroPlayedOverride)
+        .animation(theme.animation, value: viewModel.heroFavoriteOverride)
         // Reserve a full viewport-height hero and pin the content to the bottom.
         // Anchoring (rather than pushing down with a Spacer) keeps the action row /
         // overview / credits on the same baseline for every item — the logo or
@@ -175,7 +173,7 @@ struct MediaDetailHeroSection: View {
                 focusedTint: isPlayed ? theme.accent : nil,
                 isEnabled: session.client != nil,
             ) {
-                Task { await togglePlayed() }
+                Task { await viewModel.toggleHeroPlayed() }
             }
 
             CircleActionButton(
@@ -185,7 +183,7 @@ struct MediaDetailHeroSection: View {
                 focusedTint: isFavorite ? theme.accent : nil,
                 isEnabled: session.client != nil,
             ) {
-                Task { await toggleFavorite() }
+                Task { await viewModel.toggleHeroFavorite() }
             }
         }
     }
@@ -200,37 +198,5 @@ struct MediaDetailHeroSection: View {
             OverviewLabel(tagline: item.tagline, overview: item.overview)
         }
         .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
-    }
-
-    /// Optimistically flip the watched state, then persist; revert on failure.
-    private func togglePlayed() async {
-        guard let client = session.client else { return }
-        let target = !isPlayed
-        withAnimation(theme.animation) { playedOverride = target }
-        do {
-            if target {
-                try await client.markPlayed(itemId: item.id)
-            } else {
-                try await client.markUnplayed(itemId: item.id)
-            }
-        } catch {
-            withAnimation(theme.animation) { playedOverride = !target }
-        }
-    }
-
-    /// Optimistically flip the favorite state, then persist; revert on failure.
-    private func toggleFavorite() async {
-        guard let client = session.client else { return }
-        let target = !isFavorite
-        withAnimation(theme.animation) { favoriteOverride = target }
-        do {
-            if target {
-                try await client.markFavorite(itemId: item.id)
-            } else {
-                try await client.unmarkFavorite(itemId: item.id)
-            }
-        } catch {
-            withAnimation(theme.animation) { favoriteOverride = !target }
-        }
     }
 }

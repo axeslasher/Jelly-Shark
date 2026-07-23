@@ -119,12 +119,6 @@ public struct MediaDetailView: View {
 
     @State private var isPresentingOverview = false
 
-    /// Optimistic watched state for the hero's own item, owned here because
-    /// two views must agree on it: the hero's eye toggle (which writes it) and
-    /// the Play-button label below (which reads it for "Watch Again" / "Play").
-    /// `nil` until the user taps; reverted by the hero on a failed server call.
-    @State private var heroPlayedOverride: Bool?
-
     let item: MediaItem
 
     public init(item: MediaItem) {
@@ -192,7 +186,7 @@ public struct MediaDetailView: View {
             return (inProgress ? "Play Next" : "Play First", "play.fill")
         default:
             return HeroPlayLabel.label(
-                playedOverride: heroPlayedOverride,
+                playedOverride: viewModel.heroPlayedOverride,
                 played: displayItem.userData?.played ?? false,
                 hasProgress: displayItem.hasProgress,
             )
@@ -207,6 +201,7 @@ public struct MediaDetailView: View {
             // per-shelf horizontal scrolls remain lazy on their own.
             VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 MediaDetailHeroSection(
+                    viewModel: viewModel,
                     item: displayItem,
                     directors: viewModel.directors,
                     topCast: viewModel.topCast,
@@ -216,7 +211,6 @@ public struct MediaDetailView: View {
                     playTarget: playableItem,
                     playbackItem: $playbackItem,
                     isPresentingOverview: $isPresentingOverview,
-                    playedOverride: $heroPlayedOverride,
                 )
                 // Drift the hero lockup as it scrolls, in lockstep with the
                 // backdrop's melt/dim/blur. Offset only — no opacity fade: fading

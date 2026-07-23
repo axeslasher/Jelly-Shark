@@ -54,7 +54,28 @@ public final class MediaDetailViewModel {
 
     public private(set) var similarItems: [MediaItem] = []
 
+    /// Optimistic watched override for the hero's own item. While `nil` the
+    /// hero reflects the fetched `userData`; a toggle sets it and it reverts
+    /// on a failed server call. The hero's eye toggle and the Play-button
+    /// label both read through it, so they agree on the pending state.
+    public private(set) var heroPlayedOverride: Bool?
+
+    /// Optimistic favorite override for the hero's own item; same lifecycle.
+    public private(set) var heroFavoriteOverride: Bool?
+
     public private(set) var status: Status = .loading
+
+    /// Watched state the hero shows: the pending optimistic value if any,
+    /// otherwise Jellyfin's stored status for the page's item.
+    public var heroIsPlayed: Bool {
+        heroPlayedOverride ?? (detailedItem ?? item)?.userData?.played ?? false
+    }
+
+    /// Favorite state the hero shows: optimistic value if any, otherwise
+    /// Jellyfin's stored status.
+    public var heroIsFavorite: Bool {
+        heroFavoriteOverride ?? (detailedItem ?? item)?.userData?.isFavorite ?? false
+    }
 
     // MARK: - Configuration
 
@@ -109,6 +130,8 @@ public final class MediaDetailViewModel {
         directors = []
         topCast = []
         similarItems = []
+        heroPlayedOverride = nil
+        heroFavoriteOverride = nil
         status = .loading
 
         // No client means the session is still being established (or was
@@ -204,6 +227,40 @@ public final class MediaDetailViewModel {
     }
 
     // MARK: - User-Data Actions
+
+    /// Optimistically flip the hero item's watched state, then persist;
+    /// revert on failure.
+    public func toggleHeroPlayed() async {
+        guard let client, let item else { return }
+        let target = !heroIsPlayed
+        heroPlayedOverride = target
+        do {
+            if target {
+                try await client.markPlayed(itemId: item.id)
+            } else {
+                try await client.markUnplayed(itemId: item.id)
+            }
+        } catch {
+            heroPlayedOverride = !target
+        }
+    }
+
+    /// Optimistically flip the hero item's favorite state, then persist;
+    /// revert on failure.
+    public func toggleHeroFavorite() async {
+        guard let client, let item else { return }
+        let target = !heroIsFavorite
+        heroFavoriteOverride = target
+        do {
+            if target {
+                try await client.markFavorite(itemId: item.id)
+            } else {
+                try await client.unmarkFavorite(itemId: item.id)
+            }
+        } catch {
+            heroFavoriteOverride = !target
+        }
+    }
 
     /// Optimistically apply a watched-state change from an episode card's
     /// long-press menu, then persist; on success run the same in-place

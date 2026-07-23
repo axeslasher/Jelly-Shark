@@ -290,4 +290,81 @@ struct MediaDetailViewModelTests {
         await viewModel.setFavorite(false, for: viewModel.episodes[0])
         #expect(viewModel.episodes[0].userData?.isFavorite == true)
     }
+
+    // MARK: - Hero toggles
+
+    @Test("toggleHeroPlayed marks an unwatched item, then unmarks it")
+    func heroPlayedToggles() async {
+        let client = MockJellyfinClient()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+        #expect(viewModel.heroIsPlayed == false)
+
+        await viewModel.toggleHeroPlayed()
+        #expect(viewModel.heroIsPlayed == true)
+
+        await viewModel.toggleHeroPlayed()
+        #expect(viewModel.heroIsPlayed == false)
+        #expect(client.userDataCalls.map(\.action) == ["played", "unplayed"])
+        #expect(client.userDataCalls.map(\.itemId) == ["m1", "m1"])
+    }
+
+    @Test("toggleHeroFavorite favorites, then unfavorites")
+    func heroFavoriteToggles() async {
+        let client = MockJellyfinClient()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+
+        await viewModel.toggleHeroFavorite()
+        #expect(viewModel.heroIsFavorite == true)
+
+        await viewModel.toggleHeroFavorite()
+        #expect(viewModel.heroIsFavorite == false)
+        #expect(client.userDataCalls.map(\.action) == ["favorite", "unfavorite"])
+    }
+
+    @Test("A watched item's hero toggle starts from the fetched state")
+    func heroPlayedStartsFromFetchedState() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["m1"] = MediaItem(
+            id: "m1", name: "m1", type: .movie,
+            userData: UserData(played: true),
+        )
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+        #expect(viewModel.heroIsPlayed == true)
+
+        await viewModel.toggleHeroPlayed()
+        #expect(client.userDataCalls.map(\.action) == ["unplayed"])
+        #expect(viewModel.heroIsPlayed == false)
+    }
+
+    @Test("Hero toggles revert the optimistic flip when the server call fails")
+    func heroTogglesRevertOnFailure() async {
+        let client = MockJellyfinClient()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+
+        client.userDataError = APIError.networkError("offline")
+        await viewModel.toggleHeroPlayed()
+        await viewModel.toggleHeroFavorite()
+
+        #expect(viewModel.heroIsPlayed == false)
+        #expect(viewModel.heroIsFavorite == false)
+    }
+
+    @Test("Attaching a new item resets the hero's pending overrides")
+    func heroOverridesResetOnNewItem() async {
+        let client = MockJellyfinClient()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+        await viewModel.toggleHeroPlayed()
+        await viewModel.toggleHeroFavorite()
+        #expect(viewModel.heroIsPlayed == true)
+
+        await load(viewModel, client: client, item: movie("m2"))
+        #expect(viewModel.heroPlayedOverride == nil)
+        #expect(viewModel.heroIsPlayed == false)
+        #expect(viewModel.heroIsFavorite == false)
+    }
 }
