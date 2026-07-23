@@ -35,8 +35,7 @@ struct SearchView: View {
         case .idle:
             prompt
         case .searching:
-            ProgressView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            skeletonGrid
         case .empty:
             message(
                 icon: "magnifyingglass",
@@ -78,6 +77,28 @@ struct SearchView: View {
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Ghost mirror of `resultsGrid` while a search is in flight: the same
+    /// adaptive columns and landscape card lockup, so results land where the
+    /// ghosts were.
+    private var skeletonGrid: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 340), spacing: SpacingTokens.cardGap),
+                ],
+                spacing: SpacingTokens.cardGap,
+            ) {
+                ForEach(0 ..< 12, id: \.self) { _ in
+                    GhostCard(width: 320, aspectRatio: 16.0 / 9.0)
+                }
+            }
+            .padding(.horizontal, SpacingTokens.screenPadding)
+            .padding(.vertical, SpacingTokens.lg)
+        }
+        .scrollClipDisabled()
+        .skeletonPulse()
     }
 
     private var resultsGrid: some View {

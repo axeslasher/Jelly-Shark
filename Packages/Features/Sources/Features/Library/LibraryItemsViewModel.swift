@@ -44,6 +44,11 @@ public final class LibraryItemsViewModel {
     /// Filter values present in this library, for the control bar menus.
     public private(set) var filterOptions: LibraryFilterOptions = .empty
 
+    /// True while the initial options fetch is in flight — the bar shows
+    /// ghost pills where the option-driven menus will land, instead of
+    /// popping them in when the fetch resolves.
+    public private(set) var isLoadingFilterOptions = false
+
     /// Narrowed option lists per menu, each computed with that menu's own
     /// selection excluded — a decade pick must not hide other decades, only
     /// the *other* filters narrow a menu. Nil means no narrowing applies
@@ -167,9 +172,11 @@ public final class LibraryItemsViewModel {
         totalCount = nil
         isReloading = false
         state = .loading
+        isLoadingFilterOptions = true
 
         guard let client, let library else {
             state = .failed(APIError.notAuthenticated.localizedDescription)
+            isLoadingFilterOptions = false
             return
         }
 
@@ -189,6 +196,11 @@ public final class LibraryItemsViewModel {
 
         if let options = await optionsFetch, generation == loadGeneration {
             filterOptions = options
+        }
+        // Resolved either way — a failed fetch means fewer menus, and the
+        // ghost pills must hand off rather than linger.
+        if generation == loadGeneration {
+            isLoadingFilterOptions = false
         }
 
         await refreshNarrowedOptions(client: client, library: library, generation: generation)

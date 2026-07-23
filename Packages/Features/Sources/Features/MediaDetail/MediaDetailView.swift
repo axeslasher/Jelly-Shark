@@ -230,66 +230,37 @@ public struct MediaDetailView: View {
                 // nudging the offset per row. The info section isn't focusable;
                 // it just rides along at the bottom of the page.
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                    // The core load failed: the stub hero above still renders
-                    // (title, poster, often Play), so degrade in place — the
-                    // notice sits where the missing sections would, and its
-                    // Retry button keeps this focus region reachable.
-                    if viewModel.status.isFailed {
-                        FailedShelfNotice(
-                            message: "Couldn't load details — check your connection",
-                            retry: { Task { await viewModel.retry() } },
-                        )
+                    // While the core load is in flight, ghost the sections it
+                    // will fill (per page type) instead of letting them pop
+                    // in. Ghosts aren't focusable, so tvOS focus stays on the
+                    // stub hero until real shelves land — same as before,
+                    // when this region rendered nothing.
+                    if viewModel.status == .loading {
+                        sectionSkeletons
+                    } else {
+                        // The core load failed: the stub hero above still renders
+                        // (title, poster, often Play), so degrade in place — the
+                        // notice sits where the missing sections would, and its
+                        // Retry button keeps this focus region reachable.
+                        if viewModel.status.isFailed {
+                            FailedShelfNotice(
+                                message: "Couldn't load details — check your connection",
+                                retry: { Task { await viewModel.retry() } },
+                            )
+                        }
+
+                        loadedSections
                     }
 
-                    // Episodes lead on series pages — they're the reason the
-                    // page was opened. Renders nothing for other types.
-                    EpisodesSection(
-                        seasons: viewModel.seasons,
-                        episodes: viewModel.episodes,
-                        // Same target the Play button resolves to: the shelf
-                        // pre-parks there and first focus lands on it.
-                        initialEpisodeId: (viewModel.nextUpEpisode ?? viewModel.episodes.first)?.id,
-                        isRegionFocused: focusedRegion == .shelves,
-                        // Hidden while the hero owns the screen (so tvOS focus
-                        // flows past it to the parked episode); fades in only once
-                        // the scroll has essentially arrived at the shelves anchor
-                        // — a beat *after* the settle, not mid-melt. The
-                        // containerHeight gate suppresses a false reveal before the
-                        // geometry is measured (which would also skip the steer).
-                        // Still a derived Bool, so the section re-renders only when
-                        // it flips.
-                        showsSeasonAnchors: snapMetrics.containerHeight > 0
-                            && scrollOffset >= shelvesAnchor - Self.seasonAnchorRevealSlack,
-                        menu: { episode in
-                            ShelfMenuHandlers(
-                                viewDetails: { pushMediaDetail?(episode) },
-                                setPlayed: { played in
-                                    Task { await viewModel.setPlayed(played, for: episode) }
-                                },
-                                setFavorite: { favorite in
-                                    Task { await viewModel.setFavorite(favorite, for: episode) }
-                                },
-                            )
-                        },
-                        playbackItem: $playbackItem,
-                    )
-
-                    // Likewise, the contents lead on collection pages.
-                    // Renders nothing for other types.
-                    CollectionItemsSection(items: viewModel.collectionItems)
-
-                    // On pages with no leading section (movies, episodes) the
-                    // focus engine can skip the cast row and grab More Like This;
-                    // steer first focus onto cast. Gated off when episodes or a
-                    // collection lead (those steer their own first focus), so the
-                    // two steers never both fire.
-                    CastShelfSection(
-                        people: displayItem.people ?? [],
-                        isRegionFocused: focusedRegion == .shelves,
-                        steersFirstFocus: viewModel.seasons.isEmpty && viewModel.collectionItems.isEmpty,
-                    )
-
-                    SimilarItemsSection(items: viewModel.similarItems)
+                    // More Like This resolves after the core status settles
+                    // (it's enrichment), so it swaps its own ghost — keyed to
+                    // its own fetch — for the shelf, independent of the above.
+                    if viewModel.isSimilarLoading {
+                        SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+                            .skeletonPulse()
+                    } else {
+                        SimilarItemsSection(items: viewModel.similarItems)
+                    }
 
                     MediaInfoSection(item: displayItem)
                 }
@@ -391,6 +362,81 @@ public struct MediaDetailView: View {
             .fullScreenCover(isPresented: $isPresentingOverview) {
                 overviewOverlay
             }
+    }
+
+    /// The below-the-fold sections once the core load has settled.
+    @ViewBuilder
+    private var loadedSections: some View {
+        // Episodes lead on series pages — they're the reason the
+        // page was opened. Renders nothing for other types.
+        EpisodesSection(
+            seasons: viewModel.seasons,
+            episodes: viewModel.episodes,
+            // Same target the Play button resolves to: the shelf
+            // pre-parks there and first focus lands on it.
+            initialEpisodeId: (viewModel.nextUpEpisode ?? viewModel.episodes.first)?.id,
+            isRegionFocused: focusedRegion == .shelves,
+            // Hidden while the hero owns the screen (so tvOS focus
+            // flows past it to the parked episode); fades in only once
+            // the scroll has essentially arrived at the shelves anchor
+            // — a beat *after* the settle, not mid-melt. The
+            // containerHeight gate suppresses a false reveal before the
+            // geometry is measured (which would also skip the steer).
+            // Still a derived Bool, so the section re-renders only when
+            // it flips.
+            showsSeasonAnchors: snapMetrics.containerHeight > 0
+                && scrollOffset >= shelvesAnchor - Self.seasonAnchorRevealSlack,
+            menu: { episode in
+                ShelfMenuHandlers(
+                    viewDetails: { pushMediaDetail?(episode) },
+                    setPlayed: { played in
+                        Task { await viewModel.setPlayed(played, for: episode) }
+                    },
+                    setFavorite: { favorite in
+                        Task { await viewModel.setFavorite(favorite, for: episode) }
+                    },
+                )
+            },
+            playbackItem: $playbackItem,
+        )
+
+        // Likewise, the contents lead on collection pages.
+        // Renders nothing for other types.
+        CollectionItemsSection(items: viewModel.collectionItems)
+
+        // On pages with no leading section (movies, episodes) the
+        // focus engine can skip the cast row and grab More Like This;
+        // steer first focus onto cast. Gated off when episodes or a
+        // collection lead (those steer their own first focus), so the
+        // two steers never both fire.
+        CastShelfSection(
+            people: displayItem.people ?? [],
+            isRegionFocused: focusedRegion == .shelves,
+            steersFirstFocus: viewModel.seasons.isEmpty && viewModel.collectionItems.isEmpty,
+        )
+    }
+
+    /// Ghosts of the sections the core load will fill, mirroring what this
+    /// page type renders: episode stills on series, the contents' posters on
+    /// collections, then the cast row's headshots. More Like This has its own
+    /// ghost, keyed to its own fetch.
+    private var sectionSkeletons: some View {
+        VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            if item.type == .series {
+                SkeletonShelf(
+                    cardWidth: 440,
+                    shape: .artwork(aspectRatio: 16.0 / 9.0),
+                    cardCount: 4,
+                )
+            }
+
+            if item.type == .boxSet {
+                SkeletonShelf(cardWidth: 316, shape: .artwork(aspectRatio: 2.0 / 3.0))
+            }
+
+            SkeletonShelf(cardWidth: 200, shape: .circle)
+        }
+        .skeletonPulse()
     }
 
     private var overviewOverlay: OverviewOverlay {

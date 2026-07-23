@@ -89,6 +89,21 @@ struct PersonDetailHeader: View {
 
                 metadataRow
 
+                // The name and headshot render from the stub instantly; the
+                // life facts and biography wait on the person fetch. Ghost
+                // their spots while it's in flight so the lockup doesn't
+                // reflow when they land (they vanish quietly if the person
+                // has neither).
+                if person == nil, viewModel.filmographyStatus == .loading {
+                    // Same spacing as the enclosing column, so the pair
+                    // reads as the metadata line over the biography block.
+                    VStack(alignment: .leading, spacing: SpacingTokens.md) {
+                        GhostBlock(width: 420, height: 24)
+                        GhostBlock(width: 680, height: 116)
+                    }
+                    .skeletonPulse()
+                }
+
                 if let biography = person?.biography, !biography.isEmpty {
                     Button {
                         isPresentingBiography = true

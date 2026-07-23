@@ -364,6 +364,24 @@ struct LibraryItemsViewModelTests {
 
         #expect(viewModel.filterOptions.genres == ["Horror"])
         #expect(viewModel.filterOptions.decades == [1980])
+        // Resolved: the bar's ghost pills must hand off to the real menus.
+        #expect(!viewModel.isLoadingFilterOptions)
+    }
+
+    @Test("A failed options fetch still resolves the ghost pills")
+    func filterOptionsFailureResolves() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        client.filterOptionsResult = .failure(APIError.networkError("offline"))
+        let viewModel = makeViewModel(client: client)
+
+        await viewModel.loadInitial()
+
+        // Fewer menus, but never lingering ghosts.
+        #expect(!viewModel.isLoadingFilterOptions)
+        #expect(viewModel.filterOptions.genres.isEmpty)
     }
 
     @Test("A genre pick narrows decades and ratings, never other genres")

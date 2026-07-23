@@ -26,6 +26,7 @@ struct LibraryItemsView: View {
                 LibraryFilterBar(
                     options: viewModel.visibleFilterOptions,
                     query: viewModel.query,
+                    isLoadingOptions: viewModel.isLoadingFilterOptions,
                     onChange: { viewModel.update(query: $0) },
                 )
 
@@ -36,6 +37,18 @@ struct LibraryItemsView: View {
         }
         .scrollClipDisabled()
         .background(theme.background)
+        // Width for the loaded grid's column math, measured on the container
+        // top-down (frame minus the content's screen padding) — never on the
+        // grid itself, which would feed the math its own output. Note this
+        // write doesn't land while the sidebar-collapse transition is in
+        // flight (it commits once the transition settles) — fine for the
+        // loaded grid, whose content arrives later, but the reason the
+        // skeleton grid must not depend on it (see `skeletonGrid`).
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width - SpacingTokens.screenPadding * 2
+        } action: { width in
+            gridWidth = width
+        }
         .task(id: session.isConnected) {
             viewModel.attach(client: session.client, library: library, initialQuery: initialQuery)
             await viewModel.loadInitial()
@@ -60,8 +73,7 @@ struct LibraryItemsView: View {
     private var content: some View {
         switch viewModel.state {
         case .loading:
-            ProgressView()
-                .frame(maxWidth: .infinity, minHeight: 400)
+            skeletonGrid
 
         case let .failed(message):
             VStack(spacing: SpacingTokens.md) {
@@ -101,6 +113,35 @@ struct LibraryItemsView: View {
         PosterGridLayout.columns(for: gridWidth)
     }
 
+    /// Ghost mirror of `itemGrid` while the first page loads. The filter bar
+    /// above stays live.
+    ///
+    /// Native adaptive columns, NOT `columnLayout`: geometry-change state
+    /// writes don't land while the sidebar-collapse transition is in flight
+    /// (they commit only once it settles), so anything `gridWidth`-driven
+    /// paints a single centered column for the skeleton's entire lifetime.
+    /// Adaptive columns are computed inside the layout pass itself — right on
+    /// the first frame — and their math (as many ≥minimum columns as fit,
+    /// stretched evenly) matches `PosterGridLayout`'s, so the real grid lands
+    /// on the same lattice. The flexible `GhostCard` fills whatever cell the
+    /// grid computes.
+    private var skeletonGrid: some View {
+        LazyVGrid(
+            columns: [
+                GridItem(
+                    .adaptive(minimum: PosterGridLayout.minimumCardWidth),
+                    spacing: SpacingTokens.cardGap,
+                ),
+            ],
+            spacing: SpacingTokens.cardGap,
+        ) {
+            ForEach(0 ..< 18, id: \.self) { _ in
+                GhostCard(aspectRatio: 2.0 / 3.0)
+            }
+        }
+        .skeletonPulse()
+    }
+
     private var itemGrid: some View {
         let layout = columnLayout
         return LazyVGrid(
@@ -133,11 +174,6 @@ struct LibraryItemsView: View {
                     .frame(maxWidth: .infinity)
                     .gridCellColumns(1)
             }
-        }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            gridWidth = width
         }
     }
 }
