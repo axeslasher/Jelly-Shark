@@ -20,6 +20,11 @@ struct LibraryFilterBar: View {
 
     let options: LibraryFilterOptions
     let query: LibraryQuery
+    /// True while the library's filter options are still being fetched: the
+    /// option-driven menus (Genres, Decades, Ratings) show ghost pills in
+    /// their spots instead of popping in when the fetch resolves. The static
+    /// controls stay live throughout.
+    var isLoadingOptions = false
     let onChange: (LibraryQuery) -> Void
 
     var body: some View {
@@ -73,6 +78,8 @@ struct LibraryFilterBar: View {
                     next.genres = updated
                     onChange(next)
                 }
+            } else if isLoadingOptions {
+                ghostPill
             }
 
             if !options.decades.isEmpty {
@@ -86,6 +93,8 @@ struct LibraryFilterBar: View {
                     next.decades = updated
                     onChange(next)
                 }
+            } else if isLoadingOptions {
+                ghostPill
             }
 
             watchedMenu
@@ -103,6 +112,8 @@ struct LibraryFilterBar: View {
                     next.officialRatings = updated
                     onChange(next)
                 }
+            } else if isLoadingOptions {
+                ghostPill
             }
 
             if query.isFiltering {
@@ -214,6 +225,17 @@ struct LibraryFilterBar: View {
         }
     }
 
+    /// A pill-shaped ghost holding an option-driven menu's spot while the
+    /// options load. Sized to the pills' chrome so the bar doesn't reflow
+    /// when the real menu lands (or the ghost vanishes for a library that
+    /// has no values for it).
+    private var ghostPill: some View {
+        Capsule()
+            .fill(theme.surface)
+            .frame(width: 170, height: 58)
+            .skeletonPulse()
+    }
+
     private var clearButton: some View {
         Button {
             onChange(query.withFiltersCleared)
@@ -238,6 +260,28 @@ struct LibraryFilterBar: View {
             }
         }
     }
+}
+
+#Preview("Loading options") {
+    VStack(alignment: .leading, spacing: SpacingTokens.md) {
+        LibraryFilterBar(
+            options: .empty,
+            query: LibraryQuery(),
+            isLoadingOptions: true,
+            onChange: { _ in },
+        )
+        LibraryFilterBar(
+            options: LibraryFilterOptions(
+                genres: ["Action", "Comedy", "Horror"],
+                officialRatings: ["PG", "PG-13", "R"],
+                years: [1985, 1994, 2003, 2021],
+            ),
+            query: LibraryQuery(),
+            onChange: { _ in },
+        )
+    }
+    .padding()
+    .withThemeEnvironment()
 }
 
 #Preview {

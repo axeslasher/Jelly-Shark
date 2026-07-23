@@ -6,9 +6,6 @@ import SwiftUI
 /// (or the tab bar) instead of landing on a placeholder.
 struct HomeSkeleton: View {
     @Environment(\.theme) private var theme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @State private var pulsing = false
 
     var body: some View {
         // Mirrors the real content's scroll structure (same container, same
@@ -25,23 +22,21 @@ struct HomeSkeleton: View {
                 VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                     // The peeking row is headerless while the hero owns the
                     // screen, so its ghost is too.
-                    skeletonShelf(aspectRatio: 16.0 / 9.0, cardWidth: 440, showsHeader: false)
-                    skeletonShelf(
-                        aspectRatio: 2.0 / 3.0,
+                    SkeletonShelf(
+                        cardWidth: 440,
+                        shape: .artwork(aspectRatio: 16.0 / 9.0),
+                        showsHeader: false,
+                    )
+                    SkeletonShelf(
                         cardWidth: PosterGridLayout.minimumCardWidth,
+                        shape: .artwork(aspectRatio: 2.0 / 3.0),
                     )
                 }
             }
             .padding(.bottom, SpacingTokens.lg)
         }
         .scrollClipDisabled()
-        .opacity(pulsing ? 0.55 : 1)
-        .animation(
-            reduceMotion ? nil : .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
-            value: pulsing,
-        )
-        .onAppear { pulsing = true }
-        .accessibilityLabel("Loading")
+        .skeletonPulse()
     }
 
     /// Ghost of the hero lockup, line for line: logo, the fact-row/overview

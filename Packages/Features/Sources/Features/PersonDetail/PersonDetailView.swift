@@ -56,6 +56,12 @@ public struct PersonDetailView: View {
                             message: "Couldn't load filmography — check your connection",
                             retry: { Task { await viewModel.retry() } },
                         )
+                    } else if viewModel.filmographyStatus == .loading {
+                        // Ghosts where the shelves will land — non-focusable,
+                        // so tvOS focus waits on the header until real cards
+                        // arrive. Movies and series render poster rows,
+                        // episodes a stills row, mirroring the real shelves.
+                        filmographySkeleton
                     } else {
                         PersonShelfSection(
                             title: "Movies", icon: "film.fill",
@@ -94,6 +100,22 @@ public struct PersonDetailView: View {
         .fullScreenCover(isPresented: $isPresentingBiography) {
             biographyOverlay
         }
+    }
+
+    /// Ghost mirror of the three filmography shelves while they load, in
+    /// their order: two poster rows (Movies, TV Series) and a stills row
+    /// (Episodes).
+    private var filmographySkeleton: some View {
+        VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+            SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+            SkeletonShelf(
+                cardWidth: 440,
+                shape: .artwork(aspectRatio: 16.0 / 9.0),
+                cardCount: 4,
+            )
+        }
+        .skeletonPulse()
     }
 
     /// The biography's full-screen reading view — the same overlay the media

@@ -113,6 +113,8 @@ struct MediaDetailViewModelTests {
 
         #expect(viewModel.status == .loading)
         #expect(viewModel.detailedItem == nil)
+        // The similar ghost keeps showing too — nothing has resolved.
+        #expect(viewModel.isSimilarLoading)
     }
 
     // MARK: - Series
@@ -191,6 +193,8 @@ struct MediaDetailViewModelTests {
 
         #expect(viewModel.status == .loaded)
         #expect(viewModel.similarItems.isEmpty)
+        // Resolved (to nothing) — the ghost shelf must hand off, not linger.
+        #expect(!viewModel.isSimilarLoading)
     }
 
     // MARK: - Item changes

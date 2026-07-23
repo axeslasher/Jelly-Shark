@@ -54,6 +54,12 @@ public final class MediaDetailViewModel {
 
     public private(set) var similarItems: [MediaItem] = []
 
+    /// Whether the More Like This enrichment is still in flight. It resolves
+    /// *after* `status` settles (deliberately — a retry that recovers the core
+    /// doesn't wait on it), so its ghost shelf needs this flag rather than
+    /// `status` to hand off without a pop-in.
+    public private(set) var isSimilarLoading = true
+
     /// Optimistic watched override for the hero's own item. While `nil` the
     /// hero reflects the fetched `userData`; a toggle sets it and it reverts
     /// on a failed server call. The hero's eye toggle and the Play-button
@@ -130,6 +136,7 @@ public final class MediaDetailViewModel {
         directors = []
         topCast = []
         similarItems = []
+        isSimilarLoading = true
         heroPlayedOverride = nil
         heroFavoriteOverride = nil
         status = .loading
@@ -177,6 +184,7 @@ public final class MediaDetailViewModel {
         let similar = await (try? client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
         guard generation == loadGeneration else { return }
         similarItems = similar
+        isSimilarLoading = false
     }
 
     /// Re-run the core load now — the failed notice's Retry button.
