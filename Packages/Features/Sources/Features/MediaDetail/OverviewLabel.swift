@@ -15,6 +15,9 @@ struct OverviewLabel: View {
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
 
+    /// Small uppercase label directly over the tagline (the `CreditEntry`
+    /// label treatment) — the episode page's "Season 4 · Episode 1".
+    var eyebrow: String?
     let tagline: String?
     let overview: String?
     /// On-page clamp for the overview text; the overlay shows the full text.
@@ -22,11 +25,21 @@ struct OverviewLabel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sm) {
-            if let tagline, !tagline.isEmpty {
-                Text(tagline)
-                    .jsStyle(.headline)
-                    .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
-                    .lineLimit(2)
+            if eyebrow != nil || tagline?.isEmpty == false {
+                VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                    if let eyebrow {
+                        Text(eyebrow)
+                            .jsStyle(.eyebrow)
+                            .foregroundStyle(isFocused ? theme.onFocusFillSecondary : theme.tertiary)
+                            .textCase(.uppercase)
+                    }
+                    if let tagline, !tagline.isEmpty {
+                        Text(tagline)
+                            .jsStyle(.headline)
+                            .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
+                            .lineLimit(2)
+                    }
+                }
             }
             if let overview {
                 Text(overview)

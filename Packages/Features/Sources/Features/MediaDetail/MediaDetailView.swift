@@ -141,6 +141,20 @@ public struct MediaDetailView: View {
         return first == last ? String(first) : "\(first)–\(last)"
     }
 
+    /// What replaces the item's own year in the hero metadata: collections
+    /// pass their contents' span, episodes their air date (which matters more
+    /// than the season's production year). Nil falls back to the item's year.
+    private var heroYearOverride: String? {
+        switch item.type {
+        case .boxSet:
+            collectionYearSpan
+        case .episode:
+            displayItem.premiereDate?.formatted(date: .abbreviated, time: .omitted)
+        default:
+            nil
+        }
+    }
+
     /// Where the shelves' top parks on the tvOS region snap: the hero is exactly
     /// one container tall, so the shelves start one container plus one section gap
     /// into the content. Kept as MediaDetail's own expression (small inset,
@@ -205,7 +219,7 @@ public struct MediaDetailView: View {
                     item: displayItem,
                     directors: viewModel.directors,
                     topCast: viewModel.topCast,
-                    yearSpanOverride: collectionYearSpan,
+                    yearSpanOverride: heroYearOverride,
                     playTitle: playButtonLabel.title,
                     playIcon: playButtonLabel.systemImage,
                     playTarget: playableItem,
@@ -255,11 +269,16 @@ public struct MediaDetailView: View {
                     // More Like This resolves after the core status settles
                     // (it's enrichment), so it swaps its own ghost — keyed to
                     // its own fetch — for the shelf, independent of the above.
-                    if viewModel.isSimilarLoading {
-                        SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
-                            .skeletonPulse()
-                    } else {
-                        SimilarItemsSection(items: viewModel.similarItems)
+                    // Episode pages skip it outright (the season shelf is
+                    // their kin section; "more like this episode" is dubious)
+                    // — gated here too so its ghost never flashes.
+                    if item.type != .episode {
+                        if viewModel.isSimilarLoading {
+                            SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+                                .skeletonPulse()
+                        } else {
+                            SimilarItemsSection(items: viewModel.similarItems)
+                        }
                     }
 
                     MediaInfoSection(item: displayItem)
@@ -404,15 +423,38 @@ public struct MediaDetailView: View {
         // Renders nothing for other types.
         CollectionItemsSection(items: viewModel.collectionItems)
 
-        // On pages with no leading section (movies, episodes) the
-        // focus engine can skip the cast row and grab More Like This;
-        // steer first focus onto cast. Gated off when episodes or a
-        // collection lead (those steer their own first focus), so the
-        // two steers never both fire.
+        // And the rest of the season leads on episode pages, parked on
+        // the page's own episode. Renders nothing for other types.
+        SeasonEpisodesSection(
+            title: displayItem.seasonName ?? "Episodes",
+            episodes: viewModel.seasonEpisodes,
+            currentEpisodeId: item.id,
+            isRegionFocused: focusedRegion == .shelves,
+            menu: { episode in
+                ShelfMenuHandlers(
+                    viewDetails: { pushMediaDetail?(episode) },
+                    setPlayed: { played in
+                        Task { await viewModel.setPlayed(played, for: episode) }
+                    },
+                    setFavorite: { favorite in
+                        Task { await viewModel.setFavorite(favorite, for: episode) }
+                    },
+                )
+            },
+            playbackItem: $playbackItem,
+        )
+
+        // On pages with no leading section (movies) the focus engine
+        // can skip the cast row and grab More Like This; steer first
+        // focus onto cast. Gated off when a leading section exists
+        // (those steer their own first focus), so two steers never
+        // both fire.
         CastShelfSection(
             people: displayItem.people ?? [],
             isRegionFocused: focusedRegion == .shelves,
-            steersFirstFocus: viewModel.seasons.isEmpty && viewModel.collectionItems.isEmpty,
+            steersFirstFocus: viewModel.seasons.isEmpty
+                && viewModel.collectionItems.isEmpty
+                && viewModel.seasonEpisodes.isEmpty,
         )
     }
 
@@ -422,7 +464,8 @@ public struct MediaDetailView: View {
     /// ghost, keyed to its own fetch.
     private var sectionSkeletons: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-            if item.type == .series {
+            // Series and episode pages both lead with a 16:9 episode shelf.
+            if item.type == .series || item.type == .episode {
                 SkeletonShelf(
                     cardWidth: 440,
                     shape: .artwork(aspectRatio: 16.0 / 9.0),
@@ -441,24 +484,29 @@ public struct MediaDetailView: View {
 
     private var overviewOverlay: OverviewOverlay {
         OverviewOverlay(
-            tagline: displayItem.tagline,
+            // Episodes headline the overlay with their own title under the
+            // season/episode eyebrow, matching the hero's overview lockup.
+            eyebrow: displayItem.seasonEpisodeText,
+            tagline: item.type == .episode ? displayItem.name : displayItem.tagline,
             overview: displayItem.overview,
-            backdropURL: session.client?.backdropURL(for: displayItem),
+            backdropURL: viewModel.heroBackdropURL(for: displayItem),
         )
     }
 
     // MARK: - Hero backdrop
 
     /// Resolves the backdrop URL and mounts `MediaDetailHeroBackdrop`, which owns
-    /// the melt/dim/blur treatment driven by `scrollProgress`.
+    /// the melt/dim/blur treatment driven by `scrollProgress`. The view model
+    /// picks the image (an episode hero may ride its own primary still
+    /// instead of a backdrop — see `heroBackdropURL(for:)`).
     @ViewBuilder
     private var heroBackground: some View {
-        if let client = session.client,
-           let url = client.backdropURL(for: displayItem)
+        if session.client != nil,
+           let url = viewModel.heroBackdropURL(for: displayItem)
         {
             MediaDetailHeroBackdrop(
                 url: url,
-                blurHash: displayItem.backdropBlurHash,
+                blurHash: viewModel.heroBackdropBlurHash(for: displayItem),
                 progress: scrollProgress,
             )
         }

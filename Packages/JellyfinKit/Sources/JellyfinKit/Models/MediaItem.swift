@@ -502,6 +502,16 @@ public extension MediaItem {
         return "S\(season)E\(episode)"
     }
 
+    /// Spelled-out season/episode position (e.g., "Season 2 · Episode 4");
+    /// nil unless the item is an episode carrying both numbers
+    var seasonEpisodeText: String? {
+        guard type == .episode,
+              let season = parentIndexNumber,
+              let episode = indexNumber
+        else { return nil }
+        return "Season \(season) · Episode \(episode)"
+    }
+
     /// Display title for episodes (e.g., "S01E05 - Episode Title")
     var episodeDisplayTitle: String? {
         guard type == .episode,

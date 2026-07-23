@@ -4,14 +4,15 @@ import Observation
 
 /// Loads a media detail page's server-side content: the full item (which
 /// carries cast & crew), the per-type sections (seasons/episodes for series,
-/// contents for collections), and the More Like This enrichment.
+/// contents for collections, the season shelf for episodes), and the More
+/// Like This enrichment.
 ///
 /// The screen-defining fetches share one `status` — they hit the same server
 /// in the same instant, and the failed notice's Retry re-runs them together,
 /// so per-facet statuses would only add UI branches with no distinct
 /// recovery path. Genuinely optional enrichment (similar items, the next-up
-/// resolution with its first-episode fallback) keeps `try?` and never
-/// touches `status`.
+/// resolution with its first-episode fallback, the episode page's series
+/// item) keeps `try?` and never touches `status`.
 @Observable
 @MainActor
 public final class MediaDetailViewModel {
@@ -47,6 +48,22 @@ public final class MediaDetailViewModel {
     /// BoxSet-only: the collection's contents, in release order.
     public private(set) var collectionItems: [MediaItem] = []
 
+    /// Episode-only: the rest of the episode's season, in season order (the
+    /// page's own episode included — it anchors "you are here").
+    public private(set) var seasonEpisodes: [MediaItem] = []
+
+    /// Episode-only: the full series item, fetched so "Go to Series" can
+    /// push a real series page. Nil until it lands (button stays disabled) —
+    /// it's enrichment, so a failure never fails the page.
+    public private(set) var seriesItem: MediaItem?
+
+    /// Episode-only: whether the episode's own primary still passed the hero
+    /// width check (the same `HomeViewModel.heroEpisodePrimaryMinWidth` rule
+    /// as the Home marquee) and should carry the hero backdrop. False until
+    /// the check lands — the series backdrop shows meanwhile — and stays
+    /// false when the lookup fails or the still is too narrow.
+    private var episodePrimaryIsHeroBackdrop = false
+
     /// Credits derived once when the detailed item lands, rather than
     /// re-filtering `people` on every body evaluation.
     public private(set) var directors: [CastMember] = []
@@ -81,6 +98,52 @@ public final class MediaDetailViewModel {
     /// Jellyfin's stored status.
     public var heroIsFavorite: Bool {
         heroFavoriteOverride ?? (detailedItem ?? item)?.userData?.isFavorite ?? false
+    }
+
+    // MARK: - Hero backdrop
+
+    /// The backdrop the hero should render. An episode whose primary still
+    /// passed the width check rides that still; otherwise an episode goes
+    /// straight to the inherited series backdrop (skipping `backdropURL`'s
+    /// thumb fallback — a low-res thumb stretched across the hero is exactly
+    /// what the width rule exists to prevent). Everything else keeps the
+    /// standard backdrop resolution. Mirrors `HomeViewModel`.
+    public func heroBackdropURL(for item: MediaItem) -> URL? {
+        guard let client else { return nil }
+        if episodePrimaryIsHeroBackdrop {
+            return client.getImageURL(itemId: item.id, imageType: .primary, maxWidth: 1920, maxHeight: nil)
+        }
+        if item.type == .episode,
+           let parentId = item.parentArtwork?.backdropItemId,
+           item.parentArtwork?.backdropImageTag != nil
+        {
+            return client.getImageURL(itemId: parentId, imageType: .backdrop, maxWidth: 1920, maxHeight: nil)
+        }
+        return client.backdropURL(for: item)
+    }
+
+    /// Placeholder hash matching `heroBackdropURL(for:)`'s image choice.
+    /// (Inherited series backdrops carry no hash — `ParentArtwork` has none —
+    /// so those render through the plain placeholder.)
+    public func heroBackdropBlurHash(for item: MediaItem) -> String? {
+        episodePrimaryIsHeroBackdrop
+            ? item.imageTags?.primaryBlurHash
+            : item.backdropBlurHash
+    }
+
+    /// Whether the episode's own primary still is wide enough
+    /// (`HomeViewModel.heroEpisodePrimaryMinWidth`) to carry the hero,
+    /// checked against the server's stored dimensions. False without a
+    /// primary tag, on a failed lookup, or when the server reports no width.
+    private nonisolated static func episodePrimaryPassesWidthCheck(
+        _ episode: MediaItem,
+        imageInfo: @Sendable (String) async throws -> [ItemImageInfo],
+    ) async -> Bool {
+        guard episode.imageTags?.primary != nil,
+              let infos = try? await imageInfo(episode.id),
+              let width = infos.first(where: { $0.imageType == .primary })?.width
+        else { return false }
+        return width >= HomeViewModel.heroEpisodePrimaryMinWidth
     }
 
     // MARK: - Configuration
@@ -133,6 +196,9 @@ public final class MediaDetailViewModel {
         episodes = []
         nextUpEpisode = nil
         collectionItems = []
+        seasonEpisodes = []
+        seriesItem = nil
+        episodePrimaryIsHeroBackdrop = false
         directors = []
         topCast = []
         similarItems = []
@@ -171,11 +237,47 @@ public final class MediaDetailViewModel {
                 collectionItems = items
             }
 
+            // The season shelf is an episode page's kin section (like
+            // episodes on a series page), so its failure fails the core.
+            // Read the series/season ids off the detail — the pushed stub
+            // (e.g. a search result) may carry less.
+            if item.type == .episode, let seriesId = detail.seriesId ?? item.seriesId {
+                async let episodesFetch = client.getEpisodes(
+                    seriesId: seriesId,
+                    seasonId: detail.seasonId ?? item.seasonId,
+                )
+                // The series item only powers the Go to Series button —
+                // enrichment; without it the button just stays disabled.
+                async let seriesFetch = client.getMediaItem(itemId: seriesId)
+                // Same rule as the Home marquee: the episode's own still
+                // carries the hero only when it's genuinely backdrop-sized.
+                // Enrichment — a failed lookup just keeps the series backdrop.
+                async let primaryWidthCheck = Self.episodePrimaryPassesWidthCheck(
+                    detail,
+                    imageInfo: client.getImageInfo(itemId:),
+                )
+                let fetchedEpisodes = try await episodesFetch
+                let fetchedSeries = try? await seriesFetch
+                let primaryIsHeroWorthy = await primaryWidthCheck
+                guard generation == loadGeneration else { return }
+                seasonEpisodes = fetchedEpisodes
+                seriesItem = fetchedSeries
+                episodePrimaryIsHeroBackdrop = primaryIsHeroWorthy
+            }
+
             status = .loaded
         } catch {
             guard generation == loadGeneration else { return }
             status = .failed(error.localizedDescription)
             needsLoad = true
+        }
+
+        // "More like this specific episode" is a dubious question to ask the
+        // server — the season shelf is an episode page's kin section instead,
+        // so skip the fetch entirely.
+        if item.type == .episode {
+            isSimilarLoading = false
+            return
         }
 
         // More Like This is enrichment: a failure renders no shelf, never an
@@ -221,6 +323,19 @@ public final class MediaDetailViewModel {
                 episodes = refreshedEpisodes
             }
             nextUpEpisode = nextUp
+        }
+
+        // The season shelf's watched badges and progress bars move with
+        // playback too.
+        if item.type == .episode, let seriesId = (detailedItem ?? item).seriesId {
+            let refreshed = try? await client.getEpisodes(
+                seriesId: seriesId,
+                seasonId: (detailedItem ?? item).seasonId,
+            )
+            guard generation == loadGeneration else { return }
+            if let refreshed {
+                seasonEpisodes = refreshed
+            }
         }
 
         // Watched flags on the collection cards (and the Play target's
@@ -312,6 +427,7 @@ public final class MediaDetailViewModel {
             items.map { $0.id == target.id ? target : $0 }
         }
         episodes = swapping(episodes)
+        seasonEpisodes = swapping(seasonEpisodes)
         collectionItems = swapping(collectionItems)
         similarItems = swapping(similarItems)
         if nextUpEpisode?.id == target.id {
