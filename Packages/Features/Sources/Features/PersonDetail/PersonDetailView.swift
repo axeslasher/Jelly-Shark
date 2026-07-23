@@ -35,7 +35,7 @@ public struct PersonDetailView: View {
             VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
                 PersonDetailHeader(
                     member: member,
-                    person: viewModel.person,
+                    viewModel: viewModel,
                     isPresentingBiography: $isPresentingBiography,
                 )
                 .padding(.horizontal, SpacingTokens.screenPadding)

@@ -42,7 +42,18 @@ public final class PersonDetailViewModel {
     /// Random filmography entry with a usable backdrop; drives the background.
     public private(set) var backdropItem: MediaItem?
 
+    /// Optimistic override for the header's favorite toggle. While `nil` the
+    /// button reflects Jellyfin's fetched state; a toggle sets it and it
+    /// reverts on a failed server call.
+    public private(set) var favoriteOverride: Bool?
+
     public private(set) var filmographyStatus: Status = .loading
+
+    /// Favorite state the header shows: optimistic value if any, otherwise
+    /// Jellyfin's stored status.
+    public var isFavorite: Bool {
+        favoriteOverride ?? person?.isFavorite ?? false
+    }
 
     // MARK: - Configuration
 
@@ -90,6 +101,7 @@ public final class PersonDetailViewModel {
         series = []
         episodes = []
         backdropItem = nil
+        favoriteOverride = nil
         filmographyStatus = .loading
 
         // No client means the session is still being established (or was
@@ -157,6 +169,26 @@ public final class PersonDetailViewModel {
     public func retry() async {
         needsLoad = true
         await load()
+    }
+
+    // MARK: - User-Data Actions
+
+    /// Optimistically flip the favorite state, then persist; revert on
+    /// failure. Person IDs are item IDs, so the standard favorite endpoints
+    /// apply.
+    public func toggleFavorite() async {
+        guard let client, let member else { return }
+        let target = !isFavorite
+        favoriteOverride = target
+        do {
+            if target {
+                try await client.markFavorite(itemId: member.id)
+            } else {
+                try await client.unmarkFavorite(itemId: member.id)
+            }
+        } catch {
+            favoriteOverride = !target
+        }
     }
 
     /// One filmography shelf, boxed as a `Result` so a throw doesn't discard

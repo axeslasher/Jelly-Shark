@@ -161,4 +161,60 @@ struct PersonDetailViewModelTests {
         await load(viewModel, client: client)
         #expect(client.itemsFeaturingPersonRequests.count == requestCount)
     }
+
+    // MARK: - Favorite toggle
+
+    @Test("toggleFavorite favorites, then unfavorites")
+    func favoriteToggles() async {
+        let client = MockJellyfinClient()
+        let viewModel = PersonDetailViewModel()
+        await load(viewModel, client: client)
+        #expect(viewModel.isFavorite == false)
+
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == true)
+
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == false)
+        #expect(client.userDataCalls.map(\.action) == ["favorite", "unfavorite"])
+        #expect(client.userDataCalls.map(\.itemId) == ["guid-1", "guid-1"])
+    }
+
+    @Test("An already-favorited person's toggle starts from the fetched state")
+    func favoriteStartsFromFetchedState() async {
+        let client = MockJellyfinClient()
+        client.personResult = .success(Person(id: "guid-1", name: "Jane Doe", isFavorite: true))
+        let viewModel = PersonDetailViewModel()
+        await load(viewModel, client: client)
+        #expect(viewModel.isFavorite == true)
+
+        await viewModel.toggleFavorite()
+        #expect(client.userDataCalls.map(\.action) == ["unfavorite"])
+        #expect(viewModel.isFavorite == false)
+    }
+
+    @Test("toggleFavorite reverts the optimistic flip when the server call fails")
+    func favoriteRevertsOnFailure() async {
+        let client = MockJellyfinClient()
+        let viewModel = PersonDetailViewModel()
+        await load(viewModel, client: client)
+
+        client.userDataError = APIError.networkError("offline")
+        await viewModel.toggleFavorite()
+
+        #expect(viewModel.isFavorite == false)
+    }
+
+    @Test("Attaching a new person resets the pending override")
+    func overrideResetsOnNewPerson() async {
+        let client = MockJellyfinClient()
+        let viewModel = PersonDetailViewModel()
+        await load(viewModel, client: client)
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == true)
+
+        await load(viewModel, client: client, member: CastMember(id: "guid-2", name: "Other", kind: "Actor"))
+        #expect(viewModel.favoriteOverride == nil)
+        #expect(viewModel.isFavorite == false)
+    }
 }

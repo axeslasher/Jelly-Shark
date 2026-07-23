@@ -92,7 +92,7 @@ The app follows a modular architecture with clear separation of concerns. All th
 
 3. **Features** (`Packages/Features`): Application features, screens, and user flows
    - View implementations: `RootView`, `HomeView`, `LibraryItemsView` (+ `LibraryItemsViewModel`, `LibraryFilterBar`), `MediaDetailView` (hero + episodes/seasons shelf, similar items, cast & crew), `PersonDetailView` (+ `PersonDetailHeader`, filmography), `SearchView` (+ `SearchViewModel`), `SettingsView`, `ServerConnectionView`, playback views
-   - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `LibraryItemsViewModel`, `SearchViewModel`, `PlaybackViewModel`; app-level `AppSession`. Not every screen has one yet — `HomeView`, `MediaDetailView`, and `PersonDetailView` keep their load logic inline (view-model extraction is tracked in issue #26)
+   - View models (`@Observable @MainActor`): `ServerConnectionViewModel`, `HomeViewModel`, `LibraryItemsViewModel`, `MediaDetailViewModel`, `PersonDetailViewModel`, `SearchViewModel`, `PlaybackViewModel`; app-level `AppSession`. Every screen's server fetches and optimistic user-data toggles live in its view model (views keep only presentation state), each covered by a Swift Testing suite via the shared `MockJellyfinClient`
    - Navigation: a `.sidebarAdaptable` `TabView` in `RootView` — Home, one dynamic tab per Jellyfin library (grouped under a *Libraries* `TabSection`), Search, and Settings. `RootView` owns one `NavigationPath` per tab (so a tab switch can pop the outgoing stack to root — a tvOS `sidebarAdaptable` workaround) and pushes are value-based; the `MediaItem` → `MediaDetailView` and `CastMember` → `PersonDetailView` destinations are registered at each tab's root
    - Depends on JellyfinKit and DesignSystem
    - Structure: Artwork/, Library/, MediaDetail/, PersonDetail/, Playback/, Search/, Settings/ (no separate Authentication/ — connection lives under Settings/)
@@ -180,7 +180,7 @@ The foundation and core loop are in place. The app can connect to a Jellyfin ser
 - Search: debounced live search with a result grid, term-completion suggestions, and navigation to detail (`SearchView` + `SearchViewModel`)
 - AVPlayer playback with direct play (original file when the source and requested tracks allow) and HLS remux/transcode fallback, true PlayMethod reporting, progress reporting, resume, audio/subtitle track switching, episode autoplay with "Up Next" overlay
 - All five themes (Standard, Horror, Action, Video Store, Sci-Fi) switchable at runtime, on a `BaseColors` Tailwind-palette token layer; genre palettes are placeholders pending curation
-- Real unit tests for `ServerConnectionViewModel`, `PlaybackViewModel`, `SearchViewModel`, `LibraryItemsViewModel`, and `LibraryQueryDisplay` (Swift Testing) plus JellyfinKit unit tests and DesignSystem theme-catalog tests (identity, distinctness, WCAG contrast)
+- Real unit tests for every view model (`ServerConnectionViewModel`, `HomeViewModel`, `LibraryItemsViewModel`, `MediaDetailViewModel`, `PersonDetailViewModel`, `SearchViewModel`, `PlaybackViewModel`) and `LibraryQueryDisplay` (Swift Testing) plus JellyfinKit unit tests and DesignSystem theme-catalog tests (identity, distinctness, WCAG contrast)
 
 **Not yet implemented**:
 - Hand-curated palettes for Horror / Action / Video Store (structs exist; colors are first-pass Tailwind picks)

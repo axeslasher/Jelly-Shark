@@ -17,13 +17,10 @@ struct PersonDetailHeader: View {
     @Environment(AppSession.self) private var session
 
     let member: CastMember
-    let person: Person?
+    /// Owns the person fetch and the favorite toggle's optimistic state (so
+    /// its revert-on-failure path is testable).
+    let viewModel: PersonDetailViewModel
     @Binding var isPresentingBiography: Bool
-
-    /// Optimistic local override for the favorite toggle. While `nil`, the
-    /// button reflects Jellyfin's fetched state; a tap sets the override
-    /// immediately and is cleared/reverted based on the server response.
-    @State private var favoriteOverride: Bool?
 
     /// Measured height of the headshot column, mirrored onto the info column
     /// as a minimum so its focus section always spans the favorite button's
@@ -33,10 +30,16 @@ struct PersonDetailHeader: View {
     /// Hero-scale circle diameter — a clear jump from the 200pt row cards.
     private static let headshotSize: CGFloat = 300
 
-    /// Favorite state shown by the button: optimistic value if any, otherwise
-    /// Jellyfin's stored status.
+    /// Detailed fetch; upgrades the header's metadata and biography when it
+    /// lands.
+    private var person: Person? {
+        viewModel.person
+    }
+
+    /// Favorite state shown by the button: the view model's optimistic value
+    /// if any, otherwise Jellyfin's stored status.
     private var isFavorite: Bool {
-        favoriteOverride ?? person?.isFavorite ?? false
+        viewModel.isFavorite
     }
 
     var body: some View {
@@ -66,7 +69,7 @@ struct PersonDetailHeader: View {
                     focusedTint: isFavorite ? theme.accent : nil,
                     isEnabled: session.client != nil,
                 ) {
-                    Task { await toggleFavorite() }
+                    Task { await viewModel.toggleFavorite() }
                 }
             }
             .onGeometryChange(for: CGFloat.self) { proxy in
@@ -104,6 +107,10 @@ struct PersonDetailHeader: View {
                 .focusSection()
             #endif
         }
+        // Animate exactly the toggle-driven updates (heart icon/label) — the
+        // moved-to-view-model equivalent of the old `withAnimation` around the
+        // optimistic flip.
+        .animation(theme.animation, value: viewModel.favoriteOverride)
     }
 
     /// Life facts as an inline icon row, styled identically to the media
@@ -134,22 +141,5 @@ struct PersonDetailHeader: View {
         }
         let age = person.age.map { " (age \($0))" } ?? ""
         return "Born \(born)\(age)"
-    }
-
-    /// Optimistically flip the favorite state, then persist; revert on failure.
-    /// Person IDs are item IDs, so the standard favorite endpoints apply.
-    private func toggleFavorite() async {
-        guard let client = session.client else { return }
-        let target = !isFavorite
-        withAnimation(theme.animation) { favoriteOverride = target }
-        do {
-            if target {
-                try await client.markFavorite(itemId: member.id)
-            } else {
-                try await client.unmarkFavorite(itemId: member.id)
-            }
-        } catch {
-            withAnimation(theme.animation) { favoriteOverride = !target }
-        }
     }
 }
