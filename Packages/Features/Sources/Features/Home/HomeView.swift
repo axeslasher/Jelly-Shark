@@ -276,10 +276,13 @@ struct HomeView: View {
     /// content via `scrollOffset`, so it behaves as part of the hero.
     @ViewBuilder
     private var heroBackground: some View {
-        if let client = session.client, let item = viewModel.currentHeroItem {
+        if session.client != nil, let item = viewModel.currentHeroItem {
+            // The view model picks the image (an episode hero may ride its
+            // own primary still instead of a backdrop — see
+            // `heroBackdropURL(for:)`).
             HomeHeroBackdrop(
-                url: client.backdropURL(for: item),
-                blurHash: item.backdropBlurHash,
+                url: viewModel.heroBackdropURL(for: item),
+                blurHash: viewModel.heroBackdropBlurHash(for: item),
                 itemId: item.id,
                 direction: viewModel.pagingDirection,
                 generation: viewModel.pagingGeneration,

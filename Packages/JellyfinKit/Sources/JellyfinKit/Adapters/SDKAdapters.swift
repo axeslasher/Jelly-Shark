@@ -147,6 +147,19 @@ extension ParentArtwork {
     }
 }
 
+// MARK: - ItemImageInfo Adapter
+
+extension ItemImageInfo {
+    /// Nil when the entry's type isn't one the facade models (Box, Disc, …) —
+    /// callers only reason about the app's `ImageType` cases.
+    init?(from dto: JellyfinAPI.ImageInfo) {
+        guard let raw = dto.imageType?.rawValue,
+              let type = ImageType(rawValue: raw)
+        else { return nil }
+        self.init(imageType: type, width: dto.width, height: dto.height)
+    }
+}
+
 // MARK: - MediaType Adapter
 
 extension MediaType {

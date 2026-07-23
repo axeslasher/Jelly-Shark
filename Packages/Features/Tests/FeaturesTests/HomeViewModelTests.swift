@@ -57,6 +57,29 @@ struct HomeViewModelTests {
         MediaItem(id: id, name: id, type: .boxSet, imageTags: ImageTags(backdrop: "tag"))
     }
 
+    /// An episode as `/Latest` returns a lone new arrival: its own primary
+    /// still and/or an inherited series backdrop.
+    private func heroEpisode(
+        _ id: String,
+        seriesId: String? = "s1",
+        primary: Bool = true,
+        seriesBackdrop: Bool = true,
+    ) -> MediaItem {
+        MediaItem(
+            id: id,
+            name: "\(id)-name",
+            type: .episode,
+            imageTags: primary ? ImageTags(primary: "tag") : nil,
+            seriesId: seriesId,
+            seriesName: "Series",
+            indexNumber: 4,
+            parentIndexNumber: 2,
+            parentArtwork: seriesBackdrop
+                ? ParentArtwork(backdropItemId: seriesId ?? "s1", backdropImageTag: "tag")
+                : nil,
+        )
+    }
+
     /// Attach + load in one step, mirroring the view's `.task`.
     private func load(
         _ viewModel: HomeViewModel,
@@ -81,7 +104,7 @@ struct HomeViewModelTests {
     func curationFiltersTypesAndBackdrops() {
         let latest = [
             movie("m1"),
-            episode("e1", seriesId: "s1"),
+            episode("e1", seriesId: "s1"), // no primary, no series backdrop — not hero material
             movie("m2", backdrop: false),
             series("s2"),
             boxSet("b1"),
@@ -120,6 +143,38 @@ struct HomeViewModelTests {
             limit: 3,
         )
         #expect(curated.map(\.id) == ["m0", "m1", "m2"])
+    }
+
+    @Test("Curation admits episodes with hero-capable artwork, one slot per series")
+    func curationAdmitsEpisodes() {
+        let latest = [
+            heroEpisode("e1", seriesId: "s1"),
+            heroEpisode("e2", seriesId: "s1"), // same series — collapses
+            series("s1"), // the same show as a grouped entry — collapses too
+            heroEpisode("e3", seriesId: "s2", primary: false), // series backdrop alone qualifies
+            movie("m1"),
+        ]
+        let curated = HomeViewModel.curateHeroItems(
+            from: latest,
+            hasBackdrop: { $0.imageTags?.backdrop != nil },
+            limit: 10,
+        )
+        #expect(curated.map(\.id) == ["e1", "e3", "m1"])
+    }
+
+    @Test("Curation drops episodes without a series or without any hero artwork")
+    func curationDropsUnusableEpisodes() {
+        let latest = [
+            heroEpisode("e-stray", seriesId: nil),
+            heroEpisode("e-bare", seriesId: "s1", primary: false, seriesBackdrop: false),
+            movie("m1"),
+        ]
+        let curated = HomeViewModel.curateHeroItems(
+            from: latest,
+            hasBackdrop: { _ in true },
+            limit: 10,
+        )
+        #expect(curated.map(\.id) == ["m1"])
     }
 
     // MARK: - Continue Watching merge (pure)
@@ -633,6 +688,79 @@ struct HomeViewModelTests {
         await load(viewModel, client: client)
 
         #expect(viewModel.heroPlayTarget == nil)
+    }
+
+    // MARK: - Episode heroes
+
+    /// Load a Home whose hero source returns just the given episode.
+    private func loadEpisodeHero(
+        _ episode: MediaItem,
+        imageInfos: [ItemImageInfo]? = nil,
+        infoFails: Bool = false,
+    ) async -> (viewModel: HomeViewModel, client: MockJellyfinClient) {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { libraryId in
+            libraryId == nil ? .success([episode]) : .success([])
+        }
+        if let imageInfos {
+            client.imageInfosById[episode.id] = imageInfos
+        }
+        if infoFails {
+            client.imageInfoFailureIds = [episode.id]
+        }
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+        return (viewModel, client)
+    }
+
+    @Test("An episode hero with a wide-enough primary rides its own still")
+    func episodeHeroUsesWidePrimary() async {
+        // Exactly the floor width: the rule is inclusive (≥ 1080).
+        let (viewModel, _) = await loadEpisodeHero(
+            heroEpisode("e1"),
+            imageInfos: [ItemImageInfo(imageType: .primary, width: 1080, height: 608)],
+        )
+        #expect(viewModel.heroItems.map(\.id) == ["e1"])
+        let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
+        #expect(url?.path() == "/Items/e1/Images/Primary")
+    }
+
+    @Test("A narrow primary falls back to the series backdrop")
+    func episodeHeroNarrowPrimaryFallsBack() async {
+        let (viewModel, _) = await loadEpisodeHero(
+            heroEpisode("e1", seriesId: "s1"),
+            imageInfos: [ItemImageInfo(imageType: .primary, width: 720, height: 405)],
+        )
+        #expect(viewModel.heroItems.map(\.id) == ["e1"])
+        let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
+        #expect(url?.path() == "/Items/s1/Images/Backdrop")
+    }
+
+    @Test("A failed image-info lookup degrades to the series backdrop")
+    func episodeHeroInfoFailureFallsBack() async {
+        let (viewModel, _) = await loadEpisodeHero(heroEpisode("e1", seriesId: "s1"), infoFails: true)
+        #expect(viewModel.heroItems.map(\.id) == ["e1"])
+        let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
+        #expect(url?.path() == "/Items/s1/Images/Backdrop")
+    }
+
+    @Test("A narrow primary with no series backdrop drops the episode from the hero")
+    func episodeHeroWithNoUsableImageIsDropped() async {
+        let (viewModel, _) = await loadEpisodeHero(
+            heroEpisode("e1", seriesBackdrop: false),
+            imageInfos: [ItemImageInfo(imageType: .primary, width: 720, height: 405)],
+        )
+        #expect(viewModel.heroItems.isEmpty)
+    }
+
+    @Test("An episode hero plays itself — no next-up resolution")
+    func episodeHeroPlaysItself() async {
+        let (viewModel, client) = await loadEpisodeHero(
+            heroEpisode("e1"),
+            imageInfos: [ItemImageInfo(imageType: .primary, width: 1920, height: 1080)],
+        )
+        #expect(viewModel.heroPlayTarget?.id == "e1")
+        #expect(client.nextUpEpisodeRequests.isEmpty)
     }
 
     // MARK: - Auto-advance
