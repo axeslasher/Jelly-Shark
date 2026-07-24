@@ -14,9 +14,11 @@ struct Jelly_SharkApp: App {
     init() {
         // Size the shared cache for encoded poster/backdrop artwork bytes. It
         // backs `URLSession.shared`, which is what `ArtworkLoader` (decoded
-        // images live in its own bounded NSCache tier) and `TrimmedLogoImage`
-        // fetch through.
-        URLCache.shared.memoryCapacity = 64 * 1024 * 1024
+        // images live in its own bounded NSCache tiers) and `TrimmedLogoImage`
+        // fetch through. The memory tier only shortcuts re-decodes after a
+        // decoded-tier eviction — encoded bytes are ~10-20x smaller than their
+        // bitmaps, so 16MB covers plenty and the RAM belongs to decoded images.
+        URLCache.shared.memoryCapacity = 16 * 1024 * 1024
         URLCache.shared.diskCapacity = 256 * 1024 * 1024
     }
 

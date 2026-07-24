@@ -9,8 +9,9 @@ import SwiftUI
 /// every remount during shelf/grid scrolling re-decodes from scratch — the
 /// dominant memory churn found in the #105 device profiling. This loader adds
 /// the missing tier: encoded bytes ride the app-sized shared `URLCache` (via
-/// `URLSession.shared`), and decoded images live in an `NSCache` bounded by
-/// byte cost, so paging back over artwork is a lookup instead of a decode.
+/// `URLSession.shared`), and decoded images live in cost-bounded `NSCache`s
+/// (split by size class — see `screenClassCost`), so paging back over artwork
+/// is a lookup instead of a decode.
 ///
 /// Decodes are downsampled through ImageIO to the pixel size the slot actually
 /// needs — a guardrail so an oversized source can never inflate a small card
@@ -19,15 +20,32 @@ import SwiftUI
 public actor ArtworkLoader {
     public static let shared = ArtworkLoader()
 
-    /// Decoded images, keyed by URL + slot. Cost is decoded bytes; the limit
-    /// bounds the tier well under the app's overall memory target, and NSCache
-    /// additionally evicts on system memory pressure.
-    private let cache: NSCache<NSString, CGImage> = {
+    /// Decoded card-sized images (posters, landscape cells, headshots), keyed
+    /// by URL + slot. Cost is decoded bytes; the limit bounds the tier well
+    /// under the app's overall memory target, and NSCache additionally evicts
+    /// on system memory pressure.
+    private let cardCache: NSCache<NSString, CGImage> = {
         let cache = NSCache<NSString, CGImage>()
-        cache.name = "ArtworkLoader.decoded"
-        cache.totalCostLimit = 64 * 1024 * 1024
+        cache.name = "ArtworkLoader.decoded.cards"
+        cache.totalCostLimit = 40 * 1024 * 1024
         return cache
     }()
+
+    /// Screen-class images (hero/detail backdrops) live in their own tier so
+    /// the Home marquee can't thrash the cards out: an auto-advance lap over
+    /// ~10 full-screen backdrops (~8MB decoded each) would blow through any
+    /// shared budget. The limit holds about three — the focused hero and its
+    /// neighbors — and older ones re-decode behind the turn choreography.
+    private let screenCache: NSCache<NSString, CGImage> = {
+        let cache = NSCache<NSString, CGImage>()
+        cache.name = "ArtworkLoader.decoded.screens"
+        cache.totalCostLimit = 24 * 1024 * 1024
+        return cache
+    }()
+
+    /// Decoded-byte size above which an image is screen-class. Full-screen
+    /// backdrops (1920×1080 ≈ 8MB) clear it; the largest cards (~2MB) don't.
+    static let screenClassCost = 4 * 1024 * 1024
 
     /// Coalesces concurrent requests for the same key (e.g. a fast scroll
     /// remounting a card while its first load is still in flight).
@@ -45,7 +63,7 @@ public actor ArtworkLoader {
         contentMode: ContentMode,
     ) async throws -> CGImage {
         let key = Self.cacheKey(url: url, slotPixelSize: slotPixelSize, contentMode: contentMode) as NSString
-        if let cached = cache.object(forKey: key) {
+        if let cached = cardCache.object(forKey: key) ?? screenCache.object(forKey: key) {
             return cached
         }
         if let task = inFlight[key] {
@@ -61,7 +79,9 @@ public actor ArtworkLoader {
         inFlight[key] = task
         defer { inFlight[key] = nil }
         let image = try await task.value
-        cache.setObject(image, forKey: key, cost: image.bytesPerRow * image.height)
+        let cost = image.bytesPerRow * image.height
+        let tier = cost >= Self.screenClassCost ? screenCache : cardCache
+        tier.setObject(image, forKey: key, cost: cost)
         return image
     }
 
