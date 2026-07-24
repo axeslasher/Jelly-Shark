@@ -12,12 +12,10 @@ import SwiftUI
 @main
 struct Jelly_SharkApp: App {
     init() {
-        // Size the shared cache for poster/backdrop artwork. It backs
-        // `URLSession.shared` (e.g. TrimmedLogoImage) and the OS-26 AsyncImage
-        // path directly; on OS 27, where AsyncImage uses the framework's own
-        // image loader, RootView routes artwork through an explicit session
-        // bound to this same cache (see `artworkImageSession`) so the budget
-        // still applies.
+        // Size the shared cache for encoded poster/backdrop artwork bytes. It
+        // backs `URLSession.shared`, which is what `ArtworkLoader` (decoded
+        // images live in its own bounded NSCache tier) and `TrimmedLogoImage`
+        // fetch through.
         URLCache.shared.memoryCapacity = 64 * 1024 * 1024
         URLCache.shared.diskCapacity = 256 * 1024 * 1024
     }
