@@ -36,9 +36,10 @@ enum HeroPlayLabel {
 /// by the overview and Cast & Crew / More Like This shelves.
 ///
 /// Each section is its own `View` struct (not a computed property) so it forms an
-/// invalidation boundary: `scrollProgress` changes every scroll tick, but only
-/// this thin composing body and the hero backdrop re-evaluate — the shelves'
-/// inputs are unchanged, so SwiftUI skips their bodies entirely.
+/// invalidation boundary, and the per-tick scroll values live on
+/// `MediaDetailScrollState` so a scroll tick re-evaluates only the two leaf
+/// views that read them (the backdrop bridge and the hero drift wrapper) —
+/// never this body or the episode/cast/similar shelves below it.
 public struct MediaDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
@@ -48,11 +49,13 @@ public struct MediaDetailView: View {
     /// presentation state (scroll, focus, playback covers).
     @State private var viewModel = MediaDetailViewModel()
 
-    /// Continuous scroll progress for the hero treatment: 0 at the top, ramping to
-    /// 1 once the backdrop has scrolled `Self.heroFadeDistance` points. Drives the
-    /// melt/dim/blur so the transition tracks the scroll instead of snapping after
-    /// the hero leaves the screen.
-    @State private var scrollProgress: CGFloat = 0
+    /// The live scroll values, on an @Observable object instead of @State:
+    /// per-tick writes then invalidate only the views whose bodies read the
+    /// written property, and this body reads none of them. As @State, every
+    /// tick re-ran this body and re-diffed the closure-carrying episode/cast
+    /// shelves — the view-graph churn behind season-heavy pages pinning the
+    /// main thread (#105 Track B).
+    @State private var scroll = MediaDetailScrollState()
 
     /// Points of scrolling over which the hero fully transitions to its dimmed,
     /// blurred wash. Smaller = snappier; larger = more gradual.
@@ -103,11 +106,6 @@ public struct MediaDetailView: View {
 
     /// Handle for the two-anchor snap; only written on tvOS.
     @State private var scrollPosition = ScrollPosition(edge: .top)
-
-    /// Raw scroll offset in points (`contentOffset.y + contentInsets.top`, 0 at
-    /// rest). The tvOS region snap's guards compare against this — `scrollProgress`
-    /// saturates at 1 well before the shelves anchor, so it can't drive them.
-    @State private var scrollOffset: CGFloat = 0
 
     /// Pending region snap (see `onChange(of: focusedRegion)`).
     @State private var regionSnapTask: Task<Void, Never>?
@@ -214,28 +212,30 @@ public struct MediaDetailView: View {
             // can't scroll to — a section that a lazy stack hasn't built yet. The
             // per-shelf horizontal scrolls remain lazy on their own.
             VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                MediaDetailHeroSection(
-                    viewModel: viewModel,
-                    item: displayItem,
-                    directors: viewModel.directors,
-                    topCast: viewModel.topCast,
-                    yearSpanOverride: heroYearOverride,
-                    playTitle: playButtonLabel.title,
-                    playIcon: playButtonLabel.systemImage,
-                    playTarget: playableItem,
-                    playbackItem: $playbackItem,
-                    isPresentingOverview: $isPresentingOverview,
-                )
-                // Drift the hero lockup as it scrolls, in lockstep with the
-                // backdrop's melt/dim/blur. Offset only — no opacity fade: fading
-                // the hero to opacity 0 makes its controls unfocusable on tvOS
-                // (scrolling is focus movement there), which strands the scroll.
-                // Applied here rather than inside HeroSection so the hero's inputs
-                // stay unchanged during scroll and its body is skipped.
-                .offset(y: scrollProgress * Self.heroScrollDrift)
+                // The wrapper drifts the hero lockup as it scrolls, in lockstep
+                // with the backdrop's melt/dim/blur. Offset only — no opacity
+                // fade: fading the hero to opacity 0 makes its controls
+                // unfocusable on tvOS (scrolling is focus movement there),
+                // which strands the scroll. A wrapper so the per-tick
+                // `progress` read stays out of this body, and the hero's
+                // inputs stay unchanged during scroll so its body is skipped.
+                HeroExitDrift(scroll: scroll, drift: Self.heroScrollDrift) {
+                    MediaDetailHeroSection(
+                        viewModel: viewModel,
+                        item: displayItem,
+                        directors: viewModel.directors,
+                        topCast: viewModel.topCast,
+                        yearSpanOverride: heroYearOverride,
+                        playTitle: playButtonLabel.title,
+                        playIcon: playButtonLabel.systemImage,
+                        playTarget: playableItem,
+                        playbackItem: $playbackItem,
+                        isPresentingOverview: $isPresentingOverview,
+                    )
+                }
                 #if os(tvOS)
-                    .focusSection()
-                    .focused($focusedRegion, equals: .hero)
+                .focusSection()
+                .focused($focusedRegion, equals: .hero)
                 #endif
 
                 // Everything below the fold shares one focus region so tvOS
@@ -324,12 +324,12 @@ public struct MediaDetailView: View {
                     guard !Task.isCancelled else { return }
                     switch region {
                     case .hero:
-                        guard scrollOffset > Self.snapSlack else { return }
+                        guard scroll.offset > Self.snapSlack else { return }
                         withAnimation(theme.animation) {
                             scrollPosition.scrollTo(edge: .top)
                         }
                     case .shelves:
-                        guard scrollOffset < shelvesAnchor - Self.snapSlack else { return }
+                        guard scroll.offset < shelvesAnchor - Self.snapSlack else { return }
                         withAnimation(theme.animation) {
                             scrollPosition.scrollTo(y: shelvesAnchor)
                         }
@@ -353,19 +353,21 @@ public struct MediaDetailView: View {
                 )
             } action: { _, metrics in
                 snapMetrics = metrics
+                updateSeasonAnchorReveal()
             }
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, offset in
                 // Raw offset drives the tvOS region-snap guards (which compare
                 // points); keep it before the progress clamp saturates it.
-                if offset != scrollOffset {
-                    scrollOffset = offset
+                if offset != scroll.offset {
+                    scroll.offset = offset
                 }
                 let progress = min(max((offset - Self.heroFadeThreshold) / Self.heroFadeDistance, 0), 1)
-                if progress != scrollProgress {
-                    scrollProgress = progress
+                if progress != scroll.progress {
+                    scroll.progress = progress
                 }
+                updateSeasonAnchorReveal()
             }
             .background(alignment: .top) { heroBackground }
             .background(theme.background)
@@ -398,13 +400,10 @@ public struct MediaDetailView: View {
             // Hidden while the hero owns the screen (so tvOS focus
             // flows past it to the parked episode); fades in only once
             // the scroll has essentially arrived at the shelves anchor
-            // — a beat *after* the settle, not mid-melt. The
-            // containerHeight gate suppresses a false reveal before the
-            // geometry is measured (which would also skip the steer).
-            // Still a derived Bool, so the section re-renders only when
-            // it flips.
-            showsSeasonAnchors: snapMetrics.containerHeight > 0
-                && scrollOffset >= shelvesAnchor - Self.seasonAnchorRevealSlack,
+            // — a beat *after* the settle, not mid-melt. A stored Bool
+            // (see `updateSeasonAnchorReveal`), so this body observes
+            // its flips, never the raw offset ramp.
+            showsSeasonAnchors: scroll.revealsSeasonAnchors,
             menu: { episode in
                 ShelfMenuHandlers(
                     viewDetails: { pushMediaDetail?(episode) },
@@ -504,11 +503,25 @@ public struct MediaDetailView: View {
         if session.client != nil,
            let url = viewModel.heroBackdropURL(for: displayItem)
         {
-            MediaDetailHeroBackdrop(
+            // The bridge owns the per-tick `progress` read, so ticks re-run
+            // its body, not this one.
+            HeroBackdropBridge(
+                scroll: scroll,
                 url: url,
                 blurHash: viewModel.heroBackdropBlurHash(for: displayItem),
-                progress: scrollProgress,
             )
+        }
+    }
+
+    /// Recomputed on scroll ticks and container-geometry changes; stored as a
+    /// Bool so the episodes section observes only its flips. The
+    /// containerHeight gate suppresses a false reveal before the geometry is
+    /// measured (which would also skip the steer).
+    private func updateSeasonAnchorReveal() {
+        let reveals = snapMetrics.containerHeight > 0
+            && scroll.offset >= shelvesAnchor - Self.seasonAnchorRevealSlack
+        if reveals != scroll.revealsSeasonAnchors {
+            scroll.revealsSeasonAnchors = reveals
         }
     }
 
@@ -520,6 +533,60 @@ public struct MediaDetailView: View {
         Task {
             await viewModel.refreshAfterPlayback()
         }
+    }
+}
+
+/// The detail page's per-scroll-tick values. @Observable, so a write
+/// invalidates only the views whose bodies read the written property — never
+/// `MediaDetailView.body`, which reads only the stored
+/// `revealsSeasonAnchors` flips.
+@Observable @MainActor
+private final class MediaDetailScrollState {
+    /// Raw scroll offset in points (`contentOffset.y + contentInsets.top`, 0
+    /// at rest). The tvOS region snap's guards compare against this —
+    /// `progress` saturates at 1 well before the shelves anchor, so it can't
+    /// drive them.
+    var offset: CGFloat = 0
+
+    /// Continuous scroll progress for the hero treatment: 0 at the top,
+    /// ramping to 1 once the backdrop has scrolled `heroFadeDistance` points.
+    /// Drives the melt/dim/blur so the transition tracks the scroll instead
+    /// of snapping after the hero leaves the screen.
+    var progress: CGFloat = 0
+
+    /// The scroll has essentially arrived at the shelves anchor — see
+    /// `updateSeasonAnchorReveal`.
+    var revealsSeasonAnchors = false
+}
+
+/// Applies the hero's scroll-linked exit drift while keeping the per-tick
+/// `progress` read out of the parent's body: the wrapped content is built by
+/// the parent, so when a tick re-runs this body the content value is
+/// unchanged and its body is skipped — only the offset moves.
+private struct HeroExitDrift<Content: View>: View {
+    let scroll: MediaDetailScrollState
+    let drift: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.offset(y: scroll.progress * drift)
+    }
+}
+
+/// Bridges the live scroll values into `MediaDetailHeroBackdrop`'s plain
+/// inputs, so the per-tick reads land in this leaf body instead of
+/// `MediaDetailView`'s.
+private struct HeroBackdropBridge: View {
+    let scroll: MediaDetailScrollState
+    let url: URL
+    let blurHash: String?
+
+    var body: some View {
+        MediaDetailHeroBackdrop(
+            url: url,
+            blurHash: blurHash,
+            progress: scroll.progress,
+        )
     }
 }
 

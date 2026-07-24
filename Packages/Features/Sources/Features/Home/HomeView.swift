@@ -8,8 +8,10 @@ import SwiftUI
 ///
 /// This view is a thin composer — loading lives in `HomeViewModel` (and
 /// `GenreShelvesViewModel` for the genre rows), the hero visuals in
-/// `HomeHeroSection`/`HomeHeroBackdrop`. Sections are `View` structs so the
-/// per-tick scroll offset only re-evaluates this body and the backdrop.
+/// `HomeHeroSection`/`HomeHeroBackdrop`. The per-tick scroll values live on
+/// `HomeScrollState`, so a scroll tick re-evaluates only the two leaf views
+/// that read them (the backdrop bridge and the hero drift wrapper) — never
+/// this body or the shelf subtree.
 struct HomeView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
@@ -26,18 +28,13 @@ struct HomeView: View {
     /// immediately on click).
     @State private var playbackItem: MediaItem?
 
-    /// Live scroll offset; the hero backdrop rides it so hero and backdrop
-    /// slide up as one unit.
-    @State private var scrollOffset: CGFloat = 0
-
-    /// Hero exit progress (0...1) mapped from the scroll offset — drives the
-    /// lockup's extra drift and the backdrop fade, and reverses on the way
-    /// back up. No `withAnimation`: the scroll itself provides continuity
-    /// (and the region snap's animated scroll animates it for free).
-    @State private var scrollProgress: CGFloat = 0
-
-    /// Whether the hero has scrolled far enough away to pause the carousel.
-    @State private var isHeroOffscreen = false
+    /// The live scroll values, on an @Observable object instead of @State:
+    /// per-tick writes then invalidate only the views whose bodies read the
+    /// written property, and this body reads none of them. As @State, every
+    /// tick re-ran this body, whose closure-carrying sections defeat
+    /// SwiftUI's input-equality skip — re-running every shelf item body 60x/s
+    /// (the worst hitch stretch in the #105 profiling).
+    @State private var scroll = HomeScrollState()
 
     /// Which page region owns focus on tvOS (see MediaDetailView's region
     /// snap for the pattern). Crossing the boundary snaps the scroll to that
@@ -122,31 +119,33 @@ struct HomeView: View {
             // here is only the hero→shelves gap (tighter than the section
             // spacing the shelves keep between themselves).
             VStack(alignment: .leading, spacing: HomeHeroMotion.heroToShelvesGap) {
-                HomeHeroSection(
-                    items: viewModel.heroItems,
-                    index: viewModel.heroIndex,
-                    pagingDirection: viewModel.pagingDirection,
-                    advanceRequests: viewModel.advanceRequests,
-                    playTarget: viewModel.heroPlayTarget,
-                    onPlay: { playbackItem = $0 },
-                    onNext: {
-                        viewModel.advanceHero()
-                        viewModel.noteUserInteraction()
-                    },
-                    onSelect: { newIndex in
-                        viewModel.selectHero(newIndex)
-                        viewModel.noteUserInteraction()
-                    },
-                )
-                // Drift the lockup up faster than the page as it exits, in
-                // lockstep with the backdrop fade — and back on the way up.
-                // Offset only, never opacity (see HomeHeroMotion.exitDrift).
-                // Applied here so the hero's inputs stay unchanged during
-                // scroll and its body is skipped.
-                .offset(y: scrollProgress * HomeHeroMotion.exitDrift)
+                // The wrapper drifts the lockup up faster than the page as it
+                // exits, in lockstep with the backdrop fade — and back on the
+                // way up. Offset only, never opacity (see
+                // HomeHeroMotion.exitDrift). A wrapper so the per-tick
+                // `progress` read stays out of this body, and the hero's
+                // inputs stay unchanged during scroll so its body is skipped.
+                HeroExitDrift(scroll: scroll, drift: HomeHeroMotion.exitDrift) {
+                    HomeHeroSection(
+                        items: viewModel.heroItems,
+                        index: viewModel.heroIndex,
+                        pagingDirection: viewModel.pagingDirection,
+                        advanceRequests: viewModel.advanceRequests,
+                        playTarget: viewModel.heroPlayTarget,
+                        onPlay: { playbackItem = $0 },
+                        onNext: {
+                            viewModel.advanceHero()
+                            viewModel.noteUserInteraction()
+                        },
+                        onSelect: { newIndex in
+                            viewModel.selectHero(newIndex)
+                            viewModel.noteUserInteraction()
+                        },
+                    )
+                }
                 #if os(tvOS)
-                    .focusSection()
-                    .focused($focusedRegion, equals: .hero)
+                .focusSection()
+                .focused($focusedRegion, equals: .hero)
                 #endif
 
                 // Everything below the fold shares one focus region so tvOS
@@ -164,9 +163,11 @@ struct HomeView: View {
                         latestStatus: viewModel.latestStatus,
                         // Headerless while the hero owns the screen; the
                         // title fades/slides in as the hero exits (always
-                        // shown when there's no hero to defer to).
+                        // shown when there's no hero to defer to). Reads the
+                        // stored reveal Bool — it flips at the threshold
+                        // crossing only, so this body never sees the ramp.
                         showsResumeHeader: viewModel.currentHeroItem == nil
-                            || scrollProgress >= HomeHeroMotion.shelfHeaderReveal,
+                            || scroll.revealsShelfHeader,
                         onPlay: { playbackItem = $0 },
                         menu: { item in
                             ShelfMenuHandlers(
@@ -214,7 +215,7 @@ struct HomeView: View {
                     guard !Task.isCancelled else { return }
                     switch region {
                     case .hero:
-                        guard scrollOffset > HomeHeroMotion.snapSlack else { return }
+                        guard scroll.offset > HomeHeroMotion.snapSlack else { return }
                         withAnimation(theme.animation) {
                             scrollPosition.scrollTo(edge: .top)
                         }
@@ -226,7 +227,7 @@ struct HomeView: View {
                         // under the focused row (the focus engine then fights
                         // to re-reveal it: the scroll-jack). Only ever pull
                         // the page *down* to the anchor, never back up.
-                        guard scrollOffset < shelvesAnchor - HomeHeroMotion.snapSlack else { return }
+                        guard scroll.offset < shelvesAnchor - HomeHeroMotion.snapSlack else { return }
                         withAnimation(theme.animation) {
                             scrollPosition.scrollTo(y: shelvesAnchor)
                         }
@@ -245,8 +246,8 @@ struct HomeView: View {
             .onScrollGeometryChange(for: CGFloat.self) { geometry in
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, offset in
-                if offset != scrollOffset {
-                    scrollOffset = offset
+                if offset != scroll.offset {
+                    scroll.offset = offset
                 }
                 // Map the offset to exit progress (dead-banding the focus
                 // engine's settle); skip redundant writes so scrolling past
@@ -255,15 +256,20 @@ struct HomeView: View {
                     max((offset - HomeHeroMotion.exitThreshold) / HomeHeroMotion.exitDistance, 0),
                     1,
                 )
-                if progress != scrollProgress {
-                    scrollProgress = progress
+                if progress != scroll.progress {
+                    scroll.progress = progress
+                }
+                // Stored so the shelves observe the flips, not the ramp.
+                let revealsHeader = progress >= HomeHeroMotion.shelfHeaderReveal
+                if revealsHeader != scroll.revealsShelfHeader {
+                    scroll.revealsShelfHeader = revealsHeader
                 }
                 // Pause the carousel once the hero has fully exited; only
                 // report boundary crossings so scrolling doesn't spam the
                 // view model.
                 let offscreen = progress >= 1
-                if offscreen != isHeroOffscreen {
-                    isHeroOffscreen = offscreen
+                if offscreen != scroll.isHeroOffscreen {
+                    scroll.isHeroOffscreen = offscreen
                     viewModel.setPaused(offscreen, reason: .offscreen)
                 }
             }
@@ -279,15 +285,15 @@ struct HomeView: View {
         if session.client != nil, let item = viewModel.currentHeroItem {
             // The view model picks the image (an episode hero may ride its
             // own primary still instead of a backdrop — see
-            // `heroBackdropURL(for:)`).
-            HomeHeroBackdrop(
+            // `heroBackdropURL(for:)`). The bridge owns the per-tick scroll
+            // reads, so ticks re-run its body, not this one.
+            HeroBackdropBridge(
+                scroll: scroll,
                 url: viewModel.heroBackdropURL(for: item),
                 blurHash: viewModel.heroBackdropBlurHash(for: item),
                 itemId: item.id,
                 direction: viewModel.pagingDirection,
                 generation: viewModel.pagingGeneration,
-                scrollOffset: scrollOffset,
-                progress: scrollProgress,
             )
         }
     }
@@ -306,6 +312,66 @@ struct HomeView: View {
 private struct ScrollSnapMetrics: Equatable {
     var containerHeight: CGFloat
     var topInset: CGFloat
+}
+
+/// Home's per-scroll-tick values. @Observable, so a write invalidates only
+/// the views whose bodies read the written property — never `HomeView.body`,
+/// which reads only the stored `revealsShelfHeader` flips.
+@Observable @MainActor
+private final class HomeScrollState {
+    /// Live scroll offset (`contentOffset.y + contentInsets.top`); the hero
+    /// backdrop rides it so hero and backdrop slide up as one unit.
+    var offset: CGFloat = 0
+
+    /// Hero exit progress (0...1) mapped from the scroll offset — drives the
+    /// lockup's extra drift and the backdrop fade, and reverses on the way
+    /// back up. No `withAnimation`: the scroll itself provides continuity
+    /// (and the region snap's animated scroll animates it for free).
+    var progress: CGFloat = 0
+
+    /// Progress has crossed `HomeHeroMotion.shelfHeaderReveal` — stored so
+    /// header visibility observes the flips, not the ramp.
+    var revealsShelfHeader = false
+
+    /// Whether the hero has scrolled far enough away to pause the carousel.
+    var isHeroOffscreen = false
+}
+
+/// Applies the hero's scroll-linked exit drift while keeping the per-tick
+/// `progress` read out of the parent's body: the wrapped content is built by
+/// the parent, so when a tick re-runs this body the content value is
+/// unchanged and its body is skipped — only the offset moves.
+private struct HeroExitDrift<Content: View>: View {
+    let scroll: HomeScrollState
+    let drift: CGFloat
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.offset(y: scroll.progress * drift)
+    }
+}
+
+/// Bridges the live scroll values into `HomeHeroBackdrop`'s plain inputs, so
+/// the per-tick reads land in this leaf body instead of `HomeView`'s.
+private struct HeroBackdropBridge: View {
+    let scroll: HomeScrollState
+    let url: URL?
+    let blurHash: String?
+    let itemId: String
+    let direction: HomeViewModel.PagingDirection
+    let generation: Int
+
+    var body: some View {
+        HomeHeroBackdrop(
+            url: url,
+            blurHash: blurHash,
+            itemId: itemId,
+            direction: direction,
+            generation: generation,
+            scrollOffset: scroll.offset,
+            progress: scroll.progress,
+        )
+    }
 }
 
 #Preview {
