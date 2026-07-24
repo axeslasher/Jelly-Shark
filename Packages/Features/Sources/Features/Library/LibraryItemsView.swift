@@ -102,8 +102,24 @@ struct LibraryItemsView: View {
         case .loaded:
             // The previous results stay up (dimmed) while a new query loads,
             // so menu dismissal has a stable grid to return focus through
-            itemGrid
-                .opacity(viewModel.isReloading ? 0.5 : 1)
+            VStack(spacing: SpacingTokens.lg) {
+                LibraryItemGrid(
+                    viewModel: viewModel,
+                    columnCount: columnLayout.count,
+                    cardWidth: columnLayout.width,
+                )
+
+                // Outside the grid on purpose: as a cell inside `LazyVGrid`'s
+                // content, toggling it once per page load re-ran the whole
+                // grid's `ForEach` — re-generating an id for every item loaded
+                // so far, so the cost of turning the spinner on and off grew
+                // with how deep the grind had gone (#110).
+                if viewModel.isLoadingMore {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .opacity(viewModel.isReloading ? 0.5 : 1)
         }
     }
 
@@ -113,8 +129,8 @@ struct LibraryItemsView: View {
         PosterGridLayout.columns(for: gridWidth)
     }
 
-    /// Ghost mirror of `itemGrid` while the first page loads. The filter bar
-    /// above stays live.
+    /// Ghost mirror of ``LibraryItemGrid`` while the first page loads. The
+    /// filter bar above stays live.
     ///
     /// Native adaptive columns, NOT `columnLayout`: geometry-change state
     /// writes don't land while the sidebar-collapse transition is in flight
@@ -141,20 +157,42 @@ struct LibraryItemsView: View {
         }
         .skeletonPulse()
     }
+}
 
-    private var itemGrid: some View {
-        let layout = columnLayout
-        return LazyVGrid(
+/// The item grid proper, split out of ``LibraryItemsView`` so it forms an
+/// invalidation boundary.
+///
+/// Device profiling for #110 found grid paging pinned to ~81% of a core with
+/// 75% of that inside AttributeGraph and effectively none in app code — the
+/// cost is how often SwiftUI is asked to re-diff the grid, not what the cells
+/// do. Every property the owner's body reads (`state`, `isReloading`,
+/// `isLoadingMore`, and everything the filter bar pulls off the view model) used
+/// to rebuild the whole `LazyVGrid`, re-running `ForEach` id generation across
+/// every item paged in so far.
+///
+/// Holding the view model rather than the item array is what makes the boundary
+/// work: this struct compares equal across an owner re-render (same object
+/// reference, same layout), so SwiftUI skips its body — while `items` is read
+/// *here*, so an actual page append still invalidates exactly this view.
+private struct LibraryItemGrid: View {
+    @Environment(AppSession.self) private var session
+
+    let viewModel: LibraryItemsViewModel
+    let columnCount: Int
+    let cardWidth: CGFloat
+
+    var body: some View {
+        LazyVGrid(
             columns: Array(
                 repeating: GridItem(.flexible(), spacing: SpacingTokens.cardGap),
-                count: layout.count,
+                count: columnCount,
             ),
             spacing: SpacingTokens.cardGap,
         ) {
             ForEach(viewModel.items) { item in
                 item.posterShelfItem(
                     client: session.client,
-                    width: layout.width,
+                    width: cardWidth,
                     menu: ShelfMenuHandlers(
                         setPlayed: { played in
                             Task { await viewModel.setPlayed(played, for: item) }
@@ -167,12 +205,6 @@ struct LibraryItemsView: View {
                 .onAppear {
                     viewModel.loadMoreIfNeeded(currentItem: item)
                 }
-            }
-
-            if viewModel.isLoadingMore {
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .gridCellColumns(1)
             }
         }
     }
