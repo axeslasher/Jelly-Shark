@@ -64,11 +64,29 @@ struct MediaDetailHeroBackdrop: View {
             //   • Backdrop dim: `0.7` is how much it dims — final opacity is
             //     1 − 0.7 = 0.3. Larger factor = darker wash (e.g. 0.85 → 0.15
             //     remaining); smaller = brighter backdrop while scrolled.
-            //   • Blur: `20` is the max blur radius at full scroll. Higher =
-            //     softer/foggier wash; 0 disables the blur entirely.
+            //   • Blur: `maxWashBlurRadius` is the radius at full scroll;
+            //     `blurSteps` is how many discrete radii the ramp passes
+            //     through on the way (see `steppedBlurProgress`).
             // ─────────────────────────────────────────────────────────────
             .opacity(1 - 0.85 * progress)
-            .blur(radius: 20 * progress)
+            .blur(radius: Self.maxWashBlurRadius * steppedBlurProgress)
             .ignoresSafeArea()
     }
+
+    /// Progress quantized for the blur only. A radius that changes every
+    /// scroll tick re-renders the full-screen Gaussian offscreen per frame —
+    /// the offscreen-pass hitches in the #105 profile. Stepping it renders
+    /// the blur at most `blurSteps` times per melt, while the dim and melt
+    /// fade (cheap compositing) stay continuous and carry the transition
+    /// between steps.
+    private var steppedBlurProgress: CGFloat {
+        (progress * Self.blurSteps).rounded() / Self.blurSteps
+    }
+
+    /// The wash's blur radius at full scroll. Higher = softer/foggier wash.
+    private static let maxWashBlurRadius: CGFloat = 20
+
+    /// Discrete radii the blur ramp passes through. More = smoother ramp but
+    /// more offscreen re-renders; fewer = cheaper but visibly steppier.
+    private static let blurSteps: CGFloat = 6
 }
