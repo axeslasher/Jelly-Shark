@@ -23,17 +23,6 @@ public struct RootView: View {
     /// clobbers the selection ("I pressed Search but it jumped to Home").
     @State private var pendingSwitch: Task<Void, Never>?
 
-    /// The session AsyncImage uses for artwork on OS 27+ (see
-    /// `artworkImageSession`). Backed by the app's sized `URLCache.shared` so
-    /// posters/backdrops keep the tuned 64MB/256MB budget the OS-27 framework
-    /// image loader would otherwise ignore. Static so SwiftUI re-creating the
-    /// view doesn't spin up a new session each time.
-    private static let artworkURLSession: URLSession = {
-        let configuration = URLSessionConfiguration.default
-        configuration.urlCache = .shared
-        return URLSession(configuration: configuration)
-    }()
-
     public init() {}
 
     /// Wraps `selectedTab` to work around a tvOS `sidebarAdaptable` bug: if the
@@ -127,7 +116,6 @@ public struct RootView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
-        .artworkImageSession(Self.artworkURLSession)
         .withThemeEnvironment(themeManager)
         .environment(session)
         .environment(connectionViewModel)
@@ -195,23 +183,6 @@ public struct RootView: View {
                         initialQuery: LibraryQuery(genres: [filter.genre]),
                     )
                 }
-        }
-    }
-}
-
-// MARK: - Artwork Image Session
-
-private extension View {
-    /// Routes AsyncImage's artwork downloads through a cache-backed session on
-    /// OS 27+, where AsyncImage moved image loading to the framework's own
-    /// internal cache and otherwise ignores the app's `URLCache.shared` budget.
-    /// A no-op on 26.x, which already loads through the shared session/cache.
-    @ViewBuilder
-    func artworkImageSession(_ session: URLSession) -> some View {
-        if #available(tvOS 27, visionOS 27, *) {
-            asyncImageURLSession(session)
-        } else {
-            self
         }
     }
 }

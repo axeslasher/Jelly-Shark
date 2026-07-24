@@ -9,8 +9,8 @@ import SwiftUI
 ///
 /// The `.highlight` hover effect is attached explicitly to the whole artwork. The
 /// borderless style otherwise lifts the *first `Image` it finds* in the label, and
-/// since the real image is an `AsyncImage` nested below `ArtworkImage`'s clip, the
-/// default behavior scales that inner image inside the fixed, clipped frame — the
+/// since the real image is nested below `ArtworkImage`'s clip, the default
+/// behavior scales that inner image inside the fixed, clipped frame — the
 /// "image grows inside its container" bug. Attaching the effect to the card makes
 /// the whole artwork lift instead.
 ///
