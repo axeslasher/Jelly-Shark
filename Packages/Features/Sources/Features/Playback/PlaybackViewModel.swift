@@ -48,6 +48,18 @@ public final class PlaybackViewModel {
     /// Currently selected subtitle stream index (nil = off)
     public private(set) var selectedSubtitleStreamIndex: Int?
 
+    /// Optimistic override for the transport bar's favorite toggle. While
+    /// `nil` the heart reflects the playing item's fetched user data; a
+    /// toggle sets it and it reverts on a failed server call. Cleared when
+    /// autoplay advances to a new item, which brings its own state.
+    public private(set) var favoriteOverride: Bool?
+
+    /// Favorite state the transport bar shows: optimistic value if any,
+    /// otherwise Jellyfin's stored status for the playing item.
+    public var isFavorite: Bool {
+        favoriteOverride ?? item.userData?.isFavorite ?? false
+    }
+
     // MARK: - Private
 
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
@@ -254,6 +266,26 @@ public final class PlaybackViewModel {
         await rebuildStream()
     }
 
+    // MARK: - User-Data Actions
+
+    /// Optimistically flip the playing item's favorite state, then persist;
+    /// revert on failure. Mirrors the detail pages' toggles, so a heart
+    /// pressed mid-playback and one pressed on the detail page agree.
+    public func toggleFavorite() async {
+        let target = !isFavorite
+        favoriteOverride = target
+        do {
+            if target {
+                try await client.markFavorite(itemId: item.id)
+            } else {
+                try await client.unmarkFavorite(itemId: item.id)
+            }
+        } catch {
+            favoriteOverride = !target
+            Self.logger.error("[favorite] \(target ? "mark" : "unmark", privacy: .public) FAILED \"\(self.item.name, privacy: .public)\": \(error, privacy: .public)")
+        }
+    }
+
     // MARK: - Next Episode
 
     /// Start the queued next episode immediately
@@ -267,6 +299,7 @@ public final class PlaybackViewModel {
         item = next
         selectedAudioStreamIndex = nil
         selectedSubtitleStreamIndex = nil
+        favoriteOverride = nil
         await start()
     }
 

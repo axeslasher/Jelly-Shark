@@ -597,6 +597,73 @@ struct PlaybackViewModelTests {
         #expect(viewModel.state == .finished)
     }
 
+    // MARK: - Favorite Toggle
+
+    @Test("toggleFavorite favorites, then unfavorites")
+    func favoriteToggles() async {
+        let client = MockJellyfinClient()
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        #expect(viewModel.isFavorite == false)
+
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == true)
+
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == false)
+        #expect(client.userDataCalls.map(\.action) == ["favorite", "unfavorite"])
+        #expect(client.userDataCalls.allSatisfy { $0.itemId == "movie-1" })
+    }
+
+    @Test("An already-favorited item's toggle starts from its fetched state")
+    func favoriteStartsFromFetchedState() async {
+        let client = MockJellyfinClient()
+        let item = MediaItem(
+            id: "movie-1",
+            name: "Test Movie",
+            type: .movie,
+            userData: UserData(isFavorite: true),
+        )
+        let viewModel = PlaybackViewModel(client: client, item: item)
+
+        #expect(viewModel.isFavorite == true)
+
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == false)
+        #expect(client.userDataCalls.map(\.action) == ["unfavorite"])
+    }
+
+    @Test("toggleFavorite reverts the optimistic flip when the server call fails")
+    func favoriteRevertsOnFailure() async {
+        let client = MockJellyfinClient()
+        client.userDataError = URLError(.notConnectedToInternet)
+        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+
+        await viewModel.toggleFavorite()
+
+        #expect(client.userDataCalls.map(\.action) == ["favorite"])
+        #expect(viewModel.isFavorite == false)
+    }
+
+    @Test("Autoplay drops the override so the next episode shows its own state")
+    func favoriteOverrideClearsOnAutoplay() async {
+        let client = MockJellyfinClient()
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let viewModel = PlaybackViewModel(client: client, item: episode)
+
+        await viewModel.start()
+        await viewModel.toggleFavorite()
+        #expect(viewModel.isFavorite == true)
+
+        await viewModel.handlePlaybackEnded()
+        await viewModel.playNextEpisodeNow()
+
+        #expect(viewModel.favoriteOverride == nil)
+        #expect(viewModel.isFavorite == false)
+        #expect(client.userDataCalls.map(\.itemId) == ["ep-1"])
+    }
+
     // MARK: - Direct Play
 
     private func stubDirectPlaySource(on client: MockJellyfinClient) {
