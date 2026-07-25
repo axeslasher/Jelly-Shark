@@ -72,12 +72,16 @@ public struct PlaybackContainerView: View {
                     selectedAudioIndex: viewModel.selectedAudioStreamIndex,
                     selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
                     people: viewModel.castMembers,
+                    isFavorite: viewModel.isFavorite,
                     headshotURL: { viewModel.headshotURL(for: $0) },
                     onSelectAudio: { index in
                         Task { await viewModel.selectAudioStream(index: index) }
                     },
                     onSelectSubtitle: { index in
                         Task { await viewModel.selectSubtitleStream(index: index) }
+                    },
+                    onToggleFavorite: {
+                        Task { await viewModel.toggleFavorite() }
                     },
                 )
                 #if os(visionOS)
