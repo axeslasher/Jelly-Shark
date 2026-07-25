@@ -63,9 +63,13 @@ final class PlaybackLocalServer: @unchecked Sendable {
 
     private let tileURL: @Sendable (Int) -> URL?
 
-    /// Tile fetches ride the shared URLCache; Jellyfin serves tiles without
-    /// Cache-Control headers, so heuristic freshness is near zero and cached
-    /// data must be preferred explicitly
+    /// Tile fetches ride the shared URLCache. Jellyfin's image responses carry
+    /// `Cache-Control: public` with no `max-age` or `ETag`, leaving freshness
+    /// to a `Last-Modified` heuristic that is near zero for anything the server
+    /// generated recently, so cached data must be preferred explicitly or every
+    /// read revalidates. Tiles are immutable for a given item, so ignoring
+    /// staleness is safe. (Verified on item images — see #117; tile responses
+    /// require auth to probe and are assumed to behave the same.)
     private let session: URLSession
 
     private let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.playback-server")
