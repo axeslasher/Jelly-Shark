@@ -1,0 +1,63 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A PR that gets pushed to twice shouldn't pay for the superseded simulator run.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The two venues run as separate jobs so the fast one reports in ~a minute
+  # instead of waiting behind a tvOS simulator boot. Both use `macos-26`: the
+  # image pins Xcode to a 26.x and ships the tvOS "Apple TV" simulator that
+  # SIM_DEST in the Makefile expects.
+  host:
+    name: JellyfinKit (host)
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Test
+        run: make test-host
+
+  simulator:
+    name: App + DesignSystem + Features (tvOS simulator)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      # Same command developers run locally, so a green CI run and a green local
+      # run mean the same thing.
+      - name: Test
+        run: make test-sim
+
+  # The app ships to tvOS and visionOS. The simulator job above covers the tvOS
+  # build on its way to running the tests; nothing covered visionOS, so a break
+  # there stayed invisible until someone built for Vision Pro by hand — which
+  # has happened. Build only: the test targets are wired into the "Jelly Shark"
+  # scheme and run on tvOS, and what they cover is platform-agnostic, so
+  # compiling is where the value is.
+  visionos:
+    name: App (visionOS build)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build
+        run: make build-visionos

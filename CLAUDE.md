@@ -31,15 +31,22 @@ xcodebuild -scheme "Jelly Shark" -configuration Debug build
 
 ### Run Tests
 
-The app ships only to tvOS/visionOS, so tests run in two venues. **`make test`
-runs both** so nothing is silently skipped — prefer it over a bare `xcodebuild
-test`, which would miss the host suite:
+The app ships only to tvOS/visionOS, so tests run in two venues. Both run in CI
+on every PR (`.github/workflows/tests.yml`), so nothing is silently skipped
+without anyone noticing.
+
+**Use the cheapest tier that can fail on your change** (warm timings, measured
+2026-07-25; cold, the simulator tiers cost minutes):
 
 ```bash
-make test        # everything (simulator scheme + JellyfinKit host suite)
-make test-sim    # app + DesignSystemTests + FeaturesTests on the tvOS simulator
-make test-host   # JellyfinKit on the Mac host
+make test-host                        # ~5s  — JellyfinKit only, no simulator. The inner-loop tier.
+make test-only ONLY=DesignSystemTests # ~23s — one simulator suite (also: FeaturesTests, "Jelly SharkTests")
+make test                             # ~43s — both venues, everything. Pre-merge / CI only.
+make test-sim                         # the simulator venue on its own
 ```
+
+**Do not run `make test` mid-iteration.** CI owns the full suite; locally it is
+a pre-merge check, not an iteration step.
 
 Why the split: `DesignSystem` and `Features` reference tvOS/visionOS-only SwiftUI
 APIs and no longer compile for the Mac host, so their test targets are wired into
@@ -47,11 +54,17 @@ the `Jelly Shark` scheme and run on the simulator. `JellyfinKit` is pure logic,
 but its `KeychainStore`/`SessionStore` tests need a real keychain (unavailable to
 a host-less simulator test bundle), so it runs on the host via `swift test`.
 
-Run a single simulator suite (e.g. the design-system theme catalog / WCAG guardrail):
+### What tests cannot verify
 
-```bash
-xcodebuild test -scheme "Jelly Shark" -only-testing:DesignSystemTests -destination 'platform=tvOS Simulator,name=Apple TV'
-```
+Visual appearance and tvOS focus behavior are invisible to every suite in this
+repo. Do not write probe tests, print-based measurement harnesses, key-event
+robots, or simulator UI automation to check them — each has cost a session and
+none has worked. To measure a threshold, bisect the constant and read pass/fail.
+To verify appearance or focus, build and ask for a device check.
+
+Any change to scrolling, opacity/fades, snapping, layout offsets, `.disabled`,
+or navigation state must state which elements remain focusable and where default
+focus lands — that regression class ships silently otherwise.
 
 ### Clean Build
 ```bash

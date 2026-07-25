@@ -1,7 +1,12 @@
 # Swift Package Manager
 .build/
 .swiftpm/
-Package.resolved
+
+# Package.resolved is deliberately NOT ignored. It is the lockfile — the exact
+# resolved version of every dependency — so tracking it is what makes a clone
+# and a CI run resolve identically. The stock Swift.gitignore ignores it because
+# that template targets libraries, whose consumers do their own resolution; this
+# is an app, so it stays tracked.
 
 # Xcode
 xcuserdata/
