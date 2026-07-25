@@ -25,7 +25,7 @@ Post back, before touching any file:
 - **Not touching**: the adjacent things you could be tempted to fix and won't.
 - **Acceptance checklist**: functional requirements as testable bullets; every
   tvOS focus path that must still work; visual details that must not regress;
-  exactly what Justin needs to check on device.
+  exactly what the user needs to check on device.
 - **Open questions**, if any.
 
 Then **wait for a go-ahead.** Do not start implementing. This gate is the whole
@@ -63,7 +63,7 @@ See the tier table at the top of the `Makefile`.
 robots, or simulator UI automation to verify visual or focus behavior. None of
 them work on this codebase and each one has cost a session. To measure a
 threshold, bisect the constant and read pass/fail. To verify appearance or
-focus, build and ask Justin to look on device.
+focus, build and ask the user to look on device.
 
 ### Focus-engine check
 
@@ -90,7 +90,7 @@ before writing the message if there's any ambiguity about what's included.
 gh pr create --fill   # link the issue in the body: "Closes #N"
 ```
 
-Then **stop and ask Justin to verify on device.** Do not start the next thing,
+Then **stop and ask the user to verify on device.** Do not start the next thing,
 chase a tangent, or open follow-up investigations before the PR exists.
 
 ## 8. After merge
