@@ -286,8 +286,20 @@ struct EpisodesSection: View {
                                 season.id == activeSeasonId ? theme.accent : theme.primary,
                             )
                     }
-                    .glassButtonStyle(tint: theme.focusFill)
-                    .buttonBorderShape(.capsule)
+                    // Inert on purpose: this pill's focus treatment is the ring
+                    // overlay below, so the button owes us the resting capsule
+                    // and nothing else.
+                    //
+                    // `glassButtonStyle(tint:)` presented focus on its own and
+                    // then kept it — a press left a platter behind, one per
+                    // pill pressed. Clicking a pill anchors the shelf, which
+                    // changes the active season, which changes every pill's
+                    // `.focusable` argument below and rebuilds the button
+                    // mid-press: the style never sees the interaction end.
+                    // Which platter got stuck depended on the theme — Standard
+                    // leaves `focusFill` nil and so drew the system glass
+                    // style's white one, the other four themes tint their own.
+                    .inertGlassButtonStyle()
                     // From outside the row, only the active season's pill can
                     // take focus — entry always lands on the right pill with
                     // no visible redirect. Inside the row every pill is
@@ -297,9 +309,9 @@ struct EpisodesSection: View {
                     // which would leave the gate stuck shut.
                     .focusable(focusedSeasonId != nil || season.id == activeSeasonId)
                     .focused($focusedSeasonId, equals: season.id)
-                    // The focusable gate's wrapper holds the real focus, so
-                    // the glass button never shows its system focus effect —
-                    // draw our own: a focus ring and a slight lift.
+                    // The focusable gate's wrapper holds the real focus, so the
+                    // button underneath can't present focus for us — draw our
+                    // own ring.
                     .overlay {
                         if focusedSeasonId == season.id {
                             Capsule()

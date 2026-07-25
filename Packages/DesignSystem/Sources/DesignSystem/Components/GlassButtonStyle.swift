@@ -26,6 +26,28 @@ public extension View {
             buttonStyle(.bordered)
         #endif
     }
+
+    /// The resting glass capsule and **nothing else** — no platter, no lift,
+    /// no label recolor, in any state.
+    ///
+    /// For controls that present focus themselves, where a second platter is
+    /// not just redundant but a liability. `glassButtonStyle(tint:)` can't do
+    /// this on either path: a tint draws ``ThemedGlassButtonStyle``'s platter,
+    /// and a nil tint falls through to the system `.glass` style's white one,
+    /// which offers no way to turn it off at all.
+    ///
+    /// Both stick on a control whose surroundings *rebuild* during a press —
+    /// the season pills, whose `.focusable` gate is keyed to the active season
+    /// that pressing one changes. The style never sees the interaction end,
+    /// and the platter stays behind, one per press.
+    @ViewBuilder
+    func inertGlassButtonStyle(circular: Bool = false) -> some View {
+        #if os(tvOS)
+            buttonStyle(ThemedGlassButtonStyle(tint: nil, circular: circular))
+        #else
+            buttonStyle(.bordered)
+        #endif
+    }
 }
 
 public extension View {
@@ -63,26 +85,33 @@ public extension View {
     /// The focused label color defaults to the theme's `onFocusFill`; labels that
     /// set an explicit `foregroundStyle` (e.g. ``CircleActionButton``'s icon)
     /// still win, matching how the system platter treats them.
+    ///
+    /// A `nil` tint opts out of the focus treatment entirely — see
+    /// ``SwiftUI/View/inertGlassButtonStyle(circular:)``.
     public struct ThemedGlassButtonStyle: ButtonStyle {
         @Environment(\.theme) private var theme
         @Environment(\.isFocused) private var isFocused
 
-        let tint: Color
+        let tint: Color?
         let circular: Bool
 
-        public init(tint: Color, circular: Bool = false) {
+        public init(tint: Color?, circular: Bool = false) {
             self.tint = tint
             self.circular = circular
         }
 
         public func makeBody(configuration: Configuration) -> some View {
+            // Resolved once: a nil tint means this button never presents focus
+            // at all, so nothing below may key off `isFocused` on its own.
+            let platter = isFocused ? tint : nil
+
             paddedLabel(configuration.label)
-                .foregroundStyle(isFocused ? theme.onFocusFill : theme.primary)
+                .foregroundStyle(platter == nil ? theme.primary : theme.onFocusFill)
                 .glassEffect(
-                    isFocused ? .regular.tint(tint).interactive() : .clear,
+                    platter.map { .regular.tint($0).interactive() } ?? .clear,
                     in: circular ? AnyShape(.circle) : AnyShape(.capsule),
                 )
-                .scaleEffect(isFocused ? theme.focusScale : 1)
+                .scaleEffect(platter == nil ? 1 : theme.focusScale)
                 .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
                 .animation(theme.animation, value: isFocused)
                 .animation(MotionTokens.fast, value: configuration.isPressed)
