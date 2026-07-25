@@ -9,9 +9,9 @@ import SwiftUI
 /// every remount during shelf/grid scrolling re-decodes from scratch — the
 /// dominant memory churn found in the #105 device profiling. This loader adds
 /// the missing tier: encoded bytes ride the app-sized shared `URLCache` (via
-/// `URLSession.shared`), and decoded images live in cost-bounded `NSCache`s
-/// (split by size class — see `screenClassCost`), so paging back over artwork
-/// is a lookup instead of a decode.
+/// the loader's own bounded `session`), and decoded images live in
+/// cost-bounded `NSCache`s (split by size class — see `screenClassCost`), so
+/// paging back over artwork is a lookup instead of a decode.
 ///
 /// Decodes are downsampled through ImageIO to the pixel size the slot actually
 /// needs — a guardrail so an oversized source can never inflate a small card

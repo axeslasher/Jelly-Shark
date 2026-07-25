@@ -7,12 +7,13 @@ import SwiftUI
 /// stack), which is what lets `.borderless` move the caption out of the way as the
 /// artwork lifts on focus.
 ///
-/// The `.highlight` hover effect is attached explicitly to the whole artwork. The
-/// borderless style otherwise lifts the *first `Image` it finds* in the label, and
-/// since the real image is nested below `ArtworkImage`'s clip, the default
-/// behavior scales that inner image inside the fixed, clipped frame — the
-/// "image grows inside its container" bug. Attaching the effect to the card makes
-/// the whole artwork lift instead.
+/// The `.highlight` hover effect is attached explicitly to the whole artwork,
+/// with hover disabled on the nested `ArtworkImage`. The borderless style
+/// otherwise lifts the *first `Image` it finds* in the label, and since the real
+/// image is nested below `ArtworkImage`'s clip, that scales the inner image
+/// inside the fixed, clipped frame — the "image grows inside its container" bug.
+/// The pair makes the whole artwork lift instead, and keeps each card to the
+/// single Liquid Glass effect SwiftUI expects.
 ///
 /// Navigation is value-based: the card appends `value` to the enclosing
 /// `NavigationStack`'s path, and the stack's `navigationDestination(for:)`
@@ -192,10 +193,12 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             // Scoped to the image alone: the borderless style otherwise lifts
             // the first `Image` it finds in the label, which here is nested
             // below `ArtworkImage`'s clip — scaling it inside the fixed frame
-            // ("image grows inside its container") and costing a second Liquid
-            // Glass effect per card (~15% of main-thread time while paging,
-            // #110). Everything above stays hover-enabled so the borderless
-            // style keeps driving the lockup's caption choreography.
+            // ("image grows inside its container") and registering a second
+            // Liquid Glass effect per card, a runtime misconfiguration SwiftUI
+            // warns about. A correctness fix only: the duplicate effect
+            // measured as costing nothing on device (#110). Everything above
+            // stays hover-enabled so the borderless style keeps driving the
+            // lockup's caption choreography.
             .hoverEffectDisabled()
             .aspectRatio(aspectRatio, contentMode: .fit)
             .frame(width: width)

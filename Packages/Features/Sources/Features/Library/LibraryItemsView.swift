@@ -110,7 +110,7 @@ struct LibraryItemsView: View {
                 )
 
                 // Outside the grid on purpose: as a cell inside `LazyVGrid`'s
-                // content, toggling it once per page load re-ran the whole
+                // content, toggling it (twice per page load) re-ran the whole
                 // grid's `ForEach` — re-generating an id for every item loaded
                 // so far, so the cost of turning the spinner on and off grew
                 // with how deep the grind had gone (#110).
@@ -162,10 +162,7 @@ struct LibraryItemsView: View {
 /// The item grid proper, split out of ``LibraryItemsView`` so it forms an
 /// invalidation boundary.
 ///
-/// Device profiling for #110 found grid paging pinned to ~81% of a core with
-/// 75% of that inside AttributeGraph and effectively none in app code — the
-/// cost is how often SwiftUI is asked to re-diff the grid, not what the cells
-/// do. Every property the owner's body reads (`state`, `isReloading`,
+/// Every property the owner's body reads (`state`, `isReloading`,
 /// `isLoadingMore`, and everything the filter bar pulls off the view model) used
 /// to rebuild the whole `LazyVGrid`, re-running `ForEach` id generation across
 /// every item paged in so far.
@@ -174,6 +171,14 @@ struct LibraryItemsView: View {
 /// work: this struct compares equal across an owner re-render (same object
 /// reference, same layout), so SwiftUI skips its body — while `items` is read
 /// *here*, so an actual page append still invalidates exactly this view.
+///
+/// Measured on device as NOT a performance fix (#110): owner re-renders fire a
+/// handful of times per session while cells mount and unmount every frame, so
+/// the boundary guards a rare event. Grid paging stayed pinned (~81% of a core,
+/// ~75% inside AttributeGraph, effectively none in app code) — the remaining
+/// cost is per-frame view-graph maintenance proportional to mounted cell count,
+/// not re-diff frequency. Kept because the boundary is structurally correct and
+/// a spinner toggle has no business forcing a grid re-diff.
 private struct LibraryItemGrid: View {
     @Environment(AppSession.self) private var session
 
