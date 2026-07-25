@@ -7,6 +7,20 @@
 #     longer compile for the Mac host, so they run on the simulator.
 #   - host (`swift test`): JellyfinKit. It is pure logic, and its Keychain/Session
 #     tests need a real keychain, which a host-less simulator test bundle lacks.
+#
+# Verification tiers — pick the cheapest one that can fail on your change.
+# Timings below are warm (populated DerivedData), measured 2026-07-25 on an
+# M-series Mac. Cold, anything in the simulator venue costs minutes rather than
+# seconds, because it links the whole app and boots a tvOS runtime; that cold
+# cost is what makes the tiering worth honouring mid-iteration.
+#   1. `make test-host`  (~5s warm)  — JellyfinKit only, no simulator. The
+#      inner-loop tier: run it after every edit to API/session/model logic.
+#   2. `make test-only ONLY=<target>`  (~23s warm) — one simulator suite, e.g.
+#      `make test-only ONLY=DesignSystemTests`. Run before committing a change
+#      that touches DesignSystem or Features.
+#   3. `make test`  (~43s warm) — both venues, everything. This is CI's job on
+#      every PR (.github/workflows/tests.yml); locally it is a pre-merge check,
+#      not an iteration step.
 
 SCHEME   = Jelly Shark
 SIM_DEST = platform=tvOS Simulator,name=Apple TV
@@ -16,7 +30,7 @@ SIM_DEST = platform=tvOS Simulator,name=Apple TV
 # .github/workflows/swiftformat.yml together.
 SWIFTFORMAT_VERSION = 0.62.1
 
-.PHONY: test test-sim test-host build build-visionos clean \
+.PHONY: test test-sim test-host test-only build build-visionos clean \
 	format lint check-swiftformat install-hooks
 
 # Full suite across both venues.
@@ -29,6 +43,13 @@ test-sim:
 # JellyfinKit on the Mac host.
 test-host:
 	cd Packages/JellyfinKit && swift test
+
+# One simulator suite, e.g. `make test-only ONLY=DesignSystemTests`. Targets are
+# quoted because the app suite's name contains a space ("Jelly SharkTests").
+test-only:
+	@[ -n "$(ONLY)" ] || \
+		{ echo "usage: make test-only ONLY=<test target>   (Jelly SharkTests | DesignSystemTests | FeaturesTests)"; exit 1; }
+	xcodebuild test -scheme "$(SCHEME)" -destination "$(SIM_DEST)" -only-testing:"$(ONLY)"
 
 # Build the app for the two shipping platforms.
 build:
