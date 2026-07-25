@@ -28,7 +28,6 @@ import SwiftUI
 /// can mount it unconditionally.
 struct EpisodesSection: View {
     @Environment(\.theme) private var theme
-    @Environment(AppSession.self) private var session
 
     let seasons: [MediaItem]
     /// Every episode of the series, in series order (season by season)
@@ -72,9 +71,48 @@ struct EpisodesSection: View {
     /// Pending debounced anchor jump (see `onChange(of: focusedSeasonId)`).
     @State private var anchorTask: Task<Void, Never>?
 
+    /// Where the shelf is parked, as an episode index — moved by anchor jumps
+    /// and by focus travelling through the shelf. The origin for
+    /// `scrollToSeason`'s animate-or-cut test.
+    @State private var shelfIndex = 0
+
+    /// `episodeId → index` and `seasonId → first episode index`, rebuilt only
+    /// when the series' episode list changes, so a focus move resolves its
+    /// season in O(1) instead of scanning the whole series (#115).
+    @State private var lookups = EpisodeLookups()
+
     /// How long a pill must hold focus before the shelf anchors to it —
     /// traversing the pill row shouldn't fire a jump per pill passed through.
     private static let anchorDebounce: Duration = .milliseconds(250)
+
+    /// How far an anchor jump may travel with its real cards still on.
+    ///
+    /// Every jump animates — the slide *is* the interaction, and cutting reads
+    /// as a glitch. What costs is that an animated `scrollTo` makes the lazy
+    /// stack *traverse* the gap, mounting and discarding every card it sweeps
+    /// past: the biggest recurring hitch on a season-heavy series detail
+    /// (#115). Past this distance the shelf ghosts for the length of the slide,
+    /// so the traversal mounts rounded rectangles instead — which is exactly
+    /// what Apple TV's episode shelf shows mid-jump, hydrating on settle the
+    /// same way.
+    ///
+    /// Under it the slide is short enough that the cards going by are worth
+    /// looking at, and mounting a handful costs about what an ordinary scroll
+    /// does. Dial to 0 to ghost every jump, or past the longest season to ghost
+    /// none.
+    private static let maxHydratedJumpCards = 12
+
+    /// Whether the shelf is showing real cards. Cleared for the length of a
+    /// long anchor jump (see `maxHydratedJumpCards`).
+    @State private var isHydrated = true
+
+    /// Pending re-hydration, timed to the jump's settle.
+    @State private var hydrateTask: Task<Void, Never>?
+
+    /// The episode a ghosted jump is flying toward, and the redirect target for
+    /// focus that enters the shelf before it lands (see
+    /// `onChange(of: focusedEpisodeId)`). Nil whenever no jump is in flight.
+    @State private var jumpTargetEpisodeId: String?
 
     /// Episode card width, owned here because the anchor scrolls are computed
     /// geometrically from it (index × (width + gap)) — id-based scrolls need
@@ -82,9 +120,10 @@ struct EpisodesSection: View {
     /// can't resolve cards the lazy stack hasn't built.
     private static let episodeCardWidth: CGFloat = 440
 
-    /// Live shelf geometry for the anchor math (leading inset, and the
-    /// container width that sizes the trailing runway).
-    @State private var shelfGeometry = ShelfGeometry(containerWidth: 0, leadingInset: 0)
+    /// Live shelf geometry for the anchor math (leading inset, the container
+    /// width that sizes the trailing runway, and the hydrated row height the
+    /// ghosts hold).
+    @State private var shelfGeometry = ShelfGeometry(containerWidth: 0, leadingInset: 0, contentHeight: 0)
 
     var body: some View {
         if !seasons.isEmpty {
@@ -140,10 +179,40 @@ struct EpisodesSection: View {
             // accent (in either direction). The anchor row's reveal is driven by
             // the owner's scroll progress (`showsSeasonAnchors`), not by focus.
             .onChange(of: focusedEpisodeId) { _, episodeId in
-                guard let episodeId else { return }
-                if let seasonId = episodes.first(where: { $0.id == episodeId })?.seasonId {
+                guard let episodeId, let index = lookups.index(ofEpisode: episodeId) else { return }
+                // Focus reaching a card mid-jump means the user pressed into
+                // the shelf rather than waiting the slide out. The jump is
+                // over — put the real cards back under them now rather than at
+                // a settle they've already overtaken.
+                if !isHydrated {
+                    hydrateTask?.cancel()
+                    isHydrated = true
+                    // ...and take the landing back off the focus engine, which
+                    // resolves against the scroll's *final* layout rather than
+                    // the frame on screen. Left alone it picks a card that
+                    // isn't visible and then can't reveal it, because our
+                    // animation owns the offset — focus sits off screen until a
+                    // left/right press shakes it loose. The season the user
+                    // asked for is the honest destination anyway.
+                    // (Apple TV's own shelf has this same landing bug.)
+                    if let target = jumpTargetEpisodeId, target != episodeId {
+                        jumpTargetEpisodeId = nil
+                        focusedEpisodeId = target
+                        return
+                    }
+                }
+                jumpTargetEpisodeId = nil
+                // Focus travelling through the shelf is also how the shelf's
+                // resting position is tracked, since the cards it lands on are
+                // the ones on screen.
+                shelfIndex = index
+                if let seasonId = episodes[index].seasonId {
                     currentSeasonId = seasonId
                 }
+            }
+            // Rebuilt only when the list itself changes, not per focus move.
+            .onChange(of: episodes, initial: true) { _, newEpisodes in
+                lookups = EpisodeLookups(newEpisodes)
             }
             // First entry into the below-fold region: steer focus onto the
             // parked episode. Without this the engine sometimes targets the
@@ -161,6 +230,8 @@ struct EpisodesSection: View {
             .task(id: initialEpisodeId) {
                 guard let initialEpisodeId,
                       focusedEpisodeId == nil, !showsSeasonAnchors,
+                      // Scanned, not looked up: this fires once at page setup,
+                      // before `lookups` is guaranteed populated.
                       let index = episodes.firstIndex(where: { $0.id == initialEpisodeId })
                 else { return }
                 currentSeasonId = episodes[index].seasonId
@@ -221,28 +292,20 @@ struct EpisodesSection: View {
 
     private var episodeShelf: some View {
         ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
-                ForEach(episodes) { episode in
-                    episode.episodeShelfItem(
-                        client: session.client,
-                        width: Self.episodeCardWidth,
-                        menu: menu(episode),
-                    ) {
-                        playbackItem = episode
-                    }
-                    .focused($focusedEpisodeId, equals: episode.id)
-                }
-            }
-            .padding(.leading, SpacingTokens.screenPadding)
-            // Trailing runway: enough room past the last card that the final
-            // season's first episode can still park at the far left — without
-            // it, anchoring an ongoing season with a couple of episodes clamps
-            // short.
-            .padding(.trailing, max(
-                SpacingTokens.screenPadding,
-                shelfGeometry.containerWidth - Self.episodeCardWidth - SpacingTokens.screenPadding,
-            ))
-            .padding(.vertical, SpacingTokens.focusPadding)
+            // `.equatable()` is load-bearing, not decoration — see
+            // ``EpisodeShelfStack``. Everything this body reads (the season
+            // accent, the anchor reveal, focus) leaves the cards alone.
+            EpisodeShelfStack(
+                episodes: episodes,
+                cardWidth: Self.episodeCardWidth,
+                containerWidth: shelfGeometry.containerWidth,
+                isHydrated: isHydrated,
+                ghostHeight: shelfGeometry.contentHeight,
+                menu: menu,
+                focusedEpisodeId: $focusedEpisodeId,
+                playbackItem: $playbackItem,
+            )
+            .equatable()
         }
         .scrollPosition($shelfPosition)
         .scrollClipDisabled()
@@ -251,17 +314,46 @@ struct EpisodesSection: View {
             ShelfGeometry(
                 containerWidth: geometry.containerSize.width,
                 leadingInset: geometry.contentInsets.leading,
+                contentHeight: geometry.contentSize.height,
             )
         } action: { _, geometry in
-            shelfGeometry = geometry
+            var next = geometry
+            // The ghosts are sized *from* this height, so recording theirs would
+            // ratchet the row shorter with every jump. Only the hydrated row
+            // gets a vote.
+            if !isHydrated {
+                next.contentHeight = shelfGeometry.contentHeight
+            }
+            shelfGeometry = next
         }
     }
 
+    /// Anchor the shelf to a season's first episode. Always animated; a long
+    /// jump ghosts its cards for the length of the slide so the traversal stays
+    /// cheap (see `maxHydratedJumpCards`), then hydrates on settle.
     private func scrollToSeason(_ seasonId: String) {
-        guard let index = episodes.firstIndex(where: { $0.seasonId == seasonId }) else { return }
+        guard let index = lookups.firstIndex(ofSeason: seasonId) else { return }
         currentSeasonId = seasonId
+
+        hydrateTask?.cancel()
+        let ghosts = abs(index - shelfIndex) > Self.maxHydratedJumpCards
+        if ghosts {
+            isHydrated = false
+            jumpTargetEpisodeId = episodes[index].id
+        }
+
         withAnimation(theme.animation) {
             parkShelf(atEpisodeIndex: index)
+        }
+
+        guard ghosts else { return }
+        hydrateTask = Task {
+            // Hydrate as the slide lands, not before: swapping mid-flight would
+            // put the real cards back under the traversal this exists to spare.
+            try? await Task.sleep(for: .seconds(theme.transitionDuration))
+            guard !Task.isCancelled else { return }
+            isHydrated = true
+            jumpTargetEpisodeId = nil
         }
     }
 
@@ -277,6 +369,7 @@ struct EpisodesSection: View {
     /// leading safe-area inset parks an inset too far right.)
     private func parkShelf(atEpisodeIndex index: Int) {
         let x = CGFloat(index) * (Self.episodeCardWidth + SpacingTokens.cardGap)
+        shelfIndex = index
         shelfPosition.scrollTo(x: max(0, x))
     }
 }
@@ -285,4 +378,36 @@ struct EpisodesSection: View {
 private struct ShelfGeometry: Equatable {
     var containerWidth: CGFloat
     var leadingInset: CGFloat
+    /// The row's height with real cards in it — held while ghosting.
+    var contentHeight: CGFloat
+}
+
+/// Index lookups over a series' episode list, built once per list rather than
+/// scanned per event: the shelf resolves an episode's season and position on
+/// every focus move, and an anchor jump resolves a season's first episode.
+private struct EpisodeLookups {
+    private var indexByEpisodeId: [String: Int] = [:]
+    private var firstIndexBySeasonId: [String: Int] = [:]
+
+    init() {}
+
+    init(_ episodes: [MediaItem]) {
+        indexByEpisodeId.reserveCapacity(episodes.count)
+        for (index, episode) in episodes.enumerated() {
+            indexByEpisodeId[episode.id] = index
+            // Episodes arrive in series order, so the first sighting of a
+            // season is its first episode.
+            if let seasonId = episode.seasonId, firstIndexBySeasonId[seasonId] == nil {
+                firstIndexBySeasonId[seasonId] = index
+            }
+        }
+    }
+
+    func index(ofEpisode episodeId: String) -> Int? {
+        indexByEpisodeId[episodeId]
+    }
+
+    func firstIndex(ofSeason seasonId: String) -> Int? {
+        firstIndexBySeasonId[seasonId]
+    }
 }

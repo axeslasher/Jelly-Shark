@@ -12,7 +12,6 @@ import SwiftUI
 /// site can mount it unconditionally.
 struct SeasonEpisodesSection: View {
     @Environment(\.theme) private var theme
-    @Environment(AppSession.self) private var session
 
     /// Shelf header — the season's name ("Season 2"), falling back to
     /// "Episodes" when the season is unnamed.
@@ -92,27 +91,18 @@ struct SeasonEpisodesSection: View {
 
     private var episodeShelf: some View {
         ScrollView(.horizontal) {
-            LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
-                ForEach(episodes) { episode in
-                    episode.episodeShelfItem(
-                        client: session.client,
-                        width: Self.episodeCardWidth,
-                        menu: menu(episode),
-                    ) {
-                        playbackItem = episode
-                    }
-                    .focused($focusedEpisodeId, equals: episode.id)
-                }
-            }
-            .padding(.leading, SpacingTokens.screenPadding)
-            // Trailing runway: enough room past the last card that a
-            // season-finale page can still park its episode at the far left
-            // — without it, the park clamps short. Mirrors `EpisodesSection`.
-            .padding(.trailing, max(
-                SpacingTokens.screenPadding,
-                containerWidth - Self.episodeCardWidth - SpacingTokens.screenPadding,
-            ))
-            .padding(.vertical, SpacingTokens.focusPadding)
+            // Same invalidation boundary as `EpisodesSection` — this body
+            // re-runs on every focus move too, and on every frame the detail
+            // page scrolls vertically. See ``EpisodeShelfStack``.
+            EpisodeShelfStack(
+                episodes: episodes,
+                cardWidth: Self.episodeCardWidth,
+                containerWidth: containerWidth,
+                menu: menu,
+                focusedEpisodeId: $focusedEpisodeId,
+                playbackItem: $playbackItem,
+            )
+            .equatable()
         }
         .scrollPosition($shelfPosition)
         .scrollClipDisabled()
