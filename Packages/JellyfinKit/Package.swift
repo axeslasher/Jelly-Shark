@@ -7,6 +7,12 @@ let package = Package(
     platforms: [
         .tvOS(.v26),
         .visionOS(.v26),
+        // Not a shipping platform. JellyfinKit is pure logic and its Keychain
+        // tests need a real keychain, so the suite runs on the Mac host via
+        // `swift test` (see the Makefile). Without an explicit floor SPM
+        // assumes macOS 10.13 for the host build, below the macOS 10.15 that
+        // JellyfinAPI and Get require, and resolution fails before compiling.
+        .macOS(.v13),
     ],
     products: [
         .library(
