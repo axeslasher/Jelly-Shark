@@ -42,3 +42,22 @@ jobs:
       # run mean the same thing.
       - name: Test
         run: make test-sim
+
+  # The app ships to tvOS and visionOS. The simulator job above covers the tvOS
+  # build on its way to running the tests; nothing covered visionOS, so a break
+  # there stayed invisible until someone built for Vision Pro by hand — which
+  # has happened. Build only: the test targets are wired into the "Jelly Shark"
+  # scheme and run on tvOS, and what they cover is platform-agnostic, so
+  # compiling is where the value is.
+  visionos:
+    name: App (visionOS build)
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      - name: Build
+        run: make build-visionos
