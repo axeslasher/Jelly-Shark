@@ -100,6 +100,14 @@
 
                 var menus: [UIMenuElement] = []
 
+                // First. The heart is built on the very first pass and is
+                // never conditional, so leading the custom items is a stable
+                // position — unlike the track menus, which come and go with
+                // the source's streams.
+                if let favoriteAction = coordinator.favoriteAction {
+                    menus.append(favoriteAction)
+                }
+
                 if audioStreams.count > 1 {
                     let actions = audioStreams.map { stream in
                         UIAction(
@@ -154,12 +162,6 @@
                         options: [.singleSelection],
                         children: actions,
                     ))
-                }
-
-                // Last, so gaining a heart never reorders the track menus a
-                // viewer already knows the position of
-                if let favoriteAction = coordinator.favoriteAction {
-                    menus.append(favoriteAction)
                 }
 
                 controller.transportBarCustomMenuItems = menus
