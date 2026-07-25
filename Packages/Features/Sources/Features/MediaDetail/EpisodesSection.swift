@@ -125,6 +125,12 @@ struct EpisodesSection: View {
     /// ghosts hold).
     @State private var shelfGeometry = ShelfGeometry(containerWidth: 0, leadingInset: 0, contentHeight: 0)
 
+    /// The season the pills highlight: whichever the shelf is in, falling back
+    /// to the first before focus has ever entered.
+    private var activeSeasonId: String? {
+        currentSeasonId ?? seasons.first?.id
+    }
+
     var body: some View {
         if !seasons.isEmpty {
             // No "Episodes" title — the season anchors are the header. The
@@ -241,6 +247,30 @@ struct EpisodesSection: View {
     }
 
     private var seasonAnchors: some View {
+        ScrollViewReader { pills in
+            seasonAnchorRow
+                // Keep the active pill on screen. From outside the row only that
+                // pill is focusable, so once the shelf scrolls into a season
+                // whose pill sits beyond the row's right edge, pressing up has
+                // nothing focusable to land on and focus escapes to the hero —
+                // a dead end on any series with more seasons than fit (a
+                // 17-season show shows nine). Following the shelf here means
+                // the one focusable pill is always reachable.
+                //
+                // `initial: true` covers the first paint too: the shelf
+                // pre-parks on next-up, which is usually the *last* season.
+                .onChange(of: activeSeasonId, initial: true) { _, seasonId in
+                    guard let seasonId else { return }
+                    withAnimation(theme.animation) {
+                        pills.scrollTo(seasonId, anchor: .center)
+                    }
+                }
+        }
+    }
+
+    /// Safe to scroll by id, unlike the episode shelf: the pills are a plain
+    /// `HStack`, so every one of them is built and resolvable by the proxy.
+    private var seasonAnchorRow: some View {
         ScrollView(.horizontal) {
             HStack(spacing: SpacingTokens.sm) {
                 ForEach(seasons) { season in
@@ -253,8 +283,7 @@ struct EpisodesSection: View {
                         Text(season.name)
                             .jsStyle(.title)
                             .foregroundStyle(
-                                season.id == (currentSeasonId ?? seasons.first?.id)
-                                    ? theme.accent : theme.primary,
+                                season.id == activeSeasonId ? theme.accent : theme.primary,
                             )
                     }
                     .glassButtonStyle(tint: theme.focusFill)
@@ -266,10 +295,7 @@ struct EpisodesSection: View {
                     // binding sits OUTSIDE the gate: `.focusable` interposes
                     // its own focus node, and binding inside it never fires —
                     // which would leave the gate stuck shut.
-                    .focusable(
-                        focusedSeasonId != nil
-                            || season.id == (currentSeasonId ?? seasons.first?.id),
-                    )
+                    .focusable(focusedSeasonId != nil || season.id == activeSeasonId)
                     .focused($focusedSeasonId, equals: season.id)
                     // The focusable gate's wrapper holds the real focus, so
                     // the glass button never shows its system focus effect —
