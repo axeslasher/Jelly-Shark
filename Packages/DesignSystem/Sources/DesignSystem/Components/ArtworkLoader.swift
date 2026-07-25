@@ -9,9 +9,9 @@ import SwiftUI
 /// every remount during shelf/grid scrolling re-decodes from scratch — the
 /// dominant memory churn found in the #105 device profiling. This loader adds
 /// the missing tier: encoded bytes ride the app-sized shared `URLCache` (via
-/// `URLSession.shared`), and decoded images live in cost-bounded `NSCache`s
-/// (split by size class — see `screenClassCost`), so paging back over artwork
-/// is a lookup instead of a decode.
+/// the loader's own bounded `session`), and decoded images live in
+/// cost-bounded `NSCache`s (split by size class — see `screenClassCost`), so
+/// paging back over artwork is a lookup instead of a decode.
 ///
 /// Decodes are downsampled through ImageIO to the pixel size the slot actually
 /// needs — a guardrail so an oversized source can never inflate a small card
@@ -50,6 +50,27 @@ public actor ArtworkLoader {
     /// Coalesces concurrent requests for the same key (e.g. a fast scroll
     /// remounting a card while its first load is still in flight).
     private var inFlight: [NSString: Task<CGImage, any Error>] = [:]
+
+    /// Artwork rides its own session rather than `URLSession.shared`, whose
+    /// configuration is fixed, so its connection pool can be bounded.
+    ///
+    /// Jellyfin is typically reached over plain HTTP, which means HTTP/1.1
+    /// with no multiplexing: every concurrent fetch takes its own socket, and
+    /// this loader issues one detached fetch per card coming into view. #109
+    /// measured `VM: libnetwork` at 45MB across 102 regions with *zero*
+    /// transients — nothing libnetwork allocates is ever returned to the OS —
+    /// and the region count climbs with how much browsing a session does.
+    /// Capping concurrent connections bounds how many of those buffers the
+    /// app can ever cause to be created.
+    ///
+    /// `urlCache` is set explicitly to keep sharing the app-sized encoded-byte
+    /// cache that `URLSession.shared` was using.
+    static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = .shared
+        configuration.httpMaximumConnectionsPerHost = 2
+        return URLSession(configuration: configuration)
+    }()
 
     public struct DecodeFailed: Error {}
 
@@ -90,7 +111,7 @@ public actor ArtworkLoader {
         slotPixelSize: CGSize?,
         contentMode: ContentMode,
     ) async throws -> CGImage {
-        let (data, _) = try await URLSession.shared.data(from: url)
+        let (data, _) = try await session.data(from: url)
         guard let image = downsampledImage(data: data, slotPixelSize: slotPixelSize, contentMode: contentMode) else {
             throw DecodeFailed()
         }

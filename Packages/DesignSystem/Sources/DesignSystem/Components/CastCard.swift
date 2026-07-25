@@ -85,6 +85,8 @@ public struct CastCard<Value: Hashable>: View {
 
     private var artwork: some View {
         ArtworkImage(url: url, placeholderIcon: "person.fill")
+            // One hover effect per card, not two — see `ArtworkShelfItem`.
+            .hoverEffectDisabled()
             .frame(width: width, height: width)
             .clipShape(Circle())
             // Lift, specular highlight, and gimbal motion on focus.
