@@ -106,6 +106,8 @@ private struct GenreCardContent: View {
             // (nil URL renders the wash alone).
             if backdropURL != nil {
                 ArtworkImage(url: backdropURL, blurHash: blurHash, contentMode: .fill)
+                    // One hover effect per card, not two — see `ArtworkShelfItem`.
+                    .hoverEffectDisabled()
                     .grayscale(1)
                     .opacity(0.35)
             }

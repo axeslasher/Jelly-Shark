@@ -189,6 +189,14 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
 
     private var artwork: some View {
         ArtworkImage(url: url, blurHash: blurHash, placeholderIcon: placeholderIcon)
+            // Scoped to the image alone: the borderless style otherwise lifts
+            // the first `Image` it finds in the label, which here is nested
+            // below `ArtworkImage`'s clip — scaling it inside the fixed frame
+            // ("image grows inside its container") and costing a second Liquid
+            // Glass effect per card (~15% of main-thread time while paging,
+            // #110). Everything above stays hover-enabled so the borderless
+            // style keeps driving the lockup's caption choreography.
+            .hoverEffectDisabled()
             .aspectRatio(aspectRatio, contentMode: .fit)
             .frame(width: width)
             .overlay(alignment: .bottomLeading) {
