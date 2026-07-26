@@ -49,6 +49,26 @@ struct TypographySchemeTests {
         #expect(scheme.certificate.family == FontFamily.zodiak)
     }
 
+    @Test("Platform scale leaves tvOS alone and composes with theme multipliers")
+    func platformTypeScale() {
+        // The 10-foot scale is the authored one, so tvOS must come through
+        // untouched; only visionOS sizes down.
+        let scale = TypographyTokens.Size.platformScale
+        #if os(tvOS)
+            #expect(scale == 1)
+            #expect(TypographyTokens.Size.body == 22)
+        #else
+            #expect(scale < 1)
+        #endif
+
+        // Genre themes tune sizes as multiples of the token rather than as
+        // literals, which is what lets one platform factor reach them. These
+        // ratios must hold at any scale.
+        #expect(HorrorTheme().fonts.display.size == TypographyTokens.Size.display * 1.4)
+        #expect(VideoStoreTheme().fonts.headline.size == TypographyTokens.Size.headline * 1.2)
+        #expect(ActionTheme().fonts.title.size == TypographyTokens.Size.title * 1.1)
+    }
+
     @Test("Emphasis tiers resolve to the style's weights")
     func emphasisResolution() {
         var style = TypeStyle(size: 22, weight: .light)
@@ -80,7 +100,7 @@ struct TypographySchemeTests {
             #expect(fonts[role].family == FontFamily.satoshi, "\(role)")
         }
         #expect(fonts.certificate.family == FontFamily.zodiak)
-        #expect(fonts.certificate.size == 18)
+        #expect(fonts.certificate.size == TypographyTokens.Size.certificate)
         #expect(fonts.certificate.weight == .bold)
 
         // Sizes and weights are exactly the Standard tokens — any drift here
