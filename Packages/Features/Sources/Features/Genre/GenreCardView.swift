@@ -9,10 +9,16 @@ import SwiftUI
 /// screen returning from a detail page — costs no request. Long-pressing rolls
 /// a new one. Tapping navigates to the library grid pre-filtered to the genre
 /// via a `GenreFilter` value.
+///
+/// A nil `library` is an unscoped card: it samples, remembers, and links out
+/// across every library rather than one. Its remembered face is a separate
+/// entry from a scoped card's for the same genre, so the same genre can wear
+/// different faces on Home and on a detail page — deliberate, since each card
+/// borrows from the pool it actually opens.
 struct GenreCardView: View {
     @Environment(AppSession.self) private var session
 
-    let library: Library
+    let library: Library?
     let genre: String
 
     @State private var viewModel = GenreCardViewModel()

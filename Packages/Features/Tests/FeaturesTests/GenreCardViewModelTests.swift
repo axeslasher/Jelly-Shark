@@ -63,6 +63,84 @@ struct GenreCardViewModelTests {
         #expect(client.libraryItemsRequests.first?.query.genres == [Self.genre])
     }
 
+    @Test("A scoped card samples inside its library, exactly as it always has")
+    func scopedRollStaysScoped() async throws {
+        // Home's cards are the scoped case; this pins their request shape so
+        // making `library` optional can't quietly widen them (#108).
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.success(page(["a"]))]
+
+        let viewModel = GenreCardViewModel(store: makeStore())
+        await load(viewModel, client)
+
+        let request = try #require(client.libraryItemsRequests.first)
+        #expect(request.libraryId == Self.library.id)
+        #expect(request.itemTypes == [.movie])
+        #expect(request.query.library == Self.library)
+    }
+
+    // MARK: - Unscoped cards (media detail, #108)
+
+    @Test("An unscoped card samples across every library, top-level titles only")
+    func unscopedRollSpansEveryLibrary() async throws {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.success(page(["a"]))]
+
+        let viewModel = GenreCardViewModel(store: makeStore())
+        await viewModel.load(client: client, library: nil, genre: Self.genre)
+
+        let request = try #require(client.libraryItemsRequests.first)
+        #expect(request.libraryId == nil)
+        // Unscoped, the fetch is recursive over the whole tree, so the type
+        // filter is what keeps seasons and episodes out of the sample.
+        #expect(request.itemTypes == [.movie, .series])
+        #expect(request.query.library == nil)
+        #expect(try #require(viewModel.selection).itemId == "a")
+    }
+
+    @Test("An unscoped card remembers its face, so a second visit costs nothing")
+    func unscopedWarmLoadCostsNothing() async throws {
+        let store = makeStore()
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.success(page(["a", "b", "c"]))]
+
+        let cold = GenreCardViewModel(store: store)
+        await cold.load(client: client, library: nil, genre: Self.genre)
+        let firstFace = try #require(cold.selection)
+        client.libraryItemsRequests.removeAll()
+
+        let warm = GenreCardViewModel(store: store)
+        await warm.load(client: client, library: nil, genre: Self.genre)
+
+        #expect(warm.selection == firstFace)
+        #expect(client.libraryItemsRequests.isEmpty)
+        #expect(store.selection(for: GenreBackdropKey(libraryId: nil, genre: Self.genre)) == firstFace)
+    }
+
+    @Test("Scoped and unscoped cards for one genre keep their own faces")
+    func unscopedKeyIsSeparateFromScoped() async throws {
+        // Deliberate, not a collision: each card borrows from the pool it
+        // actually opens, so a detail page's "all Horror" tile mustn't wear a
+        // face drawn only from Films. The consequence is that the same genre
+        // can look different on Home and on a detail page.
+        let store = makeStore()
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.success(page(["scoped"])), .success(page(["unscoped"]))]
+
+        let scoped = GenreCardViewModel(store: store)
+        await load(scoped, client)
+
+        let unscoped = GenreCardViewModel(store: store)
+        await unscoped.load(client: client, library: nil, genre: Self.genre)
+
+        #expect(try #require(scoped.selection).itemId == "scoped")
+        #expect(try #require(unscoped.selection).itemId == "unscoped")
+        #expect(store.selection(for: key)?.itemId == "scoped")
+        #expect(store.selection(for: GenreBackdropKey(libraryId: nil, genre: Self.genre))?.itemId == "unscoped")
+        // The unscoped card didn't adopt the scoped card's warm entry.
+        #expect(client.libraryItemsRequests.count == 2)
+    }
+
     @Test("Only items that actually have a backdrop are eligible")
     func skipsArtlessItems() async throws {
         let client = MockJellyfinClient()
