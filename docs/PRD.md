@@ -82,7 +82,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 ---
 
 ### 5. Open Source, Community-Driven
-**What**: Apache 2.0 licensed, designed to be extensible
+**What**: MIT licensed, designed to be extensible
 
 **Why it matters**: Jellyfin's strength is its open ecosystem. Jelly Shark embraces this rather than fighting it.
 

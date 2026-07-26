@@ -11,7 +11,7 @@ Jelly Shark is a premium Jellyfin client for tvOS and visionOS that elevates the
 - Component variants with depth (different layouts work within any theme)
 - Platform-native excellence (tvOS focus engine, visionOS spatial layouts)
 - Professional 10-foot UI design for lean-back viewing
-- Open source, community-driven (Apache 2.0)
+- Open source, community-driven (MIT)
 
 **Target Platforms**:
 - Apple TV 4K (tvOS 26.0+)
