@@ -70,6 +70,25 @@ public extension CollectionType {
 // MARK: - Computed Properties
 
 public extension Library {
+    /// Whether the app offers this library as a destination of its own.
+    ///
+    /// Jelly Shark is a video client: a Books library has no reader behind it,
+    /// and a Folders library is the raw filesystem view of content already
+    /// listed under its real type. Both are dropped at the source rather than
+    /// shown as a tab (or a Library filter pill) that leads somewhere useless.
+    ///
+    /// Keeping the list short also matters on visionOS, where the ornament
+    /// silently drops tabs past its limit — an unbrowsable library there costs
+    /// a slot that Settings needs.
+    var isBrowsable: Bool {
+        switch collectionType {
+        case .books, .folders:
+            false
+        default:
+            true
+        }
+    }
+
     /// SF Symbol name for the library type
     var systemImageName: String {
         switch collectionType {
