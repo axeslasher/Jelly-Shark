@@ -171,12 +171,12 @@ Users can switch themes globally and customize component variants individually, 
 - Discovery: `GET /Users/{userId}/Items/Resume`, `GET /Users/{userId}/Items/Latest`, seasons/episodes (`GET /Shows/{seriesId}/Episodes`, `GET /Shows/{seriesId}/Seasons`), next-up (`GET /Shows/NextUp`) + next-episode lookup, similar items (`GET /Items/{itemId}/Similar`)
 - People: person detail (`GET /Users/{userId}/Items/{personId}`) + filmography (items featuring a person)
 - Images: `GET /Items/{itemId}/Images/{imageType}` (URL building only)
-- Playback: `GET /Items/{itemId}/PlaybackInfo`, direct play `GET /Videos/{itemId}/stream?static=true`, HLS `GET /Videos/{itemId}/main.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
+- Playback: `GET /Items/{itemId}/PlaybackInfo`, direct play `GET /Videos/{itemId}/stream?static=true`, HLS `GET /Videos/{itemId}/master.m3u8`, `POST /Sessions/Playing`, `/Progress`, `/Stopped`
 - User data: mark played/unplayed (`/PlayedItems/{itemId}`), favorite/unfavorite (`/FavoriteItems/{itemId}`) — surfaced as optimistic toggles on media and person detail
 - Search: `GET /Users/{userId}/Items` with `searchTerm` (movies/series/episodes), wired via `searchItems(query:limit:)`
 
 ### Caching Strategy (current vs. planned)
-- **Current**: Session tokens in Keychain only; artwork via `URLCache` (64MB memory / 256MB disk). No persistent metadata cache.
+- **Current**: Session tokens in Keychain only; artwork via `URLCache` (16MB memory / 256MB disk). No persistent metadata cache.
 - **Planned**: SwiftData caching for server config, user profiles, media metadata, user state, and library structure
 - Don't cache: Auth tokens (Keychain only), video streams, transcoding decisions
 

@@ -129,25 +129,27 @@ This adapter pattern keeps mapping logic centralized and testable.
 ```
 Features/
 ├── RootView.swift          (.sidebarAdaptable TabView: Home, a tab per library, Search, Settings)
-├── HomeView.swift
-├── SearchView.swift        (debounced search UI)
 ├── AppSession.swift        (app-level session/client state)
+├── HomePreferences.swift   (persisted home-screen preferences)
+├── Features.swift          (module stub — imports only)
 ├── Artwork/                (MediaArtwork image-URL helpers, TrimmedLogoImage)
-├── Library/                (LibraryItemsView, LibraryItemsViewModel, LibraryFilterBar, LibraryQueryDisplay)
-├── Search/                 (SearchViewModel)
-├── MediaDetail/            (MediaDetailView + hero/episodes/shelves/credits sections — no view model yet)
-├── PersonDetail/           (PersonDetailView, PersonDetailHeader, PersonDetailShelves — no view model yet)
-├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, UpNextOverlayView)
+├── Genre/                  (GenreShelvesView + GenreShelvesViewModel, GenreCardView + GenreCardViewModel, GenreBackdropStore)
+├── Home/                   (HomeView + HomeViewModel, hero backdrop/motion/section, shelves section, placeholders)
+├── Library/                (LibraryItemsView + LibraryItemsViewModel, LibraryFilterBar, GenreFilter, LibraryQueryDisplay, PosterGridLayout)
+├── MediaDetail/            (MediaDetailView + MediaDetailViewModel, hero/episodes/shelves/credits sections)
+├── PersonDetail/           (PersonDetailView + PersonDetailViewModel, PersonDetailHeader, PersonDetailShelves)
+├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, PlaybackLocalServer, UpNextOverlayView, audio/subtitle option matchers)
+├── Search/                 (SearchView + SearchViewModel — debounced search UI)
 └── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)
 ```
-Authentication is not a separate folder — server connection lives under `Settings/`. `HomeView` also has no dedicated view model (see the Data Flow note above).
+Authentication is not a separate folder — server connection lives under `Settings/`.
 
 ---
 
 ### App Target
 **Purpose**: Shared SwiftUI entry point and configuration
 
-`Jelly Shark` is a **single app target** (`Jelly_SharkApp.swift`) that builds for both tvOS and visionOS. It configures `URLCache.shared` (64MB memory / 256MB disk) for artwork in `init()` and presents `RootView` in a `WindowGroup`. The template `Item` SwiftData model and `ContentView` have been removed — there is no `ModelContainer`.
+`Jelly Shark` is a **single app target** (`Jelly_SharkApp.swift`) that builds for both tvOS and visionOS. It configures `URLCache.shared` (16MB memory / 256MB disk) for artwork in `init()` and presents `RootView` in a `WindowGroup`. The template `Item` SwiftData model and `ContentView` have been removed — there is no `ModelContainer`.
 
 **Current state**:
 - tvOS: focus-driven `TabView` navigation, remote-friendly controls, AVPlayer transport-bar menus for audio/subtitle selection
@@ -173,7 +175,7 @@ jellyfin-sdk-swift
 Jellyfin Server
 ```
 
-**View models are not universal yet.** The `@Observable @MainActor` view-model layer above is fully applied on four screens — `ServerConnectionViewModel`, `LibraryItemsViewModel`, `SearchViewModel`, and `PlaybackViewModel` (each with Swift Testing coverage via `MockJellyfinClient`) — plus the app-level `AppSession`. `HomeView`, `MediaDetailView`, and `PersonDetailView` currently hold their load/selection logic (and the optimistic played/favorite toggles) inline in the views, largely untested. Extracting view models for those three is tracked as test debt in issue #26.
+**Every screen has a view model.** The `@Observable @MainActor` layer above is applied throughout — `ServerConnectionViewModel`, `HomeViewModel`, `LibraryItemsViewModel`, `MediaDetailViewModel`, `PersonDetailViewModel`, `SearchViewModel`, and `PlaybackViewModel`, plus `GenreShelvesViewModel` / `GenreCardViewModel` behind the genre shelves. Each has a Swift Testing suite in `FeaturesTests`; the server-backed ones drive it through `MockJellyfinClient`. Views keep only presentation state — server fetches and the optimistic played/favorite toggles live in the view models. The app-level `AppSession` and `HomePreferences` use the same `@Observable @MainActor` shape. Extracting the last three (Home, MediaDetail, PersonDetail) was tracked as test debt in issue #26, now closed by PR #103.
 
 ### Persistence Strategy
 

@@ -133,7 +133,7 @@ GET /Videos/{itemId}/stream?static=true   (resolveStream — direct play)
 - Original file streamed as-is when the source supports direct play and the
   requested tracks are the defaults; container appended as path extension
 
-GET /Videos/{itemId}/main.m3u8   (resolveStream — HLS fallback, built by StreamURLBuilder)
+GET /Videos/{itemId}/master.m3u8 (resolveStream — HLS fallback, built by StreamURLBuilder)
 - HLS remux/transcode stream; codecs hevc,h264 / aac,ac3,eac3; SegmentContainer=mp4
 
 POST /Sessions/Playing           (reportPlaybackStart)
@@ -307,7 +307,7 @@ Describe the playable media sources returned by `PlaybackInfo`, including audio/
 
 ### Current (implemented)
 - **Keychain**: `SavedSession` (server URL, user ID, access token) + a stable device ID
-- **URLCache**: artwork images, via `URLCache.shared` configured at app launch (64MB memory / 256MB disk)
+- **URLCache**: artwork images, via `URLCache.shared` configured at app launch (16MB memory / 256MB disk)
 - **UserDefaults**: selected theme identifier
 - Everything else (libraries, items, metadata) is fetched live on each view's `.task` — there is no persistent metadata cache yet.
 
@@ -447,7 +447,7 @@ which the client doesn't fetch yet.
 ### Streaming (as implemented)
 - **Two delivery paths**, chosen per source by `MediaSource.playMethod(audioStreamIndex:subtitleStreamIndex:)` and resolved by `JellyfinClient.resolveStream(for:parameters:)`:
   - **Direct play**: `GET /Videos/{itemId}/stream?static=true` — the original file, no server processing
-  - **HLS universal endpoint**: `GET /Videos/{itemId}/main.m3u8` — the server remuxes when codecs are compatible (reported as DirectStream) and transcodes otherwise
+  - **HLS universal endpoint**: `GET /Videos/{itemId}/master.m3u8` — the server remuxes when codecs are compatible (reported as DirectStream) and transcodes otherwise. It must be the *master* playlist, not `main.m3u8`: only the master advertises WebVTT subtitle renditions and can carry the synthesized I-frame rendition `PlaybackLocalServer` appends (see `StreamURLBuilder.hlsURL`)
 - `PlaybackInfo` is requested first to obtain media sources and a play session ID
 - Offline downloads NOT supported in v1.0
 
