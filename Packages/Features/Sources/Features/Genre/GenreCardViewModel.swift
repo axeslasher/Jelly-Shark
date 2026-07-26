@@ -9,6 +9,11 @@ import Observation
 /// stable by default, random on request. A warm card costs no request at all;
 /// only a cold card, a long-press cycle, or a selection that no longer renders
 /// goes to the server.
+///
+/// `library` is optional throughout: nil samples the genre across every library
+/// (a media detail page's card, #108) instead of within one. It is part of the
+/// remembered choice's key either way, so a scoped and an unscoped card for the
+/// same genre keep their own faces.
 @Observable
 @MainActor
 final class GenreCardViewModel {
@@ -68,7 +73,7 @@ final class GenreCardViewModel {
     /// The remembered choice is taken at face value — validating it would cost
     /// the request this whole mechanism exists to avoid. It's repaired if it
     /// turns out not to render (`backdropUnavailable`).
-    func load(client: (any JellyfinClientProtocol)?, library: Library, genre: String) async {
+    func load(client: (any JellyfinClientProtocol)?, library: Library?, genre: String) async {
         guard !didLoad else { return }
 
         // An entry whose image type this build can't map back is unusable, so
@@ -91,7 +96,7 @@ final class GenreCardViewModel {
     /// the twelve items already in hand: that pool exhausts fast and starts
     /// repeating, which defeats the gesture. One request per press, and the
     /// press is deliberate and occasional, so it's on no hot path.
-    func cycle(client: (any JellyfinClientProtocol)?, library: Library, genre: String) async {
+    func cycle(client: (any JellyfinClientProtocol)?, library: Library?, genre: String) async {
         guard let client, !isCycling else { return }
         isCycling = true
         defer { isCycling = false }
@@ -109,7 +114,7 @@ final class GenreCardViewModel {
     /// The old choice is only given up once a roll actually settles: the same
     /// nil image reports a server that's merely unreachable, and an offline
     /// launch must not cost every card the face it had.
-    func backdropUnavailable(client: (any JellyfinClientProtocol)?, library: Library, genre: String) async {
+    func backdropUnavailable(client: (any JellyfinClientProtocol)?, library: Library?, genre: String) async {
         guard !didRepair, let stale = selection, let client else { return }
         didRepair = true
 
@@ -134,14 +139,19 @@ final class GenreCardViewModel {
     /// boundary without having to steer the random offset.
     func roll(
         client: any JellyfinClientProtocol,
-        library: Library,
+        library: Library?,
         genre: String,
         startIndex: Int,
     ) async -> Bool {
+        // The same query the card's destination grid will run, so the sample is
+        // drawn from exactly the pool the card opens. Built once and asked for
+        // its `itemTypes` rather than restating the movie/series rule here —
+        // `LibraryQuery` already owns it, including the unscoped answer.
+        let query = LibraryQuery(library: library, genres: [genre])
         guard let page = try? await client.getLibraryItems(
-            libraryId: library.id,
-            itemTypes: library.collectionType?.gridItemTypes,
-            query: LibraryQuery(genres: [genre]),
+            libraryId: library?.id,
+            itemTypes: query.itemTypes,
+            query: query,
             limit: Self.pageSize,
             startIndex: startIndex,
         ) else { return false }
@@ -186,7 +196,7 @@ final class GenreCardViewModel {
         return Int.random(in: 0 ... (poolCount - pageSize))
     }
 
-    private static func key(library: Library, genre: String) -> GenreBackdropKey {
-        GenreBackdropKey(libraryId: library.id, genre: genre)
+    private static func key(library: Library?, genre: String) -> GenreBackdropKey {
+        GenreBackdropKey(libraryId: library?.id, genre: genre)
     }
 }
