@@ -44,8 +44,10 @@ public final class SearchViewModel {
     // MARK: - Configuration
 
     /// How many titles to seed the empty state with. `jellyfin-web` asks for
-    /// 20, which is a lot of text buttons at ten feet.
-    private static let seedTermLimit = 12
+    /// 20, which is a lot of text buttons at ten feet — and the empty state
+    /// stacks them vertically under the glyph and copy, so this is bounded by
+    /// what fits on screen without scrolling rather than by taste.
+    private static let seedTermLimit = 5
 
     /// Maximum number of results to request.
     private let limit: Int

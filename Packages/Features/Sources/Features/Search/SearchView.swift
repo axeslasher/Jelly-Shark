@@ -61,6 +61,13 @@ struct SearchView: View {
     }
 
     private var plainPrompt: some View {
+        promptHeader
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The glyph and copy, shown whether or not the server had terms to offer.
+    /// It says what the screen is for; the terms below say where to start.
+    private var promptHeader: some View {
         VStack(spacing: SpacingTokens.md) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 64))
@@ -74,39 +81,42 @@ struct SearchView: View {
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// No 64pt glyph here: a labelled row of real destinations earns the
-    /// vertical space better than a decoration, and reads better to VoiceOver.
     private var seedTermPrompt: some View {
         VStack(spacing: SpacingTokens.md) {
+            promptHeader
+
             Text("From Your Library")
                 .jsStyle(.headline)
                 .foregroundStyle(theme.secondary)
+                .padding(.top, SpacingTokens.lg)
 
-            ScrollView(.horizontal) {
-                HStack(spacing: SpacingTokens.sm) {
-                    ForEach(viewModel.seedTerms) { item in
-                        Button {
-                            viewModel.selectSeedTerm(item.name)
-                        } label: {
-                            Text(item.name)
-                                .jsStyle(.title)
-                                .foregroundStyle(theme.primary)
-                        }
-                        // The plain glass style, unlike the season pills': these
-                        // pills have no active-item gate keyed to what pressing
-                        // one changes, so the style presents its own focus and
-                        // sees every press through.
-                        .glassButtonStyle(tint: theme.focusFill)
+            // A plain stack, not a scroll view: `seedTermLimit` is set so the
+            // column fits without scrolling, which keeps this out of the
+            // vertical-overflow trap that bit the Home shelves (#28) and means
+            // every pill is built and reachable by the focus engine.
+            VStack(spacing: SpacingTokens.sm) {
+                ForEach(viewModel.seedTerms) { item in
+                    Button {
+                        viewModel.selectSeedTerm(item.name)
+                    } label: {
+                        // No explicit `foregroundStyle`: an explicit one wins
+                        // over the style's, which is what left the label at
+                        // `primary` on a focused platter. Left alone, the style
+                        // resolves `primary` at rest and `onFocusFill` on focus,
+                        // per theme.
+                        Text(item.name)
+                            .jsStyle(.title)
                     }
+                    // The plain glass style, unlike the season pills': these
+                    // pills have no active-item gate keyed to what pressing
+                    // one changes, so the style presents its own focus and
+                    // sees every press through.
+                    .glassButtonStyle(tint: theme.focusFill)
                 }
-                .padding(.horizontal, SpacingTokens.screenPadding)
-                .padding(.vertical, SpacingTokens.focusPadding)
             }
-            .scrollClipDisabled()
-            .scrollIndicators(.hidden)
+            .padding(.horizontal, SpacingTokens.screenPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
