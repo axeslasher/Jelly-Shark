@@ -502,14 +502,6 @@ private struct CircleNavigationLink<Value: Hashable>: View {
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .focused($isFocused)
-        .overlay(alignment: .bottom) {
-            Text(title)
-                .jsStyle(.caption)
-                .foregroundStyle(theme.secondary)
-                .fixedSize()
-                .opacity(isFocused ? 1 : 0)
-                .alignmentGuide(.bottom) { $0[.top] - SpacingTokens.sm }
-        }
-        .animation(theme.animation, value: isFocused)
+        .hangingActionLabel(title, isFocused: isFocused)
     }
 }

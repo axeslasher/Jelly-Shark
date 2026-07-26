@@ -57,22 +57,74 @@ public struct CircleActionButton: View {
         .controlSize(.regular)
         .focused($isFocused)
         .disabled(!isEnabled)
-        // The label hangs below the circle as an overlay so its width never
-        // participates in layout — the button's footprint is always just the
-        // circle, and a state change ("Mark Watched" → "Watched") can't shift
-        // the row. Faded rather than conditionally inserted so gaining focus
-        // doesn't restructure the view and unsettle the focus engine.
-        .overlay(alignment: .bottom) {
-            Text(title)
-                .jsStyle(.caption)
-                .foregroundStyle(theme.secondary)
-                .fixedSize()
-                .opacity(isFocused ? 1 : 0)
-                // Report the label's bottom as its own top minus the gap, so
-                // aligning that "bottom" with the circle's bottom hangs the
-                // label one gap below the circle.
-                .alignmentGuide(.bottom) { $0[.top] - SpacingTokens.sm }
-        }
-        .animation(theme.animation, value: isFocused)
+        .hangingActionLabel(title, isFocused: isFocused)
+    }
+}
+
+// MARK: - Hanging label
+
+public extension View {
+    /// Hangs `title` beneath a circular control, revealed while the control is
+    /// focused (tvOS) or looked at (visionOS).
+    ///
+    /// Shared rather than inlined because the reveal works differently per
+    /// platform in a way that isn't visible from a call site — and because the
+    /// two controls that want it live in different modules, which is how the
+    /// visionOS reveal came to be missing from one of them (#139).
+    ///
+    /// - Parameter isFocused: tvOS's trigger. visionOS never tells an app where
+    ///   someone is looking, so there the reveal comes from a system-composed
+    ///   hover effect and this is unused.
+    func hangingActionLabel(_ title: String, isFocused: Bool) -> some View {
+        modifier(HangingActionLabel(title: title, isFocused: isFocused))
+    }
+}
+
+/// See ``SwiftUI/View/hangingActionLabel(_:isFocused:)``.
+public struct HangingActionLabel: ViewModifier {
+    @Environment(\.theme) private var theme
+
+    let title: String
+    let isFocused: Bool
+
+    public func body(content: Content) -> some View {
+        content
+            // The label hangs below the circle as an overlay so its width never
+            // participates in layout — the control's footprint is always just
+            // the circle, and a state change ("Mark Watched" → "Watched") can't
+            // shift the row. Faded rather than conditionally inserted so gaining
+            // focus doesn't restructure the view and unsettle the focus engine.
+            .overlay(alignment: .bottom) {
+                label
+                    // Report the label's bottom as its own top minus the gap, so
+                    // aligning that "bottom" with the circle's bottom hangs the
+                    // label one gap below the circle.
+                    .alignmentGuide(.bottom) { $0[.top] - SpacingTokens.sm }
+            }
+        #if os(tvOS)
+            .animation(theme.animation, value: isFocused)
+        #else
+            // Gaze never reaches the app, so the label can't fade itself the way
+            // it does on tvOS. Its effect is composed by the system; this puts
+            // that effect in a group with the control, so looking anywhere at
+            // the circle reveals the label hanging beneath it.
+            .hoverEffectGroup()
+        #endif
+    }
+
+    private var label: some View {
+        Text(title)
+            .jsStyle(.caption)
+            .foregroundStyle(theme.secondary)
+            .fixedSize()
+        #if os(tvOS)
+            .opacity(isFocused ? 1 : 0)
+        #else
+            // The effect sets both phases, so the label is hidden at rest and
+            // never needs an `opacity` of its own.
+            .hoverEffect { effect, isActive, _ in
+                effect.animation(theme.animation) { $0.opacity(isActive ? 1 : 0) }
+            }
+        #endif
     }
 }
