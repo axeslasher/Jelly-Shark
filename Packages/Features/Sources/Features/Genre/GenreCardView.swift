@@ -31,7 +31,7 @@ struct GenreCardView: View {
         // presentation and cycling is a bonus, so this stays a power-user
         // gesture with no badge or nudge — same as `ArtworkShelfItem`'s menu.
         .contextMenu {
-            Button("Shuffle Backdrop", systemImage: "shuffle") {
+            Button("Shuffle image", systemImage: "photo.on.rectangle.angled") {
                 Task { await viewModel.cycle(client: session.client, library: library, genre: genre) }
             }
         }
