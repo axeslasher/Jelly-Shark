@@ -205,8 +205,14 @@ public struct RootView: View {
         }
     }
 
+    /// `role: .search` is load-bearing, not decoration: it tells the tab bar
+    /// this tab owns searching, which is what earns the system search
+    /// presentation its layout allowance against the bar. Without it the
+    /// tvOS `sidebarAdaptable` collapsed pill draws on top of the search field
+    /// (#148). Not `#if`-guarded — the role is semantically true on visionOS
+    /// too, and a system-granted allowance outlives a hand-tuned inset.
     private var searchTab: some TabContent<AppTab> {
-        Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
+        Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
             navigationRoot(for: .search) {
                 SearchView()
             }
