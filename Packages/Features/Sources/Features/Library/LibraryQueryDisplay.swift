@@ -75,6 +75,52 @@ extension LibraryQuery {
         return words.joined(separator: " ")
     }
 
+    /// Every active filter selection, spelled out in full — the copy the
+    /// empty grid shows so the viewer can see which pill emptied it (#128).
+    ///
+    /// Filters only: no library name (the header above already carries it) and
+    /// no sort, matching the dimensions `isFiltering` considers, in the order
+    /// `displayTitle` uses. Empty when nothing is filtering.
+    ///
+    /// Deliberately does *not* go through ``shortList``: eliding at three
+    /// values ("Action, Comedy & More") would hide the guilty selection, which
+    /// is the entire point of showing this.
+    var activeFilterSummary: String {
+        guard isFiltering else { return "" }
+
+        var parts: [String] = []
+
+        switch watched {
+        case .unplayed: parts.append("Unwatched")
+        case .played: parts.append("Watched")
+        case .any: break
+        }
+
+        if favoritesOnly {
+            parts.append("Favorites")
+        }
+
+        if !genres.isEmpty {
+            parts.append(Self.fullList(genres.sorted()))
+        }
+
+        if !decades.isEmpty {
+            parts.append(Self.fullList(decades.sorted().map {
+                "\($0.formatted(.number.grouping(.never)))s"
+            }))
+        }
+
+        if !officialRatings.isEmpty {
+            parts.append("Rated \(Self.fullList(officialRatings.sorted()))")
+        }
+
+        // Dimensions read as separate facts, so they get the metadata-row
+        // separator used elsewhere in the app rather than another comma —
+        // "Action, Comedy & Horror · 1980s" stays unambiguous where
+        // "Action, Comedy & Horror, 1980s" would not.
+        return parts.joined(separator: " · ")
+    }
+
     /// "Horror", "Horror & Comedy", or "Horror, Comedy & More"
     private static func shortList(_ values: [String]) -> String {
         switch values.count {
@@ -82,5 +128,12 @@ extension LibraryQuery {
         case 2: "\(values[0]) & \(values[1])"
         default: "\(values[0]), \(values[1]) & More"
         }
+    }
+
+    /// ``shortList`` without the elision: "Horror", "Comedy & Horror",
+    /// "Action, Comedy, Drama & Horror". Every value survives.
+    private static func fullList(_ values: [String]) -> String {
+        guard values.count > 1 else { return values.first ?? "" }
+        return "\(values.dropLast().joined(separator: ", ")) & \(values[values.count - 1])"
     }
 }
