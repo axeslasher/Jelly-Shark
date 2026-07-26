@@ -169,7 +169,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 **Must work with**:
 - Any standard Jellyfin server (10.8+)
 - Apple TV 4K (all generations with tvOS 26+)
-- Apple Vision Pro (visionOS 26+)
+- Apple Vision Pro (visionOS 26.2+)
 
 **Performance targets**:
 - <2s initial library load

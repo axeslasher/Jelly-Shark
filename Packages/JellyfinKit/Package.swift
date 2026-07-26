@@ -6,7 +6,10 @@ let package = Package(
     name: "JellyfinKit",
     platforms: [
         .tvOS(.v26),
-        .visionOS(.v26),
+        // Spelled as a string because `SupportedPlatform.VisionOSVersion` only
+        // goes to major-version granularity (`.v26`); the app target's
+        // XROS_DEPLOYMENT_TARGET is 26.2 and the manifest must not permit less.
+        .visionOS("26.2"),
         // Not a shipping platform. JellyfinKit is pure logic and its Keychain
         // tests need a real keychain, so the suite runs on the Mac host via
         // `swift test` (see the Makefile). Without an explicit floor SPM
