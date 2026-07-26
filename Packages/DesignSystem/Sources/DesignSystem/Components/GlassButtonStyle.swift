@@ -58,7 +58,10 @@ public extension View {
     /// - Parameters:
     ///   - tint: The theme's `focusFill`; `nil` keeps the system `.plain` style.
     ///   - cornerRadius: Corner radius of the themed platter (typically the
-    ///     theme's `cornerRadiusLarge`).
+    ///     theme's `cornerRadiusLarge`) — and, off tvOS, of the hover effect
+    ///     this draws in its place. There the radius is the whole point: the
+    ///     built-in styles infer a capsule from the button's bounds, and around
+    ///     a paragraph that curve cuts straight through the text (#139).
     @ViewBuilder
     func plainFocusButtonStyle(tint: Color?, cornerRadius: CGFloat) -> some View {
         #if os(tvOS)
@@ -68,7 +71,20 @@ public extension View {
                 buttonStyle(.plain)
             }
         #else
-            buttonStyle(.plain)
+            // Grow the view so the hover shape clears the text by the same
+            // margins tvOS's platter uses, then take the growth back out of
+            // layout — the mirror image of how ``ThemedPlainButtonStyle``
+            // bleeds its platter outward, and equally invisible at rest.
+            // The margins are `SpacingTokens`, so they carry the visionOS
+            // platform scale and the proportions match tvOS rather than the
+            // point values.
+            padding(.horizontal, SpacingTokens.md)
+                .padding(.vertical, SpacingTokens.sm)
+                .buttonStyle(CardButtonStyle())
+                .contentShape(.hoverEffect, .rect(cornerRadius: cornerRadius))
+                .hoverEffect(.highlight)
+                .padding(.horizontal, -SpacingTokens.md)
+                .padding(.vertical, -SpacingTokens.sm)
         #endif
     }
 }

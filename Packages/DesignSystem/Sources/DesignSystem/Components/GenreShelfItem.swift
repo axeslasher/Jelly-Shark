@@ -59,7 +59,7 @@ public struct GenreShelfItem<Value: Hashable>: View {
         #if os(tvOS)
         .buttonStyle(.borderless)
         #else
-        .buttonStyle(.plain)
+        .buttonStyle(CardButtonStyle())
         #endif
     }
 }
@@ -147,11 +147,16 @@ private struct GenreCardContent: View {
         }
         .frame(width: width, height: height)
         .artworkCornerRadius(theme.cornerRadius)
-        // Lift, specular highlight, and gimbal motion on focus.
-        .hoverEffect(.highlight)
         .onChange(of: isFocused) { _, focused in
             focusStart = focused ? Date() : nil
         }
+        // The corner clip above doesn't reach the hover effect, which drew the
+        // card's glow with sharp corners (#139).
+        #if !os(tvOS)
+        .contentShape(.hoverEffect, .rect(cornerRadius: theme.cornerRadius))
+        #endif
+        // Lift, specular highlight, and gimbal motion on focus.
+        .hoverEffect(.highlight)
     }
 
     @ViewBuilder
