@@ -96,3 +96,43 @@ struct SimilarItemsSection: View {
         }
     }
 }
+
+/// "Browse by Genre" shelf — the page item's own genres, each handing off to a
+/// genre-filtered grid. Where More Like This offers the server's pick of kin
+/// titles, this offers the whole vibe: the path outward when neither this page
+/// nor its neighbours was it. Renders nothing for an item with no genres.
+struct GenreShelfSection: View {
+    /// How many tiles the shelf shows, measured against a real library (583
+    /// movies, 59 series) rather than guessed: a cap of 5 leaves 99% of movies
+    /// and 80% of series whole, where a cap of 3 would truncate 44% of series.
+    /// One cap for both page types on purpose — a shelf that behaves
+    /// differently depending on which page it's on is a rule nobody remembers.
+    private static let maxGenres = 5
+
+    let genres: [String]
+
+    /// The first five in server order. Jellyfin exposes no genre weighting, and
+    /// sorting alphabetically measured *worse*: on the worst case in the sample
+    /// (an 11-genre show) it surfaced the five most generic labels the item had
+    /// and none of the ones that describe it.
+    private var shownGenres: [String] {
+        Array(genres.prefix(Self.maxGenres))
+    }
+
+    var body: some View {
+        if !shownGenres.isEmpty {
+            // No library name in the title, unlike Home's "Browse {library} by
+            // genre": these cards aren't scoped to one, so naming one would be
+            // a claim the destination doesn't honour.
+            ContentShelf("Browse by Genre", icon: "theatermasks.fill") {
+                ForEach(shownGenres, id: \.self) { genre in
+                    // Unscoped deliberately (#108): from a detail page "more
+                    // Horror" means everything in the collection, not one
+                    // library — and a detail page has no library to resolve to
+                    // anyway. The grid still offers the Library pill to narrow.
+                    GenreCardView(library: nil, genre: genre)
+                }
+            }
+        }
+    }
+}

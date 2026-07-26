@@ -281,6 +281,25 @@ public struct MediaDetailView: View {
                         }
                     }
 
+                    // The page's last focusable row, and the only one that
+                    // leaves the page entirely — so it sits after the in-page
+                    // kin content rather than competing with it. Last also
+                    // means it can't collide with `CastShelfSection`'s
+                    // first-focus steer, which assumes nothing focusable
+                    // precedes it on a movie page.
+                    //
+                    // Episode pages skip it on the same reasoning that skips
+                    // More Like This: it would show the parent series' genres,
+                    // duplicating the Go to Series button one hero away.
+                    //
+                    // Held until the core load settles so it arrives with the
+                    // rest of the page instead of popping in from the stub's
+                    // genres — and so no focusable row exists beside the
+                    // (deliberately unfocusable) skeletons.
+                    if item.type != .episode, viewModel.status != .loading {
+                        GenreShelfSection(genres: displayItem.genres ?? [])
+                    }
+
                     MediaInfoSection(item: displayItem)
                 }
                 #if os(tvOS)
