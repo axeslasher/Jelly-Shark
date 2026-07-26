@@ -93,16 +93,7 @@ struct LibraryItemsView: View {
             .frame(maxWidth: .infinity, minHeight: 400)
 
         case .empty:
-            VStack(spacing: SpacingTokens.md) {
-                Image(systemName: "slider.vertical.3")
-                    .font(.system(size: 48))
-                    .foregroundStyle(theme.secondary)
-
-                Text("No items match these filters")
-                    .jsStyle(.body)
-                    .foregroundStyle(theme.secondary)
-            }
-            .frame(maxWidth: .infinity, minHeight: 400)
+            emptyState
 
         case .loaded:
             // The previous results stay up (dimmed) while a new query loads,
@@ -126,6 +117,66 @@ struct LibraryItemsView: View {
             }
             .opacity(viewModel.isReloading ? 0.5 : 1)
         }
+    }
+
+    /// An empty grid, in its two flavours (#128).
+    ///
+    /// With filters lit, changing the Library pill to a scope that has no
+    /// values for the current genre/decade/rating leaves the viewer looking at
+    /// nothing, with no clue which pill is responsible and — because the old
+    /// empty state was an icon and a line of text — nothing focusable below
+    /// the bar. So it names every active selection in full and offers the
+    /// bar's own clearing action, in reach.
+    ///
+    /// With no filters lit, "No items match these filters" is simply untrue:
+    /// the library really is empty, there is nothing to clear, and a button
+    /// that no-ops is worse than none. That branch stays unfocusable, which is
+    /// fine — nothing needs recovering and the filter bar above is still live.
+    private var emptyState: some View {
+        VStack(spacing: SpacingTokens.md) {
+            if viewModel.query.isFiltering {
+                Image(systemName: "slider.vertical.3")
+                    .font(.system(size: 48))
+                    .foregroundStyle(theme.secondary)
+
+                Text("No items match these filters")
+                    .jsStyle(.body)
+                    .foregroundStyle(theme.secondary)
+
+                // Never elided (unlike the header's `displayTitle`): the whole
+                // job here is to show the selection that emptied the grid.
+                Text(viewModel.query.activeFilterSummary)
+                    .jsStyle(.title)
+                    .foregroundStyle(theme.primary)
+                    .multilineTextAlignment(.center)
+
+                // The bar's Clear, in reach: same `withFiltersCleared` path,
+                // so the newly-chosen library, sort, and direction all survive.
+                //
+                // Pressing it destroys this button — `update(query:)` flips an
+                // empty grid to `.loading`, and the skeleton that replaces it
+                // is unfocusable — so focus falls to the filter bar. Accepted:
+                // that is where the viewer was headed anyway, and holding this
+                // branch mounted through the reload would show "nothing
+                // matches" over a query about to succeed.
+                Button {
+                    viewModel.update(query: viewModel.query.withFiltersCleared)
+                } label: {
+                    Label("Clear filters", systemImage: "x.circle.fill")
+                        .jsStyle(.title)
+                }
+                .glassButtonStyle(tint: theme.focusFill)
+            } else {
+                Image(systemName: "film.fill")
+                    .font(.system(size: 48))
+                    .foregroundStyle(theme.secondary)
+
+                Text("This library is empty")
+                    .jsStyle(.body)
+                    .foregroundStyle(theme.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 400)
     }
 
     /// Column math lives in `PosterGridLayout`, shared with Home's Recently
