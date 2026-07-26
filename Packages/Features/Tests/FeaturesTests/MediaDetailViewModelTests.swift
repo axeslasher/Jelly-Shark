@@ -48,6 +48,35 @@ struct MediaDetailViewModelTests {
         await viewModel.load()
     }
 
+    // MARK: - Session scoping
+
+    @Test("A session change clears the page and reloads it for the next account")
+    func sessionChangeReloadsForNewAccount() async {
+        let first = MockJellyfinClient()
+        first.mediaItemsById["m1"] = MediaItem(id: "m1", name: "First account copy", type: .movie)
+
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: first, item: movie("m1"))
+        #expect(viewModel.detailedItem?.name == "First account copy")
+
+        // Sign-out. The view's task is keyed on the session as well as the
+        // item, so it reruns with no client — which must leave nothing of the
+        // previous account's page behind. Without this, a detail page pushed
+        // on visionOS (where tab stacks survive a tab switch) would still be
+        // standing when the next account signs in.
+        await load(viewModel, client: nil, item: movie("m1"))
+        #expect(viewModel.detailedItem == nil)
+        #expect(viewModel.status == .loading)
+
+        // A different account signs in on the same, still-pushed page.
+        let second = MockJellyfinClient()
+        second.mediaItemsById["m1"] = MediaItem(id: "m1", name: "Second account copy", type: .movie)
+        await load(viewModel, client: second, item: movie("m1"))
+
+        #expect(viewModel.status == .loaded)
+        #expect(viewModel.detailedItem?.name == "Second account copy")
+    }
+
     // MARK: - Core load
 
     @Test("A movie loads its detail and derives the credits")
