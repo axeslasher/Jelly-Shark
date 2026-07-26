@@ -96,17 +96,43 @@ public final class SearchViewModel {
     /// Attach the authenticated client (called by the view when the session connects).
     ///
     /// The first attach that carries a client also kicks off the one and only
-    /// seed-terms fetch. Later attaches — a tab revisit, a reconnect — swap the
-    /// client but leave the terms alone: the query is randomised server-side,
-    /// so refetching would reshuffle the list under a viewer who just cleared
-    /// the field, which reads as instability rather than variety.
+    /// seed-terms fetch. Later attaches that still carry a client — a tab
+    /// revisit, a reconnect — swap the client but leave the terms alone: the
+    /// query is randomised server-side, so refetching would reshuffle the list
+    /// under a viewer who just cleared the field, which reads as instability
+    /// rather than variety.
+    ///
+    /// A nil client means the session ended. Everything derived from the signed-in
+    /// account is dropped and the fetch is re-armed, because this view model
+    /// outlives the session: `SearchView` holds it in `@State` and `RootView`
+    /// keeps the tab mounted across a disconnect, so without this the next
+    /// account to sign in would be shown the previous account's library. Two
+    /// Jellyfin users on one server do not necessarily see the same libraries.
     public func attach(client: (any JellyfinClientProtocol)?) {
         self.client = client
 
-        guard seedTermsTask == nil, let client else { return }
+        guard let client else {
+            resetForSignOut()
+            return
+        }
+
+        guard seedTermsTask == nil else { return }
         seedTermsTask = Task { [weak self] in
             await self?.fetchSeedTerms(client: client)
         }
+    }
+
+    /// Drop every trace of the signed-out account and re-arm the seed fetch.
+    private func resetForSignOut() {
+        seedTermsTask?.cancel()
+        seedTermsTask = nil
+        seedTerms = []
+
+        searchTask?.cancel()
+        searchTask = nil
+        results = []
+        query = ""
+        state = .idle
     }
 
     /// React to a change in the search field.
