@@ -246,7 +246,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 **Development**: Xcode 26.0+  
 **CI/CD**: TBD (GitHub Actions likely)  
 **Distribution**: TestFlight, then App Store  
-**Open Source**: Apache 2.0 license (TBD)
+**Open Source**: Apache 2.0 license — see `LICENSE` and `NOTICE` at the repo root
 
 ---
 
@@ -299,3 +299,5 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 | 2025-01 | AVPlayer + HLS transcode for playback | Native, no third-party player dependency; server handles transcoding |
 | 2025-01 | Keychain-only persistence for now | Ship the core loop first; defer SwiftData metadata caching |
 | 2025-01 | Single shared app target for tvOS + visionOS | Maximize shared SwiftUI; add platform-specific code via `#if os(...)` as needed |
+| 2026-07-25 | Apache 2.0 `LICENSE` plus a `NOTICE` at the repo root | A README claim is not a license grant. `NOTICE` is the conventional place for third-party attribution, and this repo has some to make: the committed OFL Atkinson Hyperlegible Next font and the SPM dependencies |
+| 2026-07-25 | Apache per-file headers on every first-party Swift source | The grant travels with any file copied out of the repo, which a root-only `LICENSE` does not do. Accepts a one-time mechanical diff across ~150 files; the sweep is scripted and idempotent so new files stay uniform |
