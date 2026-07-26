@@ -1,0 +1,49 @@
+Jelly Shark
+Copyright 2026 Justin Lascelle
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It also includes, or links against, third-party work listed below. Each license
+was read from the upstream project at the version this repository pins; none is
+assumed from convention.
+
+================================================================================
+Bundled font
+================================================================================
+
+Atkinson Hyperlegible Next
+  Copyright 2020-2024 The Atkinson Hyperlegible Next Project Authors
+  https://github.com/googlefonts/atkinson-hyperlegible-next
+  SIL Open Font License, Version 1.1.
+  Full license text:
+    Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/OFL.txt
+
+  The two Atkinson Hyperlegible Next variable font files in that directory are
+  committed to this repository and ship inside the app bundle. They are the only
+  fonts redistributed here: the Fontshare / Indian Type Foundry families are
+  git-ignored and must be downloaded separately, as their EULA forbids
+  redistribution. See Packages/DesignSystem/Sources/DesignSystem/Resources/
+  Fonts/FONTS.md.
+
+================================================================================
+Swift Package Manager dependencies
+================================================================================
+
+Fetched at build time rather than vendored into this repository, but linked into
+the shipped app. Versions are those pinned in Package.resolved.
+
+Get 2.2.1
+  https://github.com/kean/Get
+  MIT License. Copyright (c) 2021-2024 Alexander Grebenyuk.
+
+URLQueryEncoder 0.2.1
+  https://github.com/CreateAPI/URLQueryEncoder
+  MIT License. Copyright (c) 2022 Alexander Grebenyuk.
+
+jellyfin-sdk-swift 0.6.0 (module name: JellyfinAPI)
+  https://github.com/jellyfin/jellyfin-sdk-swift
+  License unstated upstream. As of this writing the repository carries no
+  license file at tag 0.6.0 or on its default branch, its README states no
+  license terms, and the GitHub license API reports none for the repository.
+  This entry records what was verified rather than inferring a license from the
+  Jellyfin project's other repositories.
