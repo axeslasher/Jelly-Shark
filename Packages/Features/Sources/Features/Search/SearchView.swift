@@ -88,8 +88,8 @@ struct SearchView: View {
             promptHeader
 
             Text("From Your Library")
-                .jsStyle(.headline)
-                .foregroundStyle(theme.secondary)
+                .jsStyle(.overview)
+                .foregroundStyle(theme.primary)
                 .padding(.top, SpacingTokens.lg)
 
             // A plain stack, not a scroll view: `seedTermLimit` is set so the
