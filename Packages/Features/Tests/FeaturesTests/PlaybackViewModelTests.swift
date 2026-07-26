@@ -43,7 +43,13 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var searchResult: Result<[MediaItem], Error> = .success([])
     var personResult: Result<Person, Error> = .success(Person(id: "person-id", name: "Person"))
     var itemsFeaturingPersonRequests: [(personId: String, itemTypes: [MediaType])] = []
-    var libraryItemsRequests: [(libraryId: String, query: LibraryQuery, limit: Int, startIndex: Int)] = []
+    var libraryItemsRequests: [(
+        libraryId: String?,
+        itemTypes: [MediaType]?,
+        query: LibraryQuery,
+        limit: Int,
+        startIndex: Int,
+    )] = []
     /// Pages served in request order; the last page repeats once exhausted
     var libraryItemsPages: [Result<MediaItemPage, Error>] = [
         .success(MediaItemPage(items: [], startIndex: 0, totalRecordCount: 0)),
@@ -54,6 +60,9 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Per-library filter options (the genre builds fan out per library);
     /// falls back to `filterOptionsResult` when nil
     var filterOptionsHandler: ((String) -> Result<LibraryFilterOptions, Error>)?
+    /// Library scopes the full-options endpoint was asked about, in order;
+    /// nil is the unscoped (every library) request
+    var filterOptionsRequests: [String?] = []
     var narrowedOptionsRequests: [LibraryQuery] = []
     var narrowedOptionsResult: Result<LibraryFilterOptions?, Error> = .success(nil)
     /// Per-scan-query results; falls back to narrowedOptionsResult when nil
@@ -83,14 +92,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     func getLibraryItems(
-        libraryId: String,
-        itemTypes _: [MediaType]?,
+        libraryId: String?,
+        itemTypes: [MediaType]?,
         query: LibraryQuery,
         limit: Int,
         startIndex: Int,
     ) async throws -> MediaItemPage {
         let result: Result<MediaItemPage, Error> = lock.withLock {
-            libraryItemsRequests.append((libraryId, query, limit, startIndex))
+            libraryItemsRequests.append((libraryId, itemTypes, query, limit, startIndex))
             let index = min(libraryItemsRequests.count - 1, libraryItemsPages.count - 1)
             return libraryItemsPages[index]
         }
@@ -98,15 +107,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
-    func getLibraryFilterOptions(libraryId: String, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
+    func getLibraryFilterOptions(libraryId: String?, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
         let result: Result<LibraryFilterOptions, Error> = lock.withLock {
-            filterOptionsHandler?(libraryId) ?? filterOptionsResult
+            filterOptionsRequests.append(libraryId)
+            return libraryId.flatMap { filterOptionsHandler?($0) } ?? filterOptionsResult
         }
         return try result.get()
     }
 
     func getLibraryFilterOptions(
-        libraryId _: String,
+        libraryId _: String?,
         itemTypes _: [MediaType]?,
         matching query: LibraryQuery,
     ) async throws -> LibraryFilterOptions? {

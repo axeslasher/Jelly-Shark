@@ -91,7 +91,10 @@ public struct RootView: View {
                             value: AppTab.library(library.id),
                         ) {
                             navigationRoot(for: .library(library.id)) {
-                                LibraryItemsView(library: library)
+                                // No `libraryOptions`: a tab is scoped to its
+                                // own library for good, so it gets no Library
+                                // pill and its label stays true.
+                                LibraryItemsView(initialQuery: LibraryQuery(library: library))
                             }
                         }
                     }
@@ -178,9 +181,12 @@ public struct RootView: View {
                     PersonDetailView(member: member)
                 }
                 .navigationDestination(for: GenreFilter.self) { filter in
+                    // Seeded to the shelf's library but not bound to it: this
+                    // grid has no tab label to contradict, so the viewer can
+                    // widen it to every library from the Library pill.
                     LibraryItemsView(
-                        library: filter.library,
-                        initialQuery: LibraryQuery(genres: [filter.genre]),
+                        initialQuery: LibraryQuery(library: filter.library, genres: [filter.genre]),
+                        libraryOptions: connectionViewModel.libraries,
                     )
                 }
         }
