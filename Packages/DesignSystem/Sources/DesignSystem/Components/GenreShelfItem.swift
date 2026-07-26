@@ -21,6 +21,7 @@ public struct GenreShelfItem<Value: Hashable>: View {
     private let blurHash: String?
     private let width: CGFloat
     private let value: Value
+    private let onBackdropUnavailable: (@MainActor () -> Void)?
 
     // TODO(#21): expose the blob-styling knobs as init params (defaulted) so call
     // sites can tune them without editing the component — blob count, drift
@@ -32,12 +33,14 @@ public struct GenreShelfItem<Value: Hashable>: View {
         blurHash: String? = nil,
         width: CGFloat = 664,
         value: Value,
+        onBackdropUnavailable: (@MainActor () -> Void)? = nil,
     ) {
         self.title = title
         self.backdropURL = backdropURL
         self.blurHash = blurHash
         self.width = width
         self.value = value
+        self.onBackdropUnavailable = onBackdropUnavailable
     }
 
     public var body: some View {
@@ -45,7 +48,13 @@ public struct GenreShelfItem<Value: Hashable>: View {
             // The card content is its own view so it can read `\.isFocused` —
             // that flag only resolves inside the NavigationLink's focusable
             // label subtree, not on the view that owns the link.
-            GenreCardContent(title: title, backdropURL: backdropURL, blurHash: blurHash, width: width)
+            GenreCardContent(
+                title: title,
+                backdropURL: backdropURL,
+                blurHash: blurHash,
+                width: width,
+                onBackdropUnavailable: onBackdropUnavailable,
+            )
         }
         #if os(tvOS)
         .buttonStyle(.borderless)
@@ -62,6 +71,9 @@ private struct GenreCardContent: View {
     let backdropURL: URL?
     let blurHash: String?
     let width: CGFloat
+    /// Reported up when the backdrop doesn't render, so a caller whose URL
+    /// came from a remembered choice can discard it and pick again.
+    let onBackdropUnavailable: (@MainActor () -> Void)?
 
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
@@ -76,11 +88,18 @@ private struct GenreCardContent: View {
     /// per animation frame.
     private let variation: GenreGradientVariation
 
-    init(title: String, backdropURL: URL?, blurHash: String?, width: CGFloat) {
+    init(
+        title: String,
+        backdropURL: URL?,
+        blurHash: String?,
+        width: CGFloat,
+        onBackdropUnavailable: (@MainActor () -> Void)?,
+    ) {
         self.title = title
         self.backdropURL = backdropURL
         self.blurHash = blurHash
         self.width = width
+        self.onBackdropUnavailable = onBackdropUnavailable
         variation = GenreGradientVariation(seed: Self.stableSeed(title))
     }
 
@@ -105,11 +124,16 @@ private struct GenreCardContent: View {
             // Grayscale backdrop at reduced opacity so the blobs show through
             // (nil URL renders the wash alone).
             if backdropURL != nil {
-                ArtworkImage(url: backdropURL, blurHash: blurHash, contentMode: .fill)
-                    // One hover effect per card, not two — see `ArtworkShelfItem`.
-                    .hoverEffectDisabled()
-                    .grayscale(1)
-                    .opacity(0.35)
+                ArtworkImage(
+                    url: backdropURL,
+                    blurHash: blurHash,
+                    contentMode: .fill,
+                    onLoadFailure: onBackdropUnavailable,
+                )
+                // One hover effect per card, not two — see `ArtworkShelfItem`.
+                .hoverEffectDisabled()
+                .grayscale(1)
+                .opacity(0.35)
             }
 
             // No scrim: the display weight and `primary` color read cleanly over
