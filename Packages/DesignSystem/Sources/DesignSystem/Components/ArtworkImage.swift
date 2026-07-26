@@ -17,6 +17,12 @@ public struct ArtworkImage: View {
     let contentMode: ContentMode
     let cornerRadius: CGFloat
 
+    /// Called when `url` fetches or decodes to nothing — a 404 for an item
+    /// that's gone, say. Nil for every caller whose URL was derived from an
+    /// item it was just handed by the server; genre cards pass one because
+    /// their URL comes from a *remembered* choice that can go stale (#124).
+    let onLoadFailure: (@MainActor () -> Void)?
+
     @Environment(\.theme) private var theme
     @Environment(\.displayScale) private var displayScale
 
@@ -40,12 +46,14 @@ public struct ArtworkImage: View {
         placeholderIcon: String = "photo",
         contentMode: ContentMode = .fill,
         cornerRadius: CGFloat = 0,
+        onLoadFailure: (@MainActor () -> Void)? = nil,
     ) {
         self.url = url
         self.blurHash = blurHash
         self.placeholderIcon = placeholderIcon
         self.contentMode = contentMode
         self.cornerRadius = cornerRadius
+        self.onLoadFailure = onLoadFailure
     }
 
     public var body: some View {
@@ -103,6 +111,11 @@ public struct ArtworkImage: View {
         // current image.
         if !Task.isCancelled {
             artwork = image
+            // Cancellation isn't failure, which is why this is reported only
+            // on the branch that commits the result.
+            if image == nil {
+                onLoadFailure?()
+            }
         }
     }
 
