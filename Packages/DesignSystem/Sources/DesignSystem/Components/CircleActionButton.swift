@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// An icon-only, circular action button that reveals its text label beneath the
-/// circle while focused — keeping the action lockup compact when idle (tvOS).
+/// circle while focused (tvOS) or looked at (visionOS) — keeping the action
+/// lockup compact when idle.
 public struct CircleActionButton: View {
     private let systemImage: String
     private let title: String
@@ -69,25 +70,26 @@ public extension View {
     ///
     /// Shared rather than inlined because the reveal works differently per
     /// platform in a way that isn't visible from a call site — and because the
-    /// two controls that want it live in different modules, which is how the
-    /// visionOS reveal came to be missing from one of them (#139).
+    /// two controls that want it live in different modules, each with its own
+    /// verbatim copy. That duplication is why the visionOS reveal, once added,
+    /// reached only one of them.
     ///
     /// - Parameter isFocused: tvOS's trigger. visionOS never tells an app where
-    ///   someone is looking, so there the reveal comes from a system-composed
-    ///   hover effect and this is unused.
+    ///   someone is looking, so there the reveal comes from a hover effect the
+    ///   system runs on the app's behalf, and this is unused.
     func hangingActionLabel(_ title: String, isFocused: Bool) -> some View {
         modifier(HangingActionLabel(title: title, isFocused: isFocused))
     }
 }
 
 /// See ``SwiftUI/View/hangingActionLabel(_:isFocused:)``.
-public struct HangingActionLabel: ViewModifier {
+private struct HangingActionLabel: ViewModifier {
     @Environment(\.theme) private var theme
 
     let title: String
     let isFocused: Bool
 
-    public func body(content: Content) -> some View {
+    func body(content: Content) -> some View {
         content
             // The label hangs below the circle as an overlay so its width never
             // participates in layout — the control's footprint is always just
@@ -105,9 +107,9 @@ public struct HangingActionLabel: ViewModifier {
             .animation(theme.animation, value: isFocused)
         #else
             // Gaze never reaches the app, so the label can't fade itself the way
-            // it does on tvOS. Its effect is composed by the system; this puts
-            // that effect in a group with the control, so looking anywhere at
-            // the circle reveals the label hanging beneath it.
+            // it does on tvOS. The app composes the effect below and the system
+            // runs it; this puts that effect in a group with the control, so
+            // looking anywhere at the circle reveals the label beneath it.
             .hoverEffectGroup()
         #endif
     }

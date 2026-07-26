@@ -56,7 +56,9 @@ public extension View {
     /// a theme with a `focusFill` switches to ``ThemedPlainButtonStyle``.
     ///
     /// - Parameters:
-    ///   - tint: The theme's `focusFill`; `nil` keeps the system `.plain` style.
+    ///   - tint: The theme's `focusFill`; on tvOS `nil` keeps the system
+    ///     `.plain` style. Off tvOS there is no platter to tint and the
+    ///     parameter is unused.
     ///   - cornerRadius: Corner radius of the themed platter (typically the
     ///     theme's `cornerRadiusLarge`) — and, off tvOS, of the hover effect
     ///     this draws in its place. There the radius is the whole point: the
@@ -71,18 +73,13 @@ public extension View {
                 buttonStyle(.plain)
             }
         #else
-            // Grow the view so the hover shape clears the text by the same
-            // margins tvOS's platter uses, then take the growth back out of
-            // layout — the mirror image of how ``ThemedPlainButtonStyle``
-            // bleeds its platter outward, and equally invisible at rest.
-            // The margins are `SpacingTokens`, so they carry the visionOS
-            // platform scale and the proportions match tvOS rather than the
-            // point values.
-            padding(.horizontal, SpacingTokens.md)
-                .padding(.vertical, SpacingTokens.sm)
-                .buttonStyle(CardButtonStyle())
-                .contentShape(.hoverEffect, .rect(cornerRadius: cornerRadius))
-                .hoverEffect(.highlight)
+            // The style pads the label so the hover shape clears the text by the
+            // same margins tvOS's platter uses; this takes that growth back out
+            // of layout, so the resting page is identical — the mirror image of
+            // how ``ThemedPlainButtonStyle`` bleeds its platter outward. The
+            // margins are `SpacingTokens`, so they carry the visionOS platform
+            // scale and the proportions match tvOS rather than the point values.
+            buttonStyle(CardButtonStyle(hoverShapeRadius: cornerRadius))
                 .padding(.horizontal, -SpacingTokens.md)
                 .padding(.vertical, -SpacingTokens.sm)
         #endif

@@ -147,16 +147,17 @@ private struct GenreCardContent: View {
         }
         .frame(width: width, height: height)
         .artworkCornerRadius(theme.cornerRadius)
-        .onChange(of: isFocused) { _, focused in
-            focusStart = focused ? Date() : nil
-        }
         // The corner clip above doesn't reach the hover effect, which drew the
         // card's glow with sharp corners (#139).
         #if !os(tvOS)
-        .contentShape(.hoverEffect, .rect(cornerRadius: theme.cornerRadius))
+            .contentShape(.hoverEffect, .rect(cornerRadius: theme.cornerRadius))
         #endif
-        // Lift, specular highlight, and gimbal motion on focus.
-        .hoverEffect(.highlight)
+            // Lift, specular highlight, and gimbal motion on tvOS focus; a glow
+            // under the gaze on visionOS, in the shape declared above.
+            .hoverEffect(.highlight)
+            .onChange(of: isFocused) { _, focused in
+                focusStart = focused ? Date() : nil
+            }
     }
 
     @ViewBuilder
