@@ -168,4 +168,40 @@ struct LibraryQueryTests {
             #expect(cleared.direction == .descending)
         }
     }
+
+    @Suite("Library scope")
+    struct LibraryScopeTests {
+        private static let movies = Library(id: "lib-1", name: "Films", collectionType: .movies)
+
+        @Test("A scoped query is not, by itself, filtering")
+        func libraryIsNotAFilter() {
+            #expect(!LibraryQuery(library: Self.movies).isFiltering)
+        }
+
+        @Test("Clearing filters keeps the library scope")
+        func clearKeepsLibrary() {
+            let query = LibraryQuery(library: Self.movies, genres: ["Action"])
+
+            let cleared = query.withFiltersCleared
+
+            #expect(cleared.library == Self.movies)
+            #expect(cleared.genres.isEmpty)
+            #expect(!cleared.isFiltering)
+        }
+
+        @Test("A scoped query asks for that library's grid item types")
+        func scopedItemTypes() {
+            #expect(LibraryQuery(library: Self.movies).itemTypes == [.movie])
+
+            let shows = Library(id: "lib-2", name: "Series", collectionType: .tvshows)
+            #expect(LibraryQuery(library: shows).itemTypes == [.series])
+        }
+
+        @Test("An unscoped query is pinned to top-level titles")
+        func unscopedItemTypes() {
+            // Not nil: the items fetch is recursive, so an unfiltered type
+            // list would drag seasons and episodes into the grid
+            #expect(LibraryQuery().itemTypes == [.movie, .series])
+        }
+    }
 }

@@ -44,14 +44,17 @@ public protocol JellyfinClientProtocol: Sendable {
 
     /// Fetch one page of items from a library
     /// - Parameters:
-    ///   - libraryId: The library ID
+    ///   - libraryId: The request's `parentId` — a library ID, or nil to
+    ///     fetch across every library. Stays a parameter rather than being
+    ///     read off `query.library` because not every parent is a library:
+    ///     `getCollectionItems` passes a BoxSet id through here.
     ///   - itemTypes: Which item kinds to return (e.g., `[.movie]`)
     ///   - query: Sort and filter selections
     ///   - limit: Page size
     ///   - startIndex: Starting index for pagination
     /// - Returns: The page of media items plus the total record count
     func getLibraryItems(
-        libraryId: String,
+        libraryId: String?,
         itemTypes: [MediaType]?,
         query: LibraryQuery,
         limit: Int,
@@ -59,15 +62,16 @@ public protocol JellyfinClientProtocol: Sendable {
     ) async throws -> MediaItemPage
 
     /// Fetch the filter values actually present in a library (genres,
-    /// official ratings, years), for building filter menus
-    func getLibraryFilterOptions(libraryId: String, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions
+    /// official ratings, years), for building filter menus. A nil
+    /// `libraryId` reports the values present across every library.
+    func getLibraryFilterOptions(libraryId: String?, itemTypes: [MediaType]?) async throws -> LibraryFilterOptions
 
     /// Compute the filter values still available under the given query by
     /// scanning the matching items, so menus can hide dead-end options
     /// - Returns: The narrowed options, or nil when the result set is too
     ///   large to scan (callers should fall back to the full options)
     func getLibraryFilterOptions(
-        libraryId: String,
+        libraryId: String?,
         itemTypes: [MediaType]?,
         matching query: LibraryQuery,
     ) async throws -> LibraryFilterOptions?
@@ -541,7 +545,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     public func getLibraryItems(
-        libraryId: String,
+        libraryId: String?,
         itemTypes: [MediaType]?,
         query: LibraryQuery,
         limit: Int,
@@ -592,11 +596,14 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     /// Largest result set the narrowing scan will fetch in one request;
-    /// beyond this the scan reports nil and menus fall back to full options
+    /// beyond this the scan reports nil and menus fall back to full options.
+    /// An unscoped scan (nil `libraryId`) covers every library at once, so it
+    /// crosses this line sooner — the menus then simply offer the full
+    /// unscoped option lists.
     private static let narrowingScanLimit = 2000
 
     public func getLibraryFilterOptions(
-        libraryId: String,
+        libraryId: String?,
         itemTypes: [MediaType]?,
         matching query: LibraryQuery,
     ) async throws -> LibraryFilterOptions? {
@@ -635,7 +642,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     public func getLibraryFilterOptions(
-        libraryId: String,
+        libraryId: String?,
         itemTypes: [MediaType]?,
     ) async throws -> LibraryFilterOptions {
         guard let userId = _userId else {

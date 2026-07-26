@@ -33,6 +33,10 @@ public enum WatchedFilter: String, CaseIterable, Sendable, Hashable {
 public struct LibraryQuery: Sendable, Hashable {
     public var sort: LibrarySort
     public var direction: LibrarySortDirection
+    /// Which library the grid is scoped to; nil browses every library at
+    /// once. Single-select because the server's `parentId` is singular —
+    /// there is no "Films + Series" request, only one or all.
+    public var library: Library?
     public var genres: Set<String>
     /// Decade start years, e.g. 1980 for "the 1980s"
     public var decades: Set<Int>
@@ -43,6 +47,7 @@ public struct LibraryQuery: Sendable, Hashable {
     public init(
         sort: LibrarySort = .name,
         direction: LibrarySortDirection = .ascending,
+        library: Library? = nil,
         genres: Set<String> = [],
         decades: Set<Int> = [],
         watched: WatchedFilter = .any,
@@ -51,6 +56,7 @@ public struct LibraryQuery: Sendable, Hashable {
     ) {
         self.sort = sort
         self.direction = direction
+        self.library = library
         self.genres = genres
         self.decades = decades
         self.watched = watched
@@ -58,9 +64,20 @@ public struct LibraryQuery: Sendable, Hashable {
         self.officialRatings = officialRatings
     }
 
-    /// True when any filter differs from the default (sort is not a filter)
+    /// The item kinds a grid under this query should ask for. Never nil when
+    /// unscoped: the items fetch is recursive, so with no `parentId` the whole
+    /// server tree — seasons and episodes included — would land in the grid.
+    public var itemTypes: [MediaType]? {
+        guard let library else { return [.movie, .series] }
+        return library.collectionType?.gridItemTypes
+    }
+
+    /// True when any filter differs from the default (sort is not a filter).
+    /// Neither is the library: it is the grid's scope, seeded by whatever
+    /// opened it, so Clear must not silently widen a library tab to the whole
+    /// server.
     public var isFiltering: Bool {
-        self != LibraryQuery(sort: sort, direction: direction)
+        self != LibraryQuery(sort: sort, direction: direction, library: library)
     }
 
     /// Decades expanded to concrete years for the server's `years` parameter
@@ -68,9 +85,10 @@ public struct LibraryQuery: Sendable, Hashable {
         decades.isEmpty ? nil : decades.sorted().flatMap { $0 ..< ($0 + 10) }
     }
 
-    /// The same query with all filters cleared, keeping sort and direction
+    /// The same query with all filters cleared, keeping sort, direction, and
+    /// the library scope
     public var withFiltersCleared: LibraryQuery {
-        LibraryQuery(sort: sort, direction: direction)
+        LibraryQuery(sort: sort, direction: direction, library: library)
     }
 }
 

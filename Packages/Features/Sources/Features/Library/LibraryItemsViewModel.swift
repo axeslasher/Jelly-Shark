@@ -2,10 +2,15 @@ import Foundation
 import JellyfinKit
 import Observation
 
-/// View model backing a library's item grid.
+/// View model backing a library grid.
 ///
 /// Owns the paginated query → items pipeline: infinite scroll, filter/sort
-/// changes that reset the grid, and the library's filter menu options.
+/// changes that reset the grid, and the filter menu options.
+///
+/// The library is a dimension of `query`, not a property of this object: a
+/// grid can be scoped to one library or to none at all (`query.library == nil`
+/// browses everything), and switching between the two is an ordinary query
+/// change rather than a separate mode.
 @Observable
 @MainActor
 public final class LibraryItemsViewModel {
@@ -41,7 +46,8 @@ public final class LibraryItemsViewModel {
     /// return to the control bar.
     public private(set) var isReloading = false
 
-    /// Filter values present in this library, for the control bar menus.
+    /// Filter values present under the query's library scope, for the control
+    /// bar menus.
     public private(set) var filterOptions: LibraryFilterOptions = .empty
 
     /// True while the initial options fetch is in flight — the bar shows
@@ -69,7 +75,12 @@ public final class LibraryItemsViewModel {
     private let prefetchDistance: Int
 
     private var client: (any JellyfinClientProtocol)?
-    private var library: Library?
+
+    /// The library id the view last attached with, and whether it has
+    /// attached at all — a nil id is a real value (the unscoped grid), so
+    /// "never attached" needs its own flag.
+    private var attachedLibraryID: String?
+    private var hasAttached = false
 
     /// Whether loadInitial() should actually load. The view's `.task` re-runs
     /// on every appearance — including returning from a fullscreen tvOS menu —
@@ -102,10 +113,11 @@ public final class LibraryItemsViewModel {
     }
 
     /// The headline for the grid: "All Movies" or a description of the
-    /// active filters ("Horror Movies from the 1980s").
-    public var displayTitle: String? {
-        guard let library else { return nil }
-        return query.displayTitle(libraryName: library.name)
+    /// active filters ("Horror Movies from the 1980s"). An unscoped grid has
+    /// no library name to build on, so it says "Titles" — "All Titles",
+    /// "Horror Titles from the 1980s".
+    public var displayTitle: String {
+        query.displayTitle(libraryName: query.library?.name ?? "Titles")
     }
 
     /// The options the control bar should offer: each menu narrowed to
@@ -133,32 +145,35 @@ public final class LibraryItemsViewModel {
 
     // MARK: - Actions
 
-    /// Attach the authenticated client and library (called by the view on
-    /// every appearance). Only an actual change — a new session's client or
-    /// a different library — schedules a fresh initial load.
+    /// Attach the authenticated client and the grid's seed query (called by
+    /// the view on every appearance). Only an actual change — a new session's
+    /// client, or a seed scoped to a different library — schedules a fresh
+    /// initial load.
     ///
-    /// `initialQuery` seeds the sort/filter selection for that fresh load (e.g.
-    /// a genre card pushes a genre-filtered grid); it's applied only when a
-    /// reload is scheduled, so returning to the view preserves any filters the
-    /// user has since changed. Omit it for the default unfiltered grid.
+    /// `initialQuery` seeds the library scope and the sort/filter selection
+    /// (e.g. a genre card pushes a genre-filtered grid); it's applied only
+    /// when a reload is scheduled, so returning to the view preserves any
+    /// filters the user has since changed. Compared on the library's *id*, not
+    /// the whole `Library`: a libraries refetch can hand back the same library
+    /// with a fresh `childCount`, and that must not reset the grid.
     public func attach(
         client: (any JellyfinClientProtocol)?,
-        library: Library,
-        initialQuery: LibraryQuery? = nil,
+        initialQuery: LibraryQuery = LibraryQuery(),
     ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
-        let libraryChanged = library.id != self.library?.id
+        let libraryChanged = !hasAttached || initialQuery.library?.id != attachedLibraryID
         self.client = client
-        self.library = library
+        attachedLibraryID = initialQuery.library?.id
+        hasAttached = true
         if clientChanged || libraryChanged {
             needsInitialLoad = true
-            query = initialQuery ?? LibraryQuery()
+            query = initialQuery
         }
     }
 
-    /// Load the first page and the library's filter options together.
-    /// No-op when the attached client and library have already loaded, so
-    /// view reappearances (returning from a menu or a pushed detail screen)
+    /// Load the first page and the scope's filter options together.
+    /// No-op when the attached client and library scope have already loaded,
+    /// so view reappearances (returning from a menu or a pushed detail screen)
     /// don't reload the grid.
     public func loadInitial() async {
         guard needsInitialLoad else { return }
@@ -174,7 +189,7 @@ public final class LibraryItemsViewModel {
         state = .loading
         isLoadingFilterOptions = true
 
-        guard let client, let library else {
+        guard let client else {
             state = .failed(APIError.notAuthenticated.localizedDescription)
             isLoadingFilterOptions = false
             return
@@ -183,11 +198,11 @@ public final class LibraryItemsViewModel {
         // Menu options load alongside the first page; their failure is
         // non-fatal — the bar just offers fewer menus.
         async let optionsFetch = try? client.getLibraryFilterOptions(
-            libraryId: library.id,
-            itemTypes: library.collectionType?.gridItemTypes,
+            libraryId: query.library?.id,
+            itemTypes: query.itemTypes,
         )
 
-        await loadFirstPage(client: client, library: library, generation: generation)
+        await loadFirstPage(client: client, generation: generation)
 
         // A failed first load retries on the next appearance
         if generation == loadGeneration, case .failed = state {
@@ -203,12 +218,15 @@ public final class LibraryItemsViewModel {
             isLoadingFilterOptions = false
         }
 
-        await refreshNarrowedOptions(client: client, library: library, generation: generation)
+        await refreshNarrowedOptions(client: client, generation: generation)
     }
 
     /// Apply a new sort/filter selection: reset the grid and refetch.
     public func update(query newQuery: LibraryQuery) {
         guard newQuery != query else { return }
+        // A new library scope invalidates the full option lists too, not just
+        // the narrowed ones: the menus must offer the new scope's genres.
+        let libraryChanged = newQuery.library?.id != query.library?.id
         query = newQuery
 
         loadTask?.cancel()
@@ -228,7 +246,7 @@ public final class LibraryItemsViewModel {
             narrowedRatings = nil
         }
 
-        guard let client, let library else {
+        guard let client else {
             isReloading = false
             state = .failed(APIError.notAuthenticated.localizedDescription)
             return
@@ -236,13 +254,14 @@ public final class LibraryItemsViewModel {
 
         loadTask = Task { [weak self] in
             guard let self else { return }
-            async let firstPage: Void = self.loadFirstPage(
-                client: client, library: library, generation: generation,
-            )
-            async let narrowing: Void = self.refreshNarrowedOptions(
-                client: client, library: library, generation: generation,
-            )
-            _ = await (firstPage, narrowing)
+            async let firstPage: Void = self.loadFirstPage(client: client, generation: generation)
+            async let narrowing: Void = self.refreshNarrowedOptions(client: client, generation: generation)
+            if libraryChanged {
+                async let base: Void = self.refreshBaseFilterOptions(client: client, generation: generation)
+                _ = await (firstPage, narrowing, base)
+            } else {
+                _ = await (firstPage, narrowing)
+            }
         }
     }
 
@@ -251,7 +270,7 @@ public final class LibraryItemsViewModel {
         // No prefetch off the stale grid during a reload: its item count
         // would page the *new* query from the wrong offset
         guard !isLoadingMore, !isReloading, hasMore, state == .loaded else { return }
-        guard let client, let library else { return }
+        guard let client else { return }
         guard let index = items.firstIndex(of: currentItem),
               index >= items.count - prefetchDistance else { return }
 
@@ -263,8 +282,8 @@ public final class LibraryItemsViewModel {
             guard let self else { return }
             do {
                 let page = try await client.getLibraryItems(
-                    libraryId: library.id,
-                    itemTypes: library.collectionType?.gridItemTypes,
+                    libraryId: self.query.library?.id,
+                    itemTypes: self.query.itemTypes,
                     query: self.query,
                     limit: self.pageSize,
                     startIndex: startIndex,
@@ -338,7 +357,6 @@ public final class LibraryItemsViewModel {
     /// set too large) is non-fatal — that menu falls back to full options.
     private func refreshNarrowedOptions(
         client: any JellyfinClientProtocol,
-        library: Library,
         generation: Int,
     ) async {
         var minusGenres = query
@@ -351,8 +369,8 @@ public final class LibraryItemsViewModel {
         // A menu whose remaining filters are empty needs no scan: the full
         // library options apply
         let scanQueries = Set([minusGenres, minusDecades, minusRatings].filter(\.isFiltering))
-        let itemTypes = library.collectionType?.gridItemTypes
-        let libraryId = library.id
+        let itemTypes = query.itemTypes
+        let libraryId = query.library?.id
 
         var results: [LibraryQuery: LibraryFilterOptions] = [:]
         await withTaskGroup(of: (LibraryQuery, LibraryFilterOptions?).self) { group in
@@ -389,15 +407,31 @@ public final class LibraryItemsViewModel {
         }
     }
 
+    /// Refetch the full option lists after a library-scope change. Assigned
+    /// only on change and without flipping `isLoadingFilterOptions`: this
+    /// lands in the menu-dismissal window, and swapping live menus for ghost
+    /// pills there pulls the ground out from under the focus engine. A failed
+    /// refetch keeps the previous scope's lists rather than emptying the bar.
+    private func refreshBaseFilterOptions(
+        client: any JellyfinClientProtocol,
+        generation: Int,
+    ) async {
+        let options = try? await client.getLibraryFilterOptions(
+            libraryId: query.library?.id,
+            itemTypes: query.itemTypes,
+        )
+        guard generation == loadGeneration, let options, options != filterOptions else { return }
+        filterOptions = options
+    }
+
     private func loadFirstPage(
         client: any JellyfinClientProtocol,
-        library: Library,
         generation: Int,
     ) async {
         do {
             let page = try await client.getLibraryItems(
-                libraryId: library.id,
-                itemTypes: library.collectionType?.gridItemTypes,
+                libraryId: query.library?.id,
+                itemTypes: query.itemTypes,
                 query: query,
                 limit: pageSize,
                 startIndex: 0,
