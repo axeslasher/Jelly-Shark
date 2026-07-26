@@ -47,7 +47,10 @@ struct UpNextOverlayView: View {
             }
         }
         .padding(SpacingTokens.xl)
-        .background(theme.surface.opacity(0.95))
+        // Builder form, not a direct ShapeStyle argument: under SDK 27's
+        // @ContentBuilder unification, `.opacity()` handed straight to
+        // `.background` resolves ambiguously. Renders identically.
+        .background { theme.surface.opacity(0.95) }
         .clipShape(RoundedRectangle(cornerRadius: theme.cornerRadiusLarge))
         .padding(SpacingTokens.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
