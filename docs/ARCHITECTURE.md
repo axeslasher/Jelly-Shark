@@ -228,7 +228,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 **Dependency Management**: Swift Package Manager  
 **Minimum Deployments**: 
 - tvOS 26.0+
-- visionOS 26.0+
+- visionOS 26.2+
 
 ---
 
@@ -290,7 +290,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 | 2025-01-06 | Modular architecture via SPM | Clear boundaries, reusable design system |
 | 2025-01-06 | SwiftData for persistence | Modern, type-safe, integrates well with SwiftUI |
 | 2025-01-06 | Design system as first-class module | Core differentiator of the app |
-| 2025-01-07 | Min deployment tvOS/visionOS 26.0 | Target latest features, smaller user base acceptable for v1 |
+| 2025-01-07 | Min deployment tvOS/visionOS 26.0 | Target latest features, smaller user base acceptable for v1 — *superseded 2026-07-25 for visionOS, see below* |
 | 2025-01-07 | Start with established video player libs | Don't reinvent playback; focus on UI/UX differentiation |
 | 2025-01-07 | Runtime theme switching | User control is core to customization philosophy |
 | 2025-01-08 | Adopt jellyfin-sdk-swift with wrapper | Official SDK provides API coverage; wrapper pattern gives clean app-facing types |
@@ -299,3 +299,4 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 | 2025-01 | AVPlayer + HLS transcode for playback | Native, no third-party player dependency; server handles transcoding |
 | 2025-01 | Keychain-only persistence for now | Ship the core loop first; defer SwiftData metadata caching |
 | 2025-01 | Single shared app target for tvOS + visionOS | Maximize shared SwiftUI; add platform-specific code via `#if os(...)` as needed |
+| 2026-07-25 | Min deployment visionOS **26.2** (tvOS stays 26.0) | `XROS_DEPLOYMENT_TARGET = 26.2` has been in the pbxproj since the initial commit, arriving as an Xcode default at project creation rather than as a choice anyone made, while every document and manifest said 26.0. Ratified at 26.2 rather than lowered: no shipping code uses a 26.1/26.2-only API, so this is not a technical requirement — it is a deliberate call that Vision Pro is a secondary platform with no spatial-specific work built yet, and that carrying a floor nobody has validated at 26.0 is not worth the compatibility surface. **This narrows the installable base: visionOS 26.0 and 26.1 devices are excluded.** Revisit if visionOS becomes a primary target. Manifests express it as `.visionOS("26.2")` — the string form — because `SupportedPlatform.VisionOSVersion` only offers major-version granularity (`.v26`). |

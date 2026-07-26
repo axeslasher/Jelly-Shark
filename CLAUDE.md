@@ -15,7 +15,7 @@ Jelly Shark is a premium Jellyfin client for tvOS and visionOS that elevates the
 
 **Target Platforms**:
 - Apple TV 4K (tvOS 26.0+)
-- Apple Vision Pro (visionOS 26.0+)
+- Apple Vision Pro (visionOS 26.2+)
 
 **Development Requirements**:
 - Xcode 26.0+
@@ -130,7 +130,7 @@ Session tokens are persisted to the Keychain; artwork is cached via `URLCache`. 
 - Persistence: Keychain (session tokens), URLCache (artwork); SwiftData planned but not yet adopted
 - Testing: Swift Testing
 - Dependency Management: Swift Package Manager
-- Min Deployment: tvOS 26.0+, visionOS 26.0+
+- Min Deployment: tvOS 26.0+, visionOS 26.2+
 
 ## Theming System
 

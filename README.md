@@ -55,7 +55,7 @@ Not built yet—listed here so nothing above reads as a promise:
 ## Platform Support
 
 - Apple TV 4K (tvOS 26.0+)
-- Apple Vision Pro (visionOS 26.0+)
+- Apple Vision Pro (visionOS 26.2+)
 
 ## Tech Stack
 
