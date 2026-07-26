@@ -42,8 +42,15 @@ URLQueryEncoder 0.2.1
 
 jellyfin-sdk-swift 0.6.0 (module name: JellyfinAPI)
   https://github.com/jellyfin/jellyfin-sdk-swift
-  License unstated upstream. As of this writing the repository carries no
-  license file at tag 0.6.0 or on its default branch, its README states no
-  license terms, and the GitHub license API reports none for the repository.
-  This entry records what was verified rather than inferring a license from the
-  Jellyfin project's other repositories.
+  Mozilla Public License, Version 2.0.
+  Copyright (c) Jellyfin & Jellyfin Contributors.
+  Full license text: https://mozilla.org/MPL/2.0/
+
+  The grant is made per-file via the MPL's own Exhibit A notice, carried in the
+  header of each source file, rather than by a LICENSE file at the repository
+  root. GitHub's license API reports none for the repository for that reason;
+  the notice in the sources is the authoritative statement.
+
+  MPL 2.0 is a file-level copyleft: it reaches modifications to the SDK's own
+  files, not this application's separate files that merely link against it
+  (§1.10, §3.3). No SDK source is modified or vendored here.
