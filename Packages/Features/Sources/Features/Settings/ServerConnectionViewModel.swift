@@ -227,7 +227,7 @@ public final class ServerConnectionViewModel {
     /// Finish a successful authentication: prove the connection by fetching
     /// libraries, then surface the connected state and publish the client
     private func completeConnection(client: any JellyfinClientProtocol, user: User) async throws {
-        libraries = try await client.getLibraries()
+        libraries = try await client.getLibraries().filter(\.isBrowsable)
         connectedUser = user
         state = .connected
         session?.setClient(client)

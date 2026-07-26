@@ -17,11 +17,14 @@ public struct RootView: View {
     /// view-destination links can't be popped programmatically.
     @State private var tabPaths: [AppTab: NavigationPath] = [:]
 
-    /// The in-flight deferred tab switch (see `tabSelection`). Held so a second
-    /// tab press within the pop-settle window can cancel the first before it
-    /// commits — otherwise the stale, already-superseded target wakes last and
-    /// clobbers the selection ("I pressed Search but it jumped to Home").
-    @State private var pendingSwitch: Task<Void, Never>?
+    #if os(tvOS)
+        /// The in-flight deferred tab switch (see `tabSelection`). Held so a
+        /// second tab press within the pop-settle window can cancel the first
+        /// before it commits — otherwise the stale, already-superseded target
+        /// wakes last and clobbers the selection ("I pressed Search but it
+        /// jumped to Home").
+        @State private var pendingSwitch: Task<Void, Never>?
+    #endif
 
     public init() {}
 
@@ -34,26 +37,35 @@ public struct RootView: View {
     /// pops the outgoing stack to root via its path, waits for the pop to
     /// land, then commits the switch. Tabs with nothing pushed switch
     /// immediately.
+    ///
+    /// The bug belongs to the sidebar representation, which visionOS no longer
+    /// uses, so that platform switches straight away — no pop-settle stall,
+    /// and a tab keeps its place in its stack when you come back to it.
     private var tabSelection: Binding<AppTab> {
         Binding(
             get: { selectedTab },
             set: { newValue in
                 guard newValue != selectedTab else { return }
-                // A new selection supersedes any deferred switch still waiting
-                // on a pop; cancel it so only the latest target can commit.
-                pendingSwitch?.cancel()
-                pendingSwitch = nil
-                let outgoing = selectedTab
-                if let path = tabPaths[outgoing], !path.isEmpty {
-                    tabPaths[outgoing] = NavigationPath()
-                    pendingSwitch = Task { @MainActor in
-                        try? await Task.sleep(for: .milliseconds(350))
-                        guard !Task.isCancelled else { return }
+                #if os(tvOS)
+                    // A new selection supersedes any deferred switch still
+                    // waiting on a pop; cancel it so only the latest target
+                    // can commit.
+                    pendingSwitch?.cancel()
+                    pendingSwitch = nil
+                    let outgoing = selectedTab
+                    if let path = tabPaths[outgoing], !path.isEmpty {
+                        tabPaths[outgoing] = NavigationPath()
+                        pendingSwitch = Task { @MainActor in
+                            try? await Task.sleep(for: .milliseconds(350))
+                            guard !Task.isCancelled else { return }
+                            selectedTab = newValue
+                        }
+                    } else {
                         selectedTab = newValue
                     }
-                } else {
+                #else
                     selectedTab = newValue
-                }
+                #endif
             },
         )
     }
@@ -67,58 +79,46 @@ public struct RootView: View {
 
     public var body: some View {
         TabView(selection: tabSelection) {
-            Tab("Home", systemImage: "house.fill", value: AppTab.home) {
-                navigationRoot(for: .home) {
-                    HomeView()
-                }
-            }
+            homeTab
 
-            // One tab per server library, using the user's display name (which
-            // they may have renamed, e.g. "Films") and an icon derived from the
-            // library's collection type (which renames don't touch).
-            //
-            // Plain string labels on purpose: the tvOS sidebar normalizes label
-            // styling — custom fonts/colors on Tab labels and TabSection
-            // headers compile but are ignored at runtime (verified). Theming
-            // the nav beyond `.tint` means replacing the system sidebar, which
-            // is the navigation component-variant work, not a token tweak.
-            if !connectionViewModel.libraries.isEmpty {
-                TabSection("Libraries") {
-                    ForEach(connectionViewModel.libraries) { library in
-                        Tab(
-                            library.name,
-                            systemImage: library.systemImageName,
-                            value: AppTab.library(library.id),
-                        ) {
-                            navigationRoot(for: .library(library.id)) {
-                                // No `libraryOptions`: a tab is scoped to its
-                                // own library for good, so it gets no Library
-                                // pill and its label stays true.
-                                LibraryItemsView(initialQuery: LibraryQuery(library: library))
-                            }
-                        }
+            // `TabSection` is a feature of `sidebarAdaptable`, not of TabView
+            // at large: it declares a secondary hierarchy that only the
+            // sidebar representation can draw. So the grouping is tvOS-only.
+            // On visionOS's ornament a section collapses to a single stub tab
+            // (labeled, iconless, and with its children unreachable — a
+            // headerless one draws as a blank slot), so the same tabs are
+            // declared flat there, in the order the tvOS sidebar ends up
+            // showing them: it hoists loose tabs above sections, which is why
+            // Search is declared after the libraries but displays before them.
+            #if os(tvOS)
+                if !connectionViewModel.libraries.isEmpty {
+                    TabSection("Libraries") {
+                        libraryTabs
                     }
                 }
-            }
 
-            Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
-                navigationRoot(for: .search) {
-                    SearchView()
-                }
-            }
+                searchTab
 
-            // In its own (headerless) section: the tvOS sidebar hoists loose
-            // tabs above TabSections regardless of declaration order, so
-            // Settings must be section-anchored to sit below the libraries.
-            TabSection {
-                Tab("Settings", systemImage: "gear", value: AppTab.settings) {
-                    navigationRoot(for: .settings) {
-                        SettingsView()
-                    }
+                // In its own (headerless) section so the loose-tab hoisting
+                // above doesn't lift Settings out of its place below the
+                // libraries.
+                TabSection {
+                    settingsTab
                 }
-            }
+            #else
+                searchTab
+                libraryTabs
+                settingsTab
+            #endif
         }
+        // tvOS only: the sidebar-adaptable split suits a 10-foot layout, where
+        // a focus-driven sidebar that expands on demand is the native nav
+        // shape. visionOS keeps the system default — the floating tab bar
+        // ornament outside the window — which is that platform's native shape
+        // and doesn't spend window width on a permanent rail.
+        #if os(tvOS)
         .tabViewStyle(.sidebarAdaptable)
+        #endif
         .withThemeEnvironment(themeManager)
         .environment(session)
         .environment(connectionViewModel)
@@ -160,6 +160,63 @@ public struct RootView: View {
                !libraries.contains(where: { $0.id == id })
             {
                 selectedTab = .home
+            }
+        }
+    }
+
+    // MARK: - Tab content
+
+    //
+    // Declared apart from `body` so the platform branch above chooses only how
+    // the tabs are *grouped* — the tabs themselves stay identical, and tvOS
+    // can't drift as visionOS is adapted.
+
+    private var homeTab: some TabContent<AppTab> {
+        Tab("Home", systemImage: "house.fill", value: AppTab.home) {
+            navigationRoot(for: .home) {
+                HomeView()
+            }
+        }
+    }
+
+    /// One tab per server library, using the user's display name (which they
+    /// may have renamed, e.g. "Films") and an icon derived from the library's
+    /// collection type (which renames don't touch).
+    ///
+    /// Plain string labels on purpose: the tvOS sidebar normalizes label
+    /// styling — custom fonts/colors on Tab labels and TabSection headers
+    /// compile but are ignored at runtime (verified). Theming the nav beyond
+    /// `.tint` means replacing the system sidebar, which is the navigation
+    /// component-variant work, not a token tweak.
+    private var libraryTabs: some TabContent<AppTab> {
+        ForEach(connectionViewModel.libraries) { library in
+            Tab(
+                library.name,
+                systemImage: library.systemImageName,
+                value: AppTab.library(library.id),
+            ) {
+                navigationRoot(for: .library(library.id)) {
+                    // No `libraryOptions`: a tab is scoped to its own library
+                    // for good, so it gets no Library pill and its label stays
+                    // true.
+                    LibraryItemsView(initialQuery: LibraryQuery(library: library))
+                }
+            }
+        }
+    }
+
+    private var searchTab: some TabContent<AppTab> {
+        Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
+            navigationRoot(for: .search) {
+                SearchView()
+            }
+        }
+    }
+
+    private var settingsTab: some TabContent<AppTab> {
+        Tab("Settings", systemImage: "gear", value: AppTab.settings) {
+            navigationRoot(for: .settings) {
+                SettingsView()
             }
         }
     }

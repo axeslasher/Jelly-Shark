@@ -2,34 +2,58 @@ import SwiftUI
 
 /// Typography tokens for the design system
 public enum TypographyTokens {
-    /// Typography scale sizes optimized for 10-foot UI
+    /// Typography scale sizes, authored for 10-foot UI and scaled per platform
+    /// by `platformScale`. Sizes below are the tvOS values.
     public enum Size {
+        // ┌────────────────────────────────────────────────────────────────┐
+        // │ THIS IS WHERE YOU TUNE THE visionOS TYPE SCALE.                │
+        // │ One factor, not nine — the ratios between roles are the design.│
+        // └────────────────────────────────────────────────────────────────┘
+        //
+        // The sizes below are a 10-foot scale: a tvOS viewer sits across a
+        // room, so a 22pt body is not large, it is correct. A visionOS window
+        // sits at roughly arm's length, and that platform's own scale runs far
+        // smaller (17pt body, 12pt caption) — the same numbers read as
+        // shouting in a headset.
+        //
+        // Applying the factor here rather than per theme means it composes
+        // with the per-theme multipliers for free: Horror's display × 1.4 is
+        // 1.4× whichever platform's display size, and it reaches every
+        // derived measurement too (the episode skeleton sizes its ghost bars
+        // off these tokens, so they stay matched to the text they stand in
+        // for).
+        #if os(visionOS)
+            public static let platformScale: CGFloat = 0.75
+        #else
+            public static let platformScale: CGFloat = 1
+        #endif
+
         /// Display text - 52pt (hero titles)
-        public static let display: CGFloat = 52
+        public static let display: CGFloat = 52 * platformScale
 
         /// Headline - 32pt (section headers)
-        public static let headline: CGFloat = 32
+        public static let headline: CGFloat = 32 * platformScale
 
         /// Title - 24pt (card titles)
-        public static let title: CGFloat = 24
+        public static let title: CGFloat = 24 * platformScale
 
         /// Overview - 24pt (long text descriptions)
-        public static let overview: CGFloat = 24
+        public static let overview: CGFloat = 24 * platformScale
 
         /// Body - 22pt
-        public static let body: CGFloat = 22
+        public static let body: CGFloat = 22 * platformScale
 
         /// Caption - 18pt (metadata)
-        public static let caption: CGFloat = 18
+        public static let caption: CGFloat = 18 * platformScale
 
         /// Small - 12pt (badges, labels)
-        public static let small: CGFloat = 12
+        public static let small: CGFloat = 12 * platformScale
 
         /// Eyebrow - 18pt (uppercase mini-labels above values)
-        public static let eyebrow: CGFloat = 18
+        public static let eyebrow: CGFloat = 18 * platformScale
 
         /// Certificate - 18pt (the age-rating badge)
-        public static let certificate: CGFloat = 18
+        public static let certificate: CGFloat = 18 * platformScale
     }
 
     /// Font weights

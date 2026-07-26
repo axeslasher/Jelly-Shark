@@ -42,9 +42,27 @@ struct DesignSystemTests {
             #expect(SpacingTokens.lg < SpacingTokens.xl)
         }
 
-        @Test("Base unit is 8pt")
+        @Test("Base unit is 8pt on the authored scale, scaled down for visionOS")
         func baseUnit() {
-            #expect(SpacingTokens.unit == 8)
+            let scale = SpacingTokens.platformScale
+            #expect(SpacingTokens.unit == 8 * scale)
+
+            #if os(tvOS)
+                // The 8pt grid is the authored one; tvOS must come through it
+                // untouched.
+                #expect(scale == 1)
+            #else
+                #expect(scale < 1)
+                // A grid whose base unit isn't a whole number stops being a
+                // grid — see the note on `platformScale`.
+                #expect(SpacingTokens.unit == SpacingTokens.unit.rounded())
+            #endif
+        }
+
+        @Test("Focus padding stays unscaled — it feeds hit area, not composition")
+        func focusPaddingUnscaled() {
+            #expect(SpacingTokens.focusPadding == 16)
+            #expect(SpacingTokens.focusInset == 4)
         }
     }
 

@@ -467,6 +467,30 @@ struct JellyfinKitTests {
             let musicLibrary = Library(id: "3", name: "Music", collectionType: .music)
             #expect(musicLibrary.systemImageName == "music.note")
         }
+
+        @Test("Only books and folders libraries are unbrowsable")
+        func browsableCollectionTypes() {
+            // Qualified: the SDK exports a `CollectionType` of its own
+            let unbrowsable: [JellyfinKit.CollectionType] = [.books, .folders]
+
+            for type in unbrowsable {
+                let library = Library(id: type.rawValue, name: type.rawValue, collectionType: type)
+                #expect(library.isBrowsable == false)
+            }
+
+            // Everything else stays, including a mixed library that reports no
+            // collection type at all
+            let browsable: [JellyfinKit.CollectionType?] = [
+                .movies, .tvshows, .music, .musicvideos, .homevideos,
+                .boxsets, .photos, .livetv, .playlists, .unknown, nil,
+            ]
+
+            for type in browsable {
+                let name = type?.rawValue ?? "mixed"
+                let library = Library(id: name, name: name, collectionType: type)
+                #expect(library.isBrowsable)
+            }
+        }
     }
 
     @Suite("ImageTags Adapter")
