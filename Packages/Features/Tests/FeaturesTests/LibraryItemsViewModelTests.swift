@@ -17,7 +17,7 @@ struct LibraryItemsViewModelTests {
         pageSize: Int = 3,
     ) -> LibraryItemsViewModel {
         let viewModel = LibraryItemsViewModel(pageSize: pageSize, prefetchDistance: 2)
-        viewModel.attach(client: client, library: Self.library)
+        viewModel.attach(client: client, initialQuery: LibraryQuery(library: Self.library))
         return viewModel
     }
 
@@ -50,7 +50,10 @@ struct LibraryItemsViewModelTests {
             .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
         ]
         let viewModel = LibraryItemsViewModel(pageSize: 3, prefetchDistance: 2)
-        viewModel.attach(client: client, library: Self.library, initialQuery: LibraryQuery(genres: ["Horror"]))
+        viewModel.attach(
+            client: client,
+            initialQuery: LibraryQuery(library: Self.library, genres: ["Horror"]),
+        )
 
         await viewModel.loadInitial()
 
@@ -104,7 +107,7 @@ struct LibraryItemsViewModelTests {
     @Test("Missing client fails without a request")
     func missingClient() async {
         let viewModel = LibraryItemsViewModel(pageSize: 3)
-        viewModel.attach(client: nil, library: Self.library)
+        viewModel.attach(client: nil, initialQuery: LibraryQuery(library: Self.library))
 
         await viewModel.loadInitial()
 
@@ -124,7 +127,7 @@ struct LibraryItemsViewModelTests {
         await viewModel.loadInitial()
 
         // The view's .task re-fires attach + loadInitial on every appearance
-        viewModel.attach(client: client, library: Self.library)
+        viewModel.attach(client: client, initialQuery: LibraryQuery(library: Self.library))
         await viewModel.loadInitial()
 
         #expect(client.libraryItemsRequests.count == 1)
@@ -143,7 +146,7 @@ struct LibraryItemsViewModelTests {
 
         let reconnectedClient = MockJellyfinClient()
         reconnectedClient.libraryItemsPages = client.libraryItemsPages
-        viewModel.attach(client: reconnectedClient, library: Self.library)
+        viewModel.attach(client: reconnectedClient, initialQuery: LibraryQuery(library: Self.library))
         await viewModel.loadInitial()
 
         #expect(client.libraryItemsRequests.count == 1)
@@ -165,7 +168,7 @@ struct LibraryItemsViewModelTests {
             return
         }
 
-        viewModel.attach(client: client, library: Self.library)
+        viewModel.attach(client: client, initialQuery: LibraryQuery(library: Self.library))
         await viewModel.loadInitial()
 
         #expect(viewModel.state == .loaded)
@@ -587,6 +590,96 @@ struct LibraryItemsViewModelTests {
 
         #expect(viewModel.state == .loaded)
         #expect(viewModel.filterOptions == .empty)
+    }
+
+    // MARK: - Library scope
+
+    @Test("A library-scoped grid asks for that library and its grid item types")
+    func scopedRequest() async {
+        let client = MockJellyfinClient()
+        let viewModel = makeViewModel(client: client)
+
+        await viewModel.loadInitial()
+
+        #expect(client.libraryItemsRequests[0].libraryId == "lib-1")
+        #expect(client.libraryItemsRequests[0].itemTypes == [.movie])
+        #expect(client.filterOptionsRequests == ["lib-1"])
+        #expect(viewModel.displayTitle == "All Movies")
+    }
+
+    @Test("An unscoped grid asks for every library, pinned to movies and series")
+    func unscopedRequest() async {
+        let client = MockJellyfinClient()
+        let viewModel = LibraryItemsViewModel(pageSize: 3, prefetchDistance: 2)
+        viewModel.attach(client: client, initialQuery: LibraryQuery(genres: ["Horror"]))
+
+        await viewModel.loadInitial()
+
+        #expect(client.libraryItemsRequests[0].libraryId == nil)
+        // Seasons and episodes would otherwise ride in on the recursive fetch
+        #expect(client.libraryItemsRequests[0].itemTypes == [.movie, .series])
+        #expect(client.filterOptionsRequests == [nil])
+        #expect(viewModel.displayTitle == "Horror Titles")
+    }
+
+    @Test("Switching library reloads the grid and refetches the full options")
+    func libraryChangeReloads() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = makeViewModel(client: client)
+        await viewModel.loadInitial()
+
+        var query = viewModel.query
+        query.library = nil
+        viewModel.update(query: query)
+        await viewModel.awaitPendingLoad()
+
+        #expect(client.libraryItemsRequests.count == 2)
+        #expect(client.libraryItemsRequests[1].libraryId == nil)
+        #expect(client.libraryItemsRequests[1].itemTypes == [.movie, .series])
+        // The menus must offer the new scope's values, not the old library's
+        #expect(client.filterOptionsRequests == ["lib-1", nil])
+    }
+
+    @Test("A filter change alone does not refetch the full options")
+    func filterChangeKeepsOptions() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = makeViewModel(client: client)
+        await viewModel.loadInitial()
+
+        var query = viewModel.query
+        query.genres = ["Horror"]
+        viewModel.update(query: query)
+        await viewModel.awaitPendingLoad()
+
+        #expect(client.filterOptionsRequests == ["lib-1"])
+    }
+
+    @Test("Clearing filters keeps the grid's library scope")
+    func clearKeepsLibraryScope() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+        ]
+        let viewModel = LibraryItemsViewModel(pageSize: 3, prefetchDistance: 2)
+        viewModel.attach(
+            client: client,
+            initialQuery: LibraryQuery(library: Self.library, genres: ["Horror"]),
+        )
+        await viewModel.loadInitial()
+
+        viewModel.update(query: viewModel.query.withFiltersCleared)
+        await viewModel.awaitPendingLoad()
+
+        #expect(viewModel.query.library == Self.library)
+        #expect(client.libraryItemsRequests[1].libraryId == "lib-1")
+        // Same scope, so no second full-options fetch
+        #expect(client.filterOptionsRequests == ["lib-1"])
     }
 
     // MARK: - User-data actions (card menus)

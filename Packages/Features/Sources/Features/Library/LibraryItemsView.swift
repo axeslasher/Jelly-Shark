@@ -2,18 +2,22 @@ import DesignSystem
 import JellyfinKit
 import SwiftUI
 
-/// Grid of media items within a single library, with sort/filter controls
-/// and infinite scrolling
+/// Grid of media items, with sort/filter controls and infinite scrolling.
+/// The library is one of those filters: the grid is scoped to whichever
+/// library `initialQuery` names, or to none at all.
 struct LibraryItemsView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
 
-    let library: Library
+    /// Seeds the grid's library scope and sort/filter for the first load —
+    /// a library tab passes its own library, a genre card adds the genre.
+    let initialQuery: LibraryQuery
 
-    /// Seeds the grid's sort/filter for the first load — e.g. a genre card
-    /// opens this view pre-filtered to one genre. `nil` is the default
-    /// unfiltered grid used by the library tabs.
-    var initialQuery: LibraryQuery?
+    /// Libraries the viewer may re-scope the grid to. Empty — the default —
+    /// hides the Library pill, which is what a library tab wants: its label
+    /// would otherwise stop describing its contents. Grids opened from
+    /// elsewhere pass the server's libraries.
+    var libraryOptions: [Library] = []
 
     @State private var viewModel = LibraryItemsViewModel()
     @State private var gridWidth: CGFloat = 0
@@ -26,6 +30,7 @@ struct LibraryItemsView: View {
                 LibraryFilterBar(
                     options: viewModel.visibleFilterOptions,
                     query: viewModel.query,
+                    libraryOptions: libraryOptions,
                     isLoadingOptions: viewModel.isLoadingFilterOptions,
                     onChange: { viewModel.update(query: $0) },
                 )
@@ -50,14 +55,14 @@ struct LibraryItemsView: View {
             gridWidth = width
         }
         .task(id: session.isConnected) {
-            viewModel.attach(client: session.client, library: library, initialQuery: initialQuery)
+            viewModel.attach(client: session.client, initialQuery: initialQuery)
             await viewModel.loadInitial()
         }
     }
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline, spacing: SpacingTokens.sm) {
-            Text(viewModel.displayTitle ?? "All \(library.name)")
+            Text(viewModel.displayTitle)
                 .jsStyle(.headline)
                 .foregroundStyle(theme.primary)
 
@@ -218,7 +223,9 @@ private struct LibraryItemGrid: View {
 #Preview {
     NavigationStack {
         LibraryItemsView(
-            library: Library(id: "preview-1", name: "Movies", collectionType: .movies),
+            initialQuery: LibraryQuery(
+                library: Library(id: "preview-1", name: "Movies", collectionType: .movies),
+            ),
         )
     }
     .withThemeEnvironment()

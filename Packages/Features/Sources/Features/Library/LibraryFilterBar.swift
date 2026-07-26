@@ -20,6 +20,12 @@ struct LibraryFilterBar: View {
 
     let options: LibraryFilterOptions
     let query: LibraryQuery
+    /// The libraries the viewer may scope the grid to, plus an implicit "All".
+    /// Empty — the default — hides the Library pill entirely, which is what a
+    /// library tab wants: a tab called Films must never list series, or its
+    /// own label stops being true. Grids opened from anywhere else pass the
+    /// server's libraries and get the control.
+    var libraryOptions: [Library] = []
     /// True while the library's filter options are still being fetched: the
     /// option-driven menus (Genres, Decades, Ratings) show ghost pills in
     /// their spots instead of popping in when the fetch resolves. The static
@@ -65,6 +71,12 @@ struct LibraryFilterBar: View {
 
     private var pillRow: some View {
         HStack(spacing: SpacingTokens.sm) {
+            // Leftmost: it scopes everything to its right, and its position
+            // doesn't shift as the option-driven menus come and go
+            if !libraryOptions.isEmpty {
+                libraryMenu
+            }
+
             sortMenu
 
             if !options.genres.isEmpty {
@@ -161,6 +173,31 @@ struct LibraryFilterBar: View {
     }
 
     // MARK: - Filters
+
+    /// Single-select, unlike Genres and Decades: the server's `parentId` is
+    /// singular, so the grid is scoped to exactly one library or to all of
+    /// them. Modelled on ``watchedMenu`` for that reason — a `Picker`, whose
+    /// rows carry the system selection checkmark.
+    private var libraryMenu: some View {
+        Menu {
+            Picker("Library", selection: Binding(
+                get: { query.library },
+                set: { selected in
+                    var next = query
+                    next.library = selected
+                    onChange(next)
+                },
+            )) {
+                Text("All Libraries").tag(Library?.none)
+                ForEach(libraryOptions) { library in
+                    Text(library.name).tag(Library?.some(library))
+                }
+            }
+            .tint(theme.accent)
+        } label: {
+            Text(query.library?.name ?? "Library")
+        }
+    }
 
     private func multiSelectMenu<Value: Hashable>(
         title: String,
@@ -292,6 +329,24 @@ struct LibraryFilterBar: View {
             years: [1985, 1994, 2003, 2021],
         ),
         query: LibraryQuery(genres: ["Horror"], favoritesOnly: true),
+        onChange: { _ in },
+    )
+    .padding()
+    .withThemeEnvironment()
+}
+
+#Preview("Cross-library") {
+    LibraryFilterBar(
+        options: LibraryFilterOptions(
+            genres: ["Action", "Comedy", "Horror"],
+            officialRatings: ["PG", "PG-13", "R"],
+            years: [1985, 1994, 2003, 2021],
+        ),
+        query: LibraryQuery(genres: ["Horror"]),
+        libraryOptions: [
+            Library(id: "lib-1", name: "Films", collectionType: .movies),
+            Library(id: "lib-2", name: "Series", collectionType: .tvshows),
+        ],
         onChange: { _ in },
     )
     .padding()
