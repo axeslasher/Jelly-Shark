@@ -48,7 +48,19 @@ struct SearchView: View {
         }
     }
 
+    /// The empty state. Seeded titles when the server offered any; otherwise —
+    /// on an error, an empty library, or before the fetch lands — the plain
+    /// prompt this screen has always shown.
+    @ViewBuilder
     private var prompt: some View {
+        if viewModel.seedTerms.isEmpty {
+            plainPrompt
+        } else {
+            seedTermPrompt
+        }
+    }
+
+    private var plainPrompt: some View {
         VStack(spacing: SpacingTokens.md) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 64))
@@ -61,6 +73,40 @@ struct SearchView: View {
             Text("Find movies, shows, and more")
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// No 64pt glyph here: a labelled row of real destinations earns the
+    /// vertical space better than a decoration, and reads better to VoiceOver.
+    private var seedTermPrompt: some View {
+        VStack(spacing: SpacingTokens.md) {
+            Text("From Your Library")
+                .jsStyle(.headline)
+                .foregroundStyle(theme.secondary)
+
+            ScrollView(.horizontal) {
+                HStack(spacing: SpacingTokens.sm) {
+                    ForEach(viewModel.seedTerms) { item in
+                        Button {
+                            viewModel.selectSeedTerm(item.name)
+                        } label: {
+                            Text(item.name)
+                                .jsStyle(.title)
+                                .foregroundStyle(theme.primary)
+                        }
+                        // The plain glass style, unlike the season pills': these
+                        // pills have no active-item gate keyed to what pressing
+                        // one changes, so the style presents its own focus and
+                        // sees every press through.
+                        .glassButtonStyle(tint: theme.focusFill)
+                    }
+                }
+                .padding(.horizontal, SpacingTokens.screenPadding)
+                .padding(.vertical, SpacingTokens.focusPadding)
+            }
+            .scrollClipDisabled()
+            .scrollIndicators(.hidden)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

@@ -150,6 +150,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try searchResult.get()
     }
 
+    /// Counted, not just recorded: the search empty state must seed itself
+    /// exactly once per view-model lifetime, however many times it attaches
+    var searchSuggestionsCallCount = 0
+    var searchSuggestionsResult: Result<[MediaItem], Error> = .success([])
+
+    func getSearchSuggestions(limit _: Int?) async throws -> [MediaItem] {
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            searchSuggestionsCallCount += 1
+            return searchSuggestionsResult
+        }
+        return try result.get()
+    }
+
     func getImageURL(itemId: String, imageType: ImageType, maxWidth _: Int?, maxHeight _: Int?) -> URL {
         // Real-shaped path so tests can assert WHICH image a view model chose
         serverURL
