@@ -108,7 +108,10 @@ This project is in early development, but issues and pull requests are welcome. 
 
 ## License
 
-Apache 2.0
+MIT — see [LICENSE](LICENSE). Fork it, ship it, build on the packages; the only
+ask is that the copyright notice comes along. Third-party terms for the bundled
+font and the SPM dependencies are in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 
