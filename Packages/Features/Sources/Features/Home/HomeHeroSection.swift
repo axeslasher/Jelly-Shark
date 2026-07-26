@@ -479,8 +479,9 @@ struct HomeHeroSection: View {
 }
 
 /// `CircleActionButton`'s value-based-navigation twin: the same circular glass
-/// treatment and focus-revealed hanging label, but pushing a destination
-/// instead of running an action.
+/// treatment and hanging label — revealed on focus (tvOS) or gaze (visionOS)
+/// via the shared modifier — but pushing a destination instead of running an
+/// action.
 private struct CircleNavigationLink<Value: Hashable>: View {
     @Environment(\.theme) private var theme
     @FocusState private var isFocused: Bool
@@ -502,14 +503,6 @@ private struct CircleNavigationLink<Value: Hashable>: View {
         .buttonBorderShape(.circle)
         .controlSize(.regular)
         .focused($isFocused)
-        .overlay(alignment: .bottom) {
-            Text(title)
-                .jsStyle(.caption)
-                .foregroundStyle(theme.secondary)
-                .fixedSize()
-                .opacity(isFocused ? 1 : 0)
-                .alignmentGuide(.bottom) { $0[.top] - SpacingTokens.sm }
-        }
-        .animation(theme.animation, value: isFocused)
+        .hangingActionLabel(title, isFocused: isFocused)
     }
 }

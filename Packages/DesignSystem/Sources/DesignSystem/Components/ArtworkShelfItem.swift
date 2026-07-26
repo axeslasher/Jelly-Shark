@@ -162,7 +162,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         #if os(tvOS)
         .buttonStyle(.borderless)
         #else
-        .buttonStyle(.plain)
+        .buttonStyle(CardButtonStyle())
         #endif
         .shelfContextMenu(menuActions)
     }
@@ -243,6 +243,13 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                         .padding(SpacingTokens.xs)
                 }
             }
+        // Off tvOS this effect is the card's whole hover treatment, so it has
+        // to say what shape to draw. Left to itself it takes the view's bounds
+        // and ignores the corner clip above — sharp corners around rounded
+        // artwork (#139).
+        #if !os(tvOS)
+            .contentShape(.hoverEffect, .rect(cornerRadius: theme.cornerRadius))
+        #endif
             // Lift, specular highlight, and gimbal motion on focus.
             .hoverEffect(.highlight)
     }

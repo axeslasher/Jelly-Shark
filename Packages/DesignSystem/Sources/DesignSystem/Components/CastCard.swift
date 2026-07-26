@@ -59,7 +59,7 @@ public struct CastCard<Value: Hashable>: View {
         .buttonStyle(.borderless)
         .buttonBorderShape(.circle)
         #else
-        .buttonStyle(.plain)
+        .buttonStyle(CardButtonStyle())
         #endif
         // Read the card as a single element ("Name, Role") rather than three.
         .accessibilityElement(children: .combine)
@@ -89,6 +89,12 @@ public struct CastCard<Value: Hashable>: View {
             .hoverEffectDisabled()
             .frame(width: width, height: width)
             .clipShape(Circle())
+        // The clip above doesn't reach the hover effect, which is why the
+        // effect drew a sharp square around a round photo (#139). Declaring
+        // the circle is what makes the two agree.
+        #if !os(tvOS)
+            .contentShape(.hoverEffect, .circle)
+        #endif
             // Lift, specular highlight, and gimbal motion on focus.
             .hoverEffect(.highlight)
     }
