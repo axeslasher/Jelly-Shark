@@ -32,23 +32,64 @@ struct SearchView: View {
             .background(theme.background)
     }
 
-    @ViewBuilder
+    /// One `ScrollView` for every state, deliberately hoisted above the switch.
+    ///
+    /// Each state used to bring its own — skeletons and results were separate
+    /// `ScrollView`s in separate switch branches — so any transition destroyed
+    /// one `HostingScrollView` and built another. That crashed the app when a
+    /// search was started from the system search UI's suggestion list: the
+    /// press moves focus, the focus engine asks the content area's scroll view
+    /// for its scroll-boundary metrics, and `.results → .searching` had already
+    /// replaced the scroll view underneath it. AttributeGraph then aborts with
+    /// "accessing attribute in a different namespace" — a stale graph node,
+    /// reached from a live focus update. Nothing visible is torn down, which is
+    /// what made it look like a freeze rather than a view-identity problem.
+    ///
+    /// Keeping the scroll view mounted keeps that graph node alive across the
+    /// transition. Its *contents* still swap freely; only the container has to
+    /// persist, because the container is what UIKit holds a reference to.
     private var content: some View {
+        ScrollView {
+            stateContent
+        }
+        .scrollClipDisabled()
+    }
+
+    @ViewBuilder
+    private var stateContent: some View {
         switch viewModel.state {
         case .idle:
-            prompt
+            fullHeight { prompt }
         case .searching:
             skeletonShelves
         case .empty:
-            message(
-                icon: "magnifyingglass",
-                text: "No results for \"\(viewModel.query)\"",
-            )
+            fullHeight {
+                message(
+                    icon: "magnifyingglass",
+                    text: "No results for \"\(viewModel.query)\"",
+                )
+            }
         case let .failed(errorMessage):
-            message(icon: "exclamationmark.triangle.fill", text: errorMessage)
+            fullHeight {
+                message(icon: "exclamationmark.triangle.fill", text: errorMessage)
+            }
         case .results:
             resultsShelves
         }
+    }
+
+    /// Sizes a state that wants to fill the screen and centre itself.
+    ///
+    /// `maxHeight: .infinity` no longer does that now these states live inside
+    /// a scroll view — scroll content is sized to fit, so an infinite maximum
+    /// resolves to the content's own height and the prompt would sit jammed
+    /// under the search field. `containerRelativeFrame` measures the scroll
+    /// view's visible height instead, which is what "fill the screen" meant
+    /// before the hoist.
+    private func fullHeight(@ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .frame(maxWidth: .infinity)
+            .containerRelativeFrame(.vertical)
     }
 
     /// The empty state. Seeded titles when the server offered any; otherwise —
@@ -142,19 +183,16 @@ struct SearchView: View {
     /// than incidental: focus stays in the search field and the viewer can
     /// keep typing while the round of queries is out.
     private var skeletonShelves: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
-                SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
-                SkeletonShelf(
-                    cardWidth: 320,
-                    shape: .artwork(aspectRatio: 16.0 / 9.0),
-                    cardCount: 4,
-                )
-            }
-            .padding(.vertical, SpacingTokens.lg)
+        VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+            SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+            SkeletonShelf(
+                cardWidth: 320,
+                shape: .artwork(aspectRatio: 16.0 / 9.0),
+                cardCount: 4,
+            )
         }
-        .scrollClipDisabled()
+        .padding(.vertical, SpacingTokens.lg)
         .skeletonPulse()
     }
 
@@ -169,30 +207,27 @@ struct SearchView: View {
     /// Home and Media Detail to park a hero, and this page (like the person
     /// page it follows) has none.
     private var resultsShelves: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-                SearchShelfSection(
-                    title: "Movies", icon: "film.fill",
-                    items: viewModel.movies, style: .poster,
-                )
-                SearchShelfSection(
-                    title: "TV Series", icon: "tv.fill",
-                    items: viewModel.series, style: .poster,
-                )
-                SearchShelfSection(
-                    title: "Episodes", icon: "play.tv",
-                    items: viewModel.episodes, style: .landscape,
-                )
-            }
-            .padding(.vertical, SpacingTokens.lg)
-            // One focus region for the whole stack, not one per shelf: moving
-            // between rows is a plain vertical move, and moving up out of the
-            // first shelf leaves for the search field above it.
-            #if os(tvOS)
-                .focusSection()
-            #endif
+        VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+            SearchShelfSection(
+                title: "Movies", icon: "film.fill",
+                items: viewModel.movies, style: .poster,
+            )
+            SearchShelfSection(
+                title: "TV Series", icon: "tv.fill",
+                items: viewModel.series, style: .poster,
+            )
+            SearchShelfSection(
+                title: "Episodes", icon: "play.tv",
+                items: viewModel.episodes, style: .landscape,
+            )
         }
-        .scrollClipDisabled()
+        .padding(.vertical, SpacingTokens.lg)
+        // One focus region for the whole stack, not one per shelf: moving
+        // between rows is a plain vertical move, and moving up out of the
+        // first shelf leaves for the search field above it.
+        #if os(tvOS)
+            .focusSection()
+        #endif
     }
 }
 
