@@ -205,13 +205,49 @@ public struct RootView: View {
         }
     }
 
+    /// `role: .search` declares that this tab owns searching. On its own it did
+    /// not clear the collision in #148 — the tvOS `sidebarAdaptable` collapsed
+    /// pill still drew over the search field on device, even though the
+    /// simulator reported it fixed — so `SearchView` carries the inset that
+    /// actually does. The role stays because it is a true declaration that was
+    /// simply missing (`git log -S"role: .search"` finds no prior removal), and
+    /// it costs nothing. Not `#if`-guarded: semantically true on visionOS too,
+    /// where a device check found no regression.
     private var searchTab: some TabContent<AppTab> {
-        Tab("Search", systemImage: "magnifyingglass", value: AppTab.search) {
+        Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
             navigationRoot(for: .search) {
                 SearchView()
             }
+            // The inset goes on the NavigationStack, not inside SearchView.
+            // `.searchable` draws its field in the stack's bar, above the
+            // content — padding applied within `SearchView` moved the results
+            // and left the field exactly where it was, still under the pill.
+            //
+            // `.padding`, not `.safeAreaPadding`: the latter insets against an
+            // existing safe area, and a stack that already fills its tab has
+            // none to bite on, so it was a no-op at any value. Plain padding
+            // shrinks the proposed frame and the bar lays out inside it.
+            #if os(tvOS)
+            .padding(.top, Self.searchHeadroom)
+            // The padding opens a strip above the search field that belongs to
+            // no view — `SearchView`'s own background is inside it. Paint it
+            // here or the system backdrop shows through.
+            .background(themeManager.currentTheme.background)
+            #endif
         }
     }
+
+    #if os(tvOS)
+        /// Headroom above the Search tab's stack so the `sidebarAdaptable`
+        /// collapsed pill, which draws over content at the top-leading corner,
+        /// clears the system search field (#148).
+        ///
+        /// Tuned on an Apple TV, and only there: the tvOS simulator renders
+        /// this layout differently and reported the collision fixed when it was
+        /// not. Bisect against hardware if it ever needs revisiting — nothing
+        /// in this repo can measure it.
+        private static let searchHeadroom: CGFloat = SpacingTokens.sm
+    #endif
 
     private var settingsTab: some TabContent<AppTab> {
         Tab("Settings", systemImage: "gear", value: AppTab.settings) {
