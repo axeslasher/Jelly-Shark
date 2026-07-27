@@ -293,15 +293,30 @@ extension MediaItem {
         )
     }
 
-    /// Landscape card (16:9). Episodes show the episode title over the series
-    /// name; everything else shows the name over the year.
+    /// Landscape card (16:9), the navigational counterpart to
+    /// `playableShelfItem` — same caption lockup, no play affordance.
+    ///
+    /// Episodes lead with the episode name over "Series · S2E4"; everything
+    /// else shows the name over the year. Deliberately *not*
+    /// `episodeDisplayTitle`, which bakes the code into the title as
+    /// "S10E18 - Simpsons Bible Stories": at this width the code eats the
+    /// front of the line and the truncation then eats the name, so the card
+    /// spends its one title line saying almost nothing. The code belongs in
+    /// the subtitle beside the series it qualifies.
     @MainActor
     func landscapeShelfItem(client: JellyfinClientProtocol?, width: CGFloat = 320) -> some View {
         ArtworkShelfItem(
             url: client?.landscapeURL(for: self),
             blurHash: landscapeBlurHash,
-            title: episodeDisplayTitle ?? name,
-            subtitle: type == .episode ? seriesName : productionYear.map(String.init),
+            title: name,
+            subtitle: type == .episode
+                ? [seriesName, episodeCode].compactMap(\.self).joined(separator: " · ")
+                : productionYear.map(String.init),
+            // Ragged left, matching Home's rows. Centred captions read as a
+            // caption *about* the card; leading ones read as the card's own
+            // label, and a truncated centre-aligned title looks like a layout
+            // fault rather than an intended clip.
+            captionAlignment: .leading,
             aspectRatio: 16.0 / 9.0,
             width: width,
             progress: progressPercentage,

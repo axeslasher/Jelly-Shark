@@ -385,6 +385,14 @@ extension ImageTags {
     /// BlurHashes arrive keyed by image tag; each is resolved against the tag
     /// selected above, falling back to the type's first hash when the keying
     /// doesn't line up (there's typically exactly one per type anyway).
+    ///
+    /// A hash with **no tag at all** is dropped rather than fallen back on. The
+    /// tag is what `firstImageSlot` needs to build a URL, so a hash the app
+    /// can't pair with one describes an image it will never request — the card
+    /// paints the blurhash and then stays blurred forever, since a nil URL and
+    /// a still-loading URL look identical to `ArtworkImage`. Servers do send
+    /// these: an episode with no still of its own can still carry hash entries
+    /// for artwork inherited from its series.
     init?(
         from tags: [String: String]?,
         backdropTags: [String]? = nil,
@@ -394,8 +402,8 @@ extension ImageTags {
         guard tags != nil || backdrop != nil else { return nil }
 
         func hash(in dictionary: [String: String]?, for tag: String?) -> String? {
-            guard let dictionary else { return nil }
-            return tag.flatMap { dictionary[$0] } ?? dictionary.first?.value
+            guard let dictionary, let tag else { return nil }
+            return dictionary[tag] ?? dictionary.first?.value
         }
 
         self.init(

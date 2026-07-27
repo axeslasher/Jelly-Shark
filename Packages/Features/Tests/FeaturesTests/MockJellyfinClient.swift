@@ -37,7 +37,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var nextEpisodeResult: MediaItem?
     var fetchCurrentUserResult: Result<User, Error> = .success(User(id: "user-1", name: "demo"))
     var librariesResult: Result<[Library], Error> = .success([])
-    var searchQueries: [String] = []
+    /// Search calls in arrival order. Each search now fans out one query per
+    /// item type, so the types are recorded alongside the term.
+    var searchQueries: [(query: String, itemTypes: [MediaType])] = []
+    /// Served (filtered to the requested types) when `searchHandler` is nil
     var searchResult: Result<[MediaItem], Error> = .success([])
     var personResult: Result<Person, Error> = .success(Person(id: "person-id", name: "Person"))
     var itemsFeaturingPersonRequests: [(personId: String, itemTypes: [MediaType])] = []
@@ -145,9 +148,24 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         try similarItemsResult.get()
     }
 
-    func searchItems(query: String, limit _: Int?) async throws -> [MediaItem] {
-        searchQueries.append(query)
-        return try searchResult.get()
+    /// Per-shelf results keyed by the requested item types (search fans its
+    /// three shelves out concurrently, so one type can be made to fail on its
+    /// own); nil handler filters `searchResult` by the requested types
+    var searchHandler: (([MediaType]) -> Result<[MediaItem], Error>)?
+
+    func searchItems(query: String, itemTypes: [MediaType], limit _: Int?) async throws -> [MediaItem] {
+        // Takes the lock: three concurrent calls per search would race the
+        // recording array otherwise.
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            searchQueries.append((query, itemTypes))
+            if let searchHandler {
+                return searchHandler(itemTypes)
+            }
+            return searchResult.map { items in
+                items.filter { itemTypes.contains($0.type) }
+            }
+        }
+        return try result.get()
     }
 
     /// Counted, not just recorded: the search empty state must seed itself

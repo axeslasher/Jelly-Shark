@@ -8,13 +8,30 @@ struct SearchViewModelTests {
     private func makeViewModel(client: MockJellyfinClient) -> SearchViewModel {
         // Zero debounce keeps tests fast and deterministic; awaitPendingSearch()
         // still synchronizes on the search task itself.
-        let viewModel = SearchViewModel(limit: 40, debounce: .zero)
+        let viewModel = SearchViewModel(debounce: .zero)
         viewModel.attach(client: client)
         return viewModel
     }
 
     private func movie(_ id: String, _ name: String, year: Int? = nil) -> MediaItem {
         MediaItem(id: id, name: name, type: .movie, productionYear: year)
+    }
+
+    private func series(_ id: String, _ name: String) -> MediaItem {
+        MediaItem(id: id, name: name, type: .series)
+    }
+
+    private func episode(_ id: String, _ name: String, series seriesName: String = "Show") -> MediaItem {
+        MediaItem(id: id, name: name, type: .episode, seriesName: seriesName)
+    }
+
+    /// One search is now a *round* of exactly three queries for the same term,
+    /// one per item type. Asserting the round (rather than "at least one call")
+    /// keeps the original guarantee that a single press issues a single search.
+    private func expectOneRound(_ client: MockJellyfinClient, for term: String) {
+        #expect(client.searchQueries.count == 3)
+        #expect(Set(client.searchQueries.map(\.query)) == [term])
+        #expect(Set(client.searchQueries.map(\.itemTypes)) == [[.movie], [.series], [.episode]])
     }
 
     @Test("Empty query stays idle and never calls the client")
@@ -26,11 +43,11 @@ struct SearchViewModelTests {
         await viewModel.awaitPendingSearch()
 
         #expect(viewModel.state == .idle)
-        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.allResults.isEmpty)
         #expect(client.searchQueries.isEmpty)
     }
 
-    @Test("A non-empty query populates results")
+    @Test("A non-empty query runs one round of three and populates results")
     func queryPopulatesResults() async {
         let client = MockJellyfinClient()
         client.searchResult = .success([movie("1", "Batman"), movie("2", "Batman Returns")])
@@ -39,12 +56,51 @@ struct SearchViewModelTests {
         viewModel.updateQuery("bat")
         await viewModel.awaitPendingSearch()
 
-        #expect(client.searchQueries == ["bat"])
-        #expect(viewModel.results.count == 2)
+        expectOneRound(client, for: "bat")
+        #expect(viewModel.movies.count == 2)
         #expect(viewModel.state == .results)
     }
 
-    @Test("Zero matches yields the empty state")
+    @Test("Results are grouped into their own shelves, in section order")
+    func groupsResultsByType() async {
+        let client = MockJellyfinClient()
+        client.searchResult = .success([
+            movie("1", "Batman"),
+            series("2", "Batman: The Animated Series"),
+            episode("3", "Nothing to Fear", series: "Batman: The Animated Series"),
+            movie("4", "Batman Returns"),
+        ])
+        let viewModel = makeViewModel(client: client)
+
+        viewModel.updateQuery("batman")
+        await viewModel.awaitPendingSearch()
+
+        #expect(viewModel.movies.map(\.id) == ["1", "4"])
+        #expect(viewModel.series.map(\.id) == ["2"])
+        #expect(viewModel.episodes.map(\.id) == ["3"])
+        // The flat accessor the suggestions read follows the shelf order.
+        #expect(viewModel.allResults.map(\.id) == ["1", "4", "2", "3"])
+        #expect(viewModel.state == .results)
+    }
+
+    @Test("A type with no matches leaves its shelf empty, the others populated")
+    func typeWithNoMatchesIsEmptyShelf() async {
+        let client = MockJellyfinClient()
+        client.searchResult = .success([movie("1", "Batman"), movie("2", "Batman Returns")])
+        let viewModel = makeViewModel(client: client)
+
+        viewModel.updateQuery("batman")
+        await viewModel.awaitPendingSearch()
+
+        #expect(viewModel.movies.count == 2)
+        #expect(viewModel.series.isEmpty)
+        #expect(viewModel.episodes.isEmpty)
+        // Still `.results` — an empty shelf renders nothing, it isn't an
+        // empty *search*.
+        #expect(viewModel.state == .results)
+    }
+
+    @Test("Zero matches in every type yields the empty state")
     func zeroMatchesIsEmpty() async {
         let client = MockJellyfinClient()
         client.searchResult = .success([])
@@ -54,10 +110,10 @@ struct SearchViewModelTests {
         await viewModel.awaitPendingSearch()
 
         #expect(viewModel.state == .empty)
-        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.allResults.isEmpty)
     }
 
-    @Test("A thrown error yields the failed state")
+    @Test("Every fetch throwing yields the failed state")
     func errorYieldsFailed() async {
         let client = MockJellyfinClient()
         client.searchResult = .failure(APIError.notAuthenticated)
@@ -71,13 +127,49 @@ struct SearchViewModelTests {
         } else {
             Issue.record("Expected .failed, got \(viewModel.state)")
         }
-        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.allResults.isEmpty)
     }
 
-    @Test("Clearing the query resets to idle")
+    @Test("One type failing renders the survivors and stays in results")
+    func partialFailureKeepsSurvivors() async {
+        let client = MockJellyfinClient()
+        client.searchHandler = { itemTypes in
+            if itemTypes.contains(.series) {
+                return .failure(APIError.generic("Series shelf failed"))
+            }
+            return .success(itemTypes.contains(.movie) ? [self.movie("1", "Alien")] : [])
+        }
+        let viewModel = makeViewModel(client: client)
+
+        viewModel.updateQuery("alien")
+        await viewModel.awaitPendingSearch()
+
+        #expect(viewModel.movies.map(\.id) == ["1"])
+        #expect(viewModel.series.isEmpty)
+        #expect(viewModel.state == .results)
+    }
+
+    @Test("A failure that left nothing to show is the failed state")
+    func totalFailureIsFailed() async {
+        let client = MockJellyfinClient()
+        client.searchHandler = { itemTypes in
+            itemTypes.contains(.movie)
+                ? .failure(APIError.generic("Movie shelf failed"))
+                : .success([])
+        }
+        let viewModel = makeViewModel(client: client)
+
+        viewModel.updateQuery("alien")
+        await viewModel.awaitPendingSearch()
+
+        #expect(viewModel.state == .failed(APIError.generic("Movie shelf failed").localizedDescription))
+        #expect(viewModel.allResults.isEmpty)
+    }
+
+    @Test("Clearing the query resets to idle and empties every shelf")
     func clearingResetsToIdle() async {
         let client = MockJellyfinClient()
-        client.searchResult = .success([movie("1", "Batman")])
+        client.searchResult = .success([movie("1", "Batman"), series("2", "Batman Beyond")])
         let viewModel = makeViewModel(client: client)
 
         viewModel.updateQuery("bat")
@@ -86,7 +178,9 @@ struct SearchViewModelTests {
 
         viewModel.updateQuery("")
         #expect(viewModel.state == .idle)
-        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.movies.isEmpty)
+        #expect(viewModel.series.isEmpty)
+        #expect(viewModel.episodes.isEmpty)
     }
 
     @Test("Suggestions are unique title completions matching the query")
@@ -140,7 +234,7 @@ struct SearchViewModelTests {
     func attachWithoutClientDefersFetch() async {
         let client = MockJellyfinClient()
         client.searchSuggestionsResult = .success([movie("1", "Alien")])
-        let viewModel = SearchViewModel(limit: 40, debounce: .zero)
+        let viewModel = SearchViewModel(debounce: .zero)
 
         // What the view does on first appear, before the session connects
         viewModel.attach(client: nil)
@@ -180,21 +274,29 @@ struct SearchViewModelTests {
         #expect(viewModel.seedTerms.map(\.name) == ["Solaris"])
     }
 
-    @Test("Signing out clears the query and results")
+    @Test("Signing out clears the query and every result shelf")
     func signOutClearsQueryAndResults() async {
         let client = MockJellyfinClient()
-        client.searchResult = .success([movie("1", "Alien")])
+        client.searchResult = .success([
+            movie("1", "Alien"),
+            series("2", "Alien Nation"),
+            episode("3", "Pilot", series: "Alien Nation"),
+        ])
         let viewModel = makeViewModel(client: client)
 
         viewModel.updateQuery("ali")
         await viewModel.awaitPendingSearch()
         #expect(viewModel.state == .results)
-        #expect(!viewModel.results.isEmpty)
+        #expect(viewModel.allResults.count == 3)
 
         viewModel.attach(client: nil)
 
         #expect(viewModel.query.isEmpty)
-        #expect(viewModel.results.isEmpty)
+        // Each shelf individually: a missed array here would show the previous
+        // account's titles to the next one.
+        #expect(viewModel.movies.isEmpty)
+        #expect(viewModel.series.isEmpty)
+        #expect(viewModel.episodes.isEmpty)
         #expect(viewModel.state == .idle)
     }
 
@@ -222,7 +324,7 @@ struct SearchViewModelTests {
         #expect(viewModel.state == .idle)
     }
 
-    @Test("Selecting a seed term fills the field and runs one search")
+    @Test("Selecting a seed term fills the field and runs one round of searches")
     func selectingSeedTermRunsSearch() async {
         let client = MockJellyfinClient()
         client.searchSuggestionsResult = .success([movie("1", "Alien")])
@@ -234,7 +336,10 @@ struct SearchViewModelTests {
         await viewModel.awaitPendingSearch()
 
         #expect(viewModel.query == "Alien")
-        #expect(client.searchQueries == ["Alien"])
+        // One press, one round — `selectSeedTerm` and the view's `onChange`
+        // both call `updateQuery`, and the second must cancel the first rather
+        // than issue a second round.
+        expectOneRound(client, for: "Alien")
         #expect(viewModel.state == .results)
     }
 
@@ -253,7 +358,7 @@ struct SearchViewModelTests {
 
     @Test("Without a client, a query fails gracefully")
     func missingClientFails() async {
-        let viewModel = SearchViewModel(limit: 40, debounce: .zero)
+        let viewModel = SearchViewModel(debounce: .zero)
 
         viewModel.updateQuery("bat")
         await viewModel.awaitPendingSearch()
