@@ -32,6 +32,40 @@ struct PersonDetailViewModelTests {
         await viewModel.load()
     }
 
+    // MARK: - Session scoping
+
+    @Test("A session change clears the page and reloads it for the next account")
+    func sessionChangeReloadsForNewAccount() async {
+        let first = MockJellyfinClient()
+        first.itemsFeaturingPersonHandler = { itemTypes in
+            itemTypes == [.movie] ? .success([MediaItem(id: "m1", name: "m1", type: .movie)]) : .success([])
+        }
+
+        let viewModel = PersonDetailViewModel()
+        await load(viewModel, client: first)
+        #expect(viewModel.movies.map(\.id) == ["m1"])
+
+        // Sign-out. The view's task is keyed on the session as well as the
+        // person, so it reruns with no client — which must leave nothing of the
+        // previous account's filmography behind. Without this, a person page
+        // pushed on visionOS (where tab stacks survive a tab switch) would
+        // still be standing when the next account signs in.
+        await load(viewModel, client: nil)
+        #expect(viewModel.person == nil)
+        #expect(viewModel.movies.isEmpty)
+        #expect(viewModel.filmographyStatus == .loading)
+
+        // A different account signs in on the same, still-pushed page.
+        let second = MockJellyfinClient()
+        second.itemsFeaturingPersonHandler = { itemTypes in
+            itemTypes == [.movie] ? .success([MediaItem(id: "m2", name: "m2", type: .movie)]) : .success([])
+        }
+        await load(viewModel, client: second)
+
+        #expect(viewModel.filmographyStatus == .loaded)
+        #expect(viewModel.movies.map(\.id) == ["m2"])
+    }
+
     // MARK: - Full load
 
     @Test("All three shelves load, and the backdrop borrows from the filmography")
