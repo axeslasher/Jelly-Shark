@@ -1038,8 +1038,8 @@ public final class PlaybackViewModel {
         timeControlStatus: AVPlayer.TimeControlStatus,
         positionAdvanced: Bool,
         errorDescription: String?,
-        progress _: DeliveryProgress,
-        previousProgress _: DeliveryProgress,
+        progress: DeliveryProgress,
+        previousProgress: DeliveryProgress,
     ) -> FirstFrameVerdict {
         // An error is only published once playback has failed outright, and
         // no amount of further waiting recovers from that. Checked first
@@ -1246,12 +1246,17 @@ public final class PlaybackViewModel {
         // them moved is the whole diagnosis when this misfires — a run that
         // fails with bytes climbing means something other than delivery is
         // wrong, and a run that fails with both flat is the real thing.
-        let sample = """
-        buffered=\(progress.bufferedSeconds, format: .fixed(precision: 1))s \
-        bytes=\(progress.bytesTransferred) \
-        (was \(previousProgress.bufferedSeconds, format: .fixed(precision: 1))s / \
-        \(previousProgress.bytesTransferred))
-        """
+        // `String(format:)`, not os_log's `format: .fixed(precision:)`: that
+        // spelling is `OSLogMessage` interpolation and does not exist on
+        // `String`. Xcode 27 beta compiled it anyway; release Xcode and CI do
+        // not.
+        let sample = String(
+            format: "buffered=%.1fs bytes=%lld (was %.1fs / %lld)",
+            progress.bufferedSeconds,
+            progress.bytesTransferred,
+            previousProgress.bufferedSeconds,
+            previousProgress.bytesTransferred,
+        )
 
         switch Self.firstFrameVerdict(
             timeControlStatus: player.timeControlStatus,
@@ -1261,13 +1266,13 @@ public final class PlaybackViewModel {
             previousProgress: previousProgress,
         ) {
         case .noFailure:
-            Self.logger.debug("[delivery] deadline passed with playback under way — \(sample)")
+            Self.logger.debug("[delivery] deadline passed with playback under way — \(sample, privacy: .public)")
             return false
         case .keepWaiting:
-            Self.logger.debug("[delivery] deadline extended, media still arriving — \(sample)")
+            Self.logger.debug("[delivery] deadline extended, media still arriving — \(sample, privacy: .public)")
             return true
         case let .failed(message):
-            Self.logger.error("[delivery] deadline elapsed with nothing arriving — \(sample)")
+            Self.logger.error("[delivery] deadline elapsed with nothing arriving — \(sample, privacy: .public)")
             failDelivery(for: player.currentItem, message: message, cause: "first-frame timeout")
             return false
         }
