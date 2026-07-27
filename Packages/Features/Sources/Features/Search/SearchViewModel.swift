@@ -30,9 +30,9 @@ public final class SearchViewModel {
 
     /// The latest search results, grouped by item type — one shelf each, in
     /// the order the screen renders them. Each is fetched by its own query so
-    /// the per-type caps mean something: one mixed fetch truncated by an
-    /// alphabetical sort can return forty A–C titles and no episodes at all,
-    /// which would make the group sizes an artifact of the alphabet.
+    /// the per-type caps mean something: one mixed fetch, truncated to the same
+    /// total, can return forty movies and no episodes at all, which would make
+    /// the group sizes an artifact of the cap rather than of the library.
     public private(set) var movies: [MediaItem] = []
     public private(set) var series: [MediaItem] = []
     public private(set) var episodes: [MediaItem] = []

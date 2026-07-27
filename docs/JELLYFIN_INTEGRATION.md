@@ -163,7 +163,9 @@ Played/favorite state is both read (via item `UserData`) and written from the ap
 ```
 GET /Users/{userId}/Items with SearchTerm
 ```
-Exposed as `searchItems(query:limit:)` on `JellyfinClientProtocol`. It sends a recursive `GetItems` request with `searchTerm`, restricted to `includeItemTypes` of movie/series/episode and sorted by name. `SearchView` drives it through `SearchViewModel`, which debounces input (~300ms), cancels in-flight requests, and derives term-completion suggestions from the result titles.
+Exposed as `searchItems(query:itemTypes:limit:)` on `JellyfinClientProtocol`. It sends a recursive `GetItems` request with `searchTerm`, restricted to the requested `includeItemTypes`. `SearchView` drives it through `SearchViewModel`, which debounces input (~300ms), cancels in-flight requests, issues one query per item type (movies / series / episodes, one shelf each), and derives term-completion suggestions from the result titles.
+
+**Result ordering is relevance, ranked client-side.** Exact title match first, then whole-title prefix, then word prefix, then substring; within a tier, alphabetical. The server cannot supply this: `ItemSortBy` has no relevance case, an unsorted `/Items` query returns an undefined order, and `/Search/Hints` is alphabetical too on every version this app supports (through 10.10.x, `SearchEngine` sets `OrderBy = [(SortName, Ascending)]`) while yielding a `SearchHint` with fewer fields than a `BaseItemDto`. So the request keeps `sortBy = [SortName]` purely as a deterministic fetch window and tie-breaker, over-fetches (4× the caller's limit, capped at 200) so the alphabet cannot cut the best match before ranking sees it, and `SearchRelevance` sorts and truncates. The tiers mirror the scoring provider Jellyfin added after 10.10 (`SqlSearchProvider`: exact 100 / prefix 80 / word-prefix 75 / contains 50), so the client will not disagree with the server once that ships in a release the app can rely on.
 
 ---
 
