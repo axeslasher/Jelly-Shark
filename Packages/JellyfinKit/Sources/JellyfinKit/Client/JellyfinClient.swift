@@ -97,12 +97,18 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Similar media items
     func getSimilarItems(itemId: String, limit: Int?) async throws -> [MediaItem]
 
-    /// Search the user's libraries by name
+    /// Search the user's libraries by name, best match first.
+    ///
+    /// Ordering is relevance, not alphabet: exact title, then whole-title
+    /// prefix, then word prefix, then substring, alphabetical within each
+    /// tier. Jellyfin has no relevance sort to ask for, so the ranking happens
+    /// client-side over a wider fetch window — see `SearchRelevance` for the
+    /// policy and why the server cannot supply it.
     /// - Parameters:
     ///   - query: The search term
     ///   - itemTypes: Which item kinds to return (e.g., `[.movie]`)
-    ///   - limit: Maximum number of items to return
-    /// - Returns: Matching media items of the requested types
+    ///   - limit: Maximum number of items to return, applied after ranking
+    /// - Returns: Matching media items of the requested types, best match first
     func searchItems(query: String, itemTypes: [MediaType], limit: Int?) async throws -> [MediaItem]
 
     /// Fetch library titles to seed a cold search field with.
@@ -756,16 +762,26 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             var parameters = Paths.GetItemsParameters()
             parameters.userID = userId
             parameters.searchTerm = query
-            parameters.limit = limit
+            // Wider than `limit` on purpose: the server can only truncate
+            // alphabetically, so a window the size of the caller's cap would
+            // let the alphabet decide which matches ranking ever sees.
+            parameters.limit = SearchRelevance.fetchWindow(for: limit)
             parameters.isRecursive = true
             parameters.includeItemTypes = itemTypes.compactMap(\.baseItemKind)
             parameters.fields = [.overview, .genres, .dateCreated]
+            // Alphabetical is the *fetch* order, not the order anyone sees:
+            // Jellyfin has no relevance sort, and unsorted means undefined, so
+            // this is the only deterministic window on offer. It survives as
+            // the tie-break inside each relevance tier — see `SearchRelevance`.
             parameters.sortBy = [.sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            let items = response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+            let ranked = SearchRelevance.ranked(items, matching: query)
 
-            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+            guard let limit else { return ranked }
+            return Array(ranked.prefix(limit))
         } catch let error as APIError {
             throw error
         } catch {
