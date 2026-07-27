@@ -453,6 +453,75 @@ which the client doesn't fetch yet.
 - `PlaybackInfo` is requested first to obtain media sources and a play session ID
 - Offline downloads NOT supported in v1.0
 
+### HDR, Video Range & the Display (implemented)
+
+How an HDR source is delivered depends on three parties: what the app
+declares, what the server decides, and which variant AVFoundation selects
+for the attached display. All three had to be aligned (#146):
+
+**What the app declares.** The device profile and the hand-built HLS URL
+both carry the ranges Apple hardware displays natively:
+`SDR, HDR10, HLG, DOVIWithHDR10` (profile: a `VideoRangeType` condition;
+URL: the codec-scoped `hevc-rangetype` stream option — the two are
+asserted equal by `DeviceProfileTests`). **A client that declares no range
+is assumed SDR-only**, and the resulting tone-map forces a full-resolution
+software re-encode that weak servers deliver far below realtime — the
+root cause of "4K hangs" (observed: 0.13× for a 4K HEVC re-encode while
+the same-resolution SDR file stream-copied instantly).
+
+Deliberately not declared:
+
+- `DOVIWithEL` (Dolby Vision profile 7, dual-layer): no Apple hardware
+  decodes the enhancement layer. Its omission — with HDR10 present —
+  selects the server's strip-on-copy path (Jellyfin 10.11+ removes the
+  EL/RPU with a bitstream filter, `hevc_metadata=remove_dovi=1`, during a
+  stream copy; the HDR10-compatible base layer passes through untouched).
+- `DOVI` (profile 5): no HDR10-compatible base layer, so an unsignaled
+  copy displays with broken color. Declare only after DV playlist
+  signaling is verified on device.
+
+**What the server offers.** When the video stream can be copied, the
+master playlist contains the copy (`VIDEO-RANGE=PQ`) *plus* injected
+"backward-compatibility" SDR re-encode variants (HEVC and H.264, marked
+`AllowVideoStreamCopy=false`) at the same advertised bandwidth, so
+clients choose by color range.
+
+**What the interposer rewrites.** `TrickplayHLSPlaylist.rewriteMaster`
+drops the HEVC-SDR variant (an unsustainable software x265 encode) and
+clamps the H.264-SDR variant to `MaxWidth=1920, VideoBitrate=15M` with
+honest `BANDWIDTH`/`RESOLUTION` attributes. The fallback cannot be
+removed entirely: **HLS HDR eligibility follows the attached display,
+not decode capability** — a PQ-only master is refused outright
+(`CoreMediaErrorDomain -12927`) on any SDR display, identically on the
+tvOS simulator and an Apple TV 4K on a 1080p panel, and the gate cannot
+be bypassed by stripping the `VIDEO-RANGE` attribute.
+
+**Resulting behavior per display:**
+
+| Display | HDR source | Result |
+| --- | --- | --- |
+| HDR (Vision Pro, HDR TV) | HDR10 / HLG / DV 8 | Stream-copy, true HDR |
+| HDR | DV 7 (dual-layer) | Stream-copy with server-side strip to HDR10 |
+| SDR (incl. simulator) | any HDR | Clamped 720p H.264 tone-map fallback |
+| any | SDR | Stream-copy (range declaration changes nothing) |
+
+The clamp values are measured against the reference weak server (a
+Synology DS1522+, no video engine, software-transcoding a ~60 Mbps 4K
+HDR10 HEVC source): unthrottled, 1080p/15M sustains 1.14× realtime and
+720p/8M sustains 1.45×. Beware the dashboard's fps gauge during live
+sessions — Jellyfin throttles ffmpeg once it runs ahead of the playback
+position, so a mid-session reading reflects the throttle duty cycle, not
+capacity; measure with a paced segment fetch instead. Only a full 4K
+tone-map re-encode is genuinely beyond such servers (0.13×). A
+progressive-remux path that would let SDR displays take the copy
+outright (the eligibility gate is HLS-specific) is tracked in #172.
+
+**Display resolution** is deliberately not constrained: the profile sends
+no `Width`/`Height` conditions. An Apple TV 4K decodes 4K regardless of
+the attached panel and the compositor scales; requesting a downscale
+would convert a free stream-copy into exactly the re-encode described
+above.
+
 ### Playback State Sync (implemented)
 - Report play start immediately on stream start
 - Progress updates every 10 seconds while playing (interval is injectable for tests), plus on pause/play transitions

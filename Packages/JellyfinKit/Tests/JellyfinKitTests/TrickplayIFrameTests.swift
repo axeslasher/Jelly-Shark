@@ -223,9 +223,9 @@ struct TrickplayHLSPlaylistTests {
         // The H.264-SDR fallback survives, clamped, with honest attributes
         let sdrLines = rewritten.split(separator: "\n").filter { $0.contains("VIDEO-RANGE=SDR") }
         #expect(sdrLines.count == 1)
-        #expect(sdrLines.first?.contains("BANDWIDTH=8000000") == true)
-        #expect(sdrLines.first?.contains("RESOLUTION=1280x720") == true)
-        #expect(rewritten.contains("VideoCodec=h264&VideoBitrate=8000000&AllowVideoStreamCopy=false&MaxWidth=1280"))
+        #expect(sdrLines.first?.contains("BANDWIDTH=15000000") == true)
+        #expect(sdrLines.first?.contains("RESOLUTION=1920x1080") == true)
+        #expect(rewritten.contains("VideoCodec=h264&VideoBitrate=15000000&AllowVideoStreamCopy=false&MaxWidth=1920"))
     }
 
     @Test("An SDR-source master with no fallback variants is untouched")
