@@ -201,6 +201,20 @@ public final class PlaybackViewModel {
         }
     }
 
+    /// Abandon a failed session and start the same item over, in place.
+    ///
+    /// A full `stop()` first, not a bare `start()`: `failDelivery` leaves the
+    /// paused player and — on a transcode — the server-side ffmpeg alive on
+    /// purpose, so the failed session stays diagnosable while the error screen
+    /// is up. Retrying without tearing that down would orphan the encode and
+    /// stack a second one on top of it. `stop()` is idempotent and
+    /// `failDelivery` does not set `hasStopped`, so this runs the real
+    /// teardown, and `start()` clears the flag again.
+    public func retry() async {
+        await stop()
+        await start()
+    }
+
     /// Stop playback, report the final position, and tear down. Idempotent.
     public func stop() async {
         guard !hasStopped else { return }
@@ -967,32 +981,41 @@ public final class PlaybackViewModel {
 
     // MARK: - Delivery Failures
 
-    /// How long after `play()` the app waits for the first frame before it
-    /// declares delivery failed.
+    /// How long the app waits for evidence of delivery before it looks again.
     ///
     /// This deadline is the app's only defence against an indefinite hang
     /// (#151): AVFoundation has no "the video never arrived" callback, so a
     /// stream that simply never produces bytes leaves the player sitting
-    /// there forever. The value has to clear the slowest *legitimate* start —
-    /// a cold server-side transcode of a large 4K HEVC source, where Jellyfin
-    /// has to spin up ffmpeg and write the first HLS segments before AVPlayer
-    /// sees anything — without leaving a viewer staring at a dead player.
+    /// there forever.
+    ///
+    /// It is an *interval*, not a budget. The watchdog re-arms it for as long
+    /// as the buffer keeps growing, so a slow start is bounded by how long the
+    /// media takes to arrive rather than by this number. What the value sets
+    /// is how coarsely delivery is sampled: how long a genuinely dead stream
+    /// sits before the viewer is told, and how long a link slow enough to move
+    /// less than a rounding error in one interval has to prove itself.
     ///
     /// **30s was chosen by reasoning, not measured.** Cold transcode starts
-    /// are commonly in the 10–20s range, so this leaves roughly half again as
-    /// headroom. Nothing in this repo can measure it — playback behaviour is
-    /// invisible to every test suite here (see CLAUDE.md) — so if it ever
-    /// needs revisiting, bisect it against a real Apple TV and the local
-    /// Jellyfin server, on the slowest source that still plays correctly. Too
-    /// low is strictly worse than the hang it replaces: it would turn a slow
-    /// but healthy start into an error screen.
+    /// are commonly in the 10–20s range. Nothing in this repo can measure it —
+    /// playback behaviour is invisible to every test suite here (see
+    /// CLAUDE.md) — so if it ever needs revisiting, bisect it against a real
+    /// Apple TV and the local Jellyfin server. Note the failure mode that
+    /// motivated the re-arming loop: at a fixed 30s, a file that direct-played
+    /// fine on a healthy network raised an error screen under tvOS's network
+    /// conditioner, because the playhead was the only progress signal and it
+    /// does not move while the buffer fills.
     static let firstFrameTimeout: Duration = .seconds(30)
 
     /// What an elapsed first-frame deadline means for the current session
     enum FirstFrameVerdict: Equatable {
         /// Frames are flowing, or the viewer paused before they could arrive.
-        /// Neither is a delivery failure, so the session is left alone.
+        /// Neither is a delivery failure, so the session is left alone and the
+        /// deadline retires.
         case noFailure
+        /// Nothing has played yet, but media is still arriving — a link too
+        /// narrow for the stream, not a server that stopped answering. Give it
+        /// another deadline rather than an error screen.
+        case keepWaiting
         /// Nothing arrived and nothing is on its way; show this message.
         case failed(String)
     }
@@ -1008,10 +1031,15 @@ public final class PlaybackViewModel {
     ///     watchdog was armed (i.e. after any resume seek had landed)
     ///   - errorDescription: `AVPlayerItem.error` or `AVPlayer.error`, either
     ///     of which is non-nil only once playback has failed outright
+    ///   - bufferedSeconds: total duration held in `loadedTimeRanges` now
+    ///   - previousBufferedSeconds: the same total at the previous deadline,
+    ///     zero on the first
     static func firstFrameVerdict(
         timeControlStatus: AVPlayer.TimeControlStatus,
         positionAdvanced: Bool,
         errorDescription: String?,
+        bufferedSeconds: Double,
+        previousBufferedSeconds: Double,
     ) -> FirstFrameVerdict {
         // An error is only published once playback has failed outright, and
         // no amount of further waiting recovers from that. Checked first
@@ -1038,9 +1066,24 @@ public final class PlaybackViewModel {
             // failed-to-play-to-end.
             return .noFailure
         default:
-            // .waitingToPlayAtSpecifiedRate: a rate was requested, nothing is
-            // arriving, and the deadline is up
-            return .failed(firstFrameTimeoutMessage)
+            // .waitingToPlayAtSpecifiedRate: a rate was requested and nothing
+            // has played. Whether that is a failure depends on the buffer.
+            //
+            // A growing buffer means bytes are reaching the player and the
+            // link is merely too narrow for the stream — a network-conditioned
+            // link, distant server, or a bitrate the connection cannot carry.
+            // That is slow, not broken, and it produced this classifier's
+            // first false positives: a file that direct-played fine on a
+            // healthy network raised an error screen under a throttled one,
+            // because the playhead was the only progress signal and it does
+            // not move while the buffer fills.
+            //
+            // A buffer that has not grown since the last deadline is the
+            // failure this whole mechanism exists for: a rate was requested,
+            // the deadline is up, and nothing at all is arriving.
+            return bufferedSeconds > previousBufferedSeconds
+                ? .keepWaiting
+                : .failed(firstFrameTimeoutMessage)
         }
     }
 
@@ -1056,12 +1099,15 @@ public final class PlaybackViewModel {
         return "\(advice)\n\n\(reason)"
     }
 
-    /// Message for a deadline that elapsed with nothing delivered at all
+    /// Message for a deadline that elapsed with nothing delivered at all.
+    ///
+    /// Names no duration on purpose: the deadline extends itself while the
+    /// buffer grows, so by the time this is shown the wait may have been far
+    /// longer than `firstFrameTimeout` and any figure here would be a lie.
     static var firstFrameTimeoutMessage: String {
         """
-        Playback did not start within \(firstFrameTimeout.components.seconds) seconds. \
-        The server may still be preparing this file, or the stream may be \
-        unavailable. Try playing it again.
+        Playback never started. The server may not be delivering this file, \
+        or the connection may be too slow to carry it.
         """
     }
 
@@ -1131,24 +1177,64 @@ public final class PlaybackViewModel {
         firstFrameWatchdog?.cancel()
         let baseline = currentPositionTicks()
         firstFrameWatchdog = Task { [weak self] in
-            try? await Task.sleep(for: Self.firstFrameTimeout)
-            guard !Task.isCancelled else { return }
-            self?.firstFrameDeadlineElapsed(baseline: baseline)
+            // A loop, not a single deadline: as long as the buffer keeps
+            // growing the session earns another one. Bytes arriving is not a
+            // delivery failure however slowly they arrive, and the loop ends
+            // itself the moment they stop — so a narrow link waits, while a
+            // silent server still fails on schedule.
+            var previousBuffered = 0.0
+            while true {
+                try? await Task.sleep(for: Self.firstFrameTimeout)
+                guard !Task.isCancelled, let self else { return }
+                let buffered = self.bufferedSeconds()
+                guard self.firstFrameDeadlineElapsed(
+                    baseline: baseline,
+                    bufferedSeconds: buffered,
+                    previousBufferedSeconds: previousBuffered,
+                ) else { return }
+                previousBuffered = buffered
+            }
         }
     }
 
-    private func firstFrameDeadlineElapsed(baseline: Int64) {
-        guard let player, !hasStopped else { return }
+    /// Total media held in the current item's `loadedTimeRanges`.
+    ///
+    /// Any value above zero means bytes reached the player, which is the one
+    /// signal that separates "this link is too narrow" from "nothing is
+    /// coming" — the playhead cannot say, because it does not move while the
+    /// buffer fills.
+    private func bufferedSeconds() -> Double {
+        player?.currentItem?.loadedTimeRanges.reduce(0) { $0 + CMTimeGetSeconds($1.timeRangeValue.duration) } ?? 0
+    }
+
+    /// Apply the verdict for one elapsed deadline. Returns whether the
+    /// watchdog should arm another.
+    private func firstFrameDeadlineElapsed(
+        baseline: Int64,
+        bufferedSeconds: Double,
+        previousBufferedSeconds: Double,
+    ) -> Bool {
+        guard let player, !hasStopped else { return false }
 
         switch Self.firstFrameVerdict(
             timeControlStatus: player.timeControlStatus,
             positionAdvanced: currentPositionTicks() > baseline,
             errorDescription: (player.currentItem?.error ?? player.error)?.localizedDescription,
+            bufferedSeconds: bufferedSeconds,
+            previousBufferedSeconds: previousBufferedSeconds,
         ) {
         case .noFailure:
             Self.logger.debug("[delivery] first-frame deadline passed with playback under way")
+            return false
+        case .keepWaiting:
+            Self.logger.debug("""
+            [delivery] first-frame deadline extended, buffer still filling \
+            (\(bufferedSeconds, format: .fixed(precision: 1))s)
+            """)
+            return true
         case let .failed(message):
             failDelivery(for: player.currentItem, message: message, cause: "first-frame timeout")
+            return false
         }
     }
 

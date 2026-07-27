@@ -18,6 +18,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .playing,
             positionAdvanced: false,
             errorDescription: nil,
+            bufferedSeconds: 0,
+            previousBufferedSeconds: 0,
         )
 
         #expect(verdict == .noFailure)
@@ -31,6 +33,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .waitingToPlayAtSpecifiedRate,
             positionAdvanced: true,
             errorDescription: nil,
+            bufferedSeconds: 0,
+            previousBufferedSeconds: 0,
         )
 
         #expect(verdict == .noFailure)
@@ -42,9 +46,49 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .paused,
             positionAdvanced: false,
             errorDescription: nil,
+            bufferedSeconds: 0,
+            previousBufferedSeconds: 0,
         )
 
         #expect(verdict == .noFailure)
+    }
+
+    // MARK: - Slow, not broken
+
+    @Test("A buffer that grew between deadlines earns another one")
+    func growingBufferKeepsWaiting() {
+        // The false positive that motivated this parameter: under tvOS's
+        // network conditioner a file that direct-played fine on a healthy
+        // link raised an error screen, because the playhead is the only other
+        // progress signal and it does not move while the buffer fills.
+        let verdict = PlaybackViewModel.firstFrameVerdict(
+            timeControlStatus: .waitingToPlayAtSpecifiedRate,
+            positionAdvanced: false,
+            errorDescription: nil,
+            bufferedSeconds: 4.5,
+            previousBufferedSeconds: 1.2,
+        )
+
+        #expect(verdict == .keepWaiting)
+    }
+
+    @Test("A buffer that stopped growing is a failure, however much it holds")
+    func stalledBufferFails() {
+        // Bytes arrived once and then stopped. Waiting further would restore
+        // the indefinite hang this whole mechanism replaces, so a buffer that
+        // has not moved since the last deadline fails no matter how full it
+        // is.
+        for buffered in [0.0, 2.0, 30.0] {
+            let verdict = PlaybackViewModel.firstFrameVerdict(
+                timeControlStatus: .waitingToPlayAtSpecifiedRate,
+                positionAdvanced: false,
+                errorDescription: nil,
+                bufferedSeconds: buffered,
+                previousBufferedSeconds: buffered,
+            )
+
+            #expect(verdict == .failed(PlaybackViewModel.firstFrameTimeoutMessage))
+        }
     }
 
     // MARK: - Failures
@@ -55,6 +99,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .waitingToPlayAtSpecifiedRate,
             positionAdvanced: false,
             errorDescription: nil,
+            bufferedSeconds: 0,
+            previousBufferedSeconds: 0,
         )
 
         #expect(verdict == .failed(PlaybackViewModel.firstFrameTimeoutMessage))
@@ -63,7 +109,8 @@ struct PlaybackDeliveryFailureTests {
     @Test("A failed player item beats every other signal")
     func itemErrorAlwaysFails() {
         // AVPlayer drops the rate to zero when an item fails, so the paused
-        // exemption above must not swallow a genuine error
+        // exemption above must not swallow a genuine error — and neither must
+        // a buffer that is still filling.
         for status in [
             AVPlayer.TimeControlStatus.paused,
             .waitingToPlayAtSpecifiedRate,
@@ -73,6 +120,8 @@ struct PlaybackDeliveryFailureTests {
                 timeControlStatus: status,
                 positionAdvanced: true,
                 errorDescription: "The operation could not be completed",
+                bufferedSeconds: 9,
+                previousBufferedSeconds: 1,
             )
 
             #expect(
@@ -87,11 +136,14 @@ struct PlaybackDeliveryFailureTests {
 
     // MARK: - Messages
 
-    @Test("The timeout message names the deadline it just missed")
-    func timeoutMessageNamesTheDeadline() {
+    @Test("The timeout message names no duration")
+    func timeoutMessageNamesNoDuration() {
+        // The deadline re-arms itself while the buffer grows, so the wait can
+        // be far longer than `firstFrameTimeout`. Any figure in this string
+        // would be a lie by the time a viewer read it.
         let seconds = PlaybackViewModel.firstFrameTimeout.components.seconds
 
-        #expect(PlaybackViewModel.firstFrameTimeoutMessage.contains("\(seconds) seconds"))
+        #expect(!PlaybackViewModel.firstFrameTimeoutMessage.contains("\(seconds)"))
     }
 
     @Test("A reported reason is appended to the advice, not swapped for it")
