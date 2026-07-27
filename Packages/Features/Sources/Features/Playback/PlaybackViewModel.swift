@@ -73,6 +73,15 @@ public final class PlaybackViewModel {
     private var timeControlObservation: NSKeyValueObservation?
     private var hasStopped = false
 
+    /// Delivery instrumentation for the current player item (#151). Nothing
+    /// below AVFoundation tells the app that video stopped arriving, so these
+    /// three — the item's `status`, its failed-to-play-to-end notification,
+    /// and a first-frame deadline — are the only routes a post-`play()`
+    /// failure has into `state`. They are armed and torn down together.
+    private var itemStatusObservation: NSKeyValueObservation?
+    private var failedToEndObserver: NSObjectProtocol?
+    private var firstFrameWatchdog: Task<Void, Never>?
+
     /// Whether the current stream has the selected subtitle burned into the
     /// video, in which case no legible rendition exists to toggle
     private var sessionUsesBurnIn = false
@@ -192,6 +201,20 @@ public final class PlaybackViewModel {
         }
     }
 
+    /// Abandon a failed session and start the same item over, in place.
+    ///
+    /// A full `stop()` first, not a bare `start()`: `failDelivery` leaves the
+    /// paused player and — on a transcode — the server-side ffmpeg alive on
+    /// purpose, so the failed session stays diagnosable while the error screen
+    /// is up. Retrying without tearing that down would orphan the encode and
+    /// stack a second one on top of it. `stop()` is idempotent and
+    /// `failDelivery` does not set `hasStopped`, so this runs the real
+    /// teardown, and `start()` clears the flag again.
+    public func retry() async {
+        await stop()
+        await start()
+    }
+
     /// Stop playback, report the final position, and tear down. Idempotent.
     public func stop() async {
         guard !hasStopped else { return }
@@ -205,6 +228,7 @@ public final class PlaybackViewModel {
         timeControlObservation?.invalidate()
         timeControlObservation = nil
         clearMediaSelectionState()
+        clearDeliveryObservers()
 
         player?.pause()
         player = nil
@@ -334,6 +358,13 @@ public final class PlaybackViewModel {
 
         player.play()
         state = .playing
+
+        // Arm the failure paths before anything that can await: until they
+        // exist a delivery failure has no way to reach `state`, and the start
+        // report below is a network round trip (#151)
+        observeItemStatus(of: playerItem)
+        observeFailedToPlayToEnd(of: playerItem)
+        startFirstFrameWatchdog()
 
         do {
             try await client.reportPlaybackStart(
@@ -560,6 +591,7 @@ public final class PlaybackViewModel {
         removeEndObserver()
         timeControlObservation?.invalidate()
         clearMediaSelectionState()
+        clearDeliveryObservers()
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
         player?.pause()
@@ -945,6 +977,346 @@ public final class PlaybackViewModel {
             NotificationCenter.default.removeObserver(endObserver)
         }
         endObserver = nil
+    }
+
+    // MARK: - Delivery Failures
+
+    /// How long the app waits for evidence of delivery before it looks again.
+    ///
+    /// This deadline is the app's only defence against an indefinite hang
+    /// (#151): AVFoundation has no "the video never arrived" callback, so a
+    /// stream that simply never produces bytes leaves the player sitting
+    /// there forever.
+    ///
+    /// It is an *interval*, not a budget. The watchdog re-arms it for as long
+    /// as the buffer keeps growing, so a slow start is bounded by how long the
+    /// media takes to arrive rather than by this number. What the value sets
+    /// is how coarsely delivery is sampled: how long a genuinely dead stream
+    /// sits before the viewer is told, and how long a link slow enough to move
+    /// less than a rounding error in one interval has to prove itself.
+    ///
+    /// **30s was chosen by reasoning, not measured.** Cold transcode starts
+    /// are commonly in the 10–20s range. Nothing in this repo can measure it —
+    /// playback behaviour is invisible to every test suite here (see
+    /// CLAUDE.md) — so if it ever needs revisiting, bisect it against a real
+    /// Apple TV and the local Jellyfin server. Note the failure mode that
+    /// motivated the re-arming loop: at a fixed 30s, a file that direct-played
+    /// fine on a healthy network raised an error screen under tvOS's network
+    /// conditioner, because the playhead was the only progress signal and it
+    /// does not move while the buffer fills.
+    static let firstFrameTimeout: Duration = .seconds(30)
+
+    /// What an elapsed first-frame deadline means for the current session
+    enum FirstFrameVerdict: Equatable {
+        /// Frames are flowing, or the viewer paused before they could arrive.
+        /// Neither is a delivery failure, so the session is left alone and the
+        /// deadline retires.
+        case noFailure
+        /// Nothing has played yet, but media is still arriving — a link too
+        /// narrow for the stream, not a server that stopped answering. Give it
+        /// another deadline rather than an error screen.
+        case keepWaiting
+        /// Nothing arrived and nothing is on its way; show this message.
+        case failed(String)
+    }
+
+    /// Decide whether an elapsed first-frame deadline is a delivery failure.
+    ///
+    /// Pure so the matrix is unit-testable without an AVPlayer — no suite in
+    /// this repo can drive a real one.
+    ///
+    /// - Parameters:
+    ///   - timeControlStatus: the player's status at the deadline
+    ///   - positionAdvanced: whether `currentTime` moved past where the
+    ///     watchdog was armed (i.e. after any resume seek had landed)
+    ///   - errorDescription: `AVPlayerItem.error` or `AVPlayer.error`, either
+    ///     of which is non-nil only once playback has failed outright
+    ///   - progress: buffered duration and bytes transferred, sampled now
+    ///   - previousProgress: the same pair at the previous deadline, zero on
+    ///     the first
+    static func firstFrameVerdict(
+        timeControlStatus: AVPlayer.TimeControlStatus,
+        positionAdvanced: Bool,
+        errorDescription: String?,
+        progress: DeliveryProgress,
+        previousProgress: DeliveryProgress,
+    ) -> FirstFrameVerdict {
+        // An error is only published once playback has failed outright, and
+        // no amount of further waiting recovers from that. Checked first
+        // because a failed item drops the rate to zero, which would otherwise
+        // look identical to the viewer having paused.
+        if let errorDescription {
+            return .failed(deliveryFailureMessage(reason: errorDescription))
+        }
+        // The playhead moving is the closest thing to a rendered-frame signal
+        // AVFoundation offers without a render callback
+        if positionAdvanced {
+            return .noFailure
+        }
+
+        switch timeControlStatus {
+        case .playing:
+            // Frames are flowing; the clock just has not crossed a whole tick
+            return .noFailure
+        case .paused:
+            // The viewer stopped waiting themselves. Failing here would
+            // replace a deliberate pause with an error screen, so a session
+            // paused before its first frame is left alone — a genuine failure
+            // on resume still reaches the app via `status` or
+            // failed-to-play-to-end.
+            return .noFailure
+        default:
+            // .waitingToPlayAtSpecifiedRate: a rate was requested and nothing
+            // has played. Whether that is a failure depends on whether media
+            // is still arriving.
+            //
+            // Advancing progress means the link is merely too narrow for the
+            // stream — a conditioned link, a distant server, a bitrate the
+            // connection cannot carry. That is slow, not broken, and it
+            // produced this classifier's first false positives: a file that
+            // direct-played fine on a healthy network raised an error screen
+            // under a throttled one, because the playhead was the only
+            // progress signal and it does not move while media buffers.
+            //
+            // Progress that has not moved since the last deadline is the
+            // failure this whole mechanism exists for: a rate was requested,
+            // the deadline is up, and nothing at all is arriving.
+            return progress.advanced(since: previousProgress)
+                ? .keepWaiting
+                : .failed(firstFrameTimeoutMessage)
+        }
+    }
+
+    /// Message for a failure AVFoundation reported, with its own reason
+    /// appended when it has one. Deliberately says what the viewer can do,
+    /// because the only control on the error screen is Close.
+    static func deliveryFailureMessage(reason: String?) -> String {
+        let advice = """
+        The server stopped delivering this video. It may have run out of \
+        resources, or the connection may have dropped. Try playing it again.
+        """
+        guard let reason, !reason.isEmpty else { return advice }
+        return "\(advice)\n\n\(reason)"
+    }
+
+    /// Message for a deadline that elapsed with nothing delivered at all.
+    ///
+    /// Names no duration on purpose: the deadline extends itself while the
+    /// buffer grows, so by the time this is shown the wait may have been far
+    /// longer than `firstFrameTimeout` and any figure here would be a lie.
+    static var firstFrameTimeoutMessage: String {
+        """
+        Playback never started. The server may not be delivering this file, \
+        or the connection may be too slow to carry it.
+        """
+    }
+
+    /// Watch the item's `status` for an outright failure.
+    ///
+    /// This is the one signal that distinguishes a real failure from the
+    /// benign asset/track noise AVFoundation logs during ordinary HLS setup
+    /// ("Asset has no tracks", FSTL errors — see the AVPlayer notes in
+    /// CLAUDE.md's history). Those never drive `status` to `.failed`, and the
+    /// error log is deliberately not consulted for exactly that reason.
+    /// `.initial` covers an item that had already failed by the time this
+    /// registration ran.
+    private func observeItemStatus(of playerItem: AVPlayerItem) {
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let reason = item.error?.localizedDescription
+            Task { @MainActor [weak self, weak item] in
+                self?.failDelivery(
+                    for: item,
+                    message: PlaybackViewModel.deliveryFailureMessage(reason: reason),
+                    cause: "player item status failed",
+                )
+            }
+        }
+    }
+
+    /// Watch for AVFoundation giving up on a stream that had been playing.
+    ///
+    /// Its sibling `playbackStalledNotification` is deliberately NOT
+    /// observed: a stall is a rebuffer, it recovers on its own, and treating
+    /// one as fatal would turn every slow moment on a busy network into an
+    /// error screen.
+    private func observeFailedToPlayToEnd(of playerItem: AVPlayerItem) {
+        removeFailedToEndObserver()
+        failedToEndObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+            object: playerItem,
+            queue: .main,
+        ) { [weak self, weak playerItem] note in
+            let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? any Error)?
+                .localizedDescription
+            Task { @MainActor [weak self, weak playerItem] in
+                self?.failDelivery(
+                    for: playerItem,
+                    message: PlaybackViewModel.deliveryFailureMessage(reason: reason),
+                    cause: "failed to play to end",
+                )
+            }
+        }
+    }
+
+    private func removeFailedToEndObserver() {
+        if let failedToEndObserver {
+            NotificationCenter.default.removeObserver(failedToEndObserver)
+        }
+        failedToEndObserver = nil
+    }
+
+    /// Arm the first-frame deadline for the session that just called `play()`.
+    ///
+    /// The baseline is the position *after* any resume seek, not the
+    /// requested resume tick: seeking with `toleranceAfter: .positiveInfinity`
+    /// can land well past what was asked for, and comparing against the
+    /// request would read that jump as playback progress.
+    private func startFirstFrameWatchdog() {
+        firstFrameWatchdog?.cancel()
+        let baseline = currentPositionTicks()
+        firstFrameWatchdog = Task { [weak self] in
+            // A loop, not a single deadline: as long as media keeps arriving
+            // the session earns another one. Delivery is not a failure however
+            // slow it is, and the loop ends itself the moment it stops — so a
+            // narrow link waits, while a silent server still fails on
+            // schedule.
+            var previous = DeliveryProgress()
+            while true {
+                try? await Task.sleep(for: Self.firstFrameTimeout)
+                guard !Task.isCancelled, let self else { return }
+                let progress = self.deliveryProgress()
+                guard self.firstFrameDeadlineElapsed(
+                    baseline: baseline,
+                    progress: progress,
+                    previousProgress: previous,
+                ) else { return }
+                previous = progress
+            }
+        }
+    }
+
+    /// Evidence that media is still arriving, sampled at each deadline.
+    ///
+    /// Two measures because neither covers both delivery shapes:
+    ///
+    /// `bufferedSeconds` is the natural one, but it needs a *timeline* — a
+    /// progressively-downloaded direct-play file reports no loaded ranges
+    /// until AVPlayer has read enough of the container to know its duration,
+    /// so bytes can be pouring in with this still at zero. That is what a
+    /// conditioner run showed: a throttled direct play failed with no loaded
+    /// ranges ever appearing.
+    ///
+    /// `bytesTransferred` has no such precondition. It is the honest "is the
+    /// socket moving" counter, and it is what saves the direct-play case.
+    struct DeliveryProgress: Equatable {
+        var bufferedSeconds: Double = 0
+        var bytesTransferred: Int64 = 0
+
+        /// Whether anything at all advanced since `other`.
+        func advanced(since other: Self) -> Bool {
+            bufferedSeconds > other.bufferedSeconds || bytesTransferred > other.bytesTransferred
+        }
+    }
+
+    private func deliveryProgress() -> DeliveryProgress {
+        guard let item = player?.currentItem else { return DeliveryProgress() }
+        return DeliveryProgress(
+            bufferedSeconds: item.loadedTimeRanges
+                .reduce(0) { $0 + CMTimeGetSeconds($1.timeRangeValue.duration) },
+            // Summed, not last-event: the access log accumulates an event per
+            // delivery segment, so the tail alone can go down between samples
+            // while the total is still climbing.
+            bytesTransferred: item.accessLog()?.events
+                .reduce(0) { $0 + $1.numberOfBytesTransferred } ?? 0,
+        )
+    }
+
+    /// Apply the verdict for one elapsed deadline. Returns whether the
+    /// watchdog should arm another.
+    private func firstFrameDeadlineElapsed(
+        baseline: Int64,
+        progress: DeliveryProgress,
+        previousProgress: DeliveryProgress,
+    ) -> Bool {
+        guard let player, !hasStopped else { return false }
+
+        // Both measures on every deadline, including the failing one. Which of
+        // them moved is the whole diagnosis when this misfires — a run that
+        // fails with bytes climbing means something other than delivery is
+        // wrong, and a run that fails with both flat is the real thing.
+        // `String(format:)`, not os_log's `format: .fixed(precision:)`: that
+        // spelling is `OSLogMessage` interpolation and does not exist on
+        // `String`. Xcode 27 beta compiled it anyway; release Xcode and CI do
+        // not.
+        let sample = String(
+            format: "buffered=%.1fs bytes=%lld (was %.1fs / %lld)",
+            progress.bufferedSeconds,
+            progress.bytesTransferred,
+            previousProgress.bufferedSeconds,
+            previousProgress.bytesTransferred,
+        )
+
+        switch Self.firstFrameVerdict(
+            timeControlStatus: player.timeControlStatus,
+            positionAdvanced: currentPositionTicks() > baseline,
+            errorDescription: (player.currentItem?.error ?? player.error)?.localizedDescription,
+            progress: progress,
+            previousProgress: previousProgress,
+        ) {
+        case .noFailure:
+            Self.logger.debug("[delivery] deadline passed with playback under way — \(sample, privacy: .public)")
+            return false
+        case .keepWaiting:
+            Self.logger.debug("[delivery] deadline extended, media still arriving — \(sample, privacy: .public)")
+            return true
+        case let .failed(message):
+            Self.logger.error("[delivery] deadline elapsed with nothing arriving — \(sample, privacy: .public)")
+            failDelivery(for: player.currentItem, message: message, cause: "first-frame timeout")
+            return false
+        }
+    }
+
+    /// Move a live session to `.failed`.
+    ///
+    /// Guarded on item identity and state so a late callback — from a session
+    /// that already ended, or from the item a rebuild just replaced — cannot
+    /// throw an error screen over a healthy player.
+    ///
+    /// The player is paused rather than torn down here. Full teardown (the
+    /// stopped report and `stopEncoding`) belongs to `stop()`, which
+    /// `PlaybackContainerView.onDisappear` always runs when the viewer
+    /// presses Close — the only exit from the error screen. Keeping the
+    /// session addressable until then also keeps it diagnosable.
+    private func failDelivery(for playerItem: AVPlayerItem?, message: String, cause: String) {
+        guard !hasStopped,
+              let playerItem,
+              player?.currentItem === playerItem else { return }
+        switch state {
+        case .playing, .loading: break
+        case .idle, .failed, .finished: return
+        }
+
+        Self.logger.error("""
+        [delivery] FAILED (\(cause, privacy: .public)) \
+        "\(self.item.name, privacy: .public)" \
+        method=\(String(describing: self.playMethod), privacy: .public)
+        """)
+
+        firstFrameWatchdog?.cancel()
+        firstFrameWatchdog = nil
+        player?.pause()
+        state = .failed(message)
+    }
+
+    /// Tear down everything the delivery-failure path owns for one session
+    private func clearDeliveryObservers() {
+        firstFrameWatchdog?.cancel()
+        firstFrameWatchdog = nil
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = nil
+        removeFailedToEndObserver()
     }
 
     func handlePlaybackEnded() async {

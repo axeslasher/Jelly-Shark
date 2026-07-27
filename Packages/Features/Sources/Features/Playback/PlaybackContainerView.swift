@@ -12,6 +12,14 @@ public struct PlaybackContainerView: View {
 
     @State private var viewModel: PlaybackViewModel
 
+    /// Focus for the error screen's Close button. `.failed` used to be
+    /// reachable only from `.loading`, whose ProgressView holds no focus, so
+    /// the engine had one candidate and found it. A delivery failure (#151)
+    /// arrives from `.playing`, tearing the focused AVKit player controller
+    /// out from under the engine — this states the landing spot explicitly
+    /// rather than trusting the recovery, because Close is the only exit.
+    @FocusState private var isRetryFocused: Bool
+
     public init(client: any JellyfinClientProtocol, item: MediaItem) {
         _viewModel = State(initialValue: PlaybackViewModel(client: client, item: item))
     }
@@ -176,10 +184,25 @@ public struct PlaybackContainerView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, SpacingTokens.xxl)
 
-            Button("Close") {
-                dismiss()
+            // Try Again leads and takes focus: every message on this screen
+            // ends by suggesting another attempt, and until now the screen
+            // offered no way to make one. Close stays as the way out.
+            HStack(spacing: SpacingTokens.md) {
+                Button("Try Again") {
+                    Task { await viewModel.retry() }
+                }
+                .jsStyle(.body)
+                .focused($isRetryFocused)
+
+                Button("Close") {
+                    dismiss()
+                }
+                .jsStyle(.body)
             }
-            .jsStyle(.body)
         }
+        // Focus is set rather than left to the engine: this screen is now
+        // reachable from `.playing`, where a delivery failure tears the
+        // focused AVKit controller out from under it.
+        .onAppear { isRetryFocused = true }
     }
 }
