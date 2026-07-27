@@ -13,7 +13,6 @@ struct SearchView: View {
     /// `tabSelection` for the tvOS bug this works around.
     var body: some View {
         content
-            .background(theme.background)
             .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
             .searchSuggestions {
                 ForEach(viewModel.suggestions, id: \.self) { suggestion in
@@ -27,6 +26,10 @@ struct SearchView: View {
             .task(id: session.isConnected) {
                 viewModel.attach(client: session.client)
             }
+            // Outside `.searchable`: applied to `content` it stopped at the
+            // results, leaving the headroom RootView opens above the field as
+            // bare system chrome rather than themed background (#148).
+            .background(theme.background)
     }
 
     @ViewBuilder
@@ -63,6 +66,7 @@ struct SearchView: View {
     private var plainPrompt: some View {
         promptHeader
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.vertical, SpacingTokens.sm)
     }
 
     /// The glyph and copy, shown whether or not the server had terms to offer.
@@ -86,11 +90,6 @@ struct SearchView: View {
     private var seedTermPrompt: some View {
         VStack(spacing: SpacingTokens.md) {
             promptHeader
-
-            Text("From Your Library")
-                .jsStyle(.overview)
-                .foregroundStyle(theme.primary)
-                .padding(.top, SpacingTokens.lg)
 
             // A plain stack, not a scroll view: `seedTermLimit` is set so the
             // column fits without scrolling, which keeps this out of the
