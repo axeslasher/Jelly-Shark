@@ -60,6 +60,33 @@ enum StreamURLBuilder {
     /// server itself computes in PlaybackInfo's TranscodingUrl.
     static let audioBitrate = 192_000
 
+    /// Video range types this client can display, sent on the HEVC
+    /// passthrough path as the codec-scoped `hevc-rangetype` stream option
+    /// (comma-separated, the server's own TranscodingUrl serialization).
+    ///
+    /// A client that declares no range support is assumed SDR-only, so the
+    /// server tone-maps every HDR source — and a tone-map mandates a
+    /// full-resolution software re-encode, which runs far below realtime on
+    /// typical servers and starves playback (#146: 4K HDR delivered at
+    /// 0.13× while 4K SDR stream-copied instantly). Declared, the server
+    /// copies what the device displays natively: HDR10, HLG, and Dolby
+    /// Vision profile 8 on an HDR10 base (DOVIWithHDR10).
+    ///
+    /// Deliberately absent:
+    /// - `DOVIWithEL` (DV profile 7, dual-layer): no Apple hardware decodes
+    ///   it, and its omission — with HDR10 present — selects the server's
+    ///   strip-to-HDR10 copy path (10.11+ removes the EL/RPU with a
+    ///   bitstream filter during stream copy; the base layer is a complete
+    ///   HDR10 stream).
+    /// - `DOVI` (profile 5): no HDR10-compatible base layer, so a copy
+    ///   displays with broken color unless the playlist carries DV
+    ///   signaling AVFoundation honors — declare only after a device check.
+    ///
+    /// Mirrored (pipe-separated) by the `VideoRangeType` condition in
+    /// `JellyfinClient.deviceProfile`, so PlaybackInfo negotiation and the
+    /// hand-built stream URL reach the same verdict.
+    static let hevcRangeTypes = "SDR,HDR10,HLG,DOVIWithHDR10"
+
     /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
     ///
     /// The master playlist (not `main.m3u8`, which is the video-only media
@@ -157,6 +184,13 @@ enum StreamURLBuilder {
             URLQueryItem(name: "VideoBitrate", value: String(max(maxStreamingBitrate - audioBitrate, audioBitrate))),
             URLQueryItem(name: "AudioBitrate", value: String(audioBitrate)),
         ]
+
+        // Only the passthrough path carries an HEVC copy the range
+        // declaration can unlock; the TS path is an H.264 re-encode where
+        // tone-mapping HDR down to SDR is the correct outcome.
+        if hevcPassthrough {
+            queryItems.append(URLQueryItem(name: "hevc-rangetype", value: hevcRangeTypes))
+        }
 
         if let mediaSourceId = parameters.mediaSourceId {
             queryItems.append(URLQueryItem(name: "MediaSourceId", value: mediaSourceId))

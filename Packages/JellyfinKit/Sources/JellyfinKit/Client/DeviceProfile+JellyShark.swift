@@ -30,6 +30,13 @@ extension JellyfinClient {
                 // sample entry is tagged hvc1 (or Dolby Vision's dvh1).
                 // ffmpeg tags hev1 by default, which plays audio over a
                 // black screen — route those through HLS instead.
+                //
+                // Scoped to the mp4 family: only those containers carry a
+                // sample-entry tag at all. MKV video streams have none
+                // (CodecTag=null), so an unscoped required condition failed
+                // every HEVC MKV and forced a video re-encode the server's
+                // own remux would have made moot — it retags to hvc1 when
+                // copying into fMP4 segments (#146).
                 JellyfinAPI.CodecProfile(
                     codec: "hevc",
                     conditions: [
@@ -38,6 +45,35 @@ extension JellyfinClient {
                             isRequired: true,
                             property: .videoCodecTag,
                             value: "hvc1|dvh1",
+                        ),
+                    ],
+                    container: "mp4,m4v,mov",
+                    type: .video,
+                ),
+                // Declare the video ranges the device can display, so the
+                // server stream-copies HDR instead of tone-mapping it to
+                // SDR: an undeclared client is assumed SDR-only, and the
+                // tone-map means a full-resolution software re-encode that
+                // runs far below realtime and starves playback (#146).
+                //
+                // Dolby Vision profile 7 (DOVIWithEL) is deliberately
+                // absent — no Apple hardware decodes the dual layer, and
+                // omitting it selects the server's strip-to-HDR10 copy path
+                // (10.11+). Profile 5 (DOVI) is absent until DV playlist
+                // signaling is verified on device: it has no HDR10 base
+                // layer, so an unsignaled copy displays with broken color.
+                //
+                // isRequired stays false so sources with an unprobed range
+                // aren't needlessly rejected. Mirrors (comma-separated)
+                // StreamURLBuilder.hevcRangeTypes.
+                JellyfinAPI.CodecProfile(
+                    codec: "hevc",
+                    conditions: [
+                        JellyfinAPI.ProfileCondition(
+                            condition: .equalsAny,
+                            isRequired: false,
+                            property: .videoRangeType,
+                            value: "SDR|HDR10|HLG|DOVIWithHDR10",
                         ),
                     ],
                     type: .video,

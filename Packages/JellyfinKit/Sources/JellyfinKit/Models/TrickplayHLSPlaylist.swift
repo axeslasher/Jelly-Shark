@@ -63,38 +63,39 @@ public enum TrickplayHLSPlaylist {
         }
 
         var subtitleOriginURLs: [URL] = []
-        var lines = master
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            // Drop the Roku-style image rendition: AVFoundation ignores it at
-            // best, and the synthesized I-frame rendition replaces it
-            .filter { !$0.hasPrefix("#EXT-X-IMAGE-STREAM-INF") }
-            .compactMap { rawLine -> String? in
-                let line = String(rawLine)
-                if isSubtitleRendition(line),
-                   let name = attributeValue("NAME", in: line),
-                   dropSubtitleNames.contains(name)
-                {
-                    return nil
-                }
-                if let localSubtitleURI, isSubtitleRendition(line),
-                   let range = uriAttributeRange(in: line),
-                   let origin = URL(string: String(line[range]), relativeTo: originalURL)
-                {
-                    subtitleOriginURLs.append(origin)
-                    let local = localSubtitleURI(subtitleOriginURLs.count - 1)
-                    return line.replacingCharacters(in: range, with: local)
-                }
-                // Jellyfin omits the CLOSED-CAPTIONS attribute, and an
-                // unspecified value makes AVFoundation assume embedded CC
-                // might exist — synthesizing a phantom legible option that
-                // grows a native subtitle picker even on streams with no
-                // subtitles at all (seen on burn-in sessions, whose masters
-                // advertise no renditions). Declare NONE explicitly.
-                if line.hasPrefix("#EXT-X-STREAM-INF"), !line.contains("CLOSED-CAPTIONS") {
-                    return absolutize(line: line, against: originalURL) + ",CLOSED-CAPTIONS=NONE"
-                }
-                return absolutize(line: line, against: originalURL)
+        var lines = clampForcedSDRVariants(
+            master.split(separator: "\n", omittingEmptySubsequences: false).map(String.init),
+        )
+        // Drop the Roku-style image rendition: AVFoundation ignores it at
+        // best, and the synthesized I-frame rendition replaces it
+        .filter { !$0.hasPrefix("#EXT-X-IMAGE-STREAM-INF") }
+        .compactMap { rawLine -> String? in
+            let line = String(rawLine)
+            if isSubtitleRendition(line),
+               let name = attributeValue("NAME", in: line),
+               dropSubtitleNames.contains(name)
+            {
+                return nil
             }
+            if let localSubtitleURI, isSubtitleRendition(line),
+               let range = uriAttributeRange(in: line),
+               let origin = URL(string: String(line[range]), relativeTo: originalURL)
+            {
+                subtitleOriginURLs.append(origin)
+                let local = localSubtitleURI(subtitleOriginURLs.count - 1)
+                return line.replacingCharacters(in: range, with: local)
+            }
+            // Jellyfin omits the CLOSED-CAPTIONS attribute, and an
+            // unspecified value makes AVFoundation assume embedded CC
+            // might exist — synthesizing a phantom legible option that
+            // grows a native subtitle picker even on streams with no
+            // subtitles at all (seen on burn-in sessions, whose masters
+            // advertise no renditions). Declare NONE explicitly.
+            if line.hasPrefix("#EXT-X-STREAM-INF"), !line.contains("CLOSED-CAPTIONS") {
+                return absolutize(line: line, against: originalURL) + ",CLOSED-CAPTIONS=NONE"
+            }
+            return absolutize(line: line, against: originalURL)
+        }
 
         // Drop a trailing blank line so the appended tag stays inside the file
         while lines.last?.isEmpty == true {
@@ -113,6 +114,92 @@ public enum TrickplayHLSPlaylist {
             playlist: lines.joined(separator: "\n") + "\n",
             subtitleOriginURLs: subtitleOriginURLs,
         )
+    }
+
+    /// Remove the "backward compatibility" SDR variants Jellyfin injects
+    /// next to an HDR stream-copy
+    ///
+    /// When the server can stream-copy an HDR source, its master advertises
+    /// the copy plus forced SDR re-encode variants (HEVC and H.264,
+    /// `AllowVideoStreamCopy=false` in the URI) at the SAME bandwidth,
+    /// distinguished only by `VIDEO-RANGE` — expressly so the client picks
+    /// by color range. AVFoundation derives HDR eligibility from the
+    /// ATTACHED DISPLAY, so on an SDR panel it takes an SDR variant — and
+    /// as served, that is a full-resolution software tone-map re-encode the
+    /// server may not sustain in realtime: 4K HDR delivered at 0.13× while
+    /// 4K SDR stream-copied instantly (#146).
+    ///
+    /// The SDR fallback cannot simply be removed: a PQ-only master is
+    /// refused outright on SDR displays (instant item failure, observed
+    /// identically on the tvOS simulator and an Apple TV 4K on a 1080p
+    /// panel). So the rewrite keeps exactly one — the H.264 variant, the
+    /// cheapest encode with the broadest decode support — and clamps it to
+    /// a rate a modest server CPU can produce in realtime, with honest
+    /// BANDWIDTH/RESOLUTION attributes in place of the server's same-number
+    /// hack. The x265-based HEVC-SDR variant is dropped outright. HDR
+    /// displays still select the untouched copy.
+    ///
+    /// Clamp values are measured, not guessed (#146, against a Synology
+    /// DS1522+ software-transcoding a ~60 Mbps 4K HDR10 HEVC source):
+    /// 1080p/15M sustains 1.14x realtime unthrottled, 720p/8M sustains
+    /// 1.45x. 1080p is the default for quality; if field behavior shows
+    /// mid-play starvation on weaker servers, 720p is the retreat, or
+    /// rewrite both injected variants into an H.264 ladder and let ABR
+    /// downshift.
+    static let sdrFallbackMaxWidth = 1920
+    static let sdrFallbackVideoBitrate = 15_000_000
+
+    private static func clampForcedSDRVariants(_ lines: [String]) -> [String] {
+        var result: [String] = []
+        var index = 0
+        while index < lines.count {
+            let line = lines[index]
+            if line.hasPrefix("#EXT-X-STREAM-INF"),
+               index + 1 < lines.count,
+               lines[index + 1].lowercased().contains("allowvideostreamcopy=false")
+            {
+                let uri = lines[index + 1]
+                if uri.contains("VideoCodec=h264") {
+                    result.append(clampedSDRTagLine(line))
+                    result.append(clampedSDRURI(uri))
+                }
+                // The HEVC-SDR fallback (VideoCodec=hevc) is dropped: a
+                // software x265 encode is unsustainable at any 4K rate
+                index += 2
+                continue
+            }
+            result.append(line)
+            index += 1
+        }
+        return result
+    }
+
+    /// Rewrite the kept SDR fallback's attributes to match the clamped
+    /// encode it will actually request
+    private static func clampedSDRTagLine(_ line: String) -> String {
+        var result = line
+        for attribute in ["AVERAGE-BANDWIDTH", "BANDWIDTH"] {
+            result = result.replacingOccurrences(
+                of: "\(attribute)=[0-9]+",
+                with: "\(attribute)=\(sdrFallbackVideoBitrate)",
+                options: .regularExpression,
+            )
+        }
+        return result.replacingOccurrences(
+            of: "RESOLUTION=[0-9]+x[0-9]+",
+            with: "RESOLUTION=1920x1080",
+            options: .regularExpression,
+        )
+    }
+
+    /// Clamp the SDR fallback's stream request to a sustainable encode
+    private static func clampedSDRURI(_ uri: String) -> String {
+        let rewritten = uri.replacingOccurrences(
+            of: "VideoBitrate=[0-9]+",
+            with: "VideoBitrate=\(sdrFallbackVideoBitrate)",
+            options: .regularExpression,
+        )
+        return rewritten + "&MaxWidth=\(sdrFallbackMaxWidth)"
     }
 
     private static func isSubtitleRendition(_ line: String) -> Bool {

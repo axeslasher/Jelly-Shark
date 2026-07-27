@@ -101,6 +101,41 @@ struct StreamURLBuilderTests {
         #expect(query["SubtitleMethod"] == "Hls")
         #expect(query["VideoBitrate"] == String(JellyfinClient.maxStreamingBitrate - StreamURLBuilder.audioBitrate))
         #expect(query["AudioBitrate"] == String(StreamURLBuilder.audioBitrate))
+        #expect(query["hevc-rangetype"] == StreamURLBuilder.hevcRangeTypes)
+    }
+
+    @Test("HDR range support is declared only on the HEVC passthrough path")
+    func rangeTypeFollowsPassthrough() throws {
+        func rangeType(
+            sourceVideoCodec: String?,
+            subtitleStreamIndex: Int? = nil,
+            subtitleMethod: SubtitleDeliveryMethod = .hls,
+            assumeInterposer: Bool = true,
+        ) throws -> String? {
+            let url = try #require(StreamURLBuilder.hlsURL(
+                serverURL: URL(string: "https://example.com")!,
+                accessToken: "token",
+                deviceId: "device",
+                parameters: StreamParameters(itemId: "item-1", subtitleStreamIndex: subtitleStreamIndex),
+                subtitleMethod: subtitleMethod,
+                assumeInterposer: assumeInterposer,
+                sourceVideoCodec: sourceVideoCodec,
+            ))
+            return queryItems(of: url)["hevc-rangetype"]
+        }
+
+        // The declaration unlocks an HDR stream-copy, which only the HEVC
+        // passthrough path offers — without it the server assumes SDR-only
+        // and tone-maps via a below-realtime 4K software re-encode (#146)
+        try #expect(rangeType(sourceVideoCodec: "hevc") == "SDR,HDR10,HLG,DOVIWithHDR10")
+        try #expect(rangeType(sourceVideoCodec: "h265") == "SDR,HDR10,HLG,DOVIWithHDR10")
+        try #expect(rangeType(sourceVideoCodec: "hevc", subtitleStreamIndex: 2) == "SDR,HDR10,HLG,DOVIWithHDR10")
+        // The TS path is an H.264 re-encode where tone-mapping to SDR is
+        // the correct outcome, so nothing is declared there
+        try #expect(rangeType(sourceVideoCodec: "h264") == nil)
+        try #expect(rangeType(sourceVideoCodec: nil) == nil)
+        try #expect(rangeType(sourceVideoCodec: "hevc", subtitleStreamIndex: 2, subtitleMethod: .encode) == nil)
+        try #expect(rangeType(sourceVideoCodec: "hevc", subtitleStreamIndex: 2, assumeInterposer: false) == nil)
     }
 
     @Test("Subtitle delivery method is reflected in the query")
