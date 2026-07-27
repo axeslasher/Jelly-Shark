@@ -38,7 +38,7 @@ struct SearchView: View {
         case .idle:
             prompt
         case .searching:
-            skeletonGrid
+            skeletonShelves
         case .empty:
             message(
                 icon: "magnifyingglass",
@@ -47,7 +47,7 @@ struct SearchView: View {
         case let .failed(errorMessage):
             message(icon: "exclamationmark.triangle.fill", text: errorMessage)
         case .results:
-            resultsGrid
+            resultsShelves
         }
     }
 
@@ -134,42 +134,63 @@ struct SearchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Ghost mirror of `resultsGrid` while a search is in flight: the same
-    /// adaptive columns and landscape card lockup, so results land where the
-    /// ghosts were.
-    private var skeletonGrid: some View {
+    /// Ghost mirror of `resultsShelves` while a search is in flight, in their
+    /// order: two poster rows (Movies, TV Series) and a stills row (Episodes),
+    /// so results land where the ghosts were.
+    ///
+    /// The ghosts are pure shapes and non-focusable, which is required rather
+    /// than incidental: focus stays in the search field and the viewer can
+    /// keep typing while the round of queries is out.
+    private var skeletonShelves: some View {
         ScrollView {
-            LazyVGrid(
-                columns: [
-                    GridItem(.adaptive(minimum: 340), spacing: SpacingTokens.cardGap),
-                ],
-                spacing: SpacingTokens.cardGap,
-            ) {
-                ForEach(0 ..< 12, id: \.self) { _ in
-                    GhostCard(width: 320, aspectRatio: 16.0 / 9.0)
-                }
+            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+                SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+                SkeletonShelf(
+                    cardWidth: 320,
+                    shape: .artwork(aspectRatio: 16.0 / 9.0),
+                    cardCount: 4,
+                )
             }
-            .padding(.horizontal, SpacingTokens.screenPadding)
             .padding(.vertical, SpacingTokens.lg)
         }
         .scrollClipDisabled()
         .skeletonPulse()
     }
 
-    private var resultsGrid: some View {
+    /// Results grouped by item type, in a fixed Movies → TV Series → Episodes
+    /// order — the same order as the person page's filmography, so the two
+    /// pages don't disagree. A type with no matches renders nothing, so the
+    /// first shelf on screen is whichever type matched first.
+    ///
+    /// A plain `VStack`, not a `LazyVStack`: on tvOS the focus engine can't
+    /// move focus into a section a lazy stack hasn't built yet. And no
+    /// scroll-target behaviour or focus-region snap — that machinery exists on
+    /// Home and Media Detail to park a hero, and this page (like the person
+    /// page it follows) has none.
+    private var resultsShelves: some View {
         ScrollView {
-            LazyVGrid(
-                columns: [
-                    GridItem(.adaptive(minimum: 340), spacing: SpacingTokens.cardGap),
-                ],
-                spacing: SpacingTokens.cardGap,
-            ) {
-                ForEach(viewModel.results) { item in
-                    item.landscapeShelfItem(client: session.client)
-                }
+            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                SearchShelfSection(
+                    title: "Movies", icon: "film.fill",
+                    items: viewModel.movies, style: .poster,
+                )
+                SearchShelfSection(
+                    title: "TV Series", icon: "tv.fill",
+                    items: viewModel.series, style: .poster,
+                )
+                SearchShelfSection(
+                    title: "Episodes", icon: "play.tv",
+                    items: viewModel.episodes, style: .landscape,
+                )
             }
-            .padding(.horizontal, SpacingTokens.screenPadding)
             .padding(.vertical, SpacingTokens.lg)
+            // One focus region for the whole stack, not one per shelf: moving
+            // between rows is a plain vertical move, and moving up out of the
+            // first shelf leaves for the search field above it.
+            #if os(tvOS)
+                .focusSection()
+            #endif
         }
         .scrollClipDisabled()
     }

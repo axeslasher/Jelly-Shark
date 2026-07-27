@@ -17,7 +17,7 @@ public final class SearchViewModel {
         case searching
         /// The query returned no matches.
         case empty
-        /// The query returned matches (held in `results`).
+        /// The query returned matches (held in the per-type shelves).
         case results
         /// The query failed; carries a user-facing message.
         case failed(String)
@@ -28,8 +28,20 @@ public final class SearchViewModel {
     /// The current search field text (two-way bound from the view).
     public var query: String = ""
 
-    /// The latest search results.
-    public private(set) var results: [MediaItem] = []
+    /// The latest search results, grouped by item type — one shelf each, in
+    /// the order the screen renders them. Each is fetched by its own query so
+    /// the per-type caps mean something: one mixed fetch truncated by an
+    /// alphabetical sort can return forty A–C titles and no episodes at all,
+    /// which would make the group sizes an artifact of the alphabet.
+    public private(set) var movies: [MediaItem] = []
+    public private(set) var series: [MediaItem] = []
+    public private(set) var episodes: [MediaItem] = []
+
+    /// Every result, flattened in shelf order — what the search-completion
+    /// suggestions read.
+    public var allResults: [MediaItem] {
+        movies + series + episodes
+    }
 
     /// The current query lifecycle state.
     public private(set) var state: State = .idle
@@ -49,7 +61,9 @@ public final class SearchViewModel {
     /// what fits on screen without scrolling rather than by taste.
     private static let seedTermLimit = 5
 
-    /// Maximum number of results to request.
+    /// Maximum number of results to request *per shelf* — three queries go
+    /// out per search, one per item type. Matches `PersonDetailViewModel`'s
+    /// shelf limit: a few pages of horizontal scrolling without pagination.
     private let limit: Int
 
     /// Debounce delay before issuing a search after typing stops.
@@ -65,7 +79,7 @@ public final class SearchViewModel {
     /// what makes the fetch once-per-lifetime rather than once-per-visit.
     private var seedTermsTask: Task<Void, Never>?
 
-    public init(limit: Int = 40, debounce: Duration = .milliseconds(300)) {
+    public init(limit: Int = 25, debounce: Duration = .milliseconds(300)) {
         self.limit = limit
         self.debounce = debounce
     }
@@ -82,7 +96,7 @@ public final class SearchViewModel {
 
         var seen = Set<String>()
         var ordered: [String] = []
-        for name in results.map(\.name) where name.localizedCaseInsensitiveContains(trimmed) {
+        for name in allResults.map(\.name) where name.localizedCaseInsensitiveContains(trimmed) {
             if seen.insert(name).inserted {
                 ordered.append(name)
             }
@@ -132,9 +146,17 @@ public final class SearchViewModel {
 
         searchTask?.cancel()
         searchTask = nil
-        results = []
+        clearResults()
         query = ""
         state = .idle
+    }
+
+    /// Empty every shelf. They clear together, always: a shelf missed here
+    /// would show the previous account's titles to the next one.
+    private func clearResults() {
+        movies = []
+        series = []
+        episodes = []
     }
 
     /// React to a change in the search field.
@@ -146,7 +168,7 @@ public final class SearchViewModel {
 
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            results = []
+            clearResults()
             state = .idle
             return
         }
@@ -197,21 +219,64 @@ public final class SearchViewModel {
         }
     }
 
+    /// One round of searches: three concurrent per-type queries, combined with
+    /// partial survival (the person page's filmography rule verbatim) —
+    /// whatever came back renders, and `.failed` is reported only when the
+    /// failures left nothing to show.
     private func performSearch(query: String) async {
         guard let client else {
             state = .failed(APIError.notAuthenticated.localizedDescription)
             return
         }
 
+        async let moviesFetch = Self.fetchShelf(
+            client: client, query: query, itemTypes: [.movie], limit: limit,
+        )
+        async let seriesFetch = Self.fetchShelf(
+            client: client, query: query, itemTypes: [.series], limit: limit,
+        )
+        async let episodesFetch = Self.fetchShelf(
+            client: client, query: query, itemTypes: [.episode], limit: limit,
+        )
+
+        let fetched = await [moviesFetch, seriesFetch, episodesFetch]
+        guard !Task.isCancelled else { return }
+
+        movies = (try? fetched[0].get()) ?? []
+        series = (try? fetched[1].get()) ?? []
+        episodes = (try? fetched[2].get()) ?? []
+
+        let firstError = fetched.compactMap { result -> String? in
+            if case let .failure(error) = result {
+                return error.localizedDescription
+            }
+            return nil
+        }.first
+
+        let isEmpty = movies.isEmpty && series.isEmpty && episodes.isEmpty
+        state = if let firstError, isEmpty {
+            .failed(firstError)
+        } else if isEmpty {
+            .empty
+        } else {
+            .results
+        }
+    }
+
+    /// One result shelf, boxed as a `Result` so a throw doesn't discard its
+    /// concurrently-fetched siblings.
+    private nonisolated static func fetchShelf(
+        client: any JellyfinClientProtocol,
+        query: String,
+        itemTypes: [MediaType],
+        limit: Int,
+    ) async -> Result<[MediaItem], Error> {
         do {
-            let items = try await client.searchItems(query: query, limit: limit)
-            guard !Task.isCancelled else { return }
-            results = items
-            state = items.isEmpty ? .empty : .results
+            return try await .success(client.searchItems(
+                query: query, itemTypes: itemTypes, limit: limit,
+            ))
         } catch {
-            guard !Task.isCancelled else { return }
-            results = []
-            state = .failed(error.localizedDescription)
+            return .failure(error)
         }
     }
 }

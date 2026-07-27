@@ -100,9 +100,10 @@ public protocol JellyfinClientProtocol: Sendable {
     /// Search the user's libraries by name
     /// - Parameters:
     ///   - query: The search term
+    ///   - itemTypes: Which item kinds to return (e.g., `[.movie]`)
     ///   - limit: Maximum number of items to return
-    /// - Returns: Matching media items (movies, series, episodes)
-    func searchItems(query: String, limit: Int?) async throws -> [MediaItem]
+    /// - Returns: Matching media items of the requested types
+    func searchItems(query: String, itemTypes: [MediaType], limit: Int?) async throws -> [MediaItem]
 
     /// Fetch library titles to seed a cold search field with.
     ///
@@ -742,7 +743,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func searchItems(query: String, limit: Int? = 40) async throws -> [MediaItem] {
+    public func searchItems(
+        query: String,
+        itemTypes: [MediaType] = [.movie, .series, .episode],
+        limit: Int? = 40,
+    ) async throws -> [MediaItem] {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
         }
@@ -753,7 +758,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.searchTerm = query
             parameters.limit = limit
             parameters.isRecursive = true
-            parameters.includeItemTypes = [.movie, .series, .episode]
+            parameters.includeItemTypes = itemTypes.compactMap(\.baseItemKind)
             parameters.fields = [.overview, .genres, .dateCreated]
             parameters.sortBy = [.sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]

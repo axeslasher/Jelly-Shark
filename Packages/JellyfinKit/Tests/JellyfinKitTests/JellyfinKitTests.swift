@@ -540,6 +540,27 @@ struct JellyfinKitTests {
             #expect(tags?.thumbBlurHash == nil)
         }
 
+        @Test("A hash for an image type the item has no tag for is dropped")
+        func blurHashWithoutTag() {
+            // An episode with no still of its own, carrying hash entries for
+            // artwork inherited from its series. Keeping those would paint a
+            // blurhash for an image no URL can be built for, so the card would
+            // stay blurred forever instead of falling back to its placeholder.
+            let tags = ImageTags(
+                from: [:],
+                backdropTags: nil,
+                blurHashes: .init(
+                    backdrop: ["parent-bd": "bd-hash"],
+                    primary: ["parent-p": "p-hash"],
+                    thumb: ["parent-t": "t-hash"],
+                ),
+            )
+
+            #expect(tags?.primaryBlurHash == nil)
+            #expect(tags?.backdropBlurHash == nil)
+            #expect(tags?.thumbBlurHash == nil)
+        }
+
         @Test("MediaItem blurhash conveniences mirror the URL fallback chains")
         func blurHashConveniences() {
             let item = MediaItem(
