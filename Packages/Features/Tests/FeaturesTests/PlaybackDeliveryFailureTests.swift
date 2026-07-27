@@ -18,8 +18,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .playing,
             positionAdvanced: false,
             errorDescription: nil,
-            bufferedSeconds: 0,
-            previousBufferedSeconds: 0,
+            progress: .init(),
+            previousProgress: .init(),
         )
 
         #expect(verdict == .noFailure)
@@ -33,8 +33,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .waitingToPlayAtSpecifiedRate,
             positionAdvanced: true,
             errorDescription: nil,
-            bufferedSeconds: 0,
-            previousBufferedSeconds: 0,
+            progress: .init(),
+            previousProgress: .init(),
         )
 
         #expect(verdict == .noFailure)
@@ -46,8 +46,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .paused,
             positionAdvanced: false,
             errorDescription: nil,
-            bufferedSeconds: 0,
-            previousBufferedSeconds: 0,
+            progress: .init(),
+            previousProgress: .init(),
         )
 
         #expect(verdict == .noFailure)
@@ -65,26 +65,45 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .waitingToPlayAtSpecifiedRate,
             positionAdvanced: false,
             errorDescription: nil,
-            bufferedSeconds: 4.5,
-            previousBufferedSeconds: 1.2,
+            progress: .init(bufferedSeconds: 4.5, bytesTransferred: 900_000),
+            previousProgress: .init(bufferedSeconds: 1.2, bytesTransferred: 200_000),
         )
 
         #expect(verdict == .keepWaiting)
     }
 
-    @Test("A buffer that stopped growing is a failure, however much it holds")
-    func stalledBufferFails() {
-        // Bytes arrived once and then stopped. Waiting further would restore
-        // the indefinite hang this whole mechanism replaces, so a buffer that
-        // has not moved since the last deadline fails no matter how full it
-        // is.
+    @Test("Bytes arriving with no loaded ranges yet still earns another deadline")
+    func growingBytesKeepsWaiting() {
+        // The direct-play case the buffer measure alone missed. A
+        // progressively-downloaded file reports no loaded ranges until
+        // AVPlayer has read enough of the container to know its duration, so
+        // `bufferedSeconds` sits at zero while the socket is busy. A throttled
+        // conditioner run failed on exactly this shape — bytes climbing, no
+        // ranges, playhead still.
+        let verdict = PlaybackViewModel.firstFrameVerdict(
+            timeControlStatus: .waitingToPlayAtSpecifiedRate,
+            positionAdvanced: false,
+            errorDescription: nil,
+            progress: .init(bufferedSeconds: 0, bytesTransferred: 250_000),
+            previousProgress: .init(bufferedSeconds: 0, bytesTransferred: 40000),
+        )
+
+        #expect(verdict == .keepWaiting)
+    }
+
+    @Test("Progress that stopped moving is a failure, however much it holds")
+    func stalledDeliveryFails() {
+        // Media arrived once and then stopped. Waiting further would restore
+        // the indefinite hang this whole mechanism replaces, so progress that
+        // has not moved since the last deadline fails no matter how much it
+        // already carries.
         for buffered in [0.0, 2.0, 30.0] {
             let verdict = PlaybackViewModel.firstFrameVerdict(
                 timeControlStatus: .waitingToPlayAtSpecifiedRate,
                 positionAdvanced: false,
                 errorDescription: nil,
-                bufferedSeconds: buffered,
-                previousBufferedSeconds: buffered,
+                progress: .init(bufferedSeconds: buffered, bytesTransferred: 1000),
+                previousProgress: .init(bufferedSeconds: buffered, bytesTransferred: 1000),
             )
 
             #expect(verdict == .failed(PlaybackViewModel.firstFrameTimeoutMessage))
@@ -99,8 +118,8 @@ struct PlaybackDeliveryFailureTests {
             timeControlStatus: .waitingToPlayAtSpecifiedRate,
             positionAdvanced: false,
             errorDescription: nil,
-            bufferedSeconds: 0,
-            previousBufferedSeconds: 0,
+            progress: .init(),
+            previousProgress: .init(),
         )
 
         #expect(verdict == .failed(PlaybackViewModel.firstFrameTimeoutMessage))
@@ -120,8 +139,8 @@ struct PlaybackDeliveryFailureTests {
                 timeControlStatus: status,
                 positionAdvanced: true,
                 errorDescription: "The operation could not be completed",
-                bufferedSeconds: 9,
-                previousBufferedSeconds: 1,
+                progress: .init(bufferedSeconds: 9, bytesTransferred: 5000),
+                previousProgress: .init(bufferedSeconds: 1, bytesTransferred: 100),
             )
 
             #expect(

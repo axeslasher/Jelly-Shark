@@ -1031,15 +1031,15 @@ public final class PlaybackViewModel {
     ///     watchdog was armed (i.e. after any resume seek had landed)
     ///   - errorDescription: `AVPlayerItem.error` or `AVPlayer.error`, either
     ///     of which is non-nil only once playback has failed outright
-    ///   - bufferedSeconds: total duration held in `loadedTimeRanges` now
-    ///   - previousBufferedSeconds: the same total at the previous deadline,
-    ///     zero on the first
+    ///   - progress: buffered duration and bytes transferred, sampled now
+    ///   - previousProgress: the same pair at the previous deadline, zero on
+    ///     the first
     static func firstFrameVerdict(
         timeControlStatus: AVPlayer.TimeControlStatus,
         positionAdvanced: Bool,
         errorDescription: String?,
-        bufferedSeconds: Double,
-        previousBufferedSeconds: Double,
+        progress _: DeliveryProgress,
+        previousProgress _: DeliveryProgress,
     ) -> FirstFrameVerdict {
         // An error is only published once playback has failed outright, and
         // no amount of further waiting recovers from that. Checked first
@@ -1067,21 +1067,21 @@ public final class PlaybackViewModel {
             return .noFailure
         default:
             // .waitingToPlayAtSpecifiedRate: a rate was requested and nothing
-            // has played. Whether that is a failure depends on the buffer.
+            // has played. Whether that is a failure depends on whether media
+            // is still arriving.
             //
-            // A growing buffer means bytes are reaching the player and the
-            // link is merely too narrow for the stream — a network-conditioned
-            // link, distant server, or a bitrate the connection cannot carry.
-            // That is slow, not broken, and it produced this classifier's
-            // first false positives: a file that direct-played fine on a
-            // healthy network raised an error screen under a throttled one,
-            // because the playhead was the only progress signal and it does
-            // not move while the buffer fills.
+            // Advancing progress means the link is merely too narrow for the
+            // stream — a conditioned link, a distant server, a bitrate the
+            // connection cannot carry. That is slow, not broken, and it
+            // produced this classifier's first false positives: a file that
+            // direct-played fine on a healthy network raised an error screen
+            // under a throttled one, because the playhead was the only
+            // progress signal and it does not move while media buffers.
             //
-            // A buffer that has not grown since the last deadline is the
+            // Progress that has not moved since the last deadline is the
             // failure this whole mechanism exists for: a rate was requested,
             // the deadline is up, and nothing at all is arriving.
-            return bufferedSeconds > previousBufferedSeconds
+            return progress.advanced(since: previousProgress)
                 ? .keepWaiting
                 : .failed(firstFrameTimeoutMessage)
         }
@@ -1177,62 +1177,97 @@ public final class PlaybackViewModel {
         firstFrameWatchdog?.cancel()
         let baseline = currentPositionTicks()
         firstFrameWatchdog = Task { [weak self] in
-            // A loop, not a single deadline: as long as the buffer keeps
-            // growing the session earns another one. Bytes arriving is not a
-            // delivery failure however slowly they arrive, and the loop ends
-            // itself the moment they stop — so a narrow link waits, while a
-            // silent server still fails on schedule.
-            var previousBuffered = 0.0
+            // A loop, not a single deadline: as long as media keeps arriving
+            // the session earns another one. Delivery is not a failure however
+            // slow it is, and the loop ends itself the moment it stops — so a
+            // narrow link waits, while a silent server still fails on
+            // schedule.
+            var previous = DeliveryProgress()
             while true {
                 try? await Task.sleep(for: Self.firstFrameTimeout)
                 guard !Task.isCancelled, let self else { return }
-                let buffered = self.bufferedSeconds()
+                let progress = self.deliveryProgress()
                 guard self.firstFrameDeadlineElapsed(
                     baseline: baseline,
-                    bufferedSeconds: buffered,
-                    previousBufferedSeconds: previousBuffered,
+                    progress: progress,
+                    previousProgress: previous,
                 ) else { return }
-                previousBuffered = buffered
+                previous = progress
             }
         }
     }
 
-    /// Total media held in the current item's `loadedTimeRanges`.
+    /// Evidence that media is still arriving, sampled at each deadline.
     ///
-    /// Any value above zero means bytes reached the player, which is the one
-    /// signal that separates "this link is too narrow" from "nothing is
-    /// coming" — the playhead cannot say, because it does not move while the
-    /// buffer fills.
-    private func bufferedSeconds() -> Double {
-        player?.currentItem?.loadedTimeRanges.reduce(0) { $0 + CMTimeGetSeconds($1.timeRangeValue.duration) } ?? 0
+    /// Two measures because neither covers both delivery shapes:
+    ///
+    /// `bufferedSeconds` is the natural one, but it needs a *timeline* — a
+    /// progressively-downloaded direct-play file reports no loaded ranges
+    /// until AVPlayer has read enough of the container to know its duration,
+    /// so bytes can be pouring in with this still at zero. That is what a
+    /// conditioner run showed: a throttled direct play failed with no loaded
+    /// ranges ever appearing.
+    ///
+    /// `bytesTransferred` has no such precondition. It is the honest "is the
+    /// socket moving" counter, and it is what saves the direct-play case.
+    struct DeliveryProgress: Equatable {
+        var bufferedSeconds: Double = 0
+        var bytesTransferred: Int64 = 0
+
+        /// Whether anything at all advanced since `other`.
+        func advanced(since other: Self) -> Bool {
+            bufferedSeconds > other.bufferedSeconds || bytesTransferred > other.bytesTransferred
+        }
+    }
+
+    private func deliveryProgress() -> DeliveryProgress {
+        guard let item = player?.currentItem else { return DeliveryProgress() }
+        return DeliveryProgress(
+            bufferedSeconds: item.loadedTimeRanges
+                .reduce(0) { $0 + CMTimeGetSeconds($1.timeRangeValue.duration) },
+            // Summed, not last-event: the access log accumulates an event per
+            // delivery segment, so the tail alone can go down between samples
+            // while the total is still climbing.
+            bytesTransferred: item.accessLog()?.events
+                .reduce(0) { $0 + $1.numberOfBytesTransferred } ?? 0,
+        )
     }
 
     /// Apply the verdict for one elapsed deadline. Returns whether the
     /// watchdog should arm another.
     private func firstFrameDeadlineElapsed(
         baseline: Int64,
-        bufferedSeconds: Double,
-        previousBufferedSeconds: Double,
+        progress: DeliveryProgress,
+        previousProgress: DeliveryProgress,
     ) -> Bool {
         guard let player, !hasStopped else { return false }
+
+        // Both measures on every deadline, including the failing one. Which of
+        // them moved is the whole diagnosis when this misfires — a run that
+        // fails with bytes climbing means something other than delivery is
+        // wrong, and a run that fails with both flat is the real thing.
+        let sample = """
+        buffered=\(progress.bufferedSeconds, format: .fixed(precision: 1))s \
+        bytes=\(progress.bytesTransferred) \
+        (was \(previousProgress.bufferedSeconds, format: .fixed(precision: 1))s / \
+        \(previousProgress.bytesTransferred))
+        """
 
         switch Self.firstFrameVerdict(
             timeControlStatus: player.timeControlStatus,
             positionAdvanced: currentPositionTicks() > baseline,
             errorDescription: (player.currentItem?.error ?? player.error)?.localizedDescription,
-            bufferedSeconds: bufferedSeconds,
-            previousBufferedSeconds: previousBufferedSeconds,
+            progress: progress,
+            previousProgress: previousProgress,
         ) {
         case .noFailure:
-            Self.logger.debug("[delivery] first-frame deadline passed with playback under way")
+            Self.logger.debug("[delivery] deadline passed with playback under way — \(sample)")
             return false
         case .keepWaiting:
-            Self.logger.debug("""
-            [delivery] first-frame deadline extended, buffer still filling \
-            (\(bufferedSeconds, format: .fixed(precision: 1))s)
-            """)
+            Self.logger.debug("[delivery] deadline extended, media still arriving — \(sample)")
             return true
         case let .failed(message):
+            Self.logger.error("[delivery] deadline elapsed with nothing arriving — \(sample)")
             failDelivery(for: player.currentItem, message: message, cause: "first-frame timeout")
             return false
         }
