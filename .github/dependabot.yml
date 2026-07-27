@@ -1,0 +1,18 @@
+version: 2
+
+# Actions are pinned to commit SHAs in the workflows, because a tag like `@v7`
+# is mutable — the upstream owner can repoint it and our next CI run silently
+# executes different code. Pinning without this file would mean freezing on an
+# old action forever, so the two go together: Dependabot bumps the SHA and the
+# trailing `# vX.Y.Z` comment as a PR, and nothing changes without review.
+#
+# Only `github-actions` is configured. Swift/SPM deps are managed through the
+# Xcode project and the three local packages under Packages/; whether Dependabot
+# handles that layout is untested here.
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      # Monthly, not weekly: one action is in use and every PR costs three macOS
+      # runner jobs.
+      interval: monthly
