@@ -48,7 +48,26 @@ struct SearchView: View {
         }
     }
 
+    /// The empty state. Seeded titles when the server offered any; otherwise —
+    /// on an error, an empty library, or before the fetch lands — the plain
+    /// prompt this screen has always shown.
+    @ViewBuilder
     private var prompt: some View {
+        if viewModel.seedTerms.isEmpty {
+            plainPrompt
+        } else {
+            seedTermPrompt
+        }
+    }
+
+    private var plainPrompt: some View {
+        promptHeader
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The glyph and copy, shown whether or not the server had terms to offer.
+    /// It says what the screen is for; the terms below say where to start.
+    private var promptHeader: some View {
         VStack(spacing: SpacingTokens.md) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 64))
@@ -61,6 +80,43 @@ struct SearchView: View {
             Text("Find movies, shows, and more")
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
+        }
+    }
+
+    private var seedTermPrompt: some View {
+        VStack(spacing: SpacingTokens.md) {
+            promptHeader
+
+            Text("From Your Library")
+                .jsStyle(.overview)
+                .foregroundStyle(theme.primary)
+                .padding(.top, SpacingTokens.lg)
+
+            // A plain stack, not a scroll view: `seedTermLimit` is set so the
+            // column fits without scrolling, which keeps this out of the
+            // vertical-overflow trap that bit the Home shelves (#28) and means
+            // every pill is built and reachable by the focus engine.
+            VStack(spacing: SpacingTokens.sm) {
+                ForEach(viewModel.seedTerms) { item in
+                    Button {
+                        viewModel.selectSeedTerm(item.name)
+                    } label: {
+                        // No explicit `foregroundStyle`: an explicit one wins
+                        // over the style's, which is what left the label at
+                        // `primary` on a focused platter. Left alone, the style
+                        // resolves `primary` at rest and `onFocusFill` on focus,
+                        // per theme.
+                        Text(item.name)
+                            .jsStyle(.title)
+                    }
+                    // The plain glass style, unlike the season pills': these
+                    // pills have no active-item gate keyed to what pressing
+                    // one changes, so the style presents its own focus and
+                    // sees every press through.
+                    .glassButtonStyle(tint: theme.focusFill)
+                }
+            }
+            .padding(.horizontal, SpacingTokens.screenPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

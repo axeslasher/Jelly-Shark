@@ -104,6 +104,18 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Matching media items (movies, series, episodes)
     func searchItems(query: String, limit: Int?) async throws -> [MediaItem]
 
+    /// Fetch library titles to seed a cold search field with.
+    ///
+    /// Jellyfin has no endpoint returning suggested search *terms* —
+    /// `/Search/Hints` needs a term already and `/Items/Suggestions` is an
+    /// unpersonalised random sample despite its name. This is the plain
+    /// `/Items` query `jellyfin-web` builds its own search Suggestions section
+    /// from: favourite-weighted, then randomised. Callers use the names; the
+    /// ids ride along for free.
+    /// - Parameter limit: Maximum number of items to return
+    /// - Returns: Movies and series, favourites first, otherwise in random order
+    func getSearchSuggestions(limit: Int?) async throws -> [MediaItem]
+
     // MARK: - People
 
     /// Fetch a person's details. Persons are items on the server, so the ID
@@ -745,6 +757,37 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.fields = [.overview, .genres, .dateCreated]
             parameters.sortBy = [.sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getSearchSuggestions(limit: Int? = 12) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.isRecursive = true
+            // Episodes make poor search prompts, and there is no music support
+            // to justify `jellyfin-web`'s MusicArtist.
+            parameters.includeItemTypes = [.movie, .series]
+            // The whole point of the query: the viewer's favourites float to
+            // the top, everything else is shuffled.
+            parameters.sortBy = [.isFavoriteOrLiked, .random]
+            // Titles only — no `fields`, no artwork, no count to page against.
+            parameters.imageTypeLimit = 0
+            parameters.enableImages = false
+            parameters.enableTotalRecordCount = false
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 

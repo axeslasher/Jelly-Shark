@@ -107,6 +107,150 @@ struct SearchViewModelTests {
         #expect(viewModel.suggestions == ["Batman", "Batman Returns"])
     }
 
+    // MARK: - Seed terms
+
+    @Test("Attaching a client fetches the seed terms once")
+    func attachFetchesSeedTerms() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .success([movie("1", "Alien"), movie("2", "Aliens")])
+        let viewModel = makeViewModel(client: client)
+
+        await viewModel.awaitPendingSeedTerms()
+
+        #expect(client.searchSuggestionsCallCount == 1)
+        #expect(viewModel.seedTerms.map(\.name) == ["Alien", "Aliens"])
+    }
+
+    @Test("A second attach does not refetch the seed terms")
+    func secondAttachDoesNotRefetch() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .success([movie("1", "Alien")])
+        let viewModel = makeViewModel(client: client)
+        await viewModel.awaitPendingSeedTerms()
+
+        // A tab revisit, or the session reconnecting: same client, same terms
+        viewModel.attach(client: client)
+        await viewModel.awaitPendingSeedTerms()
+
+        #expect(client.searchSuggestionsCallCount == 1)
+        #expect(viewModel.seedTerms.map(\.name) == ["Alien"])
+    }
+
+    @Test("Attaching without a client leaves the fetch for the real one")
+    func attachWithoutClientDefersFetch() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .success([movie("1", "Alien")])
+        let viewModel = SearchViewModel(limit: 40, debounce: .zero)
+
+        // What the view does on first appear, before the session connects
+        viewModel.attach(client: nil)
+        await viewModel.awaitPendingSeedTerms()
+        #expect(client.searchSuggestionsCallCount == 0)
+        #expect(viewModel.seedTerms.isEmpty)
+
+        viewModel.attach(client: client)
+        await viewModel.awaitPendingSeedTerms()
+
+        #expect(client.searchSuggestionsCallCount == 1)
+        #expect(viewModel.seedTerms.map(\.name) == ["Alien"])
+    }
+
+    // MARK: - Sign-out
+
+    @Test("Signing out drops the previous account's seed terms and refetches for the next")
+    func signOutClearsSeedTermsAcrossAccounts() async {
+        let first = MockJellyfinClient()
+        first.searchSuggestionsResult = .success([movie("1", "Alien")])
+        let viewModel = makeViewModel(client: first)
+        await viewModel.awaitPendingSeedTerms()
+        #expect(viewModel.seedTerms.map(\.name) == ["Alien"])
+
+        // The view model outlives the session: SearchView holds it in @State and
+        // RootView keeps the tab mounted across a disconnect. A second account
+        // must never be shown the first account's library.
+        viewModel.attach(client: nil)
+        #expect(viewModel.seedTerms.isEmpty)
+
+        let second = MockJellyfinClient()
+        second.searchSuggestionsResult = .success([movie("2", "Solaris")])
+        viewModel.attach(client: second)
+        await viewModel.awaitPendingSeedTerms()
+
+        #expect(second.searchSuggestionsCallCount == 1)
+        #expect(viewModel.seedTerms.map(\.name) == ["Solaris"])
+    }
+
+    @Test("Signing out clears the query and results")
+    func signOutClearsQueryAndResults() async {
+        let client = MockJellyfinClient()
+        client.searchResult = .success([movie("1", "Alien")])
+        let viewModel = makeViewModel(client: client)
+
+        viewModel.updateQuery("ali")
+        await viewModel.awaitPendingSearch()
+        #expect(viewModel.state == .results)
+        #expect(!viewModel.results.isEmpty)
+
+        viewModel.attach(client: nil)
+
+        #expect(viewModel.query.isEmpty)
+        #expect(viewModel.results.isEmpty)
+        #expect(viewModel.state == .idle)
+    }
+
+    @Test("A failed seed-terms fetch leaves the terms empty and the state idle")
+    func seedTermsErrorIsSilent() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .failure(APIError.notAuthenticated)
+        let viewModel = makeViewModel(client: client)
+
+        await viewModel.awaitPendingSeedTerms()
+
+        #expect(viewModel.seedTerms.isEmpty)
+        #expect(viewModel.state == .idle)
+    }
+
+    @Test("An empty seed-terms response leaves the terms empty")
+    func seedTermsEmptyResponse() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .success([])
+        let viewModel = makeViewModel(client: client)
+
+        await viewModel.awaitPendingSeedTerms()
+
+        #expect(viewModel.seedTerms.isEmpty)
+        #expect(viewModel.state == .idle)
+    }
+
+    @Test("Selecting a seed term fills the field and runs one search")
+    func selectingSeedTermRunsSearch() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .success([movie("1", "Alien")])
+        client.searchResult = .success([movie("1", "Alien"), movie("2", "Aliens")])
+        let viewModel = makeViewModel(client: client)
+        await viewModel.awaitPendingSeedTerms()
+
+        viewModel.selectSeedTerm("Alien")
+        await viewModel.awaitPendingSearch()
+
+        #expect(viewModel.query == "Alien")
+        #expect(client.searchQueries == ["Alien"])
+        #expect(viewModel.state == .results)
+    }
+
+    @Test("Seed terms do not leak into the query-completion suggestions")
+    func seedTermsAreNotCompletions() async {
+        let client = MockJellyfinClient()
+        client.searchSuggestionsResult = .success([movie("1", "Alien")])
+        let viewModel = makeViewModel(client: client)
+        await viewModel.awaitPendingSeedTerms()
+
+        // The two lists are mutually exclusive by construction: completions
+        // need a non-empty query, the seeded terms only show while it is empty.
+        #expect(viewModel.suggestions.isEmpty)
+        #expect(!viewModel.seedTerms.isEmpty)
+    }
+
     @Test("Without a client, a query fails gracefully")
     func missingClientFails() async {
         let viewModel = SearchViewModel(limit: 40, debounce: .zero)
