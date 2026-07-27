@@ -195,6 +195,55 @@ struct TrickplayHLSPlaylistTests {
         #expect(!rewritten.contains("EXT-X-IMAGE-STREAM-INF"))
     }
 
+    @Test("SDR fallbacks: HEVC dropped, H.264 kept with a sustainable clamp")
+    func clampsForcedSDRVariants() throws {
+        // Jellyfin injects same-bandwidth SDR re-encode variants next to an
+        // HDR stream-copy (marked AllowVideoStreamCopy=false) so clients
+        // pick by color range. A PQ-only master is refused on SDR displays,
+        // so one SDR fallback must survive — clamped to an encode a modest
+        // server can sustain, instead of the 4K tone-map that runs at
+        // 0.13× (#146)
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=73448268,AVERAGE-BANDWIDTH=73448268,VIDEO-RANGE=PQ,CODECS="hvc1.2.4.L153.B0",RESOLUTION=3840x2160
+            main.m3u8?VideoCodec=hevc,h264&VideoBitrate=119808000
+            #EXT-X-STREAM-INF:BANDWIDTH=73448268,VIDEO-RANGE=SDR,CODECS="hvc1.1.4.L153.B0",RESOLUTION=3840x2160
+            main.m3u8?VideoCodec=hevc&VideoBitrate=119808000&hevc-profile=main&AllowVideoStreamCopy=false
+            #EXT-X-STREAM-INF:BANDWIDTH=73448268,AVERAGE-BANDWIDTH=73448268,VIDEO-RANGE=SDR,CODECS="avc1.640033",RESOLUTION=3840x2160
+            main.m3u8?VideoCodec=h264&VideoBitrate=119808000&AllowVideoStreamCopy=false
+            """,
+            info: sampleInfo,
+        )
+        // The PQ copy is untouched
+        #expect(rewritten.contains("VIDEO-RANGE=PQ"))
+        #expect(rewritten.contains("VideoBitrate=119808000"))
+        // The HEVC-SDR fallback (an unsustainable x265 encode) is gone
+        #expect(!rewritten.contains("VideoCodec=hevc&VideoBitrate"))
+        // The H.264-SDR fallback survives, clamped, with honest attributes
+        let sdrLines = rewritten.split(separator: "\n").filter { $0.contains("VIDEO-RANGE=SDR") }
+        #expect(sdrLines.count == 1)
+        #expect(sdrLines.first?.contains("BANDWIDTH=8000000") == true)
+        #expect(sdrLines.first?.contains("RESOLUTION=1280x720") == true)
+        #expect(rewritten.contains("VideoCodec=h264&VideoBitrate=8000000&AllowVideoStreamCopy=false&MaxWidth=1280"))
+    }
+
+    @Test("An SDR-source master with no fallback variants is untouched")
+    func keepsPlainSDRVariant() throws {
+        // Only the injected fallbacks carry AllowVideoStreamCopy=false; a
+        // genuine SDR stream's single variant must survive
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=26000000,VIDEO-RANGE=SDR,CODECS="hvc1.1.4.L150.B0"
+            main.m3u8?VideoCodec=hevc,h264
+            """,
+            info: sampleInfo,
+        )
+        #expect(rewritten.contains("VIDEO-RANGE=SDR"))
+        #expect(rewritten.contains("main.m3u8?VideoCodec=hevc,h264"))
+    }
+
     @Test("The mjpg I-frame rendition is appended with the info's geometry")
     func appendsIFrameTag() throws {
         let rewritten = try rewrite("#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\nmain.m3u8\n", info: sampleInfo)
@@ -264,12 +313,12 @@ struct TrickplayHLSPlaylistTests {
         let rewritten = try rewrite(
             """
             #EXTM3U
-            #EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="hvc1.1.4.L120.B0,mp4a.40.2",RESOLUTION=1920x1080
+            #EXT-X-STREAM-INF:BANDWIDTH=1000,CODECS="hvc1.1.4.L120.B0,mp4a.40.2",RESOLUTION=1280x720
             main.m3u8
             """,
             info: nil,
         )
-        #expect(rewritten.contains("RESOLUTION=1920x1080,CLOSED-CAPTIONS=NONE\n"))
+        #expect(rewritten.contains("RESOLUTION=1280x720,CLOSED-CAPTIONS=NONE\n"))
     }
 
     @Test("An existing CLOSED-CAPTIONS attribute is left alone")
