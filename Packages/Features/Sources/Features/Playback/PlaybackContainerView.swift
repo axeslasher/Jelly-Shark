@@ -12,6 +12,14 @@ public struct PlaybackContainerView: View {
 
     @State private var viewModel: PlaybackViewModel
 
+    /// Focus for the error screen's Close button. `.failed` used to be
+    /// reachable only from `.loading`, whose ProgressView holds no focus, so
+    /// the engine had one candidate and found it. A delivery failure (#151)
+    /// arrives from `.playing`, tearing the focused AVKit player controller
+    /// out from under the engine — this states the landing spot explicitly
+    /// rather than trusting the recovery, because Close is the only exit.
+    @FocusState private var isCloseFocused: Bool
+
     public init(client: any JellyfinClientProtocol, item: MediaItem) {
         _viewModel = State(initialValue: PlaybackViewModel(client: client, item: item))
     }
@@ -180,6 +188,8 @@ public struct PlaybackContainerView: View {
                 dismiss()
             }
             .jsStyle(.body)
+            .focused($isCloseFocused)
         }
+        .onAppear { isCloseFocused = true }
     }
 }
