@@ -69,12 +69,22 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             // tone-map means a full-resolution software re-encode that
             // runs far below realtime and starves playback (#146).
             //
-            // Dolby Vision profile 7 (DOVIWithEL) is deliberately
-            // absent — no Apple hardware decodes the dual layer, and
-            // omitting it selects the server's strip-to-HDR10 copy path
-            // (10.11+). Profile 5 (DOVI) is absent until DV playlist
-            // signaling is verified on device: it has no HDR10 base
-            // layer, so an unsignaled copy displays with broken color.
+            // Dolby Vision profile 7 (DOVIWithEL) is absent because no
+            // Apple hardware decodes the dual layer.
+            //
+            // This used to claim the omission *selects* the server's
+            // strip-to-HDR10 copy path (10.11+). Measured 2026-07-28
+            // against Jellyfin 10.11.11, that is false: a DV profile 7.6
+            // source (VideoRangeType 8), matching nothing declared here,
+            // was tone-mapped to BT.709 by a libx264 software encode and
+            // downscaled to 1080p. On a CPU-only server that ran at ~0.4x
+            // realtime — the first frame rendered and the playhead never
+            // moved. Whether declaring DOVIWithEL instead yields a
+            // playable strip-and-copy is an open device experiment (#172).
+            //
+            // Profile 5 (DOVI) is absent until DV playlist signaling is
+            // verified on device: it has no HDR10 base layer, so an
+            // unsignaled copy displays with broken color.
             //
             // isRequired stays false so sources with an unprobed range
             // aren't needlessly rejected. This condition is the single
