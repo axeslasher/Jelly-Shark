@@ -7,6 +7,10 @@ import Foundation
 /// (#85): the view model's policy becomes testable without AVFoundation.
 @MainActor
 final class MockPlayerEngine: PlayerEngine {
+    /// The real AVFoundation declaration by default, so resolution flows
+    /// exercise the same negotiation values production does
+    var capabilities: PlaybackCapabilities = AVFoundationPlayerEngine.capabilities
+
     var onEvent: ((PlayerEngineEvent) -> Void)?
 
     // Recorded calls

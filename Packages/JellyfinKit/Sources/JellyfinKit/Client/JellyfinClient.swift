@@ -186,12 +186,16 @@ public protocol JellyfinClientProtocol: Sendable {
     ///   - startTimeTicks: Intended start position in ticks
     ///   - audioStreamIndex: Preferred audio stream index
     ///   - subtitleStreamIndex: Preferred subtitle stream index
+    ///   - capabilities: What the session's playback engine decodes; the
+    ///     DeviceProfile the server negotiates against is derived from it,
+    ///     so a different engine sends a different profile (#85)
     /// - Returns: Playback session info with available media sources
     func getPlaybackInfo(
         itemId: String,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
+        capabilities: PlaybackCapabilities,
     ) async throws -> PlaybackSessionInfo
 
     /// Resolve the stream URL and play method for a media source: the
@@ -200,6 +204,9 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameters:
     ///   - source: The media source chosen from PlaybackInfo
     ///   - parameters: Item and stream selection parameters
+    ///   - capabilities: The engine declaration this session negotiated
+    ///     with; the hand-built URL's bitrate budget and range declaration
+    ///     come from it, so URL and profile can never disagree
     ///   - assumeInterposer: Whether the loopback server will carry this
     ///     session's playlists (the normal case); pass false only on the
     ///     degraded path after the listener failed to start, which restores
@@ -209,6 +216,7 @@ public protocol JellyfinClientProtocol: Sendable {
     func resolveStream(
         for source: MediaSource,
         parameters: StreamParameters,
+        capabilities: PlaybackCapabilities,
         assumeInterposer: Bool,
     ) throws -> StreamResolution
 
@@ -333,8 +341,17 @@ public protocol JellyfinClientProtocol: Sendable {
 
 public extension JellyfinClientProtocol {
     /// The normal path: assume the loopback interposer carries the session
-    func resolveStream(for source: MediaSource, parameters: StreamParameters) throws -> StreamResolution {
-        try resolveStream(for: source, parameters: parameters, assumeInterposer: true)
+    func resolveStream(
+        for source: MediaSource,
+        parameters: StreamParameters,
+        capabilities: PlaybackCapabilities,
+    ) throws -> StreamResolution {
+        try resolveStream(
+            for: source,
+            parameters: parameters,
+            capabilities: capabilities,
+            assumeInterposer: true,
+        )
     }
 
     /// Tear down the server-side transcode for a play session. Default
@@ -973,6 +990,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
+        capabilities: PlaybackCapabilities,
     ) async throws -> PlaybackSessionInfo {
         guard let userId = _userId else {
             throw APIError.notAuthenticated
@@ -982,15 +1000,15 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             let body = JellyfinAPI.PlaybackInfoDto(
                 audioStreamIndex: audioStreamIndex,
                 isAutoOpenLiveStream: true,
-                deviceProfile: Self.deviceProfile,
+                deviceProfile: JellyfinAPI.DeviceProfile(capabilities: capabilities),
                 enableDirectPlay: true,
                 enableDirectStream: true,
                 enableTranscoding: true,
                 // Without an explicit budget the server applies a low default
                 // bitrate cap and refuses direct play for most real files
                 // (observed: ~2.5 Mbps cutoff). Apple TV is a wired/strong-
-                // wifi LAN device; declare a generous ceiling.
-                maxStreamingBitrate: Self.maxStreamingBitrate,
+                // wifi LAN device; the engine declares a generous ceiling.
+                maxStreamingBitrate: capabilities.maxStreamingBitrate,
                 startTimeTicks: startTimeTicks.map(Int.init),
                 subtitleStreamIndex: subtitleStreamIndex,
                 userID: userId,
@@ -1021,6 +1039,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     public func resolveStream(
         for source: MediaSource,
         parameters: StreamParameters,
+        capabilities: PlaybackCapabilities,
         assumeInterposer: Bool,
     ) throws -> StreamResolution {
         guard let accessToken = _accessToken else {
@@ -1051,6 +1070,8 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 subtitleMethod: source.subtitleRequiresBurnIn(at: parameters.subtitleStreamIndex) ? .encode : .hls,
                 assumeInterposer: assumeInterposer,
                 sourceVideoCodec: source.videoCodec,
+                hevcRangeTypes: capabilities.hevcRangeTypesParameter,
+                maxStreamingBitrate: capabilities.maxStreamingBitrate,
                 eTag: source.eTag,
             )
         }

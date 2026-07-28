@@ -2,6 +2,36 @@ import Foundation
 @testable import JellyfinKit
 import Testing
 
+/// `hlsURL` now takes the range declaration and bitrate budget from the
+/// engine's `PlaybackCapabilities` at every call (#85). The suite's calls
+/// go through this convenience so each test states only what it varies;
+/// the forwarded values are the AVFoundation fixture's.
+private extension StreamURLBuilder {
+    static func hlsURL(
+        serverURL: URL,
+        accessToken: String,
+        deviceId: String,
+        parameters: StreamParameters,
+        subtitleMethod: SubtitleDeliveryMethod = .hls,
+        assumeInterposer: Bool = true,
+        sourceVideoCodec: String? = nil,
+        eTag: String? = nil,
+    ) -> URL? {
+        hlsURL(
+            serverURL: serverURL,
+            accessToken: accessToken,
+            deviceId: deviceId,
+            parameters: parameters,
+            subtitleMethod: subtitleMethod,
+            assumeInterposer: assumeInterposer,
+            sourceVideoCodec: sourceVideoCodec,
+            hevcRangeTypes: PlaybackCapabilities.jellySharkAVFoundationFixture.hevcRangeTypesParameter,
+            maxStreamingBitrate: PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate,
+            eTag: eTag,
+        )
+    }
+}
+
 @Suite("StreamURLBuilder")
 struct StreamURLBuilderTests {
     private func queryItems(of url: URL) -> [String: String] {
@@ -99,9 +129,10 @@ struct StreamURLBuilderTests {
         #expect(query["AudioCodec"] == "aac,ac3,eac3")
         #expect(query["SegmentContainer"] == "mp4")
         #expect(query["SubtitleMethod"] == "Hls")
-        #expect(query["VideoBitrate"] == String(JellyfinClient.maxStreamingBitrate - StreamURLBuilder.audioBitrate))
+        let capabilities = PlaybackCapabilities.jellySharkAVFoundationFixture
+        #expect(query["VideoBitrate"] == String(capabilities.maxStreamingBitrate - StreamURLBuilder.audioBitrate))
         #expect(query["AudioBitrate"] == String(StreamURLBuilder.audioBitrate))
-        #expect(query["hevc-rangetype"] == StreamURLBuilder.hevcRangeTypes)
+        #expect(query["hevc-rangetype"] == capabilities.hevcRangeTypesParameter)
     }
 
     @Test("HDR range support is declared only on the HEVC passthrough path")

@@ -37,6 +37,7 @@ struct DeliveryContext {
     let audioStreamIndex: Int?
     let subtitleStreamIndex: Int?
     let trickplayInfo: TrickplayInfo?
+    let capabilities: PlaybackCapabilities
 }
 
 /// Picks the delivery for a resolved stream. The rule is the play method:
@@ -144,6 +145,7 @@ final class InterposedHLSDelivery: StreamDelivery {
                        audioStreamIndex: context.audioStreamIndex,
                        subtitleStreamIndex: context.subtitleStreamIndex,
                    ),
+                   capabilities: context.capabilities,
                    assumeInterposer: false,
                )
             {

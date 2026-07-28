@@ -5,8 +5,12 @@ import Testing
 
 @Suite("DeviceProfile")
 struct DeviceProfileTests {
+    private var profile: JellyfinAPI.DeviceProfile {
+        JellyfinAPI.DeviceProfile(capabilities: .jellySharkAVFoundationFixture)
+    }
+
     private var hevcProfiles: [JellyfinAPI.CodecProfile] {
-        (JellyfinClient.deviceProfile.codecProfiles ?? [])
+        (profile.codecProfiles ?? [])
             .filter { $0.codec == "hevc" && $0.type == .video }
     }
 
@@ -44,11 +48,115 @@ struct DeviceProfileTests {
         // selects the server's strip-to-HDR10 copy path. DOVI (profile 5)
         // deliberately absent pending on-device DV signaling verification.
         #expect(condition.value == "SDR|HDR10|HLG|DOVIWithHDR10")
+    }
 
-        // The stream URL sends the same set, comma-separated, so the
-        // PlaybackInfo negotiation and the hand-built HLS URL agree
-        let urlSet = StreamURLBuilder.hevcRangeTypes.split(separator: ",").sorted()
-        let profileSet = (condition.value ?? "").split(separator: "|").sorted()
-        #expect(urlSet == profileSet)
+    @Test("The stream URL's range parameter reads the same stored condition")
+    func rangeParameterSharesTheStoredCondition() {
+        // Both serializations come from the one videoRangeType condition,
+        // so PlaybackInfo negotiation (pipe-joined in the profile) and the
+        // hand-built HLS URL (comma-joined) agree by construction
+        let capabilities = PlaybackCapabilities.jellySharkAVFoundationFixture
+        #expect(capabilities.videoRangeTypes == ["SDR", "HDR10", "HLG", "DOVIWithHDR10"])
+        #expect(capabilities.hevcRangeTypesParameter == "SDR,HDR10,HLG,DOVIWithHDR10")
+    }
+
+    @Test("The derived profile is byte-identical to the retired hardcoded literal")
+    func derivedProfileMatchesRetiredLiteral() throws {
+        // The refactor's claim is "same wire payload, new owner" (#85).
+        // This proves it against the literal that shipped before the
+        // derivation existed. TEMPORARY: this test and its literal are
+        // removed once green — kept permanent it would block every
+        // legitimate future capability change (#175, #176).
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+
+        let derived = try encoder.encode(profile)
+        let literal = try encoder.encode(Self.retiredHardcodedProfile)
+
+        #expect(derived == literal)
+    }
+
+    /// The exact literal `JellyfinClient.deviceProfile` shipped before #85
+    /// derived the profile from `PlaybackCapabilities`
+    private static var retiredHardcodedProfile: JellyfinAPI.DeviceProfile {
+        JellyfinAPI.DeviceProfile(
+            codecProfiles: [
+                JellyfinAPI.CodecProfile(
+                    codec: "hevc",
+                    conditions: [
+                        JellyfinAPI.ProfileCondition(
+                            condition: .equalsAny,
+                            isRequired: true,
+                            property: .videoCodecTag,
+                            value: "hvc1|dvh1",
+                        ),
+                    ],
+                    container: "mp4,m4v,mov",
+                    type: .video,
+                ),
+                JellyfinAPI.CodecProfile(
+                    codec: "hevc",
+                    conditions: [
+                        JellyfinAPI.ProfileCondition(
+                            condition: .equalsAny,
+                            isRequired: false,
+                            property: .videoRangeType,
+                            value: "SDR|HDR10|HLG|DOVIWithHDR10",
+                        ),
+                    ],
+                    type: .video,
+                ),
+                JellyfinAPI.CodecProfile(
+                    codec: "h264",
+                    conditions: [
+                        JellyfinAPI.ProfileCondition(
+                            condition: .lessThanEqual,
+                            isRequired: false,
+                            property: .videoBitDepth,
+                            value: "8",
+                        ),
+                        JellyfinAPI.ProfileCondition(
+                            condition: .equalsAny,
+                            isRequired: false,
+                            property: .videoProfile,
+                            value: "high|main|baseline|constrained baseline",
+                        ),
+                    ],
+                    type: .video,
+                ),
+            ],
+            directPlayProfiles: [
+                JellyfinAPI.DirectPlayProfile(
+                    audioCodec: "aac,ac3,eac3,flac,alac",
+                    container: "mp4,m4v,mov",
+                    type: .video,
+                    videoCodec: "hevc,h264",
+                ),
+            ],
+            name: "Jelly Shark",
+            subtitleProfiles: [
+                JellyfinAPI.SubtitleProfile(format: "mov_text", method: .embed),
+                JellyfinAPI.SubtitleProfile(format: "vtt", method: .external),
+                JellyfinAPI.SubtitleProfile(format: "subrip", method: .external),
+                JellyfinAPI.SubtitleProfile(format: "vtt", method: .hls),
+                JellyfinAPI.SubtitleProfile(format: "subrip", method: .hls),
+                JellyfinAPI.SubtitleProfile(format: "ass", method: .encode),
+                JellyfinAPI.SubtitleProfile(format: "ssa", method: .encode),
+                JellyfinAPI.SubtitleProfile(format: "pgssub", method: .encode),
+                JellyfinAPI.SubtitleProfile(format: "dvdsub", method: .encode),
+            ],
+            transcodingProfiles: [
+                JellyfinAPI.TranscodingProfile(
+                    audioCodec: "aac,ac3,eac3",
+                    isBreakOnNonKeyFrames: true,
+                    container: "mp4,ts",
+                    context: .streaming,
+                    minSegments: 2,
+                    protocol: .hls,
+                    type: .video,
+                    videoCodec: "hevc,h264",
+                ),
+            ],
+        )
     }
 }

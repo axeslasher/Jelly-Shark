@@ -4,148 +4,92 @@ import JellyfinAPI
 // MARK: - Device Profile
 
 //
-// The device profile tells the server what this client can play natively,
+// The device profile tells the server what the client can play natively,
 // so PlaybackInfo can decide between direct play, remux, and transcode.
+//
+// It is DERIVED from the engine's `PlaybackCapabilities` declaration (#85)
+// rather than hardcoded: every claim in the profile is a property of the
+// engine that decodes the stream, so the engine owns the values and this
+// builder owns only the translation into Jellyfin's wire schema.
 
-extension JellyfinClient {
-    /// Streaming bitrate ceiling declared to the server (120 Mbps).
-    ///
-    /// PlaybackInfo requests MUST carry this: when the field is omitted the
-    /// server falls back to a low default cap and reports
-    /// `SupportsDirectPlay=false` for most real-world files (observed
-    /// cutoff ~2.5 Mbps against Jellyfin 10.10). 120 Mbps comfortably covers
-    /// 4K remuxes on a LAN while still letting the server transcode down for
-    /// genuinely enormous sources.
-    static let maxStreamingBitrate = 120_000_000
-
-    /// Capabilities profile for Apple TV / Vision Pro playback via AVPlayer
-    static var deviceProfile: JellyfinAPI.DeviceProfile {
-        JellyfinAPI.DeviceProfile(
-            // Conditions a source's video stream must meet for the blanket
-            // codec claims in directPlayProfiles to hold. Without these the
-            // server offers direct play for variants AVFoundation can't
-            // decode. Mirrors Swiftfin's AVKit conditions.
-            codecProfiles: [
-                // AVFoundation only decodes HEVC in mp4/m4v/mov when the
-                // sample entry is tagged hvc1 (or Dolby Vision's dvh1).
-                // ffmpeg tags hev1 by default, which plays audio over a
-                // black screen — route those through HLS instead.
-                //
-                // Scoped to the mp4 family: only those containers carry a
-                // sample-entry tag at all. MKV video streams have none
-                // (CodecTag=null), so an unscoped required condition failed
-                // every HEVC MKV and forced a video re-encode the server's
-                // own remux would have made moot — it retags to hvc1 when
-                // copying into fMP4 segments (#146).
+extension JellyfinAPI.DeviceProfile {
+    // Label deliberately not `from:` — that overloads Decodable's
+    // `init(from: Decoder)` and makes call sites ambiguous
+    init(capabilities: PlaybackCapabilities) {
+        self.init(
+            codecProfiles: capabilities.videoCodecRules.map { rule in
                 JellyfinAPI.CodecProfile(
-                    codec: "hevc",
-                    conditions: [
+                    codec: rule.codec,
+                    conditions: rule.conditions.map { condition in
                         JellyfinAPI.ProfileCondition(
-                            condition: .equalsAny,
-                            isRequired: true,
-                            property: .videoCodecTag,
-                            value: "hvc1|dvh1",
-                        ),
-                    ],
-                    container: "mp4,m4v,mov",
+                            condition: .init(from: condition.comparison),
+                            isRequired: condition.isRequired,
+                            property: .init(from: condition.property),
+                            value: condition.value,
+                        )
+                    },
+                    container: rule.containers?.joined(separator: ","),
                     type: .video,
-                ),
-                // Declare the video ranges the device can display, so the
-                // server stream-copies HDR instead of tone-mapping it to
-                // SDR: an undeclared client is assumed SDR-only, and the
-                // tone-map means a full-resolution software re-encode that
-                // runs far below realtime and starves playback (#146).
-                //
-                // Dolby Vision profile 7 (DOVIWithEL) is deliberately
-                // absent — no Apple hardware decodes the dual layer, and
-                // omitting it selects the server's strip-to-HDR10 copy path
-                // (10.11+). Profile 5 (DOVI) is absent until DV playlist
-                // signaling is verified on device: it has no HDR10 base
-                // layer, so an unsignaled copy displays with broken color.
-                //
-                // isRequired stays false so sources with an unprobed range
-                // aren't needlessly rejected. Mirrors (comma-separated)
-                // StreamURLBuilder.hevcRangeTypes.
-                JellyfinAPI.CodecProfile(
-                    codec: "hevc",
-                    conditions: [
-                        JellyfinAPI.ProfileCondition(
-                            condition: .equalsAny,
-                            isRequired: false,
-                            property: .videoRangeType,
-                            value: "SDR|HDR10|HLG|DOVIWithHDR10",
-                        ),
-                    ],
-                    type: .video,
-                ),
-                // No Apple hardware decodes 10-bit H.264 (Hi10P), and only
-                // the mainstream profiles are supported. isRequired stays
-                // false so sources with unprobed depth/profile aren't
-                // needlessly rejected.
-                JellyfinAPI.CodecProfile(
-                    codec: "h264",
-                    conditions: [
-                        JellyfinAPI.ProfileCondition(
-                            condition: .lessThanEqual,
-                            isRequired: false,
-                            property: .videoBitDepth,
-                            value: "8",
-                        ),
-                        JellyfinAPI.ProfileCondition(
-                            condition: .equalsAny,
-                            isRequired: false,
-                            property: .videoProfile,
-                            value: "high|main|baseline|constrained baseline",
-                        ),
-                    ],
-                    type: .video,
-                ),
-            ],
-            directPlayProfiles: [
+                )
+            },
+            directPlayProfiles: capabilities.directPlay.map { rule in
                 JellyfinAPI.DirectPlayProfile(
-                    audioCodec: "aac,ac3,eac3,flac,alac",
-                    container: "mp4,m4v,mov",
+                    audioCodec: rule.audioCodecs.joined(separator: ","),
+                    container: rule.containers.joined(separator: ","),
                     type: .video,
-                    videoCodec: "hevc,h264",
-                ),
-            ],
-            name: "Jelly Shark",
-            subtitleProfiles: [
-                // AVPlayer renders embedded tx3g (mov_text) natively; without
-                // this declaration the server refuses to direct play any
-                // mp4/mov that merely CONTAINS such a track
-                JellyfinAPI.SubtitleProfile(format: "mov_text", method: .embed),
-                // External keeps SupportsDirectPlay=true for files that have
-                // text sidecars: without it the server reports
-                // SubtitleCodecNotSupported and forces a transcode even when
-                // no subtitle was requested. Selected text subs are still
-                // delivered as HLS renditions via SubtitleMethod on the
-                // stream URL.
-                JellyfinAPI.SubtitleProfile(format: "vtt", method: .external),
-                JellyfinAPI.SubtitleProfile(format: "subrip", method: .external),
-                JellyfinAPI.SubtitleProfile(format: "vtt", method: .hls),
-                JellyfinAPI.SubtitleProfile(format: "subrip", method: .hls),
-                JellyfinAPI.SubtitleProfile(format: "ass", method: .encode),
-                JellyfinAPI.SubtitleProfile(format: "ssa", method: .encode),
-                JellyfinAPI.SubtitleProfile(format: "pgssub", method: .encode),
-                JellyfinAPI.SubtitleProfile(format: "dvdsub", method: .encode),
-            ],
+                    videoCodec: rule.videoCodecs.joined(separator: ","),
+                )
+            },
+            name: capabilities.name,
+            subtitleProfiles: capabilities.subtitles.map { rule in
+                JellyfinAPI.SubtitleProfile(
+                    format: rule.format,
+                    method: .init(from: rule.delivery),
+                )
+            },
             transcodingProfiles: [
-                // Advertise both segment containers StreamURLBuilder may
-                // request: fMP4 (the default, and the only one Apple decodes
-                // HEVC from) and ts (used only when a text subtitle rides
-                // along) — see the SegmentContainer comment there.
                 JellyfinAPI.TranscodingProfile(
-                    audioCodec: "aac,ac3,eac3",
-                    isBreakOnNonKeyFrames: true,
-                    container: "mp4,ts",
+                    audioCodec: capabilities.transcoding.audioCodecs.joined(separator: ","),
+                    isBreakOnNonKeyFrames: capabilities.transcoding.breaksOnNonKeyFrames,
+                    container: capabilities.transcoding.containers.joined(separator: ","),
                     context: .streaming,
-                    minSegments: 2,
+                    minSegments: capabilities.transcoding.minSegments,
                     protocol: .hls,
                     type: .video,
-                    videoCodec: "hevc,h264",
+                    videoCodec: capabilities.transcoding.videoCodecs.joined(separator: ","),
                 ),
             ],
         )
+    }
+}
+
+private extension JellyfinAPI.ProfileConditionType {
+    init(from comparison: PlaybackCapabilities.VideoCodecCondition.Comparison) {
+        self = switch comparison {
+        case .equalsAny: .equalsAny
+        case .lessThanEqual: .lessThanEqual
+        }
+    }
+}
+
+private extension JellyfinAPI.ProfileConditionValue {
+    init(from property: PlaybackCapabilities.VideoCodecCondition.Property) {
+        self = switch property {
+        case .videoCodecTag: .videoCodecTag
+        case .videoRangeType: .videoRangeType
+        case .videoBitDepth: .videoBitDepth
+        case .videoProfile: .videoProfile
+        }
+    }
+}
+
+private extension JellyfinAPI.SubtitleDeliveryMethod {
+    init(from delivery: PlaybackCapabilities.SubtitleRule.Delivery) {
+        self = switch delivery {
+        case .embed: .embed
+        case .external: .external
+        case .hls: .hls
+        case .encode: .encode
+        }
     }
 }

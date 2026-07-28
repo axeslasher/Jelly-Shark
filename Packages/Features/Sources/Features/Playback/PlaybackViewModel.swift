@@ -139,6 +139,7 @@ public final class PlaybackViewModel {
                 startTimeTicks: resumeTicks > 0 ? resumeTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
+                capabilities: engine.capabilities,
             )
 
             guard let source = session.defaultMediaSource else {
@@ -174,6 +175,7 @@ public final class PlaybackViewModel {
                     audioStreamIndex: selectedAudioStreamIndex,
                     subtitleStreamIndex: selectedSubtitleStreamIndex,
                 ),
+                capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
@@ -359,6 +361,7 @@ public final class PlaybackViewModel {
                 audioStreamIndex: selectedAudioStreamIndex,
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
                 trickplayInfo: trickplayInfo,
+                capabilities: engine.capabilities,
             ),
             client: client,
         )
@@ -500,6 +503,7 @@ public final class PlaybackViewModel {
                 startTimeTicks: positionTicks > 0 ? positionTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
+                capabilities: engine.capabilities,
             )
 
             guard let source = session.defaultMediaSource else {
@@ -519,6 +523,7 @@ public final class PlaybackViewModel {
                     audioStreamIndex: selectedAudioStreamIndex,
                     subtitleStreamIndex: selectedSubtitleStreamIndex,
                 ),
+                capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
