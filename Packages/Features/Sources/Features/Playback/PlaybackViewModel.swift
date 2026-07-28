@@ -543,21 +543,27 @@ public final class PlaybackViewModel {
     // MARK: - Engine Events
 
     private func handleEngineEvent(_ event: PlayerEngineEvent) {
+        // The gate is read once and then both logged and applied, so the
+        // console line can never disagree with what actually happened.
+        let isOpen = gateIsOpen(for: event)
+        Self.logger.info("""
+        [engine] \(Self.description(of: event), privacy: .public) \
+        \(isOpen ? "handled" : "DROPPED (gate closed)", privacy: .public)
+        """)
+        guard isOpen else { return }
+
         switch event {
         case .transportStatusChanged:
-            guard steadyStateEventsArmed else { return }
             Task { @MainActor [weak self] in
                 await self?.reportProgress()
             }
 
         case .playedToEnd:
-            guard steadyStateEventsArmed else { return }
             Task { @MainActor [weak self] in
                 await self?.handlePlaybackEnded()
             }
 
         case .mediaSelectionChanged:
-            guard steadyStateEventsArmed else { return }
             Task { @MainActor [weak self] in
                 await self?.reconcileMediaSelection()
             }
@@ -566,8 +572,40 @@ public final class PlaybackViewModel {
             mediaSelectionReconcileArmed = true
 
         case let .deliveryFailed(reason, cause):
-            guard deliveryFailureEventsArmed else { return }
             failDelivery(message: Self.deliveryFailureMessage(reason: reason), cause: cause)
+        }
+    }
+
+    /// Whether this event class is open for business yet.
+    ///
+    /// Each gate reproduces the timing at which the pre-seam view model
+    /// attached the corresponding observer, so no event acts earlier than it
+    /// used to (#85). A closed gate drops the event outright — it is not
+    /// queued — which is why `handleEngineEvent` logs the verdict.
+    private func gateIsOpen(for event: PlayerEngineEvent) -> Bool {
+        switch event {
+        case .transportStatusChanged, .playedToEnd, .mediaSelectionChanged:
+            steadyStateEventsArmed
+        case .mediaSelectionOptionsLoaded:
+            // Ungated: this only arms reconciliation, and it has to land
+            // whenever the engine finishes loading its selection groups —
+            // which on a fast stream can precede the start report.
+            true
+        case .deliveryFailed:
+            deliveryFailureEventsArmed
+        }
+    }
+
+    /// Console name for one engine event. The delivery-failure case carries
+    /// the engine's own cause, so a device log names the signal that fired
+    /// (item status vs. failed-to-play-to-end) rather than just the class.
+    private static func description(of event: PlayerEngineEvent) -> String {
+        switch event {
+        case .transportStatusChanged: "transportStatusChanged"
+        case .playedToEnd: "playedToEnd"
+        case .mediaSelectionChanged: "mediaSelectionChanged"
+        case .mediaSelectionOptionsLoaded: "mediaSelectionOptionsLoaded"
+        case let .deliveryFailed(_, cause): "deliveryFailed(\(cause))"
         }
     }
 
