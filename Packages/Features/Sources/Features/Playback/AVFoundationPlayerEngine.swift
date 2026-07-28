@@ -22,7 +22,8 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     /// facts about AVPlayer and the Apple hardware behind it — not about
     /// Jellyfin, and not about the app — which is why the engine owns them
     /// and JellyfinKit derives the wire-format DeviceProfile (#85).
-    static let capabilities = PlaybackCapabilities(
+    /// (`nonisolated`: immutable Sendable state, readable off the actor.)
+    nonisolated static let capabilities = PlaybackCapabilities(
         name: "Jelly Shark",
         // 120 Mbps comfortably covers 4K remuxes on a LAN while still
         // letting the server transcode down for genuinely enormous sources

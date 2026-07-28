@@ -1,5 +1,6 @@
 @testable import Features
 import Foundation
+import JellyfinKit
 
 /// The `PlayerEngine` stub for the playback suites: records every call,
 /// serves settable state, and lets tests drive the session layer by
