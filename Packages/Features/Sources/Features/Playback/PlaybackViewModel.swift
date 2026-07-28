@@ -1,14 +1,15 @@
-import AVFoundation
 import Foundation
 import JellyfinKit
 import Observation
 import OSLog
 
-/// View model for video playback
+/// View model for video playback: the session half of the player (#85).
 ///
-/// Owns the AVPlayer, drives playback state, reports progress to the
-/// Jellyfin server, and handles next-episode autoplay. All state is
-/// MainActor-confined because AVPlayer and KVO tokens are not Sendable.
+/// Owns what is playing and why — stream resolution, track selection,
+/// progress reporting to the Jellyfin server, delivery-failure policy, and
+/// next-episode autoplay. Rendering and transport live behind
+/// `PlayerEngine`; delivery (how the resolved URL reaches the engine)
+/// behind `StreamDelivery`. All state is MainActor-confined.
 @Observable
 @MainActor
 public final class PlaybackViewModel {
@@ -25,9 +26,6 @@ public final class PlaybackViewModel {
 
     /// Current playback state
     public private(set) var state: State = .idle
-
-    /// The player, available once loading succeeds
-    public private(set) var player: AVPlayer?
 
     /// The media source being played
     public private(set) var mediaSource: MediaSource?
@@ -65,65 +63,65 @@ public final class PlaybackViewModel {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
     private let client: any JellyfinClientProtocol
+    private let engine: any PlayerEngine
     private let progressInterval: Duration
     private var playSessionId: String?
     private var playMethod: PlayMethod = .transcode
     private var progressTask: Task<Void, Never>?
-    private var endObserver: NSObjectProtocol?
-    private var timeControlObservation: NSKeyValueObservation?
     private var hasStopped = false
 
-    /// Delivery instrumentation for the current player item (#151). Nothing
-    /// below AVFoundation tells the app that video stopped arriving, so these
-    /// three — the item's `status`, its failed-to-play-to-end notification,
-    /// and a first-frame deadline — are the only routes a post-`play()`
-    /// failure has into `state`. They are armed and torn down together.
-    private var itemStatusObservation: NSKeyValueObservation?
-    private var failedToEndObserver: NSObjectProtocol?
+    /// First-frame deadline for the current session (#151). The engine's
+    /// failure events and this watchdog are the only routes a post-`play()`
+    /// failure has into `state`; they are armed and torn down together.
     private var firstFrameWatchdog: Task<Void, Never>?
+
+    /// Gate for the engine's `.deliveryFailed` events. The engine arms its
+    /// observers inside `load`, but historically the view model attached
+    /// them only after `play()` — this flag preserves that timing, and
+    /// `armDeliveryFailureDetection` re-checks the engine's error so a
+    /// failure from the gap still surfaces (the `.initial` KVO behavior).
+    private var deliveryFailureEventsArmed = false
+
+    /// Gate for transport/end/media-selection events, which historically
+    /// attached only after the start report's network round trip — without
+    /// it the play() ramp would emit progress heartbeats before the start
+    /// report reaches the server.
+    private var steadyStateEventsArmed = false
+
+    /// Bumped per `engine.load`; async completions capture it and are
+    /// dropped when a rebuild or autoplay has moved the session on
+    private var sessionEpoch = 0
 
     /// Whether the current stream has the selected subtitle burned into the
     /// video, in which case no legible rendition exists to toggle
     private var sessionUsesBurnIn = false
 
-    /// The current item's legible media-selection group, once loaded
-    private var legibleGroup: AVMediaSelectionGroup?
-
-    /// The legible group's options distilled for matching. Internal (not
-    /// private) so tests can seed it without a real HLS asset.
-    var legibleOptions: [LegibleOption] = []
-
-    /// The current item's audible media-selection group, once loaded
-    private var audibleGroup: AVMediaSelectionGroup?
-
-    /// The audible group's options distilled for matching. Internal (not
-    /// private) so tests can seed it without a real asset.
-    var audibleOptions: [AudibleOption] = []
-
-    private var mediaSelectionTask: Task<Void, Never>?
-
     /// Whether native-picker reconciliation may run. Disarmed on every new
-    /// player item until the selection groups and their distilled options
-    /// have loaded — a change notification arriving before then could not
-    /// be mapped to a Jellyfin stream index.
+    /// stream until the engine reports its selection options loaded — a
+    /// change notification arriving before then could not be mapped to a
+    /// Jellyfin stream index.
     private var mediaSelectionReconcileArmed = false
-
-    private var mediaSelectionObserver: NSObjectProtocol?
 
     // MARK: - Initialization
 
     /// - Parameters:
     ///   - client: The authenticated Jellyfin client
     ///   - item: The item to play
+    ///   - engine: The rendering/transport engine to drive
     ///   - progressInterval: How often to report progress (injectable for tests)
-    public init(
+    init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
+        engine: any PlayerEngine,
         progressInterval: Duration = .seconds(10),
     ) {
         self.client = client
         self.item = item
+        self.engine = engine
         self.progressInterval = progressInterval
+        engine.onEvent = { [weak self] event in
+            self?.handleEngineEvent(event)
+        }
     }
 
     // MARK: - Lifecycle
@@ -195,7 +193,7 @@ public final class PlaybackViewModel {
             let extrasPeople = extras?.people ?? []
             castMembers = extrasPeople.isEmpty ? (item.people ?? []) : extrasPeople
 
-            await beginPlayback(url: resolution.url, resumeTicks: resumeTicks)
+            await beginPlayback(resolution: resolution, resumeTicks: resumeTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
@@ -204,7 +202,7 @@ public final class PlaybackViewModel {
     /// Abandon a failed session and start the same item over, in place.
     ///
     /// A full `stop()` first, not a bare `start()`: `failDelivery` leaves the
-    /// paused player and — on a transcode — the server-side ffmpeg alive on
+    /// paused engine and — on a transcode — the server-side ffmpeg alive on
     /// purpose, so the failed session stays diagnosable while the error screen
     /// is up. Retrying without tearing that down would orphan the encode and
     /// stack a second one on top of it. `stop()` is idempotent and
@@ -224,16 +222,10 @@ public final class PlaybackViewModel {
 
         progressTask?.cancel()
         progressTask = nil
-        removeEndObserver()
-        timeControlObservation?.invalidate()
-        timeControlObservation = nil
-        clearMediaSelectionState()
-        clearDeliveryObservers()
-
-        player?.pause()
-        player = nil
-        localServer?.stop()
-        localServer = nil
+        disarmSessionEvents()
+        engine.teardown()
+        delivery?.stop()
+        delivery = nil
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
 
@@ -280,10 +272,11 @@ public final class PlaybackViewModel {
     /// here is a stream-shape change (a track burned in or out of the video
     /// by the server), so it always rebuilds.
     ///
-    /// Critically, no path ever calls `select(nil)` on the legible group
-    /// anymore: AVKit latches its subtitle display off when it observes
-    /// that clear, and the latch is process-global — it survives full
-    /// recreation of the item, player, and player view controller (#91).
+    /// Critically, no path ever clears the legible selection in place
+    /// anymore — and `PlayerEngine` deliberately offers no API to do so:
+    /// AVKit latches its subtitle display off when it observes that clear,
+    /// and the latch is process-global — it survives full recreation of the
+    /// item, player, and player view controller (#91).
     public func selectSubtitleStream(index: Int?) async {
         guard index != selectedSubtitleStreamIndex else { return }
         selectedSubtitleStreamIndex = index
@@ -335,36 +328,75 @@ public final class PlaybackViewModel {
 
     // MARK: - Playback Internals
 
-    private func beginPlayback(url: URL, resumeTicks: Int64) async {
-        let playerItem = await makePlayerItem(url: url)
-        let player = AVPlayer(playerItem: playerItem)
-        // The master playlist marks every text rendition AUTOSELECT=YES;
-        // left on, AVPlayer would enable subtitles from system accessibility
-        // preferences behind the app's explicit selection state
-        player.appliesMediaSelectionCriteriaAutomatically = false
-        self.player = player
+    /// The trickplay resolution for the current item's media source, when the
+    /// server has seek-preview data (resolved during `start()`)
+    private var trickplayInfo: TrickplayInfo?
 
-        applyPlayerMetadata(to: playerItem)
-        loadMediaSelectionOptions(for: playerItem)
+    /// The current item's chapters (resolved during `start()`), empty when
+    /// the server reports none
+    private var chapters: [Chapter] = []
+
+    /// The delivery serving the current stream to the engine; holds the
+    /// loopback interposer on HLS sessions
+    private var delivery: (any StreamDelivery)?
+
+    /// In-flight artwork enrichment (chapter thumbnails + poster) for the
+    /// current session
+    private var metadataArtworkTask: Task<Void, Never>?
+
+    private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64) async {
+        // The old session's delivery lives until its replacement is chosen,
+        // exactly as the interposer did before the delivery seam existed
+        delivery?.stop()
+        delivery = nil
+
+        let delivery = StreamDeliverySelector.delivery(
+            for: resolution,
+            context: DeliveryContext(
+                itemId: item.id,
+                mediaSource: mediaSource,
+                playSessionId: playSessionId,
+                audioStreamIndex: selectedAudioStreamIndex,
+                subtitleStreamIndex: selectedSubtitleStreamIndex,
+                trickplayInfo: trickplayInfo,
+            ),
+            client: client,
+        )
+        let delivered = await delivery.prepare()
+        self.delivery = delivery
+        // Delivery may correct the method (the degraded interposer fallback
+        // does); the corrected value is what start reports must carry
+        playMethod = delivered.playMethod
+
+        sessionEpoch += 1
+        engine.load(
+            url: delivered.url,
+            metadata: PlayerSessionMetadata(
+                item: item,
+                chapters: chapters,
+                durationSeconds: itemDurationSeconds,
+            ),
+            // The legible group backs in-place text-rendition selection, so
+            // it is skipped on direct play (no renditions; the embedded
+            // defaults are left to the player). The audible group loads
+            // everywhere — a direct-played file's embedded tracks are
+            // exactly what the native audio picker switches behind the
+            // app's back (#89).
+            loadsLegibleOptions: playMethod != .directPlay,
+        )
+        startMetadataEnrichment()
 
         if resumeTicks > 0 {
-            let seconds = PlaybackTicks.seconds(fromTicks: resumeTicks)
-            await player.seek(
-                to: CMTime(seconds: seconds, preferredTimescale: 600),
-                toleranceBefore: .zero,
-                toleranceAfter: .positiveInfinity,
-            )
+            await engine.seekForResume(toSeconds: PlaybackTicks.seconds(fromTicks: resumeTicks))
         }
 
-        player.play()
+        engine.play()
         state = .playing
 
         // Arm the failure paths before anything that can await: until they
         // exist a delivery failure has no way to reach `state`, and the start
         // report below is a network round trip (#151)
-        observeItemStatus(of: playerItem)
-        observeFailedToPlayToEnd(of: playerItem)
-        startFirstFrameWatchdog()
+        armDeliveryFailureDetection()
 
         do {
             try await client.reportPlaybackStart(
@@ -382,58 +414,20 @@ public final class PlaybackViewModel {
         }
 
         startProgressReporting()
-        observeTimeControlStatus(of: player)
-        observeEnd(of: playerItem)
-        observeMediaSelection(of: playerItem)
-    }
-
-    /// The trickplay resolution for the current item's media source, when the
-    /// server has seek-preview data (resolved during `start()`)
-    private var trickplayInfo: TrickplayInfo?
-
-    /// The current item's chapters (resolved during `start()`), empty when
-    /// the server reports none
-    private var chapters: [Chapter] = []
-
-    /// The loopback server interposing the master playlist for the current
-    /// player item (trickplay + subtitle-playlist rewriting); nil on direct
-    /// play or when the listener could not start
-    private var localServer: PlaybackLocalServer?
-
-    /// In-flight artwork enrichment (chapter thumbnails + poster) for the
-    /// current player item
-    private var metadataArtworkTask: Task<Void, Never>?
-
-    /// Attach chapter markers and Info-tab metadata to a fresh player item,
-    /// then enrich both with artwork off the critical path
-    ///
-    /// HLS remux/transcode streams carry none of the source file's embedded
-    /// metadata, so the Chapters panel and Info tab are reconstructed from
-    /// Jellyfin data. Text lands synchronously — chapters are usable as soon
-    /// as the transport bar appears — and thumbnails upgrade the markers in
-    /// one re-set when their fetches finish.
-    private func applyPlayerMetadata(to playerItem: AVPlayerItem) {
-        playerItem.externalMetadata = PlayerMetadataFactory.externalMetadata(for: item)
-
-        #if os(tvOS)
-            if let duration = itemDurationSeconds,
-               let group = PlayerMetadataFactory.navigationMarkerGroup(
-                   chapters: chapters,
-                   durationSeconds: duration,
-               )
-            {
-                playerItem.navigationMarkerGroups = [group]
-            }
-        #endif
-
-        startMetadataEnrichment(for: playerItem)
+        steadyStateEventsArmed = true
     }
 
     private var itemDurationSeconds: Double? {
         item.runTimeTicks.map { PlaybackTicks.seconds(fromTicks: $0) }
     }
 
-    private func startMetadataEnrichment(for playerItem: AVPlayerItem) {
+    /// Fetch chapter thumbnails and the poster off the critical path, then
+    /// hand them to the engine in one re-application when they arrive.
+    ///
+    /// Text metadata lands synchronously inside `engine.load` — chapters
+    /// are usable as soon as the transport bar appears — and thumbnails
+    /// upgrade the markers when their fetches finish.
+    private func startMetadataEnrichment() {
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
 
@@ -445,8 +439,9 @@ public final class PlaybackViewModel {
         let itemId = item.id
         let mediaSourceId = mediaSource?.id
         let client = client
+        let epoch = sessionEpoch
 
-        metadataArtworkTask = Task { [weak self, weak playerItem] in
+        metadataArtworkTask = Task { [weak self] in
             let chapterArtwork = await ChapterArtworkLoader.loadArtwork(
                 for: chapters,
                 chapterImageURL: { chapter in
@@ -472,111 +467,15 @@ public final class PlaybackViewModel {
             )
             let posterData = await ChapterArtworkLoader.imageData(from: posterURL)
 
-            guard !Task.isCancelled, let self, let playerItem else { return }
-            self.applyEnrichedMetadata(
-                chapterArtwork: chapterArtwork,
-                posterData: posterData,
-                to: playerItem,
-            )
+            // A rebuild or episode change may have swapped the session
+            // mid-fetch; stale artwork must not reach the new stream
+            guard !Task.isCancelled, let self, self.sessionEpoch == epoch else { return }
+            self.engine.applyEnrichedMetadata(chapterArtwork: chapterArtwork, posterData: posterData)
         }
-    }
-
-    private func applyEnrichedMetadata(
-        chapterArtwork: [Int: Data],
-        posterData: Data?,
-        to playerItem: AVPlayerItem,
-    ) {
-        // A rebuild or episode change may have swapped the item mid-fetch
-        guard player?.currentItem === playerItem else { return }
-        guard !chapterArtwork.isEmpty || posterData != nil else { return }
-
-        playerItem.externalMetadata = PlayerMetadataFactory.externalMetadata(
-            for: item,
-            artworkData: posterData,
-        )
-
-        #if os(tvOS)
-            if !chapterArtwork.isEmpty,
-               let duration = itemDurationSeconds,
-               let group = PlayerMetadataFactory.navigationMarkerGroup(
-                   chapters: chapters,
-                   durationSeconds: duration,
-                   artwork: chapterArtwork,
-               )
-            {
-                playerItem.navigationMarkerGroups = [group]
-            }
-        #endif
-    }
-
-    /// Build the player item: plain URL for direct play, and an interposed
-    /// master serving the synthesized trickplay I-frame rendition for HLS
-    /// sessions with seek-preview data
-    private func makePlayerItem(url: URL) async -> AVPlayerItem {
-        localServer?.stop()
-        localServer = nil
-
-        guard playMethod != .directPlay else {
-            return AVPlayerItem(url: url)
-        }
-
-        let itemId = item.id
-        let sourceId = mediaSource?.id
-        let client = client
-        let info = trickplayInfo
-        // Jellyfin advertises image (PGS) subtitle streams as renditions it
-        // cannot serve as text; the proxy drops them so AVKit's picker only
-        // offers subtitles that can actually render
-        let unservable = Set(
-            (mediaSource?.subtitleStreams ?? [])
-                .filter { !$0.isTextSubtitleStream }
-                .compactMap(\.displayTitle),
-        )
-        let server = PlaybackLocalServer(
-            originalMasterURL: url,
-            info: info,
-            unservableSubtitleNames: unservable,
-        ) { tileIndex in
-            guard let info else { return nil }
-            return client.trickplayTileURL(
-                itemId: itemId,
-                width: info.widthKey,
-                tileIndex: tileIndex,
-                mediaSourceId: sourceId,
-            )
-        }
-
-        guard let interposedURL = await server.start() else {
-            // Degraded path: nothing will strip the WebVTT timestamp map,
-            // so re-resolve with the interposer assumption off — a
-            // delivered text subtitle falls back to TS + H.264, where the
-            // map's offset aligns and cues stay correctly timed (slower for
-            // HEVC sources, but never silently 10s late)
-            Self.logger.warning("[server] loopback listener unavailable; falling back to origin delivery")
-            if let source = mediaSource,
-               let fallback = try? client.resolveStream(
-                   for: source,
-                   parameters: StreamParameters(
-                       itemId: item.id,
-                       mediaSourceId: source.id,
-                       playSessionId: playSessionId,
-                       audioStreamIndex: selectedAudioStreamIndex,
-                       subtitleStreamIndex: selectedSubtitleStreamIndex,
-                   ),
-                   assumeInterposer: false,
-               )
-            {
-                playMethod = fallback.playMethod
-                return AVPlayerItem(url: fallback.url)
-            }
-            return AVPlayerItem(url: url)
-        }
-        localServer = server
-        return AVPlayerItem(url: interposedURL)
     }
 
     private func rebuildStream() async {
-        guard player != nil else { return }
+        guard engine.isLoaded else { return }
 
         let positionTicks = currentPositionTicks()
 
@@ -588,14 +487,10 @@ public final class PlaybackViewModel {
         }
 
         progressTask?.cancel()
-        removeEndObserver()
-        timeControlObservation?.invalidate()
-        clearMediaSelectionState()
-        clearDeliveryObservers()
+        disarmSessionEvents()
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
-        player?.pause()
-        player = nil
+        engine.teardown()
 
         state = .loading
 
@@ -629,114 +524,51 @@ public final class PlaybackViewModel {
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "rebuild")
 
-            await beginPlayback(url: resolution.url, resumeTicks: positionTicks)
+            await beginPlayback(resolution: resolution, resumeTicks: positionTicks)
         } catch {
             state = .failed(error.localizedDescription)
         }
     }
 
-    // MARK: - Media Selection
-
-    /// Load the media-selection groups of the freshly created player item.
-    ///
-    /// The legible group backs in-place text-rendition selection, so it is
-    /// skipped on direct play (no renditions; the embedded defaults are left
-    /// to the player). The audible group exists purely for reconciling
-    /// native-picker changes (#89) and loads everywhere — a direct-played
-    /// file's embedded tracks are exactly what the native audio picker
-    /// switches behind the app's back.
-    private func loadMediaSelectionOptions(for playerItem: AVPlayerItem) {
-        mediaSelectionTask?.cancel()
-        legibleGroup = nil
-        legibleOptions = []
-        audibleGroup = nil
-        audibleOptions = []
+    /// Reset every per-session event gate and cancel the watchdog. Runs on
+    /// stop and rebuild, before the engine tears the session down.
+    private func disarmSessionEvents() {
+        firstFrameWatchdog?.cancel()
+        firstFrameWatchdog = nil
+        deliveryFailureEventsArmed = false
+        steadyStateEventsArmed = false
         mediaSelectionReconcileArmed = false
-
-        mediaSelectionTask = Task { [weak self] in
-            await self?.loadAudibleGroup(for: playerItem)
-            if self?.playMethod != .directPlay {
-                await self?.loadLegibleGroup(for: playerItem)
-            }
-            guard let self, !Task.isCancelled,
-                  self.player?.currentItem === playerItem else { return }
-            // Arm only once the groups and their distilled options are in
-            // place — a notification arriving before then could not be
-            // mapped to a stream index anyway
-            self.mediaSelectionReconcileArmed = true
-        }
     }
 
-    private func loadAudibleGroup(for playerItem: AVPlayerItem) async {
-        do {
-            guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .audible) else {
-                Self.logger.debug("[audio] stream carries no audible group")
-                return
+    // MARK: - Engine Events
+
+    private func handleEngineEvent(_ event: PlayerEngineEvent) {
+        switch event {
+        case .transportStatusChanged:
+            guard steadyStateEventsArmed else { return }
+            Task { @MainActor [weak self] in
+                await self?.reportProgress()
             }
-            guard !Task.isCancelled, player?.currentItem === playerItem else { return }
-            audibleGroup = group
-            audibleOptions = group.options.enumerated().map { position, option in
-                AudibleOption(
-                    position: position,
-                    displayName: option.displayName,
-                    languageTag: option.extendedLanguageTag,
-                )
+
+        case .playedToEnd:
+            guard steadyStateEventsArmed else { return }
+            Task { @MainActor [weak self] in
+                await self?.handlePlaybackEnded()
             }
-        } catch {
-            Self.logger.warning("[audio] audible group load failed: \(error, privacy: .public)")
-        }
-    }
 
-    private func loadLegibleGroup(for playerItem: AVPlayerItem) async {
-        do {
-            guard let group = try await playerItem.asset.loadMediaSelectionGroup(for: .legible) else {
-                // Normal on a stream with no legible renditions
-                Self.logger.debug("[subtitle] stream carries no legible group")
-                return
+        case .mediaSelectionChanged:
+            guard steadyStateEventsArmed else { return }
+            Task { @MainActor [weak self] in
+                await self?.reconcileMediaSelection()
             }
-            guard !Task.isCancelled else { return }
-            legibleGroupDidLoad(group, for: playerItem)
-        } catch {
-            // The root of the subtitle pipeline: if this load fails, no
-            // rendition can ever be selected and every diagnostic
-            // downstream is unreachable, so record the cause at a
-            // persisted level
-            Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
+
+        case .mediaSelectionOptionsLoaded:
+            mediaSelectionReconcileArmed = true
+
+        case let .deliveryFailed(reason, cause):
+            guard deliveryFailureEventsArmed else { return }
+            failDelivery(message: Self.deliveryFailureMessage(reason: reason), cause: cause)
         }
-    }
-
-    private func legibleGroupDidLoad(_ group: AVMediaSelectionGroup, for playerItem: AVPlayerItem) {
-        // A rebuild may have replaced the player while the group loaded
-        guard player?.currentItem === playerItem else { return }
-
-        legibleGroup = group
-        legibleOptions = group.options.enumerated().map { position, option in
-            LegibleOption(
-                position: position,
-                displayName: option.displayName,
-                languageTag: option.extendedLanguageTag,
-            )
-        }
-        Self.logger.debug("[subtitle] legible options loaded: \(self.legibleOptions.count)")
-        // Deliberately no selection is applied. AVKit owns text subtitles:
-        // its picker, the rendition's DEFAULT/AUTOSELECT flags, and the
-        // viewer's system caption preference decide what renders. The app
-        // used to select and clear here — and the clear (`select(nil)`)
-        // latched AVKit's subtitle display off process-wide, surviving full
-        // player recreation (#91). The group and options are kept solely so
-        // `reconcileMediaSelection` can map AVKit's choices back to
-        // Jellyfin stream indices for menus and reporting.
-    }
-
-    private func clearMediaSelectionState() {
-        mediaSelectionTask?.cancel()
-        mediaSelectionTask = nil
-        legibleGroup = nil
-        legibleOptions = []
-        audibleGroup = nil
-        audibleOptions = []
-        mediaSelectionReconcileArmed = false
-        removeMediaSelectionObserver()
     }
 
     // MARK: - Native-Picker Reconciliation
@@ -750,26 +582,6 @@ public final class PlaybackViewModel {
         case unmatched
     }
 
-    private func observeMediaSelection(of playerItem: AVPlayerItem) {
-        removeMediaSelectionObserver()
-        mediaSelectionObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.mediaSelectionDidChangeNotification,
-            object: playerItem,
-            queue: .main,
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.reconcileMediaSelection()
-            }
-        }
-    }
-
-    private func removeMediaSelectionObserver() {
-        if let mediaSelectionObserver {
-            NotificationCenter.default.removeObserver(mediaSelectionObserver)
-        }
-        mediaSelectionObserver = nil
-    }
-
     /// Adopt a native-picker track change into view-model state.
     ///
     /// AVKit's transport-bar pickers flip renditions directly on the player
@@ -780,20 +592,17 @@ public final class PlaybackViewModel {
     /// finds state already matching, and stops — no feedback cycle is
     /// possible by construction.
     private func reconcileMediaSelection() async {
-        guard mediaSelectionReconcileArmed,
-              let playerItem = player?.currentItem else { return }
-        let selection = playerItem.currentMediaSelection
+        guard mediaSelectionReconcileArmed, engine.isLoaded else { return }
         var changed = false
 
-        if let group = legibleGroup {
-            let position = selection.selectedMediaOption(in: group)
-                .flatMap { group.options.firstIndex(of: $0) }
+        if !engine.legibleOptions.isEmpty {
+            let position = engine.selectedLegiblePosition
             let decision = Self.subtitleReconcileDecision(
                 selectedPosition: position,
                 currentIndex: selectedSubtitleStreamIndex,
                 sessionUsesBurnIn: sessionUsesBurnIn,
                 streams: mediaSource?.subtitleStreams ?? [],
-                options: legibleOptions,
+                options: engine.legibleOptions,
             )
             switch decision {
             case let .update(index):
@@ -818,15 +627,14 @@ public final class PlaybackViewModel {
         // picker has nothing to offer, and its metadata (displayName
         // "Unknown", no language) matches no Jellyfin stream — reconciling
         // it would warn on every notification for a switch nobody can make
-        if let group = audibleGroup, audibleOptions.count > 1 {
-            let option = selection.selectedMediaOption(in: group)
-                .flatMap { group.options.firstIndex(of: $0) }
-                .flatMap { position in audibleOptions.first { $0.position == position } }
+        if engine.audibleOptions.count > 1 {
+            let option = engine.selectedAudiblePosition
+                .flatMap { position in engine.audibleOptions.first { $0.position == position } }
             let decision = Self.audioReconcileDecision(
                 selectedOption: option,
                 currentIndex: selectedAudioStreamIndex,
                 streams: mediaSource?.audioStreams ?? [],
-                options: audibleOptions,
+                options: engine.audibleOptions,
             )
             switch decision {
             case let .update(index):
@@ -857,7 +665,7 @@ public final class PlaybackViewModel {
     }
 
     /// Decide how a legible-selection change maps onto the stored subtitle
-    /// index. Pure so the matrix is unit-testable without AVPlayer.
+    /// index. Pure so the matrix is unit-testable without a player.
     static func subtitleReconcileDecision(
         selectedPosition: Int?,
         currentIndex: Int?,
@@ -892,7 +700,7 @@ public final class PlaybackViewModel {
     }
 
     /// Decide how an audible-selection change maps onto the stored audio
-    /// index. Pure so the matrix is unit-testable without AVPlayer.
+    /// index. Pure so the matrix is unit-testable without a player.
     static func audioReconcileDecision(
         selectedOption: AudibleOption?,
         currentIndex: Int?,
@@ -949,36 +757,6 @@ public final class PlaybackViewModel {
         }
     }
 
-    private func observeTimeControlStatus(of player: AVPlayer) {
-        timeControlObservation?.invalidate()
-        timeControlObservation = player.observe(\.timeControlStatus, options: [.old, .new]) { [weak self] _, change in
-            guard change.oldValue != change.newValue else { return }
-            Task { @MainActor [weak self] in
-                await self?.reportProgress()
-            }
-        }
-    }
-
-    private func observeEnd(of playerItem: AVPlayerItem) {
-        removeEndObserver()
-        endObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.didPlayToEndTimeNotification,
-            object: playerItem,
-            queue: .main,
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                await self?.handlePlaybackEnded()
-            }
-        }
-    }
-
-    private func removeEndObserver() {
-        if let endObserver {
-            NotificationCenter.default.removeObserver(endObserver)
-        }
-        endObserver = nil
-    }
-
     // MARK: - Delivery Failures
 
     /// How long the app waits for evidence of delivery before it looks again.
@@ -1022,20 +800,20 @@ public final class PlaybackViewModel {
 
     /// Decide whether an elapsed first-frame deadline is a delivery failure.
     ///
-    /// Pure so the matrix is unit-testable without an AVPlayer — no suite in
+    /// Pure so the matrix is unit-testable without an engine — no suite in
     /// this repo can drive a real one.
     ///
     /// - Parameters:
-    ///   - timeControlStatus: the player's status at the deadline
-    ///   - positionAdvanced: whether `currentTime` moved past where the
+    ///   - transportStatus: the engine's transport state at the deadline
+    ///   - positionAdvanced: whether the playhead moved past where the
     ///     watchdog was armed (i.e. after any resume seek had landed)
-    ///   - errorDescription: `AVPlayerItem.error` or `AVPlayer.error`, either
-    ///     of which is non-nil only once playback has failed outright
+    ///   - errorDescription: the engine's error, non-nil only once playback
+    ///     has failed outright
     ///   - progress: buffered duration and bytes transferred, sampled now
     ///   - previousProgress: the same pair at the previous deadline, zero on
     ///     the first
     static func firstFrameVerdict(
-        timeControlStatus: AVPlayer.TimeControlStatus,
+        transportStatus: PlaybackTransportStatus,
         positionAdvanced: Bool,
         errorDescription: String?,
         progress: DeliveryProgress,
@@ -1054,7 +832,7 @@ public final class PlaybackViewModel {
             return .noFailure
         }
 
-        switch timeControlStatus {
+        switch transportStatus {
         case .playing:
             // Frames are flowing; the clock just has not crossed a whole tick
             return .noFailure
@@ -1062,13 +840,12 @@ public final class PlaybackViewModel {
             // The viewer stopped waiting themselves. Failing here would
             // replace a deliberate pause with an error screen, so a session
             // paused before its first frame is left alone — a genuine failure
-            // on resume still reaches the app via `status` or
-            // failed-to-play-to-end.
+            // on resume still reaches the app via the engine's failure
+            // events.
             return .noFailure
-        default:
-            // .waitingToPlayAtSpecifiedRate: a rate was requested and nothing
-            // has played. Whether that is a failure depends on whether media
-            // is still arriving.
+        case .waitingToPlay:
+            // A rate was requested and nothing has played. Whether that is a
+            // failure depends on whether media is still arriving.
             //
             // Advancing progress means the link is merely too narrow for the
             // stream — a conditioned link, a distant server, a bitrate the
@@ -1087,7 +864,7 @@ public final class PlaybackViewModel {
         }
     }
 
-    /// Message for a failure AVFoundation reported, with its own reason
+    /// Message for a failure the engine reported, with its own reason
     /// appended when it has one. Deliberately says what the viewer can do,
     /// because the only control on the error screen is Close.
     static func deliveryFailureMessage(reason: String?) -> String {
@@ -1111,68 +888,31 @@ public final class PlaybackViewModel {
         """
     }
 
-    /// Watch the item's `status` for an outright failure.
-    ///
-    /// This is the one signal that distinguishes a real failure from the
-    /// benign asset/track noise AVFoundation logs during ordinary HLS setup
-    /// ("Asset has no tracks", FSTL errors — see the AVPlayer notes in
-    /// CLAUDE.md's history). Those never drive `status` to `.failed`, and the
-    /// error log is deliberately not consulted for exactly that reason.
-    /// `.initial` covers an item that had already failed by the time this
-    /// registration ran.
-    private func observeItemStatus(of playerItem: AVPlayerItem) {
-        itemStatusObservation?.invalidate()
-        itemStatusObservation = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
-            guard item.status == .failed else { return }
-            let reason = item.error?.localizedDescription
-            Task { @MainActor [weak self, weak item] in
-                self?.failDelivery(
-                    for: item,
-                    message: PlaybackViewModel.deliveryFailureMessage(reason: reason),
-                    cause: "player item status failed",
-                )
-            }
+    /// Arm delivery-failure detection for the session that just called
+    /// `play()`: open the gate for the engine's `.deliveryFailed` events,
+    /// surface any failure that happened before the gate opened, and start
+    /// the first-frame deadline.
+    private func armDeliveryFailureDetection() {
+        deliveryFailureEventsArmed = true
+        // The engine's `.initial` status check may have fired into a closed
+        // gate (its event hops the main actor, so it can land during the
+        // resume seek); reading the error here restores the original
+        // attach-time check
+        if let reason = engine.currentErrorDescription {
+            failDelivery(
+                message: Self.deliveryFailureMessage(reason: reason),
+                cause: "player item status failed",
+            )
         }
-    }
-
-    /// Watch for AVFoundation giving up on a stream that had been playing.
-    ///
-    /// Its sibling `playbackStalledNotification` is deliberately NOT
-    /// observed: a stall is a rebuffer, it recovers on its own, and treating
-    /// one as fatal would turn every slow moment on a busy network into an
-    /// error screen.
-    private func observeFailedToPlayToEnd(of playerItem: AVPlayerItem) {
-        removeFailedToEndObserver()
-        failedToEndObserver = NotificationCenter.default.addObserver(
-            forName: AVPlayerItem.failedToPlayToEndTimeNotification,
-            object: playerItem,
-            queue: .main,
-        ) { [weak self, weak playerItem] note in
-            let reason = (note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? any Error)?
-                .localizedDescription
-            Task { @MainActor [weak self, weak playerItem] in
-                self?.failDelivery(
-                    for: playerItem,
-                    message: PlaybackViewModel.deliveryFailureMessage(reason: reason),
-                    cause: "failed to play to end",
-                )
-            }
-        }
-    }
-
-    private func removeFailedToEndObserver() {
-        if let failedToEndObserver {
-            NotificationCenter.default.removeObserver(failedToEndObserver)
-        }
-        failedToEndObserver = nil
+        startFirstFrameWatchdog()
     }
 
     /// Arm the first-frame deadline for the session that just called `play()`.
     ///
     /// The baseline is the position *after* any resume seek, not the
-    /// requested resume tick: seeking with `toleranceAfter: .positiveInfinity`
-    /// can land well past what was asked for, and comparing against the
-    /// request would read that jump as playback progress.
+    /// requested resume tick: seeking with a forward tolerance can land well
+    /// past what was asked for, and comparing against the request would read
+    /// that jump as playback progress.
     private func startFirstFrameWatchdog() {
         firstFrameWatchdog?.cancel()
         let baseline = currentPositionTicks()
@@ -1186,7 +926,7 @@ public final class PlaybackViewModel {
             while true {
                 try? await Task.sleep(for: Self.firstFrameTimeout)
                 guard !Task.isCancelled, let self else { return }
-                let progress = self.deliveryProgress()
+                let progress = self.engine.deliveryProgress()
                 guard self.firstFrameDeadlineElapsed(
                     baseline: baseline,
                     progress: progress,
@@ -1197,42 +937,6 @@ public final class PlaybackViewModel {
         }
     }
 
-    /// Evidence that media is still arriving, sampled at each deadline.
-    ///
-    /// Two measures because neither covers both delivery shapes:
-    ///
-    /// `bufferedSeconds` is the natural one, but it needs a *timeline* — a
-    /// progressively-downloaded direct-play file reports no loaded ranges
-    /// until AVPlayer has read enough of the container to know its duration,
-    /// so bytes can be pouring in with this still at zero. That is what a
-    /// conditioner run showed: a throttled direct play failed with no loaded
-    /// ranges ever appearing.
-    ///
-    /// `bytesTransferred` has no such precondition. It is the honest "is the
-    /// socket moving" counter, and it is what saves the direct-play case.
-    struct DeliveryProgress: Equatable {
-        var bufferedSeconds: Double = 0
-        var bytesTransferred: Int64 = 0
-
-        /// Whether anything at all advanced since `other`.
-        func advanced(since other: Self) -> Bool {
-            bufferedSeconds > other.bufferedSeconds || bytesTransferred > other.bytesTransferred
-        }
-    }
-
-    private func deliveryProgress() -> DeliveryProgress {
-        guard let item = player?.currentItem else { return DeliveryProgress() }
-        return DeliveryProgress(
-            bufferedSeconds: item.loadedTimeRanges
-                .reduce(0) { $0 + CMTimeGetSeconds($1.timeRangeValue.duration) },
-            // Summed, not last-event: the access log accumulates an event per
-            // delivery segment, so the tail alone can go down between samples
-            // while the total is still climbing.
-            bytesTransferred: item.accessLog()?.events
-                .reduce(0) { $0 + $1.numberOfBytesTransferred } ?? 0,
-        )
-    }
-
     /// Apply the verdict for one elapsed deadline. Returns whether the
     /// watchdog should arm another.
     private func firstFrameDeadlineElapsed(
@@ -1240,7 +944,7 @@ public final class PlaybackViewModel {
         progress: DeliveryProgress,
         previousProgress: DeliveryProgress,
     ) -> Bool {
-        guard let player, !hasStopped else { return false }
+        guard engine.isLoaded, !hasStopped else { return false }
 
         // Both measures on every deadline, including the failing one. Which of
         // them moved is the whole diagnosis when this misfires — a run that
@@ -1259,9 +963,9 @@ public final class PlaybackViewModel {
         )
 
         switch Self.firstFrameVerdict(
-            timeControlStatus: player.timeControlStatus,
+            transportStatus: engine.transportStatus,
             positionAdvanced: currentPositionTicks() > baseline,
-            errorDescription: (player.currentItem?.error ?? player.error)?.localizedDescription,
+            errorDescription: engine.currentErrorDescription,
             progress: progress,
             previousProgress: previousProgress,
         ) {
@@ -1273,26 +977,25 @@ public final class PlaybackViewModel {
             return true
         case let .failed(message):
             Self.logger.error("[delivery] deadline elapsed with nothing arriving — \(sample, privacy: .public)")
-            failDelivery(for: player.currentItem, message: message, cause: "first-frame timeout")
+            failDelivery(message: message, cause: "first-frame timeout")
             return false
         }
     }
 
     /// Move a live session to `.failed`.
     ///
-    /// Guarded on item identity and state so a late callback — from a session
-    /// that already ended, or from the item a rebuild just replaced — cannot
-    /// throw an error screen over a healthy player.
+    /// Guarded on state and stop so a late signal — from a session that
+    /// already ended — cannot throw an error screen over a healthy player;
+    /// stale engine callbacks from a replaced stream never get this far
+    /// (the engine drops them by generation).
     ///
-    /// The player is paused rather than torn down here. Full teardown (the
+    /// The engine is paused rather than torn down here. Full teardown (the
     /// stopped report and `stopEncoding`) belongs to `stop()`, which
     /// `PlaybackContainerView.onDisappear` always runs when the viewer
     /// presses Close — the only exit from the error screen. Keeping the
     /// session addressable until then also keeps it diagnosable.
-    private func failDelivery(for playerItem: AVPlayerItem?, message: String, cause: String) {
-        guard !hasStopped,
-              let playerItem,
-              player?.currentItem === playerItem else { return }
+    private func failDelivery(message: String, cause: String) {
+        guard !hasStopped, engine.isLoaded else { return }
         switch state {
         case .playing, .loading: break
         case .idle, .failed, .finished: return
@@ -1306,17 +1009,8 @@ public final class PlaybackViewModel {
 
         firstFrameWatchdog?.cancel()
         firstFrameWatchdog = nil
-        player?.pause()
+        engine.pause()
         state = .failed(message)
-    }
-
-    /// Tear down everything the delivery-failure path owns for one session
-    private func clearDeliveryObservers() {
-        firstFrameWatchdog?.cancel()
-        firstFrameWatchdog = nil
-        itemStatusObservation?.invalidate()
-        itemStatusObservation = nil
-        removeFailedToEndObserver()
     }
 
     func handlePlaybackEnded() async {
@@ -1331,7 +1025,7 @@ public final class PlaybackViewModel {
     }
 
     private func reportProgress() async {
-        guard let player, !hasStopped else { return }
+        guard engine.isLoaded, !hasStopped else { return }
 
         let positionTicks = currentPositionTicks()
         do {
@@ -1341,7 +1035,7 @@ public final class PlaybackViewModel {
                 playSessionId: playSessionId,
                 positionTicks: positionTicks,
                 playMethod: playMethod,
-                isPaused: player.timeControlStatus == .paused,
+                isPaused: engine.transportStatus == .paused,
                 audioStreamIndex: selectedAudioStreamIndex,
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
             )
@@ -1354,9 +1048,8 @@ public final class PlaybackViewModel {
     }
 
     private func currentPositionTicks() -> Int64 {
-        guard let player else { return 0 }
-        let seconds = player.currentTime().seconds
-        guard seconds.isFinite, seconds > 0 else { return 0 }
+        guard let seconds = engine.currentTimeSeconds,
+              seconds.isFinite, seconds > 0 else { return 0 }
         return PlaybackTicks.ticks(fromSeconds: seconds)
     }
 }
