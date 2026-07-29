@@ -1202,6 +1202,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 trickplay: dto.trickplay.flatMap { TrickplayManifest(from: $0) },
                 chapters: Chapter.chapters(from: dto.chapters ?? []),
                 people: CastMember.members(from: dto.people ?? []),
+                // Not a requested field: this endpoint is user-scoped, so
+                // user data comes back regardless. Reading it costs nothing
+                // and is the only fresh copy the player gets (#189).
+                userData: dto.userData.map { UserData(from: $0) },
             )
         } catch let error as APIError {
             throw error

@@ -195,6 +195,17 @@ public final class PlaybackViewModel {
             let extrasPeople = extras?.people ?? []
             castMembers = extrasPeople.isEmpty ? (item.people ?? []) : extrasPeople
 
+            // Correct the launching item's user data from the server's copy.
+            // A launch site can hand over an arbitrarily stale item — the
+            // detail page's favorite toggle is optimistic and never corrects
+            // the item it passes to the player, so the transport bar's heart
+            // showed the pre-toggle state (#189). Safe to apply here:
+            // `resumeTicks` was read before this fetch, so a fresh position
+            // can't move the seek this session is already committed to.
+            if let freshUserData = extras?.userData {
+                item.userData = freshUserData
+            }
+
             await beginPlayback(resolution: resolution, resumeTicks: resumeTicks)
         } catch {
             state = .failed(error.localizedDescription)
