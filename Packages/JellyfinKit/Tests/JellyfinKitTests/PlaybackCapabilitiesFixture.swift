@@ -6,6 +6,13 @@ extension PlaybackCapabilities {
     /// `AVFoundationPlayerEngine`), which the JellyfinKit host suite cannot
     /// import. A FeaturesTests suite pins the real declaration to these same
     /// values, so the two suites together cover the derivation chain.
+    ///
+    /// The link is by hand, and it can only break one way. Amending the
+    /// engine's declaration fails `PlaybackCapabilitiesDeclarationTests`,
+    /// which names the change — but nothing fails here, so this copy
+    /// silently goes stale and `DeviceProfileTests` keeps proving a
+    /// derivation of values no engine sends. If a shared test-support
+    /// target ever exists, this belongs in it.
     static let jellySharkAVFoundationFixture = PlaybackCapabilities(
         name: "Jelly Shark",
         maxStreamingBitrate: 120_000_000,
