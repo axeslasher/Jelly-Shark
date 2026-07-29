@@ -199,11 +199,27 @@ public final class PlaybackViewModel {
             // A launch site can hand over an arbitrarily stale item — the
             // detail page's favorite toggle is optimistic and never corrects
             // the item it passes to the player, so the transport bar's heart
-            // showed the pre-toggle state (#189). Safe to apply here:
-            // `resumeTicks` was read before this fetch, so a fresh position
-            // can't move the seek this session is already committed to.
+            // showed the pre-toggle state (#189).
+            //
+            // The position is deliberately NOT taken from the server's copy.
+            // `resumeTicks` is read at the top of `start()`, before this
+            // fetch, so a fresh position could never move this attempt's seek
+            // anyway — but `item` outlives the attempt, and `retry()` re-runs
+            // `start()`, which re-reads the position from here. Taking the
+            // server's would make Try Again resume somewhere the first press
+            // did not, and by then it is stale in its own right: this
+            // session's `stop()` has already reported where the failed
+            // attempt actually was. Keeping the launch site's value is what
+            // makes a retry repeat the attempt rather than change it.
             if let freshUserData = extras?.userData {
-                item.userData = freshUserData
+                item.userData = UserData(
+                    playbackPositionTicks: item.userData?.playbackPositionTicks,
+                    playCount: freshUserData.playCount,
+                    isFavorite: freshUserData.isFavorite,
+                    played: freshUserData.played,
+                    lastPlayedDate: freshUserData.lastPlayedDate,
+                    unplayedItemCount: freshUserData.unplayedItemCount,
+                )
             }
 
             await beginPlayback(resolution: resolution, resumeTicks: resumeTicks)

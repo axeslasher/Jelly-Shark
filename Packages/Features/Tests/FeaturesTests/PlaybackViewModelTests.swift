@@ -531,6 +531,29 @@ struct PlaybackViewModelTests {
         await viewModel.stop()
     }
 
+    @Test("A retry repeats the launch position rather than the extras' position")
+    func retryKeepsLaunchResumePosition() async {
+        let client = MockJellyfinClient()
+        // The server's copy disagrees with the launching item — watched
+        // further along on another client, say.
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            userData: UserData(playbackPositionTicks: 600_000_000, isFavorite: true),
+        ))
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 300_000_000))
+
+        await viewModel.start()
+        await viewModel.retry()
+
+        // Both attempts seek to the launching item's 30s. `item` outlives a
+        // single attempt, so taking the server's position when correcting the
+        // favorite state would make Try Again land 60s in — somewhere the
+        // first press did not go, and stale by then anyway.
+        #expect(engine.resumeSeeks == [30, 30])
+        // The state the correction is actually for still comes through
+        #expect(viewModel.isFavorite == true)
+        await viewModel.stop()
+    }
+
     @Test("Autoplay drops the override so the next episode shows its own state")
     func favoriteOverrideClearsOnAutoplay() async {
         let client = MockJellyfinClient()
