@@ -305,6 +305,121 @@ struct PlaybackViewModelTests {
         #expect(viewModel.selectedSubtitleStreamIndex == nil)
     }
 
+    // MARK: - Event Gates
+
+    // The gates reproduce the timing at which the pre-seam view model
+    // attached each observer, so no event class acts earlier than it used
+    // to (#85). `MockPlayerEngine.onPlay` fires inside the window where
+    // both are still closed.
+
+    /// Drain the event handler's spawned tasks when there is no state
+    /// change to wait on — a gate working means nothing happens
+    private func drainEvents() async {
+        for _ in 0 ..< 10 {
+            await Task.yield()
+        }
+    }
+
+    @Test("A delivery-failure event before the gate opens cannot half-fail the session")
+    func deliveryFailureBeforeGateIsDropped() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        // No engine error, so the arm-time re-check finds nothing either
+        engine.onPlay = { [weak engine] in
+            engine?.send(.deliveryFailed(reason: nil, cause: "player item status failed"))
+        }
+        await viewModel.start()
+
+        // Ungated, failDelivery would run here and pause the engine — and
+        // then `state = .playing`, the very next line of beginPlayback,
+        // would overwrite `.failed`. The session would be left with a
+        // paused engine while its state claimed to be playing.
+        #expect(viewModel.state == .playing)
+        #expect(engine.pauseCount == 0)
+    }
+
+    @Test("The arm-time re-check surfaces a failure that landed while the gate was closed")
+    func deliveryFailureInGapSurfacesViaErrorRecheck() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        engine.onPlay = { [weak engine] in
+            // The engine's own error is what `armDeliveryFailureDetection`
+            // reads back, standing in for the `.initial` KVO fire the
+            // pre-seam view model got when it attached its observer here.
+            // Note the residual gap: a failure with no error description
+            // has nothing for the re-check to find, and only the
+            // first-frame watchdog would catch it.
+            engine?.currentErrorDescription = "Cannot Open"
+            engine?.send(.deliveryFailed(reason: "Cannot Open", cause: "player item status failed"))
+        }
+        await viewModel.start()
+
+        #expect(viewModel.state == .failed(PlaybackViewModel.deliveryFailureMessage(reason: "Cannot Open")))
+        #expect(engine.pauseCount == 1)
+    }
+
+    @Test("A transport event before the gate opens emits no heartbeat")
+    func transportChangeBeforeGateEmitsNoProgress() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        engine.onPlay = { [weak engine] in
+            engine?.send(.transportStatusChanged)
+        }
+        await viewModel.start()
+        await drainEvents()
+
+        // The gate exists so the play() ramp cannot race a progress report
+        // ahead of the start report the server needs first
+        #expect(client.startReports.count == 1)
+        #expect(client.progressReports.isEmpty)
+    }
+
+    @Test("A played-to-end event before the gate opens does not queue autoplay")
+    func playedToEndBeforeGateIsDropped() async {
+        let client = MockJellyfinClient()
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
+
+        engine.onPlay = { [weak engine] in
+            engine?.send(.playedToEnd)
+        }
+        await viewModel.start()
+        await drainEvents()
+
+        #expect(viewModel.nextEpisode == nil)
+        #expect(viewModel.state == .playing)
+    }
+
+    @Test("Options-loaded is ungated, so reconciliation arms across the same window")
+    func optionsLoadedIsNotGated() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        // Deliberately asymmetric: this event only arms reconciliation, and
+        // on a fast stream the engine can finish loading its groups before
+        // the start report returns. Gating it would strand the session with
+        // reconciliation permanently disarmed.
+        engine.onPlay = { [weak engine] in
+            engine?.send(.mediaSelectionOptionsLoaded)
+        }
+        await viewModel.start()
+
+        engine.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
+        ]
+        engine.selectedLegiblePosition = 1
+        engine.send(.mediaSelectionChanged)
+        await waitUntil { viewModel.selectedSubtitleStreamIndex != nil }
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 3)
+    }
+
     // MARK: - Favorite Toggle
 
     @Test("toggleFavorite favorites, then unfavorites")

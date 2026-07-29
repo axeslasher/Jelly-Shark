@@ -43,9 +43,17 @@ final class MockPlayerEngine: PlayerEngine {
         isLoaded = true
     }
 
+    /// Fired inside `play()`, which lands in the window where both of the
+    /// session layer's event gates are still closed — after `load` armed
+    /// the real engine's observers, before `armDeliveryFailureDetection`
+    /// and the start report open them. The only hook a test has on that
+    /// window.
+    var onPlay: (() -> Void)?
+
     func play() {
         playCount += 1
         transportStatus = .playing
+        onPlay?()
     }
 
     func pause() {
