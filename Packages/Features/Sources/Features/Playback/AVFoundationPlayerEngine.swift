@@ -18,6 +18,148 @@ import OSLog
 final class AVFoundationPlayerEngine: PlayerEngine {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
+    /// What AVFoundation on tvOS/visionOS decodes and displays. These are
+    /// facts about AVPlayer and the Apple hardware behind it — not about
+    /// Jellyfin, and not about the app — which is why the engine owns them
+    /// and JellyfinKit derives the wire-format DeviceProfile (#85).
+    /// (`nonisolated`: immutable Sendable state, readable off the actor.)
+    nonisolated static let capabilities = PlaybackCapabilities(
+        name: "Jelly Shark",
+        // 120 Mbps comfortably covers 4K remuxes on a LAN while still
+        // letting the server transcode down for genuinely enormous sources
+        maxStreamingBitrate: 120_000_000,
+        directPlay: [
+            PlaybackCapabilities.DirectPlayRule(
+                containers: ["mp4", "m4v", "mov"],
+                videoCodecs: ["hevc", "h264"],
+                audioCodecs: ["aac", "ac3", "eac3", "flac", "alac"],
+            ),
+        ],
+        // Conditions a source's video stream must meet for the blanket
+        // direct-play claims to hold. Without these the server offers
+        // direct play for variants AVFoundation can't decode. Mirrors
+        // Swiftfin's AVKit conditions.
+        videoCodecRules: [
+            // AVFoundation only decodes HEVC in mp4/m4v/mov when the
+            // sample entry is tagged hvc1 (or Dolby Vision's dvh1).
+            // ffmpeg tags hev1 by default, which plays audio over a
+            // black screen — route those through HLS instead.
+            //
+            // Scoped to the mp4 family: only those containers carry a
+            // sample-entry tag at all. MKV video streams have none
+            // (CodecTag=null), so an unscoped required condition failed
+            // every HEVC MKV and forced a pointless re-encode the server's
+            // own remux would have made moot — it retags to hvc1 when
+            // copying into fMP4 segments (#146).
+            PlaybackCapabilities.VideoCodecRule(
+                codec: "hevc",
+                containers: ["mp4", "m4v", "mov"],
+                conditions: [
+                    PlaybackCapabilities.VideoCodecCondition(
+                        property: .videoCodecTag,
+                        comparison: .equalsAny,
+                        value: "hvc1|dvh1",
+                        isRequired: true,
+                    ),
+                ],
+            ),
+            // Declare the video ranges the device can display, so the
+            // server stream-copies HDR instead of tone-mapping it to
+            // SDR: an undeclared client is assumed SDR-only, and the
+            // tone-map means a full-resolution software re-encode that
+            // runs far below realtime and starves playback (#146).
+            //
+            // Dolby Vision profile 7 (DOVIWithEL) is absent because no
+            // Apple hardware decodes the dual layer.
+            //
+            // This used to claim the omission *selects* the server's
+            // strip-to-HDR10 copy path (10.11+). Measured 2026-07-28
+            // against Jellyfin 10.11.11, that is false: a DV profile 7.6
+            // source (VideoRangeType 8), matching nothing declared here,
+            // was tone-mapped to BT.709 by a libx264 software encode and
+            // downscaled to 1080p. On a CPU-only server that ran at ~0.4x
+            // realtime — the first frame rendered and the playhead never
+            // moved. Whether declaring DOVIWithEL instead yields a
+            // playable strip-and-copy is an open device experiment (#172).
+            //
+            // Profile 5 (DOVI) is absent until DV playlist signaling is
+            // verified on device: it has no HDR10 base layer, so an
+            // unsignaled copy displays with broken color.
+            //
+            // isRequired stays false so sources with an unprobed range
+            // aren't needlessly rejected. This condition is the single
+            // stored source for the range set — the stream URL's
+            // `hevc-rangetype` option reads it back comma-separated.
+            PlaybackCapabilities.VideoCodecRule(
+                codec: "hevc",
+                conditions: [
+                    PlaybackCapabilities.VideoCodecCondition(
+                        property: .videoRangeType,
+                        comparison: .equalsAny,
+                        value: "SDR|HDR10|HLG|DOVIWithHDR10",
+                        isRequired: false,
+                    ),
+                ],
+            ),
+            // No Apple hardware decodes 10-bit H.264 (Hi10P), and only
+            // the mainstream profiles are supported. isRequired stays
+            // false so sources with unprobed depth/profile aren't
+            // needlessly rejected.
+            PlaybackCapabilities.VideoCodecRule(
+                codec: "h264",
+                conditions: [
+                    PlaybackCapabilities.VideoCodecCondition(
+                        property: .videoBitDepth,
+                        comparison: .lessThanEqual,
+                        value: "8",
+                        isRequired: false,
+                    ),
+                    PlaybackCapabilities.VideoCodecCondition(
+                        property: .videoProfile,
+                        comparison: .equalsAny,
+                        value: "high|main|baseline|constrained baseline",
+                        isRequired: false,
+                    ),
+                ],
+            ),
+        ],
+        subtitles: [
+            // AVPlayer renders embedded tx3g (mov_text) natively; without
+            // this declaration the server refuses to direct play any
+            // mp4/mov that merely CONTAINS such a track
+            PlaybackCapabilities.SubtitleRule(format: "mov_text", delivery: .embed),
+            // External keeps SupportsDirectPlay=true for files that have
+            // text sidecars: without it the server reports
+            // SubtitleCodecNotSupported and forces a transcode even when
+            // no subtitle was requested. Selected text subs are still
+            // delivered as HLS renditions via SubtitleMethod on the
+            // stream URL.
+            PlaybackCapabilities.SubtitleRule(format: "vtt", delivery: .external),
+            PlaybackCapabilities.SubtitleRule(format: "subrip", delivery: .external),
+            PlaybackCapabilities.SubtitleRule(format: "vtt", delivery: .hls),
+            PlaybackCapabilities.SubtitleRule(format: "subrip", delivery: .hls),
+            PlaybackCapabilities.SubtitleRule(format: "ass", delivery: .encode),
+            PlaybackCapabilities.SubtitleRule(format: "ssa", delivery: .encode),
+            PlaybackCapabilities.SubtitleRule(format: "pgssub", delivery: .encode),
+            PlaybackCapabilities.SubtitleRule(format: "dvdsub", delivery: .encode),
+        ],
+        // Advertise both segment containers StreamURLBuilder may request:
+        // fMP4 (the default, and the only one Apple decodes HEVC from) and
+        // ts (used only when a text subtitle rides along) — see the
+        // SegmentContainer comment there.
+        transcoding: PlaybackCapabilities.TranscodingRule(
+            containers: ["mp4", "ts"],
+            videoCodecs: ["hevc", "h264"],
+            audioCodecs: ["aac", "ac3", "eac3"],
+            minSegments: 2,
+            breaksOnNonKeyFrames: true,
+        ),
+    )
+
+    nonisolated var capabilities: PlaybackCapabilities {
+        Self.capabilities
+    }
+
     /// The player, for the hosting view. Not part of `PlayerEngine`: only
     /// the AVKit hosting path needs it, and it holds a typed reference to
     /// this engine.

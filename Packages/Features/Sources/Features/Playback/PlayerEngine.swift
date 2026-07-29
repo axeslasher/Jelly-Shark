@@ -103,6 +103,12 @@ struct DeliveryProgress: Equatable {
 /// its own hosting view where `PlaybackContainerView` builds the AVKit one.
 @MainActor
 protocol PlayerEngine: AnyObject {
+    /// What this engine decodes and renders. The `DeviceProfile` sent with
+    /// every PlaybackInfo request is derived from this declaration, so the
+    /// server negotiates against the engine that will actually decode the
+    /// stream — a second engine sends its own profile with no other change.
+    var capabilities: PlaybackCapabilities { get }
+
     /// Event sink, invoked synchronously on the main actor. Set once by the
     /// session layer before the first `load`.
     var onEvent: ((PlayerEngineEvent) -> Void)? { get set }

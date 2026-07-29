@@ -5,8 +5,12 @@ import Testing
 
 @Suite("DeviceProfile")
 struct DeviceProfileTests {
+    private var profile: JellyfinAPI.DeviceProfile {
+        JellyfinAPI.DeviceProfile(capabilities: .jellySharkAVFoundationFixture)
+    }
+
     private var hevcProfiles: [JellyfinAPI.CodecProfile] {
-        (JellyfinClient.deviceProfile.codecProfiles ?? [])
+        (profile.codecProfiles ?? [])
             .filter { $0.codec == "hevc" && $0.type == .video }
     }
 
@@ -44,11 +48,15 @@ struct DeviceProfileTests {
         // selects the server's strip-to-HDR10 copy path. DOVI (profile 5)
         // deliberately absent pending on-device DV signaling verification.
         #expect(condition.value == "SDR|HDR10|HLG|DOVIWithHDR10")
+    }
 
-        // The stream URL sends the same set, comma-separated, so the
-        // PlaybackInfo negotiation and the hand-built HLS URL agree
-        let urlSet = StreamURLBuilder.hevcRangeTypes.split(separator: ",").sorted()
-        let profileSet = (condition.value ?? "").split(separator: "|").sorted()
-        #expect(urlSet == profileSet)
+    @Test("The stream URL's range parameter reads the same stored condition")
+    func rangeParameterSharesTheStoredCondition() {
+        // Both serializations come from the one videoRangeType condition,
+        // so PlaybackInfo negotiation (pipe-joined in the profile) and the
+        // hand-built HLS URL (comma-joined) agree by construction
+        let capabilities = PlaybackCapabilities.jellySharkAVFoundationFixture
+        #expect(capabilities.videoRangeTypes == ["SDR", "HDR10", "HLG", "DOVIWithHDR10"])
+        #expect(capabilities.hevcRangeTypesParameter == "SDR,HDR10,HLG,DOVIWithHDR10")
     }
 }

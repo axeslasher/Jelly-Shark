@@ -60,33 +60,6 @@ enum StreamURLBuilder {
     /// server itself computes in PlaybackInfo's TranscodingUrl.
     static let audioBitrate = 192_000
 
-    /// Video range types this client can display, sent on the HEVC
-    /// passthrough path as the codec-scoped `hevc-rangetype` stream option
-    /// (comma-separated, the server's own TranscodingUrl serialization).
-    ///
-    /// A client that declares no range support is assumed SDR-only, so the
-    /// server tone-maps every HDR source — and a tone-map mandates a
-    /// full-resolution software re-encode, which runs far below realtime on
-    /// typical servers and starves playback (#146: 4K HDR delivered at
-    /// 0.13× while 4K SDR stream-copied instantly). Declared, the server
-    /// copies what the device displays natively: HDR10, HLG, and Dolby
-    /// Vision profile 8 on an HDR10 base (DOVIWithHDR10).
-    ///
-    /// Deliberately absent:
-    /// - `DOVIWithEL` (DV profile 7, dual-layer): no Apple hardware decodes
-    ///   it, and its omission — with HDR10 present — selects the server's
-    ///   strip-to-HDR10 copy path (10.11+ removes the EL/RPU with a
-    ///   bitstream filter during stream copy; the base layer is a complete
-    ///   HDR10 stream).
-    /// - `DOVI` (profile 5): no HDR10-compatible base layer, so a copy
-    ///   displays with broken color unless the playlist carries DV
-    ///   signaling AVFoundation honors — declare only after a device check.
-    ///
-    /// Mirrored (pipe-separated) by the `VideoRangeType` condition in
-    /// `JellyfinClient.deviceProfile`, so PlaybackInfo negotiation and the
-    /// hand-built stream URL reach the same verdict.
-    static let hevcRangeTypes = "SDR,HDR10,HLG,DOVIWithHDR10"
-
     /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
     ///
     /// The master playlist (not `main.m3u8`, which is the video-only media
@@ -115,6 +88,17 @@ enum StreamURLBuilder {
     ///   - assumeInterposer: Whether `PlaybackLocalServer` will carry this
     ///     session (the normal case); false is the degraded path when the
     ///     loopback listener could not start
+    ///   - hevcRangeTypes: Video range types the engine's display pipeline
+    ///     handles, sent on the HEVC passthrough path as the codec-scoped
+    ///     `hevc-rangetype` stream option (comma-separated, the server's own
+    ///     TranscodingUrl serialization). Comes from
+    ///     `PlaybackCapabilities.hevcRangeTypesParameter`, the same stored
+    ///     declaration the derived DeviceProfile's `VideoRangeType`
+    ///     condition serializes — so PlaybackInfo negotiation and the
+    ///     hand-built stream URL reach the same verdict by construction.
+    ///     An undeclared client is assumed SDR-only and the server
+    ///     tone-maps every HDR source via a below-realtime software
+    ///     re-encode (#146).
     ///   - maxStreamingBitrate: Total streaming budget in bits per second
     ///   - eTag: Optional media source tag for cache validation
     /// - Returns: The stream URL, or nil if construction fails
@@ -126,7 +110,8 @@ enum StreamURLBuilder {
         subtitleMethod: SubtitleDeliveryMethod = .hls,
         assumeInterposer: Bool = true,
         sourceVideoCodec: String? = nil,
-        maxStreamingBitrate: Int = JellyfinClient.maxStreamingBitrate,
+        hevcRangeTypes: String,
+        maxStreamingBitrate: Int,
         eTag: String? = nil,
     ) -> URL? {
         // The segment container is chosen by the SOURCE video codec, because

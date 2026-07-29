@@ -258,19 +258,25 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
+    /// Capability declarations received by playback calls, in arrival order
+    var receivedCapabilities: [PlaybackCapabilities] = []
+
     func getPlaybackInfo(
         itemId: String,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
+        capabilities: PlaybackCapabilities,
     ) async throws -> PlaybackSessionInfo {
         playbackInfoRequests.append((itemId, startTimeTicks, audioStreamIndex, subtitleStreamIndex))
+        receivedCapabilities.append(capabilities)
         return try playbackInfoResult.get()
     }
 
     func resolveStream(
         for source: MediaSource,
         parameters: StreamParameters,
+        capabilities _: PlaybackCapabilities,
         assumeInterposer _: Bool,
     ) throws -> StreamResolution {
         // Route through the real decision rule so tests exercise it end to end

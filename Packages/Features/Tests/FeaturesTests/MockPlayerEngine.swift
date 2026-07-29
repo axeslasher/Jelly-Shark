@@ -1,5 +1,6 @@
 @testable import Features
 import Foundation
+import JellyfinKit
 
 /// The `PlayerEngine` stub for the playback suites: records every call,
 /// serves settable state, and lets tests drive the session layer by
@@ -7,6 +8,10 @@ import Foundation
 /// (#85): the view model's policy becomes testable without AVFoundation.
 @MainActor
 final class MockPlayerEngine: PlayerEngine {
+    /// The real AVFoundation declaration by default, so resolution flows
+    /// exercise the same negotiation values production does
+    var capabilities: PlaybackCapabilities = AVFoundationPlayerEngine.capabilities
+
     var onEvent: ((PlayerEngineEvent) -> Void)?
 
     // Recorded calls
