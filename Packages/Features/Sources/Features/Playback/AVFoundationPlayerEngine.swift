@@ -23,6 +23,15 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     /// Jellyfin, and not about the app — which is why the engine owns them
     /// and JellyfinKit derives the wire-format DeviceProfile (#85).
     /// (`nonisolated`: immutable Sendable state, readable off the actor.)
+    ///
+    /// **Amending this means amending `PlaybackCapabilitiesFixture` in
+    /// JellyfinKitTests too.** That fixture is a hand-copy of these values
+    /// — the host suite cannot import Features — and nothing asserts the
+    /// two are equal, because they live in test targets that cannot see
+    /// each other. `PlaybackCapabilitiesDeclarationTests` will fail here
+    /// and point at the change; nothing will point at the fixture, and a
+    /// stale one leaves `DeviceProfileTests` proving a derivation no
+    /// engine actually sends.
     nonisolated static let capabilities = PlaybackCapabilities(
         name: "Jelly Shark",
         // 120 Mbps comfortably covers 4K remuxes on a LAN while still
