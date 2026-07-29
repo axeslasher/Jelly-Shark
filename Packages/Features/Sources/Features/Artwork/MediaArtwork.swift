@@ -113,6 +113,18 @@ extension JellyfinClientProtocol {
     }
 }
 
+/// How long a navigating context-menu action waits for tvOS to finish
+/// dismissing the menu and putting the lifted card back before it pushes.
+///
+/// Not a design value — it has to outlast a system animation the app does not
+/// own and cannot observe the end of (SwiftUI's `contextMenu` exposes no
+/// dismissal callback), so it is a measured floor rather than a chosen
+/// duration. The oracle is the log: too short and UIKit resumes emitting
+/// `setPresentationValue is called outside of supported contexts, ignoring`
+/// from `com.apple.UIKit.AnimationKit`, with the stranded card visible for
+/// exactly as long as those faults continue.
+private let contextMenuDismissalSettle: Duration = .milliseconds(350)
+
 /// The owning screen's handlers for a shelf card's long-press context menu.
 /// Each nil handler omits its menu entry, so reused cards stay contextual
 /// (e.g. no View Details on a card whose select already navigates).
@@ -165,8 +177,25 @@ extension MediaItem {
             actions.append(ShelfMenuAction(
                 title: "View Details",
                 systemImage: "info.circle.text.page.fill",
-                action: viewDetails,
-            ))
+            ) {
+                // Deferred, unlike the toggles above, because this one
+                // navigates. tvOS lifts the pressed card into a system
+                // presentation for the menu and animates it back on dismiss;
+                // pushing synchronously here replaces the hierarchy that
+                // animation is returning into, so UIKit spends the rest of it
+                // logging "setPresentationValue is called outside of
+                // supported contexts, ignoring" (AnimationKit) and the lifted
+                // card is left painted over the detail page for as long as
+                // the orphaned animation runs.
+                //
+                // The toggles need no deferral: they mutate state in place,
+                // so the card is still there to animate back into — and
+                // delaying their optimistic feedback would be a regression.
+                Task { @MainActor in
+                    try? await Task.sleep(for: contextMenuDismissalSettle)
+                    viewDetails()
+                }
+            })
         }
         if let setFavorite = handlers.setFavorite {
             let favorite = userData?.isFavorite == true
