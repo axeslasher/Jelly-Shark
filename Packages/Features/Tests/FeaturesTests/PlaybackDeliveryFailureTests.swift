@@ -1,10 +1,9 @@
-import AVFoundation
 @testable import Features
 import Testing
 
 /// The pure decision behind the first-frame watchdog (#151): given what the
-/// player looks like when the deadline elapses, decide whether delivery
-/// failed. The observation and teardown around it need a real AVPlayer and a
+/// engine looks like when the deadline elapses, decide whether delivery
+/// failed. The observation and teardown around it need a real player and a
 /// real server, which no suite in this repo can provide — this covers the
 /// classification, which is where the false positives would come from.
 @MainActor
@@ -12,10 +11,10 @@ import Testing
 struct PlaybackDeliveryFailureTests {
     // MARK: - Not failures
 
-    @Test("A playing player at the deadline is not a failure")
+    @Test("A playing engine at the deadline is not a failure")
     func playingIsHealthy() {
         let verdict = PlaybackViewModel.firstFrameVerdict(
-            timeControlStatus: .playing,
+            transportStatus: .playing,
             positionAdvanced: false,
             errorDescription: nil,
             progress: .init(),
@@ -30,7 +29,7 @@ struct PlaybackDeliveryFailureTests {
         // A transcode that started slowly and is buffering again by the
         // deadline: frames demonstrably arrived, so this must never fail
         let verdict = PlaybackViewModel.firstFrameVerdict(
-            timeControlStatus: .waitingToPlayAtSpecifiedRate,
+            transportStatus: .waitingToPlay,
             positionAdvanced: true,
             errorDescription: nil,
             progress: .init(),
@@ -43,7 +42,7 @@ struct PlaybackDeliveryFailureTests {
     @Test("A viewer who paused before the first frame is not a failure")
     func pausedIsHealthy() {
         let verdict = PlaybackViewModel.firstFrameVerdict(
-            timeControlStatus: .paused,
+            transportStatus: .paused,
             positionAdvanced: false,
             errorDescription: nil,
             progress: .init(),
@@ -62,7 +61,7 @@ struct PlaybackDeliveryFailureTests {
         // link raised an error screen, because the playhead is the only other
         // progress signal and it does not move while the buffer fills.
         let verdict = PlaybackViewModel.firstFrameVerdict(
-            timeControlStatus: .waitingToPlayAtSpecifiedRate,
+            transportStatus: .waitingToPlay,
             positionAdvanced: false,
             errorDescription: nil,
             progress: .init(bufferedSeconds: 4.5, bytesTransferred: 900_000),
@@ -81,7 +80,7 @@ struct PlaybackDeliveryFailureTests {
         // conditioner run failed on exactly this shape — bytes climbing, no
         // ranges, playhead still.
         let verdict = PlaybackViewModel.firstFrameVerdict(
-            timeControlStatus: .waitingToPlayAtSpecifiedRate,
+            transportStatus: .waitingToPlay,
             positionAdvanced: false,
             errorDescription: nil,
             progress: .init(bufferedSeconds: 0, bytesTransferred: 250_000),
@@ -99,7 +98,7 @@ struct PlaybackDeliveryFailureTests {
         // already carries.
         for buffered in [0.0, 2.0, 30.0] {
             let verdict = PlaybackViewModel.firstFrameVerdict(
-                timeControlStatus: .waitingToPlayAtSpecifiedRate,
+                transportStatus: .waitingToPlay,
                 positionAdvanced: false,
                 errorDescription: nil,
                 progress: .init(bufferedSeconds: buffered, bytesTransferred: 1000),
@@ -115,7 +114,7 @@ struct PlaybackDeliveryFailureTests {
     @Test("Still waiting with nothing delivered is a failure")
     func waitingWithNothingDeliveredFails() {
         let verdict = PlaybackViewModel.firstFrameVerdict(
-            timeControlStatus: .waitingToPlayAtSpecifiedRate,
+            transportStatus: .waitingToPlay,
             positionAdvanced: false,
             errorDescription: nil,
             progress: .init(),
@@ -127,16 +126,16 @@ struct PlaybackDeliveryFailureTests {
 
     @Test("A failed player item beats every other signal")
     func itemErrorAlwaysFails() {
-        // AVPlayer drops the rate to zero when an item fails, so the paused
+        // The engine drops the rate to zero when an item fails, so the paused
         // exemption above must not swallow a genuine error — and neither must
         // a buffer that is still filling.
         for status in [
-            AVPlayer.TimeControlStatus.paused,
-            .waitingToPlayAtSpecifiedRate,
+            PlaybackTransportStatus.paused,
+            .waitingToPlay,
             .playing,
         ] {
             let verdict = PlaybackViewModel.firstFrameVerdict(
-                timeControlStatus: status,
+                transportStatus: status,
                 positionAdvanced: true,
                 errorDescription: "The operation could not be completed",
                 progress: .init(bufferedSeconds: 9, bytesTransferred: 5000),

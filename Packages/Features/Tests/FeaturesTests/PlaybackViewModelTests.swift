@@ -1,4 +1,3 @@
-import AVFoundation
 @testable import Features
 import Foundation
 import JellyfinKit
@@ -17,16 +16,34 @@ struct PlaybackViewModelTests {
         )
     }
 
+    /// Every suite member drives the view model through a mock engine; the
+    /// engine comes back alongside so tests can assert on what reached it
+    private func makePlayback(
+        client: MockJellyfinClient,
+        item: MediaItem,
+        progressInterval: Duration = .seconds(10),
+    ) -> (viewModel: PlaybackViewModel, engine: MockPlayerEngine) {
+        let engine = MockPlayerEngine()
+        let viewModel = PlaybackViewModel(
+            client: client,
+            item: item,
+            engine: engine,
+            progressInterval: progressInterval,
+        )
+        return (viewModel, engine)
+    }
+
     @Test("start() transitions to playing and reports start")
     func startReachesPlaying() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         #expect(viewModel.state == .idle)
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(viewModel.player != nil)
+        #expect(engine.isLoaded)
+        #expect(engine.playCount == 1)
         #expect(viewModel.mediaSource?.id == "source-1")
         #expect(client.startReports.count == 1)
         #expect(client.startReports[0].itemId == "movie-1")
@@ -37,25 +54,26 @@ struct PlaybackViewModelTests {
     func startWithResumePosition() async {
         let client = MockJellyfinClient()
         let resumeTicks: Int64 = 6_000_000_000 // 10 minutes
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie(resumeTicks: resumeTicks))
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: resumeTicks))
 
         await viewModel.start()
 
         #expect(client.playbackInfoRequests.count == 1)
         #expect(client.playbackInfoRequests[0].startTimeTicks == resumeTicks)
         #expect(client.startReports[0].positionTicks == resumeTicks)
+        #expect(engine.resumeSeeks == [600])
     }
 
     @Test("start() failure surfaces as failed state")
     func startFailure() async {
         let client = MockJellyfinClient()
         client.playbackInfoResult = .failure(APIError.generic("Playback not possible"))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(viewModel.state == .failed("Playback not possible"))
-        #expect(viewModel.player == nil)
+        #expect(engine.loadRequests.isEmpty)
         #expect(client.startReports.isEmpty)
     }
 
@@ -63,17 +81,17 @@ struct PlaybackViewModelTests {
     func emptyMediaSources() async {
         let client = MockJellyfinClient()
         client.playbackInfoResult = .success(PlaybackSessionInfo(playSessionId: "s", mediaSources: []))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(viewModel.state == .failed("No playable media sources for this item"))
     }
 
-    @Test("stop() reports stopped and is idempotent")
+    @Test("stop() reports stopped, tears the engine down, and is idempotent")
     func stopReportsAndIsIdempotent() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         await viewModel.stop()
@@ -81,7 +99,8 @@ struct PlaybackViewModelTests {
 
         #expect(client.stopReports.count == 1)
         #expect(client.stopReports[0].itemId == "movie-1")
-        #expect(viewModel.player == nil)
+        #expect(engine.teardownCount == 1)
+        #expect(!engine.isLoaded)
     }
 
     /// Poll until the condition holds (bounded), so timer-driven assertions stay
@@ -96,7 +115,7 @@ struct PlaybackViewModelTests {
     @Test("Progress is reported periodically")
     func progressReporting() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(
+        let (viewModel, _) = makePlayback(
             client: client,
             item: makeMovie(),
             progressInterval: .milliseconds(50),
@@ -113,7 +132,7 @@ struct PlaybackViewModelTests {
     @Test("Track selection rebuilds the stream with the selected index")
     func trackSelectionRebuildsStream() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         await viewModel.selectSubtitleStream(index: 3)
@@ -128,7 +147,7 @@ struct PlaybackViewModelTests {
     @Test("Selecting the already-selected track is a no-op")
     func selectingSameTrackIsNoOp() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         await viewModel.selectSubtitleStream(index: nil)
@@ -143,7 +162,7 @@ struct PlaybackViewModelTests {
         let next = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
         client.nextEpisodeResult = next
 
-        let viewModel = PlaybackViewModel(client: client, item: episode)
+        let (viewModel, _) = makePlayback(client: client, item: episode)
         await viewModel.start()
 
         // Simulate end-of-item discovery having queued the next episode,
@@ -164,7 +183,7 @@ struct PlaybackViewModelTests {
     @Test("Movies finish without consulting next episode")
     func moviesDoNotAutoplay() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         await viewModel.handlePlaybackEnded()
@@ -179,7 +198,7 @@ struct PlaybackViewModelTests {
         let client = MockJellyfinClient()
         client.nextEpisodeResult = nil
         let episode = MediaItem(id: "ep-9", name: "Finale", type: .episode, seriesId: "series-1")
-        let viewModel = PlaybackViewModel(client: client, item: episode)
+        let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
         await viewModel.handlePlaybackEnded()
@@ -194,7 +213,7 @@ struct PlaybackViewModelTests {
         let client = MockJellyfinClient()
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
         let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
-        let viewModel = PlaybackViewModel(client: client, item: episode)
+        let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
         await viewModel.handlePlaybackEnded()
@@ -204,12 +223,209 @@ struct PlaybackViewModelTests {
         #expect(viewModel.state == .finished)
     }
 
+    // MARK: - Engine Events
+
+    @Test("A delivery-failure event fails the session but keeps it addressable")
+    func deliveryFailureEventFailsSession() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        engine.send(.deliveryFailed(reason: "Cannot Open", cause: "player item status failed"))
+
+        #expect(viewModel.state == .failed(PlaybackViewModel.deliveryFailureMessage(reason: "Cannot Open")))
+        // failDelivery pauses rather than tears down: the session stays
+        // diagnosable until Close runs stop()
+        #expect(engine.pauseCount == 1)
+        #expect(engine.teardownCount == 0)
+        #expect(engine.isLoaded)
+    }
+
+    @Test("A played-to-end event queues the next episode")
+    func playedToEndEventQueuesNextEpisode() async {
+        let client = MockJellyfinClient()
+        let next = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        client.nextEpisodeResult = next
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
+
+        await viewModel.start()
+        engine.send(.playedToEnd)
+        await waitUntil { viewModel.nextEpisode != nil }
+
+        #expect(viewModel.nextEpisode == next)
+    }
+
+    @Test("A native-picker subtitle change reconciles into app state")
+    func mediaSelectionChangeReconciles() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+
+        // The engine's legible options come in, then the viewer picks the
+        // Spanish rendition in the native picker. (Spanish, not English:
+        // the source also carries an English PGS stream, which makes the
+        // English reverse-match ambiguous — the matcher refuses to guess.)
+        engine.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
+        ]
+        engine.send(.mediaSelectionOptionsLoaded)
+        engine.selectedLegiblePosition = 1
+        engine.send(.mediaSelectionChanged)
+        await waitUntil { viewModel.selectedSubtitleStreamIndex != nil }
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 3)
+        // Reconciliation is write-only: adopting the picker's choice must
+        // never rebuild the stream it just switched in place
+        #expect(engine.loadRequests.count == 1)
+    }
+
+    @Test("Selection-change events before options load are not reconciled")
+    func mediaSelectionChangeBeforeOptionsLoadIsIgnored() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        engine.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+        ]
+        engine.selectedLegiblePosition = 0
+        // No .mediaSelectionOptionsLoaded — reconcile must stay disarmed
+        engine.send(.mediaSelectionChanged)
+        // Drain the event handler's task; there is no state change to wait on
+        for _ in 0 ..< 10 {
+            await Task.yield()
+        }
+
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+    }
+
+    // MARK: - Event Gates
+
+    // The gates reproduce the timing at which the pre-seam view model
+    // attached each observer, so no event class acts earlier than it used
+    // to (#85). `MockPlayerEngine.onPlay` fires inside the window where
+    // both are still closed.
+
+    /// Drain the event handler's spawned tasks when there is no state
+    /// change to wait on — a gate working means nothing happens
+    private func drainEvents() async {
+        for _ in 0 ..< 10 {
+            await Task.yield()
+        }
+    }
+
+    @Test("A delivery-failure event before the gate opens cannot half-fail the session")
+    func deliveryFailureBeforeGateIsDropped() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        // No engine error, so the arm-time re-check finds nothing either
+        engine.onPlay = { [weak engine] in
+            engine?.send(.deliveryFailed(reason: nil, cause: "player item status failed"))
+        }
+        await viewModel.start()
+
+        // Ungated, failDelivery would run here and pause the engine — and
+        // then `state = .playing`, the very next line of beginPlayback,
+        // would overwrite `.failed`. The session would be left with a
+        // paused engine while its state claimed to be playing.
+        #expect(viewModel.state == .playing)
+        #expect(engine.pauseCount == 0)
+    }
+
+    @Test("The arm-time re-check surfaces a failure that landed while the gate was closed")
+    func deliveryFailureInGapSurfacesViaErrorRecheck() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        engine.onPlay = { [weak engine] in
+            // The engine's own error is what `armDeliveryFailureDetection`
+            // reads back, standing in for the `.initial` KVO fire the
+            // pre-seam view model got when it attached its observer here.
+            // Note the residual gap: a failure with no error description
+            // has nothing for the re-check to find, and only the
+            // first-frame watchdog would catch it.
+            engine?.currentErrorDescription = "Cannot Open"
+            engine?.send(.deliveryFailed(reason: "Cannot Open", cause: "player item status failed"))
+        }
+        await viewModel.start()
+
+        #expect(viewModel.state == .failed(PlaybackViewModel.deliveryFailureMessage(reason: "Cannot Open")))
+        #expect(engine.pauseCount == 1)
+    }
+
+    @Test("A transport event before the gate opens emits no heartbeat")
+    func transportChangeBeforeGateEmitsNoProgress() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        engine.onPlay = { [weak engine] in
+            engine?.send(.transportStatusChanged)
+        }
+        await viewModel.start()
+        await drainEvents()
+
+        // The gate exists so the play() ramp cannot race a progress report
+        // ahead of the start report the server needs first
+        #expect(client.startReports.count == 1)
+        #expect(client.progressReports.isEmpty)
+    }
+
+    @Test("A played-to-end event before the gate opens does not queue autoplay")
+    func playedToEndBeforeGateIsDropped() async {
+        let client = MockJellyfinClient()
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
+
+        engine.onPlay = { [weak engine] in
+            engine?.send(.playedToEnd)
+        }
+        await viewModel.start()
+        await drainEvents()
+
+        #expect(viewModel.nextEpisode == nil)
+        #expect(viewModel.state == .playing)
+    }
+
+    @Test("Options-loaded is ungated, so reconciliation arms across the same window")
+    func optionsLoadedIsNotGated() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        // Deliberately asymmetric: this event only arms reconciliation, and
+        // on a fast stream the engine can finish loading its groups before
+        // the start report returns. Gating it would strand the session with
+        // reconciliation permanently disarmed.
+        engine.onPlay = { [weak engine] in
+            engine?.send(.mediaSelectionOptionsLoaded)
+        }
+        await viewModel.start()
+
+        engine.legibleOptions = [
+            LegibleOption(position: 0, displayName: "English - Default - SUBRIP", languageTag: "en"),
+            LegibleOption(position: 1, displayName: "Spanish - SUBRIP", languageTag: "es"),
+        ]
+        engine.selectedLegiblePosition = 1
+        engine.send(.mediaSelectionChanged)
+        await waitUntil { viewModel.selectedSubtitleStreamIndex != nil }
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 3)
+    }
+
     // MARK: - Favorite Toggle
 
     @Test("toggleFavorite favorites, then unfavorites")
     func favoriteToggles() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         #expect(viewModel.isFavorite == false)
 
@@ -231,7 +447,7 @@ struct PlaybackViewModelTests {
             type: .movie,
             userData: UserData(isFavorite: true),
         )
-        let viewModel = PlaybackViewModel(client: client, item: item)
+        let (viewModel, _) = makePlayback(client: client, item: item)
 
         #expect(viewModel.isFavorite == true)
 
@@ -244,7 +460,7 @@ struct PlaybackViewModelTests {
     func favoriteRevertsOnFailure() async {
         let client = MockJellyfinClient()
         client.userDataError = URLError(.notConnectedToInternet)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.toggleFavorite()
 
@@ -257,7 +473,7 @@ struct PlaybackViewModelTests {
         let client = MockJellyfinClient()
         let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
-        let viewModel = PlaybackViewModel(client: client, item: episode)
+        let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
         await viewModel.toggleFavorite()
@@ -294,7 +510,7 @@ struct PlaybackViewModelTests {
     func directPlayCapableSourceDirectPlays() async {
         let client = MockJellyfinClient()
         stubDirectPlaySource(on: client)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
@@ -303,6 +519,8 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions[0].playMethod == .directPlay)
         #expect(client.startReports.count == 1)
         #expect(client.startReports[0].playMethod == .directPlay)
+        // Direct play has no renditions; the legible group is left alone
+        #expect(engine.loadRequests[0].loadsLegibleOptions == false)
     }
 
     // MARK: - Trickplay
@@ -314,14 +532,10 @@ struct PlaybackViewModelTests {
         )
     }
 
-    private func assetURL(of viewModel: PlaybackViewModel) -> URL? {
-        (viewModel.player?.currentItem?.asset as? AVURLAsset)?.url
-    }
-
     @Test("start() requests the playback extras for the item")
     func startRequestsPlaybackExtras() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
@@ -329,7 +543,7 @@ struct PlaybackViewModelTests {
         // No extras (the default stub) → the loopback server still
         // interposes: subtitle-playlist rewriting needs it on every HLS
         // session, trickplay or not
-        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        #expect(engine.lastLoadedURL?.host() == "127.0.0.1")
         await viewModel.stop()
     }
 
@@ -339,12 +553,12 @@ struct PlaybackViewModelTests {
         client.playbackExtrasResult = .success(PlaybackExtras(
             trickplay: TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
         ))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        let url = assetURL(of: viewModel)
+        let url = engine.lastLoadedURL
         #expect(url?.host() == "127.0.0.1")
         #expect(url?.lastPathComponent == "master.m3u8")
         await viewModel.stop()
@@ -354,12 +568,12 @@ struct PlaybackViewModelTests {
     func playbackExtrasFailureDegrades() async {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .failure(APIError.generic("boom"))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        #expect(engine.lastLoadedURL?.host() == "127.0.0.1")
         await viewModel.stop()
     }
 
@@ -370,12 +584,12 @@ struct PlaybackViewModelTests {
         client.playbackExtrasResult = .success(PlaybackExtras(
             trickplay: TrickplayManifest(sources: ["source-1": [makeTrickplayInfo()]]),
         ))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(client.streamResolutions[0].playMethod == .directPlay)
-        #expect(assetURL(of: viewModel)?.host() == "example.com")
+        #expect(engine.lastLoadedURL?.host() == "example.com")
     }
 
     @Test("A manifest keyed to other media sources interposes without thumbnails")
@@ -387,12 +601,12 @@ struct PlaybackViewModelTests {
                 "another-source": [makeTrickplayInfo()],
             ]),
         ))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        #expect(assetURL(of: viewModel)?.host() == "127.0.0.1")
+        #expect(engine.lastLoadedURL?.host() == "127.0.0.1")
         await viewModel.stop()
     }
 
@@ -406,41 +620,38 @@ struct PlaybackViewModelTests {
         ]
     }
 
-    @Test("Chapters attach navigation markers and metadata to the player item")
+    @Test("Chapters and runtime reach the engine as session metadata")
     func chaptersAttachMarkers() async throws {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .success(PlaybackExtras(chapters: makeChapters()))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
-        let playerItem = try #require(viewModel.player?.currentItem)
-        #if os(tvOS)
-            let group = try #require(playerItem.navigationMarkerGroups.first)
-            #expect(group.title == nil)
-            #expect(group.timedNavigationMarkers?.count == 2)
-        #endif
-        #expect(!playerItem.externalMetadata.isEmpty)
+        // How the metadata becomes AVKit markers is the engine's business,
+        // covered by AVFoundationPlayerEngineTests + PlayerMetadataFactoryTests
+        let metadata = try #require(engine.lastMetadata)
+        #expect(metadata.item.id == "movie-1")
+        #expect(metadata.chapters.count == 2)
+        #expect(metadata.durationSeconds == 7200)
     }
 
-    @Test("A stream rebuild re-attaches markers without refetching extras")
+    @Test("A stream rebuild re-attaches metadata without refetching extras")
     func rebuildReattachesMarkers() async throws {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .success(PlaybackExtras(chapters: makeChapters()))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
-        let originalItem = viewModel.player?.currentItem
+        #expect(engine.loadRequests.count == 1)
 
         await viewModel.selectAudioStream(index: 2)
 
-        let rebuiltItem = try #require(viewModel.player?.currentItem)
-        #expect(rebuiltItem !== originalItem)
+        #expect(engine.loadRequests.count == 2)
+        #expect(engine.teardownCount == 1)
         #expect(client.playbackExtrasRequests == ["movie-1"])
-        #if os(tvOS)
-            #expect(rebuiltItem.navigationMarkerGroups.first?.timedNavigationMarkers?.count == 2)
-        #endif
-        #expect(!rebuiltItem.externalMetadata.isEmpty)
+        let metadata = try #require(engine.lastMetadata)
+        #expect(metadata.chapters.count == 2)
     }
 
     @Test("Autoplaying the next episode refetches extras for the new item")
@@ -448,7 +659,7 @@ struct PlaybackViewModelTests {
         let client = MockJellyfinClient()
         let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
-        let viewModel = PlaybackViewModel(client: client, item: episode)
+        let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
         await viewModel.handlePlaybackEnded()
@@ -462,7 +673,7 @@ struct PlaybackViewModelTests {
         let client = MockJellyfinClient()
         let member = CastMember(id: "p1", name: "Actor", role: "Lead", kind: "Actor", primaryImageTag: nil)
         client.playbackExtrasResult = .success(PlaybackExtras(people: [member]))
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
@@ -475,33 +686,31 @@ struct PlaybackViewModelTests {
         client.playbackExtrasResult = .failure(APIError.generic("boom"))
         let member = CastMember(id: "p2", name: "Actor", role: nil, kind: "Director", primaryImageTag: nil)
         let item = MediaItem(id: "movie-1", name: "Test Movie", type: .movie, people: [member])
-        let viewModel = PlaybackViewModel(client: client, item: item)
+        let (viewModel, _) = makePlayback(client: client, item: item)
 
         await viewModel.start()
 
         #expect(viewModel.castMembers == [member])
     }
 
-    @Test("An item without runtime still plays, just without markers")
+    @Test("An item without runtime still plays, just without a duration")
     func missingRuntimeSkipsMarkers() async throws {
         let client = MockJellyfinClient()
         client.playbackExtrasResult = .success(PlaybackExtras(chapters: makeChapters()))
         let item = MediaItem(id: "movie-1", name: "No Runtime", type: .movie)
-        let viewModel = PlaybackViewModel(client: client, item: item)
+        let (viewModel, engine) = makePlayback(client: client, item: item)
 
         await viewModel.start()
 
         #expect(viewModel.state == .playing)
-        let playerItem = try #require(viewModel.player?.currentItem)
-        #if os(tvOS)
-            #expect(playerItem.navigationMarkerGroups.isEmpty)
-        #endif
+        let metadata = try #require(engine.lastMetadata)
+        #expect(metadata.durationSeconds == nil)
     }
 
     @Test("The default mock source still transcodes (existing behavior preserved)")
     func incompatibleSourceTranscodes() async {
         let client = MockJellyfinClient()
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
@@ -514,7 +723,7 @@ struct PlaybackViewModelTests {
     func subtitleSelectionLeavesDirectPlay() async {
         let client = MockJellyfinClient()
         stubDirectPlaySource(on: client)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         #expect(client.startReports[0].playMethod == .directPlay)
@@ -544,13 +753,14 @@ struct PlaybackViewModelTests {
         let client = MockJellyfinClient()
         stubDirectPlaySource(on: client)
         let resumeTicks: Int64 = 6_000_000_000
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie(resumeTicks: resumeTicks))
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: resumeTicks))
 
         await viewModel.start()
 
         #expect(client.streamResolutions[0].playMethod == .directPlay)
         #expect(client.startReports[0].positionTicks == resumeTicks)
         #expect(client.startReports[0].playMethod == .directPlay)
+        #expect(engine.resumeSeeks == [600])
     }
 
     // MARK: - Subtitle Selection
@@ -608,7 +818,7 @@ struct PlaybackViewModelTests {
     func startLeavesTextDefaultToAVKit() async {
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
@@ -624,7 +834,7 @@ struct PlaybackViewModelTests {
     func startSeedsBurnInDefault() async {
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
 
@@ -638,7 +848,7 @@ struct PlaybackViewModelTests {
     func explicitOffSurvivesRebuild() async {
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         await viewModel.selectSubtitleStream(index: nil)
@@ -658,7 +868,7 @@ struct PlaybackViewModelTests {
         stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
         let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
-        let viewModel = PlaybackViewModel(client: client, item: episode)
+        let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
         await viewModel.selectSubtitleStream(index: nil)
@@ -672,7 +882,7 @@ struct PlaybackViewModelTests {
     func imageSubtitleBurnInTransitions() async {
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         #expect(client.startReports[0].playMethod == .directPlay)
@@ -699,10 +909,10 @@ struct PlaybackViewModelTests {
         // display off process-wide (#91).
         let client = MockJellyfinClient()
         stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: nil)
-        let viewModel = PlaybackViewModel(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
-        let playerBefore = viewModel.player
+        #expect(engine.loadRequests.count == 1)
 
         await viewModel.selectSubtitleStream(index: 4)
 
@@ -711,6 +921,9 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions.count == 2)
         #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 4)
         #expect(client.startReports.count == 2)
-        #expect(viewModel.player !== playerBefore)
+        // The rebuild is a fresh load on a torn-down session, not an
+        // in-place swap
+        #expect(engine.loadRequests.count == 2)
+        #expect(engine.teardownCount == 1)
     }
 }

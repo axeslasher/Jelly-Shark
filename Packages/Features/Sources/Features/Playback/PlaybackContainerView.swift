@@ -12,6 +12,12 @@ public struct PlaybackContainerView: View {
 
     @State private var viewModel: PlaybackViewModel
 
+    /// The concrete engine, held alongside the view model: the AVKit
+    /// hosting below needs the typed `player` the `PlayerEngine` protocol
+    /// deliberately doesn't expose, and reading it here keeps SwiftUI
+    /// re-rendering when a mid-session rebuild swaps the player instance.
+    @State private var playerEngine: AVFoundationPlayerEngine
+
     /// Focus for the error screen's Close button. `.failed` used to be
     /// reachable only from `.loading`, whose ProgressView holds no focus, so
     /// the engine had one candidate and found it. A delivery failure (#151)
@@ -21,7 +27,9 @@ public struct PlaybackContainerView: View {
     @FocusState private var isRetryFocused: Bool
 
     public init(client: any JellyfinClientProtocol, item: MediaItem) {
-        _viewModel = State(initialValue: PlaybackViewModel(client: client, item: item))
+        let engine = AVFoundationPlayerEngine()
+        _playerEngine = State(initialValue: engine)
+        _viewModel = State(initialValue: PlaybackViewModel(client: client, item: item, engine: engine))
     }
 
     public var body: some View {
@@ -72,7 +80,7 @@ public struct PlaybackContainerView: View {
     @ViewBuilder
     private var playerView: some View {
         #if canImport(UIKit)
-            if let player = viewModel.player {
+            if let player = playerEngine.player {
                 PlayerViewControllerRepresentable(
                     player: player,
                     audioStreams: viewModel.mediaSource?.audioStreams ?? [],
