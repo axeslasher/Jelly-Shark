@@ -184,6 +184,12 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     @ObservationIgnored private var generation = 0
 
     @ObservationIgnored private var timeControlObservation: NSKeyValueObservation?
+
+    /// Last transport status handed to the session layer, so the observation
+    /// can tell a real transition from a repeat notification without reading
+    /// the change dictionary. See `observeTimeControlStatus`.
+    @ObservationIgnored private var lastTransportStatus: AVPlayer.TimeControlStatus?
+
     @ObservationIgnored private var itemStatusObservation: NSKeyValueObservation?
     @ObservationIgnored private var endObserver: NSObjectProtocol?
     @ObservationIgnored private var failedToEndObserver: NSObjectProtocol?
@@ -258,6 +264,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     private func removeObservers() {
         timeControlObservation?.invalidate()
         timeControlObservation = nil
+        lastTransportStatus = nil
         itemStatusObservation?.invalidate()
         itemStatusObservation = nil
         if let endObserver {
@@ -444,11 +451,28 @@ final class AVFoundationPlayerEngine: PlayerEngine {
 
     // MARK: - Observers
 
+    /// Emit `.transportStatusChanged` on every real play/pause transition.
+    ///
+    /// The status is read live off the player rather than out of the change
+    /// dictionary. Typed KVO decodes `change.oldValue`/`newValue` by bridging
+    /// an `NSNumber` into `AVPlayer.TimeControlStatus`, an imported
+    /// Objective-C enum, and that bridge yields nil for both — so the
+    /// `oldValue != newValue` guard this used to open with evaluated
+    /// `nil != nil` and returned on *every* fire. The event never reached the
+    /// session layer, and pause/resume waited up to a full progress interval
+    /// to reach the server instead of reporting promptly (#181).
+    ///
+    /// Dedupe therefore happens here, against a last-seen value seeded at
+    /// registration, and on the main actor — the KVO callback itself can
+    /// arrive on any thread.
     private func observeTimeControlStatus(of player: AVPlayer, generation: Int) {
-        timeControlObservation = player.observe(\.timeControlStatus, options: [.old, .new]) { [weak self] _, change in
-            guard change.oldValue != change.newValue else { return }
+        lastTransportStatus = player.timeControlStatus
+        timeControlObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
+            let status = player.timeControlStatus
             Task { @MainActor [weak self] in
                 guard let self, self.generation == generation else { return }
+                guard status != self.lastTransportStatus else { return }
+                self.lastTransportStatus = status
                 self.onEvent?(.transportStatusChanged)
             }
         }

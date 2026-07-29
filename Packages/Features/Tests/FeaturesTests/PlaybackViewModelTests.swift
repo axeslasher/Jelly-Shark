@@ -468,6 +468,92 @@ struct PlaybackViewModelTests {
         #expect(viewModel.isFavorite == false)
     }
 
+    @Test("start() corrects a launching item whose favorite state went stale")
+    func startCorrectsStaleFavoriteState() async {
+        let client = MockJellyfinClient()
+        // The state #189 reproduces: the detail page unfavorited the item and
+        // flipped only its own optimistic override, so the item handed to the
+        // player still claims favorite while the server disagrees.
+        client.playbackExtrasResult = .success(PlaybackExtras(userData: UserData(isFavorite: false)))
+        let staleItem = MediaItem(
+            id: "movie-1",
+            name: "Test Movie",
+            type: .movie,
+            userData: UserData(isFavorite: true),
+        )
+        let (viewModel, _) = makePlayback(client: client, item: staleItem)
+
+        #expect(viewModel.isFavorite == true)
+
+        await viewModel.start()
+
+        #expect(viewModel.isFavorite == false)
+        // Corrected from the extras fetch alone — no separate request
+        #expect(client.playbackExtrasRequests == ["movie-1"])
+        #expect(client.userDataCalls.isEmpty)
+        await viewModel.stop()
+    }
+
+    @Test("start() keeps the fetched state when the extras carry no user data")
+    func startKeepsFetchedStateWithoutExtrasUserData() async {
+        let client = MockJellyfinClient()
+        // Default stub: no user data in the response. The launching item is
+        // then the only copy there is, so it must survive untouched.
+        let item = MediaItem(
+            id: "movie-1",
+            name: "Test Movie",
+            type: .movie,
+            userData: UserData(isFavorite: true),
+        )
+        let (viewModel, _) = makePlayback(client: client, item: item)
+
+        await viewModel.start()
+
+        #expect(viewModel.isFavorite == true)
+        await viewModel.stop()
+    }
+
+    @Test("A fresh position from the extras cannot move this session's resume seek")
+    func startIgnoresExtrasPositionForResume() async {
+        let client = MockJellyfinClient()
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            userData: UserData(playbackPositionTicks: 600_000_000, isFavorite: true),
+        ))
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 300_000_000))
+
+        await viewModel.start()
+
+        // Resume follows the launching item's 30s, not the extras' 60s: the
+        // seek is committed before the extras land, and reporting a position
+        // the player never sought to would be worse than a stale one.
+        #expect(engine.resumeSeeks == [30])
+        #expect(viewModel.isFavorite == true)
+        await viewModel.stop()
+    }
+
+    @Test("A retry repeats the launch position rather than the extras' position")
+    func retryKeepsLaunchResumePosition() async {
+        let client = MockJellyfinClient()
+        // The server's copy disagrees with the launching item — watched
+        // further along on another client, say.
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            userData: UserData(playbackPositionTicks: 600_000_000, isFavorite: true),
+        ))
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 300_000_000))
+
+        await viewModel.start()
+        await viewModel.retry()
+
+        // Both attempts seek to the launching item's 30s. `item` outlives a
+        // single attempt, so taking the server's position when correcting the
+        // favorite state would make Try Again land 60s in — somewhere the
+        // first press did not go, and stale by then anyway.
+        #expect(engine.resumeSeeks == [30, 30])
+        // The state the correction is actually for still comes through
+        #expect(viewModel.isFavorite == true)
+        await viewModel.stop()
+    }
+
     @Test("Autoplay drops the override so the next episode shows its own state")
     func favoriteOverrideClearsOnAutoplay() async {
         let client = MockJellyfinClient()

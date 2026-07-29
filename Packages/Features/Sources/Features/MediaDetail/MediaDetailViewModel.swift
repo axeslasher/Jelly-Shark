@@ -297,11 +297,11 @@ public final class MediaDetailViewModel {
 
     /// Playback changes server-side user data this page displays — resume
     /// position (hero Play/Resume button), watched flags on episode and
-    /// collection cards, and next-up. `load()` only re-runs when the item id
-    /// changes, so refresh in place when the player dismisses; unlike
-    /// `load()`, nothing is blanked or re-statused first, so already-rendered
-    /// shelves don't flash — which is why `try?` is right here: a failed
-    /// refresh keeps the last-good data.
+    /// collection cards, next-up, and the hero's own watched/favorite state.
+    /// `load()` only re-runs when the item id changes, so refresh in place
+    /// when the player dismisses; unlike `load()`, nothing is blanked or
+    /// re-statused first, so already-rendered shelves don't flash — which is
+    /// why `try?` is right here: a failed refresh keeps the last-good data.
     public func refreshAfterPlayback() async {
         guard let client, let item else { return }
         loadGeneration += 1
@@ -310,6 +310,16 @@ public final class MediaDetailViewModel {
         if let refreshed = try? await client.getMediaItem(itemId: item.id) {
             guard generation == loadGeneration else { return }
             detailedItem = refreshed
+            // The refreshed item is authoritative, so the pending optimistic
+            // overrides have to stand down — the player carries its own
+            // watched and favorite toggles, and a heart unfavorited in there
+            // was masked forever by an override set on this page before
+            // playback (#189). Cleared in the same turn as the assignment, so
+            // the hero never renders the two disagreeing; and only on a
+            // successful refetch, since on failure the override is still the
+            // best value there is.
+            heroPlayedOverride = nil
+            heroFavoriteOverride = nil
             deriveCredits()
         }
 

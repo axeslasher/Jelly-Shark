@@ -557,6 +557,66 @@ struct MediaDetailViewModelTests {
         #expect(viewModel.heroIsFavorite == false)
     }
 
+    @Test("A favorite change made in the player survives backing out to the page")
+    func refreshAfterPlaybackDropsMaskingHeroOverride() async {
+        let client = MockJellyfinClient()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+
+        // Favorite here first — that override is what masks the player's
+        // change on the way back (#189, the reverse direction).
+        await viewModel.toggleHeroFavorite()
+        #expect(viewModel.heroIsFavorite == true)
+
+        // The player unfavorited it mid-session, so the refetch disagrees
+        // with the override.
+        client.mediaItemsById["m1"] = MediaItem(
+            id: "m1", name: "m1", type: .movie,
+            userData: UserData(isFavorite: false),
+        )
+        await viewModel.refreshAfterPlayback()
+
+        #expect(viewModel.heroFavoriteOverride == nil)
+        #expect(viewModel.heroIsFavorite == false)
+    }
+
+    @Test("A watched change made in the player survives backing out to the page")
+    func refreshAfterPlaybackDropsMaskingPlayedOverride() async {
+        let client = MockJellyfinClient()
+        client.mediaItemsById["m1"] = MediaItem(
+            id: "m1", name: "m1", type: .movie,
+            userData: UserData(played: true),
+        )
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+
+        // Marked unwatched here, then watched to the end in the player.
+        await viewModel.toggleHeroPlayed()
+        #expect(viewModel.heroIsPlayed == false)
+
+        await viewModel.refreshAfterPlayback()
+
+        #expect(viewModel.heroPlayedOverride == nil)
+        #expect(viewModel.heroIsPlayed == true)
+    }
+
+    @Test("A failed post-playback refresh keeps the hero's pending overrides")
+    func refreshAfterPlaybackFailureKeepsHeroOverrides() async {
+        let client = MockJellyfinClient()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m1"))
+        await viewModel.toggleHeroFavorite()
+        await viewModel.toggleHeroPlayed()
+
+        // Nothing authoritative arrived, so dropping the overrides would flip
+        // the hero back to a state the viewer already changed.
+        client.mediaItemFailureIds = ["m1"]
+        await viewModel.refreshAfterPlayback()
+
+        #expect(viewModel.heroIsFavorite == true)
+        #expect(viewModel.heroIsPlayed == true)
+    }
+
     @Test("Attaching a new item resets the hero's pending overrides")
     func heroOverridesResetOnNewItem() async {
         let client = MockJellyfinClient()

@@ -36,7 +36,7 @@ public struct Chapter: Sendable, Equatable, Hashable {
 }
 
 /// Ancillary per-item data resolved alongside playback — trickplay, chapters,
-/// and cast ride the same fields-scoped item fetch
+/// cast, and user data ride the same fields-scoped item fetch
 ///
 /// Cast is fetched here rather than read off the launching `MediaItem`
 /// because playback can start from shelf items whose list fetches never
@@ -51,13 +51,25 @@ public struct PlaybackExtras: Sendable, Equatable {
     /// The item's cast and crew, empty when the server reports none
     public let people: [CastMember]
 
+    /// The server's current watched/favorite state for the item, nil when
+    /// the response carries none.
+    ///
+    /// Carried for the same reason as cast: a launching `MediaItem` can be
+    /// arbitrarily stale by the time playback starts — a detail page toggles
+    /// favorite optimistically without correcting the item it hands over
+    /// (#189) — and this fetch is user-scoped, so the fresh value arrives
+    /// whether or not anyone reads it.
+    public let userData: UserData?
+
     public init(
         trickplay: TrickplayManifest? = nil,
         chapters: [Chapter] = [],
         people: [CastMember] = [],
+        userData: UserData? = nil,
     ) {
         self.trickplay = trickplay
         self.chapters = chapters
         self.people = people
+        self.userData = userData
     }
 }
