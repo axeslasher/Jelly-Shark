@@ -55,7 +55,7 @@ struct LibraryItemsView: View {
             gridWidth = width
         }
         .task(id: session.isConnected) {
-            viewModel.attach(client: session.client, initialQuery: initialQuery)
+            viewModel.attach(client: session.client, initialQuery: initialQuery, cache: session.scopedCache)
             await viewModel.loadInitial()
         }
     }

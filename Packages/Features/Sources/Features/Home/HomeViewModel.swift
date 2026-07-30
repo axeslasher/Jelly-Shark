@@ -178,6 +178,7 @@ public final class HomeViewModel {
 
     private var client: (any JellyfinClientProtocol)?
     private var libraries: [Library] = []
+    private var cache: ScopedCache?
 
     /// Reload only when the connection or library set actually changes
     /// (mirrors `GenreShelvesViewModel`); a failed load re-arms this so the
@@ -199,13 +200,18 @@ public final class HomeViewModel {
 
     // MARK: - Loading
 
-    /// Attach the client and library list (called by the view on appearance).
-    /// Only an actual change schedules a reload.
-    public func attach(client: (any JellyfinClientProtocol)?, libraries: [Library]) {
+    /// Attach the client, library list, and cache (called by the view on
+    /// appearance). Only an actual change schedules a reload.
+    public func attach(
+        client: (any JellyfinClientProtocol)?,
+        libraries: [Library],
+        cache: ScopedCache? = nil,
+    ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let librariesChanged = libraries.map(\.id) != self.libraries.map(\.id)
         self.client = client
         self.libraries = libraries
+        self.cache = cache
         if clientChanged || librariesChanged {
             needsLoad = true
         }
@@ -241,9 +247,36 @@ public final class HomeViewModel {
             return
         }
 
-        resumeStatus = .loading
-        nextUpStatus = .loading
-        latestStatus = .loading
+        // Hydrate the whole page from the last successful load before any
+        // network work, so a relaunch reveals content instead of the
+        // skeleton. One blob applied in one turn: the all-or-nothing reveal
+        // (`isInitialLoading`) fires exactly once with the hero populated,
+        // which is what keeps default focus landing on the hero. The network
+        // fan-out below then reconciles each section in place — the loaders
+        // never set `.loading`, so the skeleton cannot return.
+        var hydratedHeroIds: [String]?
+        if resumeItems.isEmpty, nextUpItems.isEmpty, latestShelves.isEmpty, let cache {
+            let snapshot = await cache.read(CachedHomeSnapshot.self, key: .homeSnapshot)
+            guard generation == loadGeneration else { return }
+            if let snapshot {
+                resumeItems = snapshot.resume
+                nextUpItems = snapshot.nextUp
+                latestShelves = snapshot.shelves.map { LibraryShelf(library: $0.library, items: $0.items) }
+                heroItems = snapshot.heroItems
+                episodePrimaryHeroIds = Set(snapshot.episodePrimaryHeroIds)
+                seriesLastPlayedDates = snapshot.seriesLastPlayedDates
+                resumeStatus = snapshot.resume.isEmpty ? .empty : .loaded
+                nextUpStatus = snapshot.nextUp.isEmpty ? .empty : .loaded
+                latestStatus = (latestShelves.isEmpty && heroItems.isEmpty) ? .empty : .loaded
+                settleHero(client: client, previousHeroIds: nil)
+                hydratedHeroIds = heroItems.map(\.id)
+            }
+        }
+        if hydratedHeroIds == nil {
+            resumeStatus = .loading
+            nextUpStatus = .loading
+            latestStatus = .loading
+        }
 
         // Sections resolve independently: each records its own items + status
         // as it completes, so a slow shelf never blocks its siblings.
@@ -259,10 +292,28 @@ public final class HomeViewModel {
             return
         }
 
-        settleHero(client: client, previousHeroIds: nil)
+        // On a hydrated load the previous ids are the snapshot's, so an
+        // unchanged hero set skips the index reset and the marquee doesn't
+        // yank under the viewer mid-reconcile.
+        settleHero(client: client, previousHeroIds: hydratedHeroIds)
 
         if resumeStatus.isFailed || nextUpStatus.isFailed || latestStatus.isFailed {
             needsLoad = true
+        } else if !needsLoad, let cache {
+            // Every section is fresh from the network (a keep-on-failure
+            // catch or partial shelf failure re-arms `needsLoad`, skipping
+            // this): capture the page for the next launch's first frame.
+            await cache.write(
+                CachedHomeSnapshot(
+                    resume: resumeItems,
+                    nextUp: nextUpItems,
+                    shelves: latestShelves.map { CachedHomeSnapshot.Shelf(library: $0.library, items: $0.items) },
+                    heroItems: heroItems,
+                    episodePrimaryHeroIds: Array(episodePrimaryHeroIds),
+                    seriesLastPlayedDates: seriesLastPlayedDates,
+                ),
+                key: .homeSnapshot,
+            )
         }
     }
 
@@ -404,8 +455,16 @@ public final class HomeViewModel {
             resumeStatus = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
-            resumeItems = []
-            resumeStatus = .failed(error.localizedDescription)
+            if resumeItems.isEmpty {
+                resumeStatus = .failed(error.localizedDescription)
+            } else {
+                // Keep the rendered lane — hydrated content offline, or the
+                // previous items when a post-playback refresh fails —
+                // and re-arm so the next appearance retries. Blanking a
+                // rendered lane over a refresh failure reads as data loss.
+                resumeStatus = .loaded
+                needsLoad = true
+            }
         }
     }
 
@@ -417,8 +476,13 @@ public final class HomeViewModel {
             nextUpStatus = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
-            nextUpItems = []
-            nextUpStatus = .failed(error.localizedDescription)
+            if nextUpItems.isEmpty {
+                nextUpStatus = .failed(error.localizedDescription)
+            } else {
+                // Same keep-and-re-arm rule as `loadResume`
+                nextUpStatus = .loaded
+                needsLoad = true
+            }
         }
     }
 
@@ -482,15 +546,23 @@ public final class HomeViewModel {
             }
         } catch {
             guard generation == loadGeneration else { return }
-            latestShelves = shelves
-            episodePrimaryHeroIds = []
-            heroItems = []
-            if shelfError != nil {
+            if latestShelves.isEmpty, heroItems.isEmpty {
+                latestShelves = shelves
+                episodePrimaryHeroIds = []
+                heroItems = []
+                if shelfError != nil {
+                    needsLoad = true
+                }
+                // The per-library rows stand on their own; only report failure
+                // when nothing in the section survived.
+                latestStatus = shelves.isEmpty ? .failed(error.localizedDescription) : .loaded
+            } else {
+                // A hydrated hero and rows are already rendering; keep them
+                // whole rather than swapping in a partial fresh set with a
+                // blanked hero, and re-arm so the next appearance retries.
+                latestStatus = .loaded
                 needsLoad = true
             }
-            // The per-library rows stand on their own; only report failure
-            // when nothing in the section survived.
-            latestStatus = shelves.isEmpty ? .failed(error.localizedDescription) : .loaded
         }
     }
 

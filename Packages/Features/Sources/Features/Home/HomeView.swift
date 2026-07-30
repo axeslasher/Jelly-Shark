@@ -90,7 +90,7 @@ struct HomeView: View {
         .animation(theme.animation, value: viewModel.isInitialLoading)
         .background(theme.background)
         .task(id: session.isConnected) {
-            viewModel.attach(client: session.client, libraries: connection.libraries)
+            viewModel.attach(client: session.client, libraries: connection.libraries, cache: session.scopedCache)
             await viewModel.load()
             genreShelves.attach(client: session.client, libraries: connection.libraries)
             await genreShelves.load()

@@ -47,3 +47,13 @@ public enum CacheSnapshotKey: Sendable, Hashable {
 
     static let mediaDetailKind = "mediaDetail"
 }
+
+public extension LibraryQuery {
+    /// Whether this query is the default browse — name ascending, no
+    /// filters — whose first page is the one grid state the cache persists.
+    /// Shared between the write side (`CachingJellyfinClient`) and the
+    /// hydration side so the two conditions can never drift apart.
+    var isDefaultBrowse: Bool {
+        !isFiltering && sort == .name && direction == .ascending
+    }
+}

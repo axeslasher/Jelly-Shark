@@ -118,7 +118,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         )
         if let scope {
             await cache.ingestServerUserData(scope: scope, items: page.items)
-            if startIndex == 0, !query.isFiltering, query.sort == .name, query.direction == .ascending {
+            if startIndex == 0, query.isDefaultBrowse {
                 await cache.write(page, scope: scope, key: .libraryFirstPage(libraryID: libraryId))
             }
         }
