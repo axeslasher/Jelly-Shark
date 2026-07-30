@@ -95,7 +95,7 @@ public struct LibraryQuery: Sendable, Hashable {
 // MARK: - Results
 
 /// One page of a library fetch
-public struct MediaItemPage: Sendable {
+public struct MediaItemPage: Sendable, Codable {
     public let items: [MediaItem]
     public let startIndex: Int
     public let totalRecordCount: Int?

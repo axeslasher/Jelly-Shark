@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This is a clean, app-specific representation of a user.
 /// It is created from the SDK's UserDto via the adapter layer.
-public struct User: Identifiable, Sendable, Equatable, Hashable {
+public struct User: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Unique identifier for the user
     public let id: String
 

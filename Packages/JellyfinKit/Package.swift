@@ -15,7 +15,9 @@ let package = Package(
         // `swift test` (see the Makefile). Without an explicit floor SPM
         // assumes macOS 10.13 for the host build, below the macOS 10.15 that
         // JellyfinAPI and Get require, and resolution fails before compiling.
-        .macOS(.v13),
+        // v15 because the SwiftData cache (`#Unique`, macOS 15) also builds
+        // and tests on the host.
+        .macOS(.v15),
     ],
     products: [
         .library(

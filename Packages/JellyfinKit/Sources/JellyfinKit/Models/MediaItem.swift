@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This is a clean, app-specific representation of media.
 /// It is created from the SDK's BaseItemDto via the adapter layer.
-public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
+public struct MediaItem: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Unique identifier for the item
     public let id: String
 
@@ -160,7 +160,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable {
 /// Ancestor-owned artwork an item can inherit when it lacks its own. Each
 /// image pairs the tag with the id of the ancestor item that owns it, since
 /// image URLs are built against the owning item.
-public struct ParentArtwork: Sendable, Equatable, Hashable {
+public struct ParentArtwork: Sendable, Equatable, Hashable, Codable {
     /// Item owning the nearest ancestor backdrop (usually the series)
     public let backdropItemId: String?
     public let backdropImageTag: String?
@@ -190,7 +190,7 @@ public struct ParentArtwork: Sendable, Equatable, Hashable {
 // MARK: - Supporting Types
 
 /// Types of media items in Jellyfin
-public enum MediaType: String, Sendable, Hashable {
+public enum MediaType: String, Sendable, Hashable, Codable {
     case movie = "Movie"
     case series = "Series"
     case season = "Season"
@@ -206,7 +206,7 @@ public enum MediaType: String, Sendable, Hashable {
 }
 
 /// Image tags for a media item
-public struct ImageTags: Sendable, Equatable, Hashable {
+public struct ImageTags: Sendable, Equatable, Hashable, Codable {
     public let primary: String?
     public let backdrop: String?
     public let banner: String?
@@ -245,7 +245,7 @@ public struct ImageTags: Sendable, Equatable, Hashable {
 /// Deliberately not the raw `MediaStream` list: the adapter reduces the
 /// default video/audio/subtitle streams to the handful of labels the UI can
 /// badge, keeping the SDK types behind the facade.
-public struct MediaTechnicalInfo: Sendable, Equatable, Hashable {
+public struct MediaTechnicalInfo: Sendable, Equatable, Hashable, Codable {
     /// Video resolution class: "8K", "4K", "1080p", "720p", or "SD"
     public let resolution: String?
 
@@ -326,7 +326,7 @@ public struct MediaTechnicalInfo: Sendable, Equatable, Hashable {
 }
 
 /// User-specific data for a media item
-public struct UserData: Sendable, Equatable, Hashable {
+public struct UserData: Sendable, Equatable, Hashable, Codable {
     /// Playback position in ticks
     public let playbackPositionTicks: Int64?
 
