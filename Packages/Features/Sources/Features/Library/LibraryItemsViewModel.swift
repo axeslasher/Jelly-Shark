@@ -262,6 +262,14 @@ public final class LibraryItemsViewModel {
             } else {
                 _ = await (firstPage, narrowing)
             }
+
+            // A failed query change retries on the next appearance, matching
+            // `loadInitial()`. Without this the grid keeps its error screen
+            // until the viewer changes another pill, because `loadInitial()`
+            // no-ops on a flag only the initial path ever re-arms.
+            if generation == self.loadGeneration, case .failed = self.state {
+                self.needsInitialLoad = true
+            }
         }
     }
 

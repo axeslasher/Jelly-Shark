@@ -350,6 +350,57 @@ struct LibraryItemsViewModelTests {
         #expect(viewModel.totalCount == 2)
     }
 
+    @Test("A failed query change retries on the next appearance")
+    func failedQueryChangeRetries() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+            .failure(APIError.serverError(statusCode: 500)),
+            .success(MediaItemPage(items: makeItems(10 ..< 12), startIndex: 0, totalRecordCount: 2)),
+        ]
+        let viewModel = makeViewModel(client: client)
+        await viewModel.loadInitial()
+
+        var query = viewModel.query
+        query.genres = ["Horror"]
+        viewModel.update(query: query)
+        await viewModel.awaitPendingLoad()
+        guard case .failed = viewModel.state else {
+            Issue.record("Expected .failed, got \(viewModel.state)")
+            return
+        }
+
+        viewModel.attach(client: client, initialQuery: LibraryQuery(library: Self.library))
+        await viewModel.loadInitial()
+
+        #expect(viewModel.state == .loaded)
+        #expect(viewModel.items.map(\.id) == ["item-10", "item-11"])
+        #expect(client.libraryItemsRequests.count == 3)
+        // The retry re-runs the failed query, not the pre-filter one
+        #expect(client.libraryItemsRequests[2].query.genres == ["Horror"])
+    }
+
+    @Test("A successful query change leaves reappearance a no-op")
+    func succeededQueryChangeDoesNotRearm() async {
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [
+            .success(MediaItemPage(items: makeItems(0 ..< 3), startIndex: 0, totalRecordCount: 3)),
+            .success(MediaItemPage(items: makeItems(10 ..< 12), startIndex: 0, totalRecordCount: 2)),
+        ]
+        let viewModel = makeViewModel(client: client)
+        await viewModel.loadInitial()
+
+        var query = viewModel.query
+        query.genres = ["Horror"]
+        viewModel.update(query: query)
+        await viewModel.awaitPendingLoad()
+
+        viewModel.attach(client: client, initialQuery: LibraryQuery(library: Self.library))
+        await viewModel.loadInitial()
+
+        #expect(client.libraryItemsRequests.count == 2)
+    }
+
     // MARK: - Filter options
 
     @Test("Filter options load alongside the first page")
