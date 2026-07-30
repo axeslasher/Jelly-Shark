@@ -252,6 +252,14 @@ public final class LibraryItemsViewModel {
             return
         }
 
+        // This change *is* the fresh load, so nothing is owed on the next
+        // appearance — including when an earlier failure armed the flag and
+        // this is the pill press recovering from it. Below the client guard so
+        // a change that never fetches keeps whatever retry was already owed,
+        // and still synchronous with the generation bump, so no in-flight task
+        // can race it. The task re-arms if this load fails too.
+        needsInitialLoad = false
+
         loadTask = Task { [weak self] in
             guard let self else { return }
             async let firstPage: Void = self.loadFirstPage(client: client, generation: generation)
