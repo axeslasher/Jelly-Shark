@@ -361,13 +361,20 @@ struct LibraryHydrationTests {
         let load = Task { await viewModel.loadInitial() }
         await waitUntil { viewModel.items.isEmpty == false }
 
-        // hasMore is true off the cached page, but paging must wait
+        // hasMore is true off the cached page, but this paging attempt must
+        // be swallowed. Asserted after quiescence below, not here — reading
+        // the request log mid-flight races loadInitial's own page-0 fetch.
         viewModel.loadMoreIfNeeded(currentItem: viewModel.items[1])
-        #expect(client.libraryItemsRequests.count == 1)
 
         client.libraryItemsDelay = nil
         await gate.open()
         await load.value
+        await viewModel.awaitPendingLoad()
+
+        // Only page 0 was ever requested: a wrongly-fired pagination would
+        // show as a second request and as spliced orderings in the grid
+        #expect(client.libraryItemsRequests.count == 1)
+        #expect(viewModel.items.map(\.id) == ["fresh-1", "fresh-2"])
 
         // With the fresh page landed, pagination resumes from its count
         viewModel.loadMoreIfNeeded(currentItem: viewModel.items[1])
