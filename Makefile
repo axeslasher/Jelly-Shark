@@ -23,7 +23,21 @@
 #      not an iteration step.
 
 SCHEME   = Jelly Shark
-SIM_DEST = platform=tvOS Simulator,name=Apple TV
+
+# Two kinds of destination, because they answer different questions.
+#
+# Running tests needs a real booted device, so SIM_DEST names one. Building does
+# not — nothing is executed — so the build targets use generic destinations,
+# which resolve against the installed SDK rather than the machine's device list.
+#
+# That distinction is load-bearing on CI: the visionOS build failed on 2026-07-31
+# with "Unable to find a device matching the provided destination specifier"
+# because the runner image had no simulator named "Apple Vision Pro" that day.
+# The same commit had built fine on the PR branch minutes earlier. A build target
+# pinned to a device name fails on runner-image drift for no benefit.
+SIM_DEST    = platform=tvOS Simulator,name=Apple TV
+BUILD_DEST  = generic/platform=tvOS Simulator
+VISION_DEST = generic/platform=visionOS Simulator
 
 # Formatting is pinned to an exact SwiftFormat version so local runs, the
 # pre-commit hook, and CI all agree on the output. Bump here and in
@@ -51,12 +65,13 @@ test-only:
 		{ echo "usage: make test-only ONLY=<test target>   (Jelly SharkTests | DesignSystemTests | FeaturesTests)"; exit 1; }
 	xcodebuild test -scheme "$(SCHEME)" -destination "$(SIM_DEST)" -only-testing:"$(ONLY)"
 
-# Build the app for the two shipping platforms.
+# Build the app for the two shipping platforms. Generic destinations — see the
+# note above SIM_DEST for why these deliberately don't name a device.
 build:
-	xcodebuild -scheme "$(SCHEME)" -destination "$(SIM_DEST)" build
+	xcodebuild -scheme "$(SCHEME)" -destination "$(BUILD_DEST)" build
 
 build-visionos:
-	xcodebuild -scheme "$(SCHEME)" -destination 'platform=visionOS Simulator,name=Apple Vision Pro' build
+	xcodebuild -scheme "$(SCHEME)" -destination "$(VISION_DEST)" build
 
 clean:
 	xcodebuild clean -scheme "$(SCHEME)"
