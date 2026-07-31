@@ -5,7 +5,7 @@ import Foundation
 /// Created from the SDK's `BaseItemPerson` via the adapter layer. Person IDs are
 /// item IDs in Jellyfin, so a headshot URL can be built with the standard image
 /// endpoint when `primaryImageTag` is present.
-public struct CastMember: Identifiable, Sendable, Equatable, Hashable {
+public struct CastMember: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Unique identifier for the person (usable as an item ID for image URLs)
     public let id: String
 

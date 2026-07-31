@@ -4,7 +4,7 @@ import Foundation
 ///
 /// This is a clean, app-specific representation of a library.
 /// It is created from the SDK's BaseItemDto via the adapter layer.
-public struct Library: Identifiable, Sendable, Equatable, Hashable {
+public struct Library: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Unique identifier for the library
     public let id: String
 
@@ -36,7 +36,7 @@ public struct Library: Identifiable, Sendable, Equatable, Hashable {
 }
 
 /// Types of library collections in Jellyfin
-public enum CollectionType: String, Sendable, Hashable {
+public enum CollectionType: String, Sendable, Hashable, Codable {
     case movies
     case tvshows
     case music
