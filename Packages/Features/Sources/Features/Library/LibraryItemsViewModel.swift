@@ -489,10 +489,12 @@ public final class LibraryItemsViewModel {
         } catch {
             guard generation == loadGeneration else { return }
             if isRefreshingHydratedPage {
-                // The hydrated grid stands (offline, or the server hiccuped);
-                // pagination stays held, and the retry owed can't ride the
-                // failed-state re-arm below because the state never failed.
-                isRefreshingHydratedPage = false
+                // The hydrated grid stands (offline, or the server hiccuped).
+                // The flag deliberately stays true: paging against the stale
+                // cached page 0 would splice two orderings, so pagination
+                // holds until a *successful* refresh clears it. The retry
+                // owed can't ride the failed-state re-arm below because the
+                // state never failed, so it's re-armed here.
                 isReloading = false
                 needsInitialLoad = true
             } else {

@@ -157,11 +157,14 @@ public final class ServerConnectionViewModel {
         // Reflect the restored server in the form
         serverURL = saved.serverURL.absoluteString
 
-        let restoredClient = wrapped(makeClient(makeConfiguration(serverURL: saved.serverURL), saved))
+        let scope = CacheScope(serverURL: saved.serverURL, userID: saved.userID)
+        let restoredClient = wrapped(
+            makeClient(makeConfiguration(serverURL: saved.serverURL), saved),
+            scope: scope,
+        )
         self.client = restoredClient
 
         if let cache {
-            let scope = CacheScope(serverURL: saved.serverURL, userID: saved.userID)
             if let cachedLibraries = await cache.read([Library].self, scope: scope, key: .libraries),
                state == .connecting
             {
@@ -338,10 +341,15 @@ public final class ServerConnectionViewModel {
     }
 
     /// Wrap a freshly-built client so its responses feed the cache; without
-    /// a cache the client passes through untouched
-    private func wrapped(_ client: any JellyfinClientProtocol) -> any JellyfinClientProtocol {
+    /// a cache the client passes through untouched. A restored session
+    /// passes its scope so writes work during the validation window, before
+    /// the wrapped client has fetched its user.
+    private func wrapped(
+        _ client: any JellyfinClientProtocol,
+        scope: CacheScope? = nil,
+    ) -> any JellyfinClientProtocol {
         guard let cache else { return client }
-        return CachingJellyfinClient(wrapping: client, cache: cache)
+        return CachingJellyfinClient(wrapping: client, cache: cache, scope: scope)
     }
 
     /// Finish a successful authentication: prove the connection by fetching

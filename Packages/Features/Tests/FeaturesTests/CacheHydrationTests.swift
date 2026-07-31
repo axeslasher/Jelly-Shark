@@ -402,6 +402,26 @@ struct LibraryHydrationTests {
         await viewModel.loadInitial()
         #expect(viewModel.items.map(\.id) == ["fresh-1"])
     }
+
+    @Test("A failed refresh keeps pagination held against the stale page")
+    func refreshFailureHoldsPagination() async {
+        let cache = makeScopedCache()
+        await cache.write(page(["cached-1", "cached-2"], total: 3), key: .libraryFirstPage(libraryID: nil))
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.failure(APIError.networkError("offline"))]
+
+        let viewModel = LibraryItemsViewModel()
+        viewModel.attach(client: client, cache: cache)
+        await viewModel.loadInitial()
+        #expect(viewModel.items.map(\.id) == ["cached-1", "cached-2"])
+
+        // hasMore is true off the cached total, but appending the server's
+        // current page 1 to the stale cached page 0 would splice two
+        // orderings — the hold must survive the failed refresh
+        viewModel.loadMoreIfNeeded(currentItem: viewModel.items[1])
+        await viewModel.awaitPendingLoad()
+        #expect(client.libraryItemsRequests.count == 1)
+    }
 }
 
 // MARK: - Media detail hydration
