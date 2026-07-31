@@ -87,6 +87,36 @@ struct UserStateOverlayTests {
         #expect(home.resumeItems.first?.userData?.played == true)
     }
 
+    @Test("A session that never played doesn't wipe the resume position")
+    func failedSessionStopKeepsResumePosition() async {
+        let shared = UserStateStore()
+        shared.ingest(serverItems: [
+            MediaItem(
+                id: "movie-1",
+                name: "movie-1",
+                type: .movie,
+                runTimeTicks: 72_000_000_000,
+                userData: UserData(playbackPositionTicks: 27_000_000_000),
+            ),
+        ])
+        let client = MockJellyfinClient()
+        client.playbackInfoResult = .failure(APIError.generic("Playback not possible"))
+        let viewModel = PlaybackViewModel(
+            client: client,
+            item: MediaItem(id: "movie-1", name: "movie-1", type: .movie),
+            engine: MockPlayerEngine(),
+            userState: shared,
+        )
+
+        await viewModel.start()
+        await viewModel.stop()
+
+        // The engine never rendered, so its 0 position must not clobber the
+        // 45-minute resume bar every shelf resolves through
+        let resolved = shared.resolve(MediaItem(id: "movie-1", name: "movie-1", type: .movie))
+        #expect(resolved.userData?.playbackPositionTicks == 27_000_000_000)
+    }
+
     @Test("Marking watched clears the resolved progress — Replay, never a stale Resume")
     func toggleWatchedClearsResolvedProgress() async {
         let shared = UserStateStore()

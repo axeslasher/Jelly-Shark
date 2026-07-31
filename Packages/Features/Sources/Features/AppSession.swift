@@ -31,13 +31,21 @@ public final class AppSession {
 
     public init() {}
 
+    /// The in-flight overlay activation, retained so a sign-out (or a
+    /// replacement connection) can cancel it — an unretained task could
+    /// complete after `deactivate()` and repopulate state across the
+    /// privacy boundary
+    private var activationTask: Task<Void, Never>?
+
     /// Store the client (and its cache scope) after a successful connection
     public func setClient(_ client: any JellyfinClientProtocol, scopedCache: ScopedCache? = nil) {
         self.client = client
         self.scopedCache = scopedCache
+        activationTask?.cancel()
+        activationTask = nil
         if let scopedCache {
             let userState = userState
-            Task {
+            activationTask = Task {
                 await userState.activate(cache: scopedCache)
             }
         }
@@ -46,6 +54,8 @@ public final class AppSession {
     /// Clear the client on disconnect. Also drops all resolved user state —
     /// the same privacy boundary as the cache scope purge.
     public func clearClient() {
+        activationTask?.cancel()
+        activationTask = nil
         client = nil
         scopedCache = nil
         userState.deactivate()

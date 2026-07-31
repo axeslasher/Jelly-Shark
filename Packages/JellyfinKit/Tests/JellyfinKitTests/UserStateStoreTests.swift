@@ -72,6 +72,47 @@ struct UserStateStoreTests {
         #expect(store.resolve(series).userData?.unplayedItemCount == 7)
     }
 
+    @Test func playedContainerResolvesZeroUnwatched() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        let series = item("series-1", unplayedCount: 7)
+
+        // Marking a container watched has nothing unwatched left — a played
+        // badge next to a stale "7" would contradict itself
+        let token = store.beginPlayedToggle(itemID: "series-1", target: true)
+        #expect(store.resolve(series).userData?.unplayedItemCount == 0)
+
+        store.confirm(token)
+        #expect(store.resolve(series).userData?.unplayedItemCount == 0)
+
+        // Marking unwatched falls back to the item's own count
+        let back = store.beginPlayedToggle(itemID: "series-1", target: false)
+        store.confirm(back)
+        #expect(store.resolve(series).userData?.unplayedItemCount == 7)
+    }
+
+    @Test func staleActivationCannotRepopulateADeactivatedStore() async {
+        // Seed the table so a completing activation would have rows to leak
+        await cache.store.ingestServerUserData(
+            scope: cache.scope,
+            items: [item("m-1", played: true, favorite: true)],
+        )
+
+        let store = UserStateStore()
+        let activation = Task { await store.activate(cache: cache) }
+        // Let the activation reach its suspension on the cache actor…
+        for _ in 0 ..< 10 {
+            await Task.yield()
+        }
+        // …then sign out before it resumes. The stale completion must be
+        // dropped, not merged back in across the privacy boundary.
+        store.deactivate()
+        await activation.value
+
+        #expect(store.resolve(item("m-1")) == item("m-1"))
+        #expect(store.isFavorite(itemID: "m-1", fallback: false) == false)
+    }
+
     @Test func ingestSkipsItemsWithoutUserDataOrRealId() async {
         let store = UserStateStore()
         await store.activate(cache: cache)

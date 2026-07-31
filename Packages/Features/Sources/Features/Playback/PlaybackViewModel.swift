@@ -249,8 +249,13 @@ public final class PlaybackViewModel {
 
         // The final playhead lands in the overlay immediately, so a shelf
         // behind the dismissing player shows the right resume bar on its
-        // first frame (#193) — the server learns it via the report below
-        userState.recordPosition(itemID: item.id, ticks: positionTicks)
+        // first frame (#193) — the server learns it via the report below.
+        // Only when playback actually advanced: a session that never
+        // rendered (delivery failure → Close, a retry's teardown) reads 0,
+        // and recording that would wipe a real resume position.
+        if positionTicks > 0 {
+            userState.recordPosition(itemID: item.id, ticks: positionTicks)
+        }
 
         // Telemetry must never block teardown
         do {

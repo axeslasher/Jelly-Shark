@@ -63,6 +63,11 @@ public final class UserStateStore {
     public func activate(cache: ScopedCache) async {
         self.cache = cache
         let seeded = await cache.store.allUserStates(scope: cache.scope)
+        // A deactivate (sign-out) or a replacement activation may have
+        // landed while the table read was on the store's actor. Their state
+        // must win over this stale completion — merging it in would carry
+        // one account's rows across the privacy boundary.
+        guard !Task.isCancelled, self.cache?.scope == cache.scope else { return }
         states = seeded.merging(states) { _, memory in memory }
     }
 
@@ -108,7 +113,10 @@ public final class UserStateStore {
             isFavorite: value.isFavorite,
             played: value.played,
             lastPlayedDate: value.lastPlayedDate,
-            unplayedItemCount: item.userData?.unplayedItemCount,
+            // A played container has nothing unwatched left — mirroring
+            // MediaItem.settingPlayed, so a series marked watched can't
+            // render a played badge next to a stale unwatched count
+            unplayedItemCount: value.played ? 0 : item.userData?.unplayedItemCount,
         )
         return copy
     }

@@ -96,7 +96,7 @@ public struct PersonDetailView: View {
         }
         .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: target)
+                PlaybackContainerView(client: client, item: target, userState: session.userState)
             }
         }
         .fullScreenCover(isPresented: $isPresentingBiography) {
