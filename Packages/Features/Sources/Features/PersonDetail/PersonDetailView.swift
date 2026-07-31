@@ -91,12 +91,12 @@ public struct PersonDetailView: View {
         // Keyed on the session as well as the person: a sign-out must drop this
         // page rather than leave it for whoever signs in next.
         .task(id: SessionScopedID(content: member.id, isConnected: session.isConnected)) {
-            viewModel.attach(client: session.client, member: member)
+            viewModel.attach(client: session.client, member: member, userState: session.userState)
             await viewModel.load()
         }
         .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: target)
+                PlaybackContainerView(client: client, item: target, userState: session.userState)
             }
         }
         .fullScreenCover(isPresented: $isPresentingBiography) {

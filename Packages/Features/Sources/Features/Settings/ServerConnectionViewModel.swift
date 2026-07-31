@@ -340,16 +340,22 @@ public final class ServerConnectionViewModel {
         await validationTask?.value
     }
 
-    /// Wrap a freshly-built client so its responses feed the cache; without
-    /// a cache the client passes through untouched. A restored session
-    /// passes its scope so writes work during the validation window, before
-    /// the wrapped client has fetched its user.
+    /// Wrap a freshly-built client so its responses feed the cache and the
+    /// user-state overlay; without a cache the client passes through
+    /// untouched. A restored session passes its scope so writes work during
+    /// the validation window, before the wrapped client has fetched its
+    /// user.
     private func wrapped(
         _ client: any JellyfinClientProtocol,
         scope: CacheScope? = nil,
     ) -> any JellyfinClientProtocol {
         guard let cache else { return client }
-        return CachingJellyfinClient(wrapping: client, cache: cache, scope: scope)
+        return CachingJellyfinClient(
+            wrapping: client,
+            cache: cache,
+            scope: scope,
+            userState: session?.userState,
+        )
     }
 
     /// Finish a successful authentication: prove the connection by fetching

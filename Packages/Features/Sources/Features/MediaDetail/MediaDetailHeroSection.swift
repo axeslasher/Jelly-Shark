@@ -107,10 +107,11 @@ struct MediaDetailHeroSection: View {
         .padding(.horizontal, SpacingTokens.screenPadding)
         .padding(.bottom, SpacingTokens.md)
         // Animate exactly the toggle-driven updates (button icons/labels, the
-        // owner's Play label) — the moved-to-view-model equivalent of the old
-        // `withAnimation` around each optimistic flip.
-        .animation(theme.animation, value: viewModel.heroPlayedOverride)
-        .animation(theme.animation, value: viewModel.heroFavoriteOverride)
+        // owner's Play label). The resolved booleans move the moment a
+        // pending toggle begins, so they animate the same flips the old
+        // per-flip overrides did.
+        .animation(theme.animation, value: viewModel.heroIsPlayed)
+        .animation(theme.animation, value: viewModel.heroIsFavorite)
         // Reserve a full viewport-height hero and pin the content to the bottom.
         // Anchoring (rather than pushing down with a Spacer) keeps the action row /
         // overview / credits on the same baseline for every item — the logo or

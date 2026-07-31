@@ -28,8 +28,16 @@ public final class LibraryItemsViewModel {
 
     // MARK: - State
 
+    /// All items loaded so far for the current query, as fetched. The
+    /// public accessor resolves through the user-state overlay at read
+    /// time, so watched/favorite/progress changes render without array
+    /// surgery (#193).
+    private var rawItems: [MediaItem] = []
+
     /// All items loaded so far for the current query.
-    public private(set) var items: [MediaItem] = []
+    public var items: [MediaItem] {
+        userState.resolving(rawItems)
+    }
 
     /// The current query lifecycle state.
     public private(set) var state: State = .loading
@@ -77,6 +85,11 @@ public final class LibraryItemsViewModel {
     private var client: (any JellyfinClientProtocol)?
     private var cache: ScopedCache?
 
+    /// The shared user-state overlay. A private fallback keeps the toggle
+    /// and resolve semantics identical when a view constructs the model
+    /// without one (previews, tests) — one code path, not two.
+    private var userState = UserStateStore()
+
     /// True while a grid hydrated from the cache awaits its fresh first
     /// page. Pagination is held until the refresh lands: the cached page and
     /// the server's current page 0 may disagree, and appending page 1 to the
@@ -110,7 +123,7 @@ public final class LibraryItemsViewModel {
 
     public var hasMore: Bool {
         guard let totalCount else { return false }
-        return items.count < totalCount
+        return rawItems.count < totalCount
     }
 
     /// A "1,234 items" subtitle, nil until the first page lands.
@@ -167,11 +180,15 @@ public final class LibraryItemsViewModel {
         client: (any JellyfinClientProtocol)?,
         initialQuery: LibraryQuery = LibraryQuery(),
         cache: ScopedCache? = nil,
+        userState: UserStateStore? = nil,
     ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let libraryChanged = !hasAttached || initialQuery.library?.id != attachedLibraryID
         self.client = client
         self.cache = cache
+        if let userState {
+            self.userState = userState
+        }
         attachedLibraryID = initialQuery.library?.id
         hasAttached = true
         if clientChanged || libraryChanged {
@@ -192,7 +209,7 @@ public final class LibraryItemsViewModel {
         loadGeneration += 1
         let generation = loadGeneration
 
-        items = []
+        rawItems = []
         totalCount = nil
         isReloading = false
         state = .loading
@@ -208,11 +225,11 @@ public final class LibraryItemsViewModel {
         // the fresh page-0 fetch below reconciles. Filtered or re-sorted
         // seeds are never cached (`isDefaultBrowse` is shared with the write
         // side, so the two conditions cannot drift).
-        if items.isEmpty, query.isDefaultBrowse, let cache {
+        if rawItems.isEmpty, query.isDefaultBrowse, let cache {
             let cached = await cache.read(MediaItemPage.self, key: .libraryFirstPage(libraryID: query.library?.id))
             guard generation == loadGeneration else { return }
             if let cached, !cached.items.isEmpty {
-                items = cached.items
+                rawItems = cached.items
                 totalCount = cached.totalRecordCount ?? cached.items.count
                 state = .loaded
                 isRefreshingHydratedPage = true
@@ -264,7 +281,7 @@ public final class LibraryItemsViewModel {
         isReloading = true
         // Keep the current items visible while the new query loads; only an
         // already-empty grid shows the spinner
-        if items.isEmpty {
+        if rawItems.isEmpty {
             state = .loading
         }
         if !newQuery.isFiltering {
@@ -315,12 +332,14 @@ public final class LibraryItemsViewModel {
         // hydrated grid still awaiting its fresh page 0.
         guard !isLoadingMore, !isReloading, !isRefreshingHydratedPage, hasMore, state == .loaded else { return }
         guard let client else { return }
-        guard let index = items.firstIndex(of: currentItem),
-              index >= items.count - prefetchDistance else { return }
+        // By id, not equality: the view hands back a resolved item, whose
+        // userData can differ from the raw array's copy
+        guard let index = rawItems.firstIndex(where: { $0.id == currentItem.id }),
+              index >= rawItems.count - prefetchDistance else { return }
 
         isLoadingMore = true
         let generation = loadGeneration
-        let startIndex = items.count
+        let startIndex = rawItems.count
 
         loadTask = Task { [weak self] in
             guard let self else { return }
@@ -333,7 +352,7 @@ public final class LibraryItemsViewModel {
                     startIndex: startIndex,
                 )
                 guard generation == self.loadGeneration else { return }
-                self.items.append(contentsOf: page.items)
+                self.rawItems.append(contentsOf: page.items)
                 self.totalCount = page.totalRecordCount ?? self.totalCount
                 self.isLoadingMore = false
             } catch {
@@ -354,42 +373,41 @@ public final class LibraryItemsViewModel {
 
     // MARK: - User-Data Actions
 
-    /// Optimistically apply a watched-state change from a card's long-press
-    /// menu, then persist; revert on failure. The grid is not re-filtered:
-    /// even under a watched/unwatched filter, collapsing the card mid-browse
-    /// would yank focus — the next reload applies the server's truth.
+    /// Apply a watched-state change from a card's long-press menu through
+    /// the user-state overlay; the server's acknowledgment commits it, a
+    /// failure withdraws it. The grid is not re-filtered: even under a
+    /// watched/unwatched filter, collapsing the card mid-browse would yank
+    /// focus — the next reload applies the server's truth.
     public func setPlayed(_ played: Bool, for item: MediaItem) async {
         guard let client else { return }
-        replaceInGrid(item.settingPlayed(played))
+        let token = userState.beginPlayedToggle(itemID: item.id, target: played)
         do {
             if played {
                 try await client.markPlayed(itemId: item.id)
             } else {
                 try await client.markUnplayed(itemId: item.id)
             }
+            userState.confirm(token)
         } catch {
-            replaceInGrid(item)
+            userState.revert(token)
         }
     }
 
-    /// Optimistically apply a favorite change from a card's long-press menu,
-    /// then persist; revert on failure.
+    /// Apply a favorite change from a card's long-press menu; same pending-
+    /// toggle lifecycle.
     public func setFavorite(_ favorite: Bool, for item: MediaItem) async {
         guard let client else { return }
-        replaceInGrid(item.settingFavorite(favorite))
+        let token = userState.beginFavoriteToggle(itemID: item.id, target: favorite)
         do {
             if favorite {
                 try await client.markFavorite(itemId: item.id)
             } else {
                 try await client.unmarkFavorite(itemId: item.id)
             }
+            userState.confirm(token)
         } catch {
-            replaceInGrid(item)
+            userState.revert(token)
         }
-    }
-
-    private func replaceInGrid(_ item: MediaItem) {
-        items = items.map { $0.id == item.id ? item : $0 }
     }
 
     // MARK: - Loading
@@ -481,11 +499,11 @@ public final class LibraryItemsViewModel {
                 startIndex: 0,
             )
             guard generation == loadGeneration else { return }
-            items = page.items
+            rawItems = page.items
             totalCount = page.totalRecordCount ?? page.items.count
             isReloading = false
             isRefreshingHydratedPage = false
-            state = items.isEmpty ? .empty : .loaded
+            state = rawItems.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
             if isRefreshingHydratedPage {
@@ -498,7 +516,7 @@ public final class LibraryItemsViewModel {
                 isReloading = false
                 needsInitialLoad = true
             } else {
-                items = []
+                rawItems = []
                 totalCount = nil
                 isReloading = false
                 state = .failed(error.localizedDescription)

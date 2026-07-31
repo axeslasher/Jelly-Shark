@@ -5,27 +5,23 @@ import SwiftUI
 /// Title + SF Symbol for the hero Play button on plain (movie / episode)
 /// pages — the series and collection labels are computed separately.
 ///
-/// `playedOverride` is the optimistic watched toggle. Marking watched *or*
-/// unwatched clears the server-side resume position, so a pending override
-/// supersedes the item's stored progress: watched reads "Replay" (with the
-/// circular-arrow icon the played shelf badge uses), unwatched drops straight
-/// to "Play" (never a stale "Resume"). Absent an override, a fully-watched
-/// item still reads "Replay", an in-progress one "Resume".
+/// Reads resolved state only: the user-state overlay already applies any
+/// in-flight watched toggle *and* clears the resume position with it (both
+/// directions clear it server-side), so a fully-watched item reads "Replay"
+/// (with the circular-arrow icon the played shelf badge uses), an
+/// in-progress one "Resume", and a pending toggle can never leave a stale
+/// "Resume" behind.
 enum HeroPlayLabel {
     static func label(
-        playedOverride: Bool?,
         played: Bool,
         hasProgress: Bool,
     ) -> (title: String, systemImage: String) {
-        let replay = (title: "Replay", systemImage: "arrow.counterclockwise")
-        let play = (title: "Play", systemImage: "play.fill")
-        if let playedOverride {
-            return playedOverride ? replay : play
-        }
         if played {
-            return replay
+            return (title: "Replay", systemImage: "arrow.counterclockwise")
         }
-        return hasProgress ? (title: "Resume", systemImage: "play.fill") : play
+        return hasProgress
+            ? (title: "Resume", systemImage: "play.fill")
+            : (title: "Play", systemImage: "play.fill")
     }
 }
 
@@ -198,8 +194,7 @@ public struct MediaDetailView: View {
             return (inProgress ? "Play Next" : "Play First", "play.fill")
         default:
             return HeroPlayLabel.label(
-                playedOverride: viewModel.heroPlayedOverride,
-                played: displayItem.userData?.played ?? false,
+                played: viewModel.heroIsPlayed,
                 hasProgress: displayItem.hasProgress,
             )
         }
@@ -393,12 +388,17 @@ public struct MediaDetailView: View {
             // Keyed on the session as well as the item: a sign-out must drop
             // this page rather than leave it for whoever signs in next.
             .task(id: SessionScopedID(content: item.id, isConnected: session.isConnected)) {
-                viewModel.attach(client: session.client, item: item, cache: session.scopedCache)
+                viewModel.attach(
+                    client: session.client,
+                    item: item,
+                    cache: session.scopedCache,
+                    userState: session.userState,
+                )
                 await viewModel.load()
             }
             .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
                 if let client = session.client {
-                    PlaybackContainerView(client: client, item: target)
+                    PlaybackContainerView(client: client, item: target, userState: session.userState)
                 }
             }
             .fullScreenCover(isPresented: $isPresentingOverview) {

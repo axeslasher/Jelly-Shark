@@ -239,7 +239,7 @@ struct PersonDetailViewModelTests {
         #expect(viewModel.isFavorite == false)
     }
 
-    @Test("Attaching a new person resets the pending override")
+    @Test("Attaching a new person shows that person's own state")
     func overrideResetsOnNewPerson() async {
         let client = MockJellyfinClient()
         let viewModel = PersonDetailViewModel()
@@ -247,8 +247,9 @@ struct PersonDetailViewModelTests {
         await viewModel.toggleFavorite()
         #expect(viewModel.isFavorite == true)
 
+        // The overlay keys by item id, so the first person's confirmed
+        // favorite cannot bleed onto the next page
         await load(viewModel, client: client, member: CastMember(id: "guid-2", name: "Other", kind: "Actor"))
-        #expect(viewModel.favoriteOverride == nil)
         #expect(viewModel.isFavorite == false)
     }
 }

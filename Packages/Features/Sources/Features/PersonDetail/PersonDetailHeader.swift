@@ -122,10 +122,10 @@ struct PersonDetailHeader: View {
                 .focusSection()
             #endif
         }
-        // Animate exactly the toggle-driven updates (heart icon/label) — the
-        // moved-to-view-model equivalent of the old `withAnimation` around the
-        // optimistic flip.
-        .animation(theme.animation, value: viewModel.favoriteOverride)
+        // Animate exactly the toggle-driven updates (heart icon/label). The
+        // resolved boolean moves the moment a pending toggle begins, so it
+        // animates the same flip the old per-flip override did.
+        .animation(theme.animation, value: viewModel.isFavorite)
     }
 
     /// Life facts as an inline icon row, styled identically to the media

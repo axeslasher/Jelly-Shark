@@ -26,10 +26,15 @@ public struct PlaybackContainerView: View {
     /// rather than trusting the recovery, because Close is the only exit.
     @FocusState private var isRetryFocused: Bool
 
-    public init(client: any JellyfinClientProtocol, item: MediaItem) {
+    public init(client: any JellyfinClientProtocol, item: MediaItem, userState: UserStateStore? = nil) {
         let engine = AVFoundationPlayerEngine()
         _playerEngine = State(initialValue: engine)
-        _viewModel = State(initialValue: PlaybackViewModel(client: client, item: item, engine: engine))
+        _viewModel = State(initialValue: PlaybackViewModel(
+            client: client,
+            item: item,
+            engine: engine,
+            userState: userState,
+        ))
     }
 
     public var body: some View {
