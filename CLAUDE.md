@@ -153,5 +153,6 @@ Full documentation is available in the `/docs` directory:
 - **ARCHITECTURE.md**: Module structure, data flow, tech stack, decision log
 - **DESIGN_SYSTEM.md**: Theming philosophy, color palettes, typography, component variants
 - **JELLYFIN_INTEGRATION.md**: API endpoints, authentication, data models, caching strategy
+- **RELEASING.md**: Versioning scheme, release naming, how to cut and tag a release
 
 API Documentation: https://api.jellyfin.org
