@@ -427,29 +427,33 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// "unfavorite", itemId); `userDataError` makes them all throw
     var userDataCalls: [(action: String, itemId: String)] = []
     var userDataError: Error?
+    /// Optional gate awaited before a mutation resolves, so tests can hold
+    /// a toggle in flight while something else refreshes
+    var userDataDelay: (() async -> Void)?
 
-    private func recordUserData(_ action: String, _ itemId: String) throws {
-        try lock.withLock {
+    private func recordUserData(_ action: String, _ itemId: String) async throws {
+        lock.withLock {
             userDataCalls.append((action, itemId))
-            if let userDataError {
-                throw userDataError
-            }
+        }
+        await userDataDelay?()
+        if let userDataError {
+            throw userDataError
         }
     }
 
     func markPlayed(itemId: String) async throws {
-        try recordUserData("played", itemId)
+        try await recordUserData("played", itemId)
     }
 
     func markUnplayed(itemId: String) async throws {
-        try recordUserData("unplayed", itemId)
+        try await recordUserData("unplayed", itemId)
     }
 
     func markFavorite(itemId: String) async throws {
-        try recordUserData("favorite", itemId)
+        try await recordUserData("favorite", itemId)
     }
 
     func unmarkFavorite(itemId: String) async throws {
-        try recordUserData("unfavorite", itemId)
+        try await recordUserData("unfavorite", itemId)
     }
 }

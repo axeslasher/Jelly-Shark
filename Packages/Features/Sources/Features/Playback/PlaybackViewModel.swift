@@ -46,16 +46,11 @@ public final class PlaybackViewModel {
     /// Currently selected subtitle stream index (nil = off)
     public private(set) var selectedSubtitleStreamIndex: Int?
 
-    /// Optimistic override for the transport bar's favorite toggle. While
-    /// `nil` the heart reflects the playing item's fetched user data; a
-    /// toggle sets it and it reverts on a failed server call. Cleared when
-    /// autoplay advances to a new item, which brings its own state.
-    public private(set) var favoriteOverride: Bool?
-
-    /// Favorite state the transport bar shows: optimistic value if any,
-    /// otherwise Jellyfin's stored status for the playing item.
+    /// Favorite state the transport bar shows, read through the user-state
+    /// overlay — the same authority the detail pages read, so a heart
+    /// pressed anywhere agrees everywhere (#193).
     public var isFavorite: Bool {
-        favoriteOverride ?? item.userData?.isFavorite ?? false
+        userState.resolve(item).userData?.isFavorite ?? false
     }
 
     // MARK: - Private
@@ -65,6 +60,11 @@ public final class PlaybackViewModel {
     private let client: any JellyfinClientProtocol
     private let engine: any PlayerEngine
     private let progressInterval: Duration
+
+    /// The shared user-state overlay. A private fallback keeps the toggle
+    /// and resolve semantics identical when the container constructs the
+    /// model without one (previews, tests) — one code path, not two.
+    private let userState: UserStateStore
     private var playSessionId: String?
     private var playMethod: PlayMethod = .transcode
     private var progressTask: Task<Void, Never>?
@@ -114,11 +114,13 @@ public final class PlaybackViewModel {
         item: MediaItem,
         engine: any PlayerEngine,
         progressInterval: Duration = .seconds(10),
+        userState: UserStateStore? = nil,
     ) {
         self.client = client
         self.item = item
         self.engine = engine
         self.progressInterval = progressInterval
+        self.userState = userState ?? UserStateStore()
         engine.onEvent = { [weak self] event in
             self?.handleEngineEvent(event)
         }
@@ -195,31 +197,18 @@ public final class PlaybackViewModel {
             let extrasPeople = extras?.people ?? []
             castMembers = extrasPeople.isEmpty ? (item.people ?? []) : extrasPeople
 
-            // Correct the launching item's user data from the server's copy.
-            // A launch site can hand over an arbitrarily stale item — the
-            // detail page's favorite toggle is optimistic and never corrects
-            // the item it passes to the player, so the transport bar's heart
-            // showed the pre-toggle state (#189).
-            //
-            // The position is deliberately NOT taken from the server's copy.
-            // `resumeTicks` is read at the top of `start()`, before this
-            // fetch, so a fresh position could never move this attempt's seek
-            // anyway — but `item` outlives the attempt, and `retry()` re-runs
-            // `start()`, which re-reads the position from here. Taking the
-            // server's would make Try Again resume somewhere the first press
-            // did not, and by then it is stale in its own right: this
-            // session's `stop()` has already reported where the failed
-            // attempt actually was. Keeping the launch site's value is what
-            // makes a retry repeat the attempt rather than change it.
+            // Feed the server's fresh user data into the shared overlay
+            // (the extras fetch isn't a MediaItem fetch, so the caching
+            // client's ingestion never sees it). `item` itself stays the
+            // launch site's copy: `retry()` re-reads the resume position
+            // from it, and taking the server's would make Try Again resume
+            // somewhere the first press did not. Display state — the
+            // transport bar's heart included (#189) — reads through the
+            // overlay, so the stale copy misleads nothing.
             if let freshUserData = extras?.userData {
-                item.userData = UserData(
-                    playbackPositionTicks: item.userData?.playbackPositionTicks,
-                    playCount: freshUserData.playCount,
-                    isFavorite: freshUserData.isFavorite,
-                    played: freshUserData.played,
-                    lastPlayedDate: freshUserData.lastPlayedDate,
-                    unplayedItemCount: freshUserData.unplayedItemCount,
-                )
+                var fresh = item
+                fresh.userData = freshUserData
+                userState.ingest(serverItems: [fresh])
             }
 
             await beginPlayback(resolution: resolution, resumeTicks: resumeTicks)
@@ -257,6 +246,11 @@ public final class PlaybackViewModel {
         delivery = nil
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
+
+        // The final playhead lands in the overlay immediately, so a shelf
+        // behind the dismissing player shows the right resume bar on its
+        // first frame (#193) — the server learns it via the report below
+        userState.recordPosition(itemID: item.id, ticks: positionTicks)
 
         // Telemetry must never block teardown
         do {
@@ -314,20 +308,21 @@ public final class PlaybackViewModel {
 
     // MARK: - User-Data Actions
 
-    /// Optimistically flip the playing item's favorite state, then persist;
-    /// revert on failure. Mirrors the detail pages' toggles, so a heart
-    /// pressed mid-playback and one pressed on the detail page agree.
+    /// Flip the playing item's favorite state through the user-state
+    /// overlay — the same store the detail pages toggle, so a heart pressed
+    /// mid-playback and one pressed on the detail page agree.
     public func toggleFavorite() async {
         let target = !isFavorite
-        favoriteOverride = target
+        let token = userState.beginFavoriteToggle(itemID: item.id, target: target)
         do {
             if target {
                 try await client.markFavorite(itemId: item.id)
             } else {
                 try await client.unmarkFavorite(itemId: item.id)
             }
+            userState.confirm(token)
         } catch {
-            favoriteOverride = !target
+            userState.revert(token)
             Self.logger.error("[favorite] \(target ? "mark" : "unmark", privacy: .public) FAILED \"\(self.item.name, privacy: .public)\": \(error, privacy: .public)")
         }
     }
@@ -345,7 +340,6 @@ public final class PlaybackViewModel {
         item = next
         selectedAudioStreamIndex = nil
         selectedSubtitleStreamIndex = nil
-        favoriteOverride = nil
         await start()
     }
 
@@ -1098,6 +1092,9 @@ public final class PlaybackViewModel {
         guard engine.isLoaded, !hasStopped else { return }
 
         let positionTicks = currentPositionTicks()
+        // Tracked locally regardless of whether the report lands — the
+        // viewer's position is a fact about the viewer, not the network
+        userState.recordPosition(itemID: item.id, ticks: positionTicks)
         do {
             try await client.reportPlaybackProgress(
                 itemId: item.id,

@@ -576,7 +576,6 @@ struct MediaDetailViewModelTests {
         )
         await viewModel.refreshAfterPlayback()
 
-        #expect(viewModel.heroFavoriteOverride == nil)
         #expect(viewModel.heroIsFavorite == false)
     }
 
@@ -596,7 +595,6 @@ struct MediaDetailViewModelTests {
 
         await viewModel.refreshAfterPlayback()
 
-        #expect(viewModel.heroPlayedOverride == nil)
         #expect(viewModel.heroIsPlayed == true)
     }
 
@@ -626,8 +624,9 @@ struct MediaDetailViewModelTests {
         await viewModel.toggleHeroFavorite()
         #expect(viewModel.heroIsPlayed == true)
 
+        // The overlay keys by item id, so m1's confirmed toggles cannot
+        // bleed onto m2's hero
         await load(viewModel, client: client, item: movie("m2"))
-        #expect(viewModel.heroPlayedOverride == nil)
         #expect(viewModel.heroIsPlayed == false)
         #expect(viewModel.heroIsFavorite == false)
     }

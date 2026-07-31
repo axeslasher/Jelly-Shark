@@ -90,7 +90,12 @@ struct HomeView: View {
         .animation(theme.animation, value: viewModel.isInitialLoading)
         .background(theme.background)
         .task(id: session.isConnected) {
-            viewModel.attach(client: session.client, libraries: connection.libraries, cache: session.scopedCache)
+            viewModel.attach(
+                client: session.client,
+                libraries: connection.libraries,
+                cache: session.scopedCache,
+                userState: session.userState,
+            )
             await viewModel.load()
             genreShelves.attach(client: session.client, libraries: connection.libraries)
             await genreShelves.load()
@@ -106,7 +111,7 @@ struct HomeView: View {
         }
         .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: target)
+                PlaybackContainerView(client: client, item: target, userState: session.userState)
             }
         }
     }

@@ -42,17 +42,13 @@ public final class PersonDetailViewModel {
     /// Random filmography entry with a usable backdrop; drives the background.
     public private(set) var backdropItem: MediaItem?
 
-    /// Optimistic override for the header's favorite toggle. While `nil` the
-    /// button reflects Jellyfin's fetched state; a toggle sets it and it
-    /// reverts on a failed server call.
-    public private(set) var favoriteOverride: Bool?
-
     public private(set) var filmographyStatus: Status = .loading
 
-    /// Favorite state the header shows: optimistic value if any, otherwise
-    /// Jellyfin's stored status.
+    /// Favorite state the header shows, read through the user-state overlay
+    /// (persons are items on the server, so the shared store keys them like
+    /// any other id). Falls back to the fetched person's own flag.
     public var isFavorite: Bool {
-        favoriteOverride ?? person?.isFavorite ?? false
+        userState.isFavorite(itemID: member?.id ?? "", fallback: person?.isFavorite ?? false)
     }
 
     // MARK: - Configuration
@@ -63,6 +59,11 @@ public final class PersonDetailViewModel {
 
     private var client: (any JellyfinClientProtocol)?
     private var member: CastMember?
+
+    /// The shared user-state overlay. A private fallback keeps the toggle
+    /// and resolve semantics identical when a view constructs the model
+    /// without one (previews, tests) — one code path, not two.
+    private var userState = UserStateStore()
 
     /// Reload only when the connection or person actually changes (mirrors
     /// `HomeViewModel`); a failed load re-arms this so the next appearance
@@ -77,11 +78,18 @@ public final class PersonDetailViewModel {
     /// Attach the client and page person (called by the view on appearance
     /// and when the pushed member changes). Only an actual change schedules
     /// a load.
-    public func attach(client: (any JellyfinClientProtocol)?, member: CastMember) {
+    public func attach(
+        client: (any JellyfinClientProtocol)?,
+        member: CastMember,
+        userState: UserStateStore? = nil,
+    ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let memberChanged = member.id != self.member?.id
         self.client = client
         self.member = member
+        if let userState {
+            self.userState = userState
+        }
         if clientChanged || memberChanged {
             needsLoad = true
         }
@@ -101,7 +109,6 @@ public final class PersonDetailViewModel {
         series = []
         episodes = []
         backdropItem = nil
-        favoriteOverride = nil
         filmographyStatus = .loading
 
         // No client means the session is still being established (or was
@@ -133,6 +140,12 @@ public final class PersonDetailViewModel {
         guard generation == loadGeneration else { return }
 
         person = fetchedPerson
+        // Person fetches bypass the caching client's item ingestion (a
+        // Person isn't a MediaItem), so seed the overlay's favorite here —
+        // keyed by the member id, the same key `isFavorite` reads through
+        if let fetchedPerson {
+            userState.ingestServerFavorite(itemID: member.id, isFavorite: fetchedPerson.isFavorite)
+        }
         movies = (try? results[0].get()) ?? []
         series = (try? results[1].get()) ?? []
         episodes = (try? results[2].get()) ?? []
@@ -173,21 +186,22 @@ public final class PersonDetailViewModel {
 
     // MARK: - User-Data Actions
 
-    /// Optimistically flip the favorite state, then persist; revert on
-    /// failure. Person IDs are item IDs, so the standard favorite endpoints
-    /// apply.
+    /// Flip the favorite state through the user-state overlay; the server's
+    /// acknowledgment commits it, a failure withdraws it. Person IDs are
+    /// item IDs, so the standard favorite endpoints apply.
     public func toggleFavorite() async {
         guard let client, let member else { return }
         let target = !isFavorite
-        favoriteOverride = target
+        let token = userState.beginFavoriteToggle(itemID: member.id, target: target)
         do {
             if target {
                 try await client.markFavorite(itemId: member.id)
             } else {
                 try await client.unmarkFavorite(itemId: member.id)
             }
+            userState.confirm(token)
         } catch {
-            favoriteOverride = !target
+            userState.revert(token)
         }
     }
 

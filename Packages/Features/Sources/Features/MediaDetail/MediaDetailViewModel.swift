@@ -34,23 +34,49 @@ public final class MediaDetailViewModel {
 
     // MARK: - Outputs
 
+    /// Raw section content as fetched. The public accessors below resolve
+    /// through the user-state overlay at read time, so watched/favorite/
+    /// progress changes render wherever an item appears without array
+    /// surgery (#193).
+    private var rawDetailedItem: MediaItem?
+    private var rawSeasons: [MediaItem] = []
+    private var rawEpisodes: [MediaItem] = []
+    private var rawNextUpEpisode: MediaItem?
+    private var rawCollectionItems: [MediaItem] = []
+    private var rawSeasonEpisodes: [MediaItem] = []
+    private var rawSimilarItems: [MediaItem] = []
+
     /// The detailed fetch; nil until it lands (or when it failed), so the
     /// view can keep rendering the stub it was pushed with.
-    public private(set) var detailedItem: MediaItem?
+    public var detailedItem: MediaItem? {
+        rawDetailedItem.map { userState.resolve($0) }
+    }
 
     /// Series-only: the season list, every episode in series order (one
     /// continuous shelf spans all seasons), and the episode the hero Play
     /// button resolves to.
-    public private(set) var seasons: [MediaItem] = []
-    public private(set) var episodes: [MediaItem] = []
-    public private(set) var nextUpEpisode: MediaItem?
+    public var seasons: [MediaItem] {
+        userState.resolving(rawSeasons)
+    }
+
+    public var episodes: [MediaItem] {
+        userState.resolving(rawEpisodes)
+    }
+
+    public var nextUpEpisode: MediaItem? {
+        rawNextUpEpisode.map { userState.resolve($0) }
+    }
 
     /// BoxSet-only: the collection's contents, in release order.
-    public private(set) var collectionItems: [MediaItem] = []
+    public var collectionItems: [MediaItem] {
+        userState.resolving(rawCollectionItems)
+    }
 
     /// Episode-only: the rest of the episode's season, in season order (the
     /// page's own episode included — it anchors "you are here").
-    public private(set) var seasonEpisodes: [MediaItem] = []
+    public var seasonEpisodes: [MediaItem] {
+        userState.resolving(rawSeasonEpisodes)
+    }
 
     /// Episode-only: the full series item, fetched so "Go to Series" can
     /// push a real series page. Nil until it lands (button stays disabled) —
@@ -69,7 +95,9 @@ public final class MediaDetailViewModel {
     public private(set) var directors: [CastMember] = []
     public private(set) var topCast: [CastMember] = []
 
-    public private(set) var similarItems: [MediaItem] = []
+    public var similarItems: [MediaItem] {
+        userState.resolving(rawSimilarItems)
+    }
 
     /// Whether the More Like This enrichment is still in flight. It resolves
     /// *after* `status` settles (deliberately — a retry that recovers the core
@@ -77,27 +105,20 @@ public final class MediaDetailViewModel {
     /// `status` to hand off without a pop-in.
     public private(set) var isSimilarLoading = true
 
-    /// Optimistic watched override for the hero's own item. While `nil` the
-    /// hero reflects the fetched `userData`; a toggle sets it and it reverts
-    /// on a failed server call. The hero's eye toggle and the Play-button
-    /// label both read through it, so they agree on the pending state.
-    public private(set) var heroPlayedOverride: Bool?
-
-    /// Optimistic favorite override for the hero's own item; same lifecycle.
-    public private(set) var heroFavoriteOverride: Bool?
-
     public private(set) var status: Status = .loading
 
-    /// Watched state the hero shows: the pending optimistic value if any,
-    /// otherwise Jellyfin's stored status for the page's item.
+    /// Watched state the hero shows: the page's item resolved through the
+    /// user-state overlay, which also carries any in-flight toggle — the
+    /// eye toggle and the Play-button label agree by construction.
     public var heroIsPlayed: Bool {
-        heroPlayedOverride ?? (detailedItem ?? item)?.userData?.played ?? false
+        guard let page = rawDetailedItem ?? item else { return false }
+        return userState.resolve(page).userData?.played ?? false
     }
 
-    /// Favorite state the hero shows: optimistic value if any, otherwise
-    /// Jellyfin's stored status.
+    /// Favorite state the hero shows; same resolution path.
     public var heroIsFavorite: Bool {
-        heroFavoriteOverride ?? (detailedItem ?? item)?.userData?.isFavorite ?? false
+        guard let page = rawDetailedItem ?? item else { return false }
+        return userState.resolve(page).userData?.isFavorite ?? false
     }
 
     // MARK: - Hero backdrop
@@ -150,6 +171,12 @@ public final class MediaDetailViewModel {
 
     private var client: (any JellyfinClientProtocol)?
     private var cache: ScopedCache?
+
+    /// The shared user-state overlay. A private fallback keeps the toggle
+    /// and resolve semantics identical when a view constructs the model
+    /// without one (previews, tests) — there is one code path, not two.
+    private var userState = UserStateStore()
+
     private var item: MediaItem?
 
     /// Reload only when the connection or page item actually changes
@@ -177,12 +204,16 @@ public final class MediaDetailViewModel {
         client: (any JellyfinClientProtocol)?,
         item: MediaItem,
         cache: ScopedCache? = nil,
+        userState: UserStateStore? = nil,
     ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let itemChanged = item.id != self.item?.id
         self.client = client
         self.item = item
         self.cache = cache
+        if let userState {
+            self.userState = userState
+        }
         if clientChanged || itemChanged {
             needsLoad = true
         }
@@ -197,20 +228,18 @@ public final class MediaDetailViewModel {
 
         // Reset so a reused view (item.id change) doesn't show the previous
         // item's seasons or collection contents while the new ones load.
-        detailedItem = nil
-        seasons = []
-        episodes = []
-        nextUpEpisode = nil
-        collectionItems = []
-        seasonEpisodes = []
+        rawDetailedItem = nil
+        rawSeasons = []
+        rawEpisodes = []
+        rawNextUpEpisode = nil
+        rawCollectionItems = []
+        rawSeasonEpisodes = []
         seriesItem = nil
         episodePrimaryIsHeroBackdrop = false
         directors = []
         topCast = []
-        similarItems = []
+        rawSimilarItems = []
         isSimilarLoading = true
-        heroPlayedOverride = nil
-        heroFavoriteOverride = nil
         status = .loading
 
         // No client means the session is still being established (or was
@@ -226,7 +255,7 @@ public final class MediaDetailViewModel {
             let cached = await cache.read(MediaItem.self, key: .mediaDetail(itemID: item.id))
             guard generation == loadGeneration else { return }
             if let cached {
-                detailedItem = cached
+                rawDetailedItem = cached
                 deriveCredits()
             }
         }
@@ -234,7 +263,7 @@ public final class MediaDetailViewModel {
         do {
             let detail = try await client.getMediaItem(itemId: item.id)
             guard generation == loadGeneration else { return }
-            detailedItem = detail
+            rawDetailedItem = detail
             deriveCredits()
 
             if item.type == .series {
@@ -246,15 +275,15 @@ public final class MediaDetailViewModel {
                 // first episode, so a failure here must not fail the page.
                 let nextUp = await (try? nextUpFetch) ?? nil
                 guard generation == loadGeneration else { return }
-                seasons = fetchedSeasons
-                episodes = fetchedEpisodes
-                nextUpEpisode = nextUp
+                rawSeasons = fetchedSeasons
+                rawEpisodes = fetchedEpisodes
+                rawNextUpEpisode = nextUp
             }
 
             if item.type == .boxSet {
                 let items = try await client.getCollectionItems(collectionId: item.id)
                 guard generation == loadGeneration else { return }
-                collectionItems = items
+                rawCollectionItems = items
             }
 
             // The season shelf is an episode page's kin section (like
@@ -280,7 +309,7 @@ public final class MediaDetailViewModel {
                 let fetchedSeries = try? await seriesFetch
                 let primaryIsHeroWorthy = await primaryWidthCheck
                 guard generation == loadGeneration else { return }
-                seasonEpisodes = fetchedEpisodes
+                rawSeasonEpisodes = fetchedEpisodes
                 seriesItem = fetchedSeries
                 episodePrimaryIsHeroBackdrop = primaryIsHeroWorthy
             }
@@ -305,7 +334,7 @@ public final class MediaDetailViewModel {
         // recovers doesn't wait on it.
         let similar = await (try? client.getSimilarItems(itemId: item.id, limit: 12)) ?? []
         guard generation == loadGeneration else { return }
-        similarItems = similar
+        rawSimilarItems = similar
         isSimilarLoading = false
     }
 
@@ -327,19 +356,17 @@ public final class MediaDetailViewModel {
         loadGeneration += 1
         let generation = loadGeneration
 
+        // No override bookkeeping here anymore: the player's own toggles
+        // confirm into the same user-state overlay this page reads through,
+        // so there is nothing stale to mask (#189's fix, subsumed by #193's).
+        // The refetch is ingested explicitly — it is the authoritative
+        // post-playback state, and with an unwrapped client (tests,
+        // previews) nothing else feeds the overlay; wrapped, this is an
+        // idempotent double-ingest.
         if let refreshed = try? await client.getMediaItem(itemId: item.id) {
             guard generation == loadGeneration else { return }
-            detailedItem = refreshed
-            // The refreshed item is authoritative, so the pending optimistic
-            // overrides have to stand down — the player carries its own
-            // watched and favorite toggles, and a heart unfavorited in there
-            // was masked forever by an override set on this page before
-            // playback (#189). Cleared in the same turn as the assignment, so
-            // the hero never renders the two disagreeing; and only on a
-            // successful refetch, since on failure the override is still the
-            // best value there is.
-            heroPlayedOverride = nil
-            heroFavoriteOverride = nil
+            rawDetailedItem = refreshed
+            userState.ingest(serverItems: [refreshed])
             deriveCredits()
         }
 
@@ -350,21 +377,21 @@ public final class MediaDetailViewModel {
             let nextUp = await (try? nextUpFetch) ?? nil
             guard generation == loadGeneration else { return }
             if let refreshedEpisodes {
-                episodes = refreshedEpisodes
+                rawEpisodes = refreshedEpisodes
             }
-            nextUpEpisode = nextUp
+            rawNextUpEpisode = nextUp
         }
 
         // The season shelf's watched badges and progress bars move with
         // playback too.
-        if item.type == .episode, let seriesId = (detailedItem ?? item).seriesId {
+        if item.type == .episode, let seriesId = (rawDetailedItem ?? item).seriesId {
             let refreshed = try? await client.getEpisodes(
                 seriesId: seriesId,
-                seasonId: (detailedItem ?? item).seasonId,
+                seasonId: (rawDetailedItem ?? item).seasonId,
             )
             guard generation == loadGeneration else { return }
             if let refreshed {
-                seasonEpisodes = refreshed
+                rawSeasonEpisodes = refreshed
             }
         }
 
@@ -374,94 +401,84 @@ public final class MediaDetailViewModel {
             let refreshedItems = try? await client.getCollectionItems(collectionId: item.id)
             guard generation == loadGeneration else { return }
             if let refreshedItems {
-                collectionItems = refreshedItems
+                rawCollectionItems = refreshedItems
             }
         }
     }
 
     // MARK: - User-Data Actions
 
-    /// Optimistically flip the hero item's watched state, then persist;
-    /// revert on failure.
+    /// Flip the hero item's watched state through the user-state overlay:
+    /// displayed at once as a pending toggle, committed on the server's
+    /// acknowledgment, withdrawn on failure.
     public func toggleHeroPlayed() async {
         guard let client, let item else { return }
         let target = !heroIsPlayed
-        heroPlayedOverride = target
+        let token = userState.beginPlayedToggle(itemID: item.id, target: target)
         do {
             if target {
                 try await client.markPlayed(itemId: item.id)
             } else {
                 try await client.markUnplayed(itemId: item.id)
             }
+            userState.confirm(token)
         } catch {
-            heroPlayedOverride = !target
+            userState.revert(token)
         }
     }
 
-    /// Optimistically flip the hero item's favorite state, then persist;
-    /// revert on failure.
+    /// Flip the hero item's favorite state; same pending-toggle lifecycle.
     public func toggleHeroFavorite() async {
         guard let client, let item else { return }
         let target = !heroIsFavorite
-        heroFavoriteOverride = target
+        let token = userState.beginFavoriteToggle(itemID: item.id, target: target)
         do {
             if target {
                 try await client.markFavorite(itemId: item.id)
             } else {
                 try await client.unmarkFavorite(itemId: item.id)
             }
+            userState.confirm(token)
         } catch {
-            heroFavoriteOverride = !target
+            userState.revert(token)
         }
     }
 
-    /// Optimistically apply a watched-state change from an episode card's
-    /// long-press menu, then persist; on success run the same in-place
-    /// refresh as a finished playback, since watched flags move next-up and
-    /// the hero's Play target. Reverts on failure.
+    /// Apply a watched-state change from an episode card's long-press menu
+    /// through the overlay (every section showing the item updates at
+    /// once); on success run the same in-place refresh as a finished
+    /// playback, since watched flags move next-up and the hero's Play
+    /// target.
     public func setPlayed(_ played: Bool, for target: MediaItem) async {
         guard let client else { return }
-        replaceInSections(target.settingPlayed(played))
+        let token = userState.beginPlayedToggle(itemID: target.id, target: played)
         do {
             if played {
                 try await client.markPlayed(itemId: target.id)
             } else {
                 try await client.markUnplayed(itemId: target.id)
             }
+            userState.confirm(token)
             await refreshAfterPlayback()
         } catch {
-            replaceInSections(target)
+            userState.revert(token)
         }
     }
 
-    /// Optimistically apply a favorite change from an episode card's
-    /// long-press menu, then persist; revert on failure.
+    /// Apply a favorite change from an episode card's long-press menu;
+    /// same pending-toggle lifecycle.
     public func setFavorite(_ favorite: Bool, for target: MediaItem) async {
         guard let client else { return }
-        replaceInSections(target.settingFavorite(favorite))
+        let token = userState.beginFavoriteToggle(itemID: target.id, target: favorite)
         do {
             if favorite {
                 try await client.markFavorite(itemId: target.id)
             } else {
                 try await client.unmarkFavorite(itemId: target.id)
             }
+            userState.confirm(token)
         } catch {
-            replaceInSections(target)
-        }
-    }
-
-    /// Swap the item (by id) into every section that carries it, so a card's
-    /// badge and menu labels update in place wherever it appears.
-    private func replaceInSections(_ target: MediaItem) {
-        func swapping(_ items: [MediaItem]) -> [MediaItem] {
-            items.map { $0.id == target.id ? target : $0 }
-        }
-        episodes = swapping(episodes)
-        seasonEpisodes = swapping(seasonEpisodes)
-        collectionItems = swapping(collectionItems)
-        similarItems = swapping(similarItems)
-        if nextUpEpisode?.id == target.id {
-            nextUpEpisode = target
+            userState.revert(token)
         }
     }
 
@@ -471,7 +488,7 @@ public final class MediaDetailViewModel {
     /// servers that report everyone as `kind == "Actor"` with the function in
     /// `role`. Top cast: first 3 billed actors, excluding mislabeled crew.
     private func deriveCredits() {
-        let people = detailedItem?.people ?? []
+        let people = rawDetailedItem?.people ?? []
         directors = people.filter { $0.kind == "Director" || $0.role == "Director" }
         topCast = Array(
             people

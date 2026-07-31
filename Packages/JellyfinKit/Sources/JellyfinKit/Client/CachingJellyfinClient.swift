@@ -33,14 +33,21 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     /// without this, every cache write in it would silently no-op.
     private let fallbackScope: CacheScope?
 
+    /// When present, user-data ingestion and mutation acknowledgments route
+    /// through the live overlay (which persists) instead of writing the
+    /// table directly, so screens see server truth the moment it arrives
+    private let userState: UserStateStore?
+
     public init(
         wrapping inner: any JellyfinClientProtocol,
         cache: MediaCacheStore,
         scope: CacheScope? = nil,
+        userState: UserStateStore? = nil,
     ) {
         self.inner = inner
         self.cache = cache
         fallbackScope = scope
+        self.userState = userState
     }
 
     // MARK: - Identity (pass-through)
@@ -73,7 +80,10 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     /// Record the user data carried by a batch of fetched items
     @discardableResult
     private func ingesting(_ items: [MediaItem]) async -> [MediaItem] {
-        if let scope, !items.isEmpty {
+        guard !items.isEmpty else { return items }
+        if let userState {
+            await userState.ingest(serverItems: items)
+        } else if let scope {
             await cache.ingestServerUserData(scope: scope, items: items)
         }
         return items
@@ -129,11 +139,9 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
             limit: limit,
             startIndex: startIndex,
         )
-        if let scope {
-            await cache.ingestServerUserData(scope: scope, items: page.items)
-            if startIndex == 0, query.isDefaultBrowse {
-                await cache.write(page, scope: scope, key: .libraryFirstPage(libraryID: libraryId))
-            }
+        await ingesting(page.items)
+        if let scope, startIndex == 0, query.isDefaultBrowse {
+            await cache.write(page, scope: scope, key: .libraryFirstPage(libraryID: libraryId))
         }
         return page
     }
@@ -161,8 +169,8 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     public func getMediaItem(itemId: String) async throws -> MediaItem {
         let item = try await inner.getMediaItem(itemId: itemId)
+        await ingesting([item])
         if let scope {
-            await cache.ingestServerUserData(scope: scope, items: [item])
             await cache.write(item, scope: scope, key: .mediaDetail(itemID: itemId))
         }
         return item
@@ -365,43 +373,45 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     // MARK: - User data
 
+    // With a live overlay, mark* acknowledgments are committed (and
+    // persisted) by the caller's pending-token confirm — the overlay owns
+    // the field while the toggle is in flight, so a direct table write here
+    // would be a blind duplicate. The direct writes below serve only the
+    // overlay-less configuration.
+
     public func markPlayed(itemId: String) async throws {
         try await inner.markPlayed(itemId: itemId)
-        if let scope {
-            await cache.setUserState(scope: scope, itemID: itemId) { state in
-                // Mirrors MediaItem.settingPlayed: the server clears resume
-                // progress on both transitions
-                state.played = true
-                state.playbackPositionTicks = nil
-            }
+        guard userState == nil, let scope else { return }
+        await cache.setUserState(scope: scope, itemID: itemId) { state in
+            // Mirrors MediaItem.settingPlayed: the server clears resume
+            // progress on both transitions
+            state.played = true
+            state.playbackPositionTicks = nil
         }
     }
 
     public func markUnplayed(itemId: String) async throws {
         try await inner.markUnplayed(itemId: itemId)
-        if let scope {
-            await cache.setUserState(scope: scope, itemID: itemId) { state in
-                state.played = false
-                state.playbackPositionTicks = nil
-            }
+        guard userState == nil, let scope else { return }
+        await cache.setUserState(scope: scope, itemID: itemId) { state in
+            state.played = false
+            state.playbackPositionTicks = nil
         }
     }
 
     public func markFavorite(itemId: String) async throws {
         try await inner.markFavorite(itemId: itemId)
-        if let scope {
-            await cache.setUserState(scope: scope, itemID: itemId) { state in
-                state.isFavorite = true
-            }
+        guard userState == nil, let scope else { return }
+        await cache.setUserState(scope: scope, itemID: itemId) { state in
+            state.isFavorite = true
         }
     }
 
     public func unmarkFavorite(itemId: String) async throws {
         try await inner.unmarkFavorite(itemId: itemId)
-        if let scope {
-            await cache.setUserState(scope: scope, itemID: itemId) { state in
-                state.isFavorite = false
-            }
+        guard userState == nil, let scope else { return }
+        await cache.setUserState(scope: scope, itemID: itemId) { state in
+            state.isFavorite = false
         }
     }
 }

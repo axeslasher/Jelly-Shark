@@ -60,7 +60,18 @@ public final class HomeViewModel {
 
     // MARK: - Outputs
 
-    public private(set) var heroItems: [MediaItem] = []
+    /// Raw section content as fetched. The public accessors below resolve
+    /// through the user-state overlay at read time, so watched/favorite/
+    /// progress changes render wherever an item appears without array
+    /// surgery (#193).
+    private var rawHeroItems: [MediaItem] = []
+    private var rawResumeItems: [MediaItem] = []
+    private var rawNextUpItems: [MediaItem] = []
+    private var rawLatestShelves: [LibraryShelf] = []
+
+    public var heroItems: [MediaItem] {
+        userState.resolving(rawHeroItems)
+    }
 
     /// Episode hero ids whose own primary still passed the
     /// `heroEpisodePrimaryMinWidth` check during curation. Members render
@@ -68,9 +79,17 @@ public final class HomeViewModel {
     /// backdrop (see `heroBackdropURL(for:)`).
     private var episodePrimaryHeroIds: Set<String> = []
 
-    public private(set) var resumeItems: [MediaItem] = []
-    public private(set) var nextUpItems: [MediaItem] = []
-    public private(set) var latestShelves: [LibraryShelf] = []
+    public var resumeItems: [MediaItem] {
+        userState.resolving(rawResumeItems)
+    }
+
+    public var nextUpItems: [MediaItem] {
+        userState.resolving(rawNextUpItems)
+    }
+
+    public var latestShelves: [LibraryShelf] {
+        rawLatestShelves.map { LibraryShelf(library: $0.library, items: userState.resolving($0.items)) }
+    }
 
     /// Each series' most recent episode play date — the sort keys that let
     /// next-up episodes (unwatched, so no `lastPlayedDate` of their own)
@@ -105,7 +124,7 @@ public final class HomeViewModel {
     }
 
     public var currentHeroItem: MediaItem? {
-        heroItems.indices.contains(heroIndex) ? heroItems[heroIndex] : nil
+        rawHeroItems.indices.contains(heroIndex) ? userState.resolve(rawHeroItems[heroIndex]) : nil
     }
 
     /// The backdrop the hero should render for an item. Episodes whose
@@ -142,8 +161,8 @@ public final class HomeViewModel {
     /// already-loaded state (≤32 items, recompute-on-read is trivial).
     public var mergedContinueWatchingItems: [MediaItem] {
         Self.mergeContinueWatching(
-            resume: resumeItems,
-            nextUp: nextUpItems,
+            resume: userState.resolving(rawResumeItems),
+            nextUp: userState.resolving(rawNextUpItems),
             seriesLastPlayed: seriesLastPlayedDates,
             now: Date(),
         )
@@ -159,7 +178,7 @@ public final class HomeViewModel {
         if resumeStatus == .loading || nextUpStatus == .loading {
             return .loading
         }
-        if !resumeItems.isEmpty || !nextUpItems.isEmpty {
+        if !rawResumeItems.isEmpty || !rawNextUpItems.isEmpty {
             return .loaded
         }
         if case .failed = resumeStatus {
@@ -179,6 +198,11 @@ public final class HomeViewModel {
     private var client: (any JellyfinClientProtocol)?
     private var libraries: [Library] = []
     private var cache: ScopedCache?
+
+    /// The shared user-state overlay. A private fallback keeps the toggle
+    /// and resolve semantics identical when a view constructs the model
+    /// without one (previews, tests) — one code path, not two.
+    private var userState = UserStateStore()
 
     /// Reload only when the connection or library set actually changes
     /// (mirrors `GenreShelvesViewModel`); a failed load re-arms this so the
@@ -206,12 +230,16 @@ public final class HomeViewModel {
         client: (any JellyfinClientProtocol)?,
         libraries: [Library],
         cache: ScopedCache? = nil,
+        userState: UserStateStore? = nil,
     ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let librariesChanged = libraries.map(\.id) != self.libraries.map(\.id)
         self.client = client
         self.libraries = libraries
         self.cache = cache
+        if let userState {
+            self.userState = userState
+        }
         if clientChanged || librariesChanged {
             needsLoad = true
         }
@@ -234,11 +262,11 @@ public final class HomeViewModel {
             // placeholder, never these statuses. Park them at `.loading`
             // rather than `.empty`: pre-marking empty made "Nothing here yet"
             // flash in the beat between connecting and the real load.
-            heroItems = []
+            rawHeroItems = []
             episodePrimaryHeroIds = []
-            resumeItems = []
-            nextUpItems = []
-            latestShelves = []
+            rawResumeItems = []
+            rawNextUpItems = []
+            rawLatestShelves = []
             seriesLastPlayedDates = [:]
             resumeStatus = .loading
             nextUpStatus = .loading
@@ -255,21 +283,21 @@ public final class HomeViewModel {
         // fan-out below then reconciles each section in place — the loaders
         // never set `.loading`, so the skeleton cannot return.
         var hydratedHeroIds: [String]?
-        if resumeItems.isEmpty, nextUpItems.isEmpty, latestShelves.isEmpty, let cache {
+        if rawResumeItems.isEmpty, rawNextUpItems.isEmpty, rawLatestShelves.isEmpty, let cache {
             let snapshot = await cache.read(CachedHomeSnapshot.self, key: .homeSnapshot)
             guard generation == loadGeneration else { return }
             if let snapshot {
-                resumeItems = snapshot.resume
-                nextUpItems = snapshot.nextUp
-                latestShelves = snapshot.shelves.map { LibraryShelf(library: $0.library, items: $0.items) }
-                heroItems = snapshot.heroItems
+                rawResumeItems = snapshot.resume
+                rawNextUpItems = snapshot.nextUp
+                rawLatestShelves = snapshot.shelves.map { LibraryShelf(library: $0.library, items: $0.items) }
+                rawHeroItems = snapshot.heroItems
                 episodePrimaryHeroIds = Set(snapshot.episodePrimaryHeroIds)
                 seriesLastPlayedDates = snapshot.seriesLastPlayedDates
                 resumeStatus = snapshot.resume.isEmpty ? .empty : .loaded
                 nextUpStatus = snapshot.nextUp.isEmpty ? .empty : .loaded
-                latestStatus = (latestShelves.isEmpty && heroItems.isEmpty) ? .empty : .loaded
+                latestStatus = (rawLatestShelves.isEmpty && rawHeroItems.isEmpty) ? .empty : .loaded
                 settleHero(client: client, previousHeroIds: nil)
-                hydratedHeroIds = heroItems.map(\.id)
+                hydratedHeroIds = rawHeroItems.map(\.id)
             }
         }
         if hydratedHeroIds == nil {
@@ -305,10 +333,10 @@ public final class HomeViewModel {
             // this): capture the page for the next launch's first frame.
             await cache.write(
                 CachedHomeSnapshot(
-                    resume: resumeItems,
-                    nextUp: nextUpItems,
-                    shelves: latestShelves.map { CachedHomeSnapshot.Shelf(library: $0.library, items: $0.items) },
-                    heroItems: heroItems,
+                    resume: rawResumeItems,
+                    nextUp: rawNextUpItems,
+                    shelves: rawLatestShelves.map { CachedHomeSnapshot.Shelf(library: $0.library, items: $0.items) },
+                    heroItems: rawHeroItems,
                     episodePrimaryHeroIds: Array(episodePrimaryHeroIds),
                     seriesLastPlayedDates: seriesLastPlayedDates,
                 ),
@@ -330,7 +358,7 @@ public final class HomeViewModel {
         let shouldRetryResume = resumeStatus.isFailed
         let shouldRetryNextUp = nextUpStatus.isFailed
         let shouldRetryLatest = latestStatus.isFailed
-        let heroIdsBefore = heroItems.map(\.id)
+        let heroIdsBefore = rawHeroItems.map(\.id)
 
         if shouldRetryResume {
             await loadResume(client: client, generation: generation)
@@ -355,7 +383,7 @@ public final class HomeViewModel {
         // curation, and a recovered resume/next-up can offer a fallback
         // where there was none. `settleHero` skips the marquee reset when
         // the hero set didn't actually change.
-        if shouldRetryLatest || heroItems.isEmpty {
+        if shouldRetryLatest || rawHeroItems.isEmpty {
             settleHero(client: client, previousHeroIds: heroIdsBefore)
         }
 
@@ -372,11 +400,11 @@ public final class HomeViewModel {
     /// shelf-only retry doesn't yank the marquee; `nil` always resets (a
     /// full load).
     private func settleHero(client: any JellyfinClientProtocol, previousHeroIds: [String]?) {
-        if heroItems.isEmpty {
-            let fallback = (resumeItems + nextUpItems).first { client.backdropURL(for: $0) != nil }
-            heroItems = fallback.map { [$0] } ?? []
+        if rawHeroItems.isEmpty {
+            let fallback = (rawResumeItems + rawNextUpItems).first { client.backdropURL(for: $0) != nil }
+            rawHeroItems = fallback.map { [$0] } ?? []
         }
-        guard heroItems.map(\.id) != previousHeroIds else { return }
+        guard rawHeroItems.map(\.id) != previousHeroIds else { return }
         heroIndex = 0
         resolveHeroPlayTarget()
         startAutoAdvance()
@@ -397,53 +425,43 @@ public final class HomeViewModel {
 
     // MARK: - User-Data Actions
 
-    /// Optimistically apply a watched-state change from a shelf card's menu,
-    /// then persist; revert on failure. Success also refreshes the lanes
-    /// whose membership the change moves (a watched item leaves Continue
-    /// Watching; a watched episode advances Next Up).
+    /// Apply a watched-state change from a shelf card's menu through the
+    /// user-state overlay (every section showing the item updates at once);
+    /// the server's acknowledgment commits it, a failure withdraws it.
+    /// Success also refreshes the lanes whose membership the change moves
+    /// (a watched item leaves Continue Watching; a watched episode advances
+    /// Next Up).
     public func setPlayed(_ played: Bool, for item: MediaItem) async {
         guard let client else { return }
-        replaceInSections(item.settingPlayed(played))
+        let token = userState.beginPlayedToggle(itemID: item.id, target: played)
         do {
             if played {
                 try await client.markPlayed(itemId: item.id)
             } else {
                 try await client.markUnplayed(itemId: item.id)
             }
+            userState.confirm(token)
             await refreshUserState()
         } catch {
-            replaceInSections(item)
+            userState.revert(token)
         }
     }
 
-    /// Optimistically apply a favorite change from a shelf card's menu, then
-    /// persist; revert on failure. Favorites don't move lane membership, so
-    /// no refresh.
+    /// Apply a favorite change from a shelf card's menu; same pending-
+    /// toggle lifecycle. Favorites don't move lane membership, so no
+    /// refresh.
     public func setFavorite(_ favorite: Bool, for item: MediaItem) async {
         guard let client else { return }
-        replaceInSections(item.settingFavorite(favorite))
+        let token = userState.beginFavoriteToggle(itemID: item.id, target: favorite)
         do {
             if favorite {
                 try await client.markFavorite(itemId: item.id)
             } else {
                 try await client.unmarkFavorite(itemId: item.id)
             }
+            userState.confirm(token)
         } catch {
-            replaceInSections(item)
-        }
-    }
-
-    /// Swap the item (by id) into every section that carries it, so a card's
-    /// badge and menu labels update in place wherever it appears.
-    private func replaceInSections(_ item: MediaItem) {
-        func swapping(_ items: [MediaItem]) -> [MediaItem] {
-            items.map { $0.id == item.id ? item : $0 }
-        }
-        heroItems = swapping(heroItems)
-        resumeItems = swapping(resumeItems)
-        nextUpItems = swapping(nextUpItems)
-        latestShelves = latestShelves.map {
-            LibraryShelf(library: $0.library, items: swapping($0.items))
+            userState.revert(token)
         }
     }
 
@@ -451,11 +469,11 @@ public final class HomeViewModel {
         do {
             let items = try await client.getResumeItems(limit: Self.resumeLimit)
             guard generation == loadGeneration else { return }
-            resumeItems = items
+            rawResumeItems = items
             resumeStatus = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
-            if resumeItems.isEmpty {
+            if rawResumeItems.isEmpty {
                 resumeStatus = .failed(error.localizedDescription)
             } else {
                 // Keep the rendered lane — hydrated content offline, or the
@@ -472,11 +490,11 @@ public final class HomeViewModel {
         do {
             let items = try await client.getNextUpItems(limit: Self.nextUpLimit)
             guard generation == loadGeneration else { return }
-            nextUpItems = items
+            rawNextUpItems = items
             nextUpStatus = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
-            if nextUpItems.isEmpty {
+            if rawNextUpItems.isEmpty {
                 nextUpStatus = .failed(error.localizedDescription)
             } else {
                 // Same keep-and-re-arm rule as `loadResume`
@@ -527,9 +545,9 @@ public final class HomeViewModel {
             curated.removeAll { $0.type == .episode && !primaryIds.contains($0.id) && !Self.hasSeriesBackdrop($0) }
 
             guard generation == loadGeneration else { return }
-            latestShelves = shelves
+            rawLatestShelves = shelves
             episodePrimaryHeroIds = primaryIds
-            heroItems = curated
+            rawHeroItems = curated
             // A partial library failure still shows what survived, but re-arms
             // the load so the next appearance refetches the missing rows.
             // (`load()` only ever re-sets this to true at its end, so setting
@@ -542,14 +560,14 @@ public final class HomeViewModel {
                 // row failed, that's a failed section even with a live hero.
                 latestStatus = .failed(shelfError)
             } else {
-                latestStatus = (shelves.isEmpty && heroItems.isEmpty) ? .empty : .loaded
+                latestStatus = (shelves.isEmpty && rawHeroItems.isEmpty) ? .empty : .loaded
             }
         } catch {
             guard generation == loadGeneration else { return }
-            if latestShelves.isEmpty, heroItems.isEmpty {
-                latestShelves = shelves
+            if rawLatestShelves.isEmpty, rawHeroItems.isEmpty {
+                rawLatestShelves = shelves
                 episodePrimaryHeroIds = []
-                heroItems = []
+                rawHeroItems = []
                 if shelfError != nil {
                     needsLoad = true
                 }
@@ -813,10 +831,10 @@ public final class HomeViewModel {
     /// Advance to the next hero item (wrapping). Used by the timer and the
     /// hero's "next" button.
     public func advanceHero() {
-        guard heroItems.count > 1 else { return }
+        guard rawHeroItems.count > 1 else { return }
         pagingDirection = .forward
         pagingGeneration += 1
-        heroIndex = (heroIndex + 1) % heroItems.count
+        heroIndex = (heroIndex + 1) % rawHeroItems.count
         resolveHeroPlayTarget()
     }
 
@@ -824,7 +842,7 @@ public final class HomeViewModel {
     /// page turns (edge navigation, swipes) here. Native paging never wraps,
     /// so plain comparison gives the direction.
     public func selectHero(_ newIndex: Int) {
-        guard heroItems.indices.contains(newIndex), newIndex != heroIndex else { return }
+        guard rawHeroItems.indices.contains(newIndex), newIndex != heroIndex else { return }
         pagingDirection = newIndex > heroIndex ? .forward : .backward
         pagingGeneration += 1
         heroIndex = newIndex
@@ -854,7 +872,7 @@ public final class HomeViewModel {
     }
 
     public func startAutoAdvance() {
-        guard advanceTask == nil, heroItems.count > 1, pauseReasons.isEmpty else { return }
+        guard advanceTask == nil, rawHeroItems.count > 1, pauseReasons.isEmpty else { return }
         advanceTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let interval = self?.autoAdvanceInterval else { return }

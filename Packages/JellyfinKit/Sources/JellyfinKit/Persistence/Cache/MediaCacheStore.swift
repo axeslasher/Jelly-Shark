@@ -234,6 +234,17 @@ public actor MediaCacheStore {
 
     // MARK: User state
 
+    /// Every stored user-state row for the scope, keyed by item id — the
+    /// cold-start seed for `UserStateStore`'s in-memory overlay
+    public func allUserStates(scope: CacheScope) -> [String: CachedUserStateValue] {
+        let scopeKey = scope.storageKey
+        let descriptor = FetchDescriptor<CachedUserState>(
+            predicate: #Predicate { $0.scopeKey == scopeKey },
+        )
+        let rows = (try? modelContext.fetch(descriptor)) ?? []
+        return Dictionary(rows.map { ($0.itemID, $0.value) }, uniquingKeysWith: { _, last in last })
+    }
+
     /// The stored user state for the given items, keyed by item id
     public func userStates(scope: CacheScope, itemIDs: [String]) -> [String: CachedUserStateValue] {
         let scopeKey = scope.storageKey

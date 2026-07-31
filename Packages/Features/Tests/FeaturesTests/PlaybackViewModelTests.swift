@@ -554,7 +554,7 @@ struct PlaybackViewModelTests {
         await viewModel.stop()
     }
 
-    @Test("Autoplay drops the override so the next episode shows its own state")
+    @Test("Autoplay's next episode shows its own state, not the last one's")
     func favoriteOverrideClearsOnAutoplay() async {
         let client = MockJellyfinClient()
         let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
@@ -568,7 +568,8 @@ struct PlaybackViewModelTests {
         await viewModel.handlePlaybackEnded()
         await viewModel.playNextEpisodeNow()
 
-        #expect(viewModel.favoriteOverride == nil)
+        // The overlay keys by item id, so ep-1's confirmed favorite cannot
+        // bleed onto ep-2's transport bar
         #expect(viewModel.isFavorite == false)
         #expect(client.userDataCalls.map(\.itemId) == ["ep-1"])
     }

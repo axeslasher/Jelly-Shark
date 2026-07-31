@@ -19,6 +19,11 @@ public final class AppSession {
     /// (previews, tests).
     public private(set) var scopedCache: ScopedCache?
 
+    /// The shared authority for watched/favorite/progress display state
+    /// (#193). Owned here so every screen resolves through one overlay;
+    /// activated per connection, cleared with it.
+    public let userState = UserStateStore()
+
     /// Whether there is an authenticated connection to a server
     public var isConnected: Bool {
         client?.isAuthenticated ?? false
@@ -30,12 +35,20 @@ public final class AppSession {
     public func setClient(_ client: any JellyfinClientProtocol, scopedCache: ScopedCache? = nil) {
         self.client = client
         self.scopedCache = scopedCache
+        if let scopedCache {
+            let userState = userState
+            Task {
+                await userState.activate(cache: scopedCache)
+            }
+        }
     }
 
-    /// Clear the client on disconnect
+    /// Clear the client on disconnect. Also drops all resolved user state —
+    /// the same privacy boundary as the cache scope purge.
     public func clearClient() {
         client = nil
         scopedCache = nil
+        userState.deactivate()
     }
 }
 
