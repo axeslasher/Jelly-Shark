@@ -165,6 +165,25 @@ struct CachingJellyfinClientTests {
         #expect(await store.userStates(scope: scope, itemIDs: ["m-1"])["m-1"]?.isFavorite == false)
     }
 
+    // MARK: - Pass-through dispatch
+
+    @Test func stopEncodingReachesTheWrappedClient() async {
+        // Pins the witness-table dispatch: were stopEncoding extension-only,
+        // this forward would statically hit the protocol's no-op default and
+        // the server-side transcode teardown would be silently swallowed
+        await client.stopEncoding(playSessionId: "session-1")
+        #expect(stub.stopEncodingCalls == ["session-1"])
+    }
+
+    @Test func playbackExtrasUserDataIsIngested() async throws {
+        stub.playbackExtrasResult = PlaybackExtras(
+            userData: UserData(playbackPositionTicks: 700, isFavorite: true),
+        )
+        _ = try await client.getPlaybackExtras(itemId: "m-1")
+        let state = await store.userStates(scope: scope, itemIDs: ["m-1"])["m-1"]
+        #expect(state == CachedUserStateValue(isFavorite: true, playbackPositionTicks: 700))
+    }
+
     @Test func failedMutationLeavesStateUntouched() async {
         await store.ingestServerUserData(scope: scope, items: [item("m-1", userData: UserData(played: false))])
         stub.markError = StubError()

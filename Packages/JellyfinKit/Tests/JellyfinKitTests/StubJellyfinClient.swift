@@ -39,6 +39,7 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     // MARK: - Recordings
 
+    private(set) var stopEncodingCalls: [String] = []
     private(set) var markPlayedCalls: [String] = []
     private(set) var markUnplayedCalls: [String] = []
     private(set) var markFavoriteCalls: [String] = []
@@ -87,6 +88,17 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getEpisodes(seriesId _: String, seasonId _: String?) async throws -> [MediaItem] {
         episodesResult
+    }
+
+    var playbackExtrasResult: PlaybackExtras?
+
+    func getPlaybackExtras(itemId _: String) async throws -> PlaybackExtras {
+        guard let playbackExtrasResult else { throw StubError() }
+        return playbackExtrasResult
+    }
+
+    func stopEncoding(playSessionId: String) async {
+        stopEncodingCalls.append(playSessionId)
     }
 
     func markPlayed(itemId: String) async throws {
@@ -223,10 +235,6 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks _: Int64,
     ) async throws {
         fatalError("unstubbed reportPlaybackStopped")
-    }
-
-    func getPlaybackExtras(itemId _: String) async throws -> PlaybackExtras {
-        fatalError("unstubbed getPlaybackExtras")
     }
 
     func chapterImageURL(itemId _: String, chapterIndex _: Int, tag _: String, maxWidth _: Int?) -> URL {

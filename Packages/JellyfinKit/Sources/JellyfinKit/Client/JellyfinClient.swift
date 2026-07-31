@@ -337,6 +337,17 @@ public protocol JellyfinClientProtocol: Sendable {
 
     /// Remove an item from the current user's favorites
     func unmarkFavorite(itemId: String) async throws
+
+    /// Tear down the server-side transcode for a play session.
+    ///
+    /// A protocol requirement (with a no-op default below) rather than an
+    /// extension-only method, deliberately: extension-only methods are
+    /// statically dispatched, so a call through `any JellyfinClientProtocol`
+    /// — which is how every view model and decorator holds the client —
+    /// would always hit the no-op and never the real client's
+    /// `DELETE /Videos/ActiveEncodings`, silently leaking an ffmpeg per
+    /// teardown.
+    func stopEncoding(playSessionId: String) async
 }
 
 public extension JellyfinClientProtocol {
@@ -354,9 +365,8 @@ public extension JellyfinClientProtocol {
         )
     }
 
-    /// Tear down the server-side transcode for a play session. Default
-    /// no-op so conformances that never transcode need not care; the real
-    /// client sends `DELETE /Videos/ActiveEncodings`.
+    /// Default no-op so conformances that never transcode need not care;
+    /// the real client sends `DELETE /Videos/ActiveEncodings`.
     func stopEncoding(playSessionId _: String) async {}
 }
 

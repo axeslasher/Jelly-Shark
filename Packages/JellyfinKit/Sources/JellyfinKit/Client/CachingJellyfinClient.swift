@@ -296,7 +296,16 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     }
 
     public func getPlaybackExtras(itemId: String) async throws -> PlaybackExtras {
-        try await inner.getPlaybackExtras(itemId: itemId)
+        let extras = try await inner.getPlaybackExtras(itemId: itemId)
+        // Not an item-returning fetch, but it carries the freshest user data
+        // the app ever sees for an item (user-scoped, fetched at playback
+        // launch) — skipping it would leave the state stale for exactly the
+        // items being watched. The trickplay/chapter payload itself is
+        // playback data and stays uncached.
+        if let data = extras.userData {
+            await ingesting([MediaItem(id: itemId, name: "", type: .unknown, userData: data)])
+        }
+        return extras
     }
 
     public func chapterImageURL(itemId: String, chapterIndex: Int, tag: String, maxWidth: Int?) -> URL {
@@ -307,9 +316,10 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         inner.trickplayTileURL(itemId: itemId, width: width, tileIndex: tileIndex, mediaSourceId: mediaSourceId)
     }
 
-    /// Explicitly forwarded: the protocol's default implementation is a
-    /// no-op, and silently swallowing the real client's
-    /// `DELETE /Videos/ActiveEncodings` would leak server-side transcodes
+    /// Explicitly forwarded: without this the decorator's witness would be
+    /// the protocol's no-op default, and the real client's
+    /// `DELETE /Videos/ActiveEncodings` would be silently swallowed,
+    /// leaking server-side transcodes
     public func stopEncoding(playSessionId: String) async {
         await inner.stopEncoding(playSessionId: playSessionId)
     }
