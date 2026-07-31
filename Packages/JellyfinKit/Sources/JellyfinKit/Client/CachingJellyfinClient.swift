@@ -27,9 +27,20 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     private let inner: any JellyfinClientProtocol
     private let cache: MediaCacheStore
 
-    public init(wrapping inner: any JellyfinClientProtocol, cache: MediaCacheStore) {
+    /// The scope a restored session already knows at construction. The
+    /// wrapped client's `currentUser` stays nil until `fetchCurrentUser`
+    /// returns, and an instant-connect launch fetches *during* that window —
+    /// without this, every cache write in it would silently no-op.
+    private let fallbackScope: CacheScope?
+
+    public init(
+        wrapping inner: any JellyfinClientProtocol,
+        cache: MediaCacheStore,
+        scope: CacheScope? = nil,
+    ) {
         self.inner = inner
         self.cache = cache
+        fallbackScope = scope
     }
 
     // MARK: - Identity (pass-through)
@@ -50,10 +61,12 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         inner.accessToken
     }
 
-    /// Whose cache the wrapped client's responses belong to; nil until the
-    /// client knows its user
+    /// Whose cache the wrapped client's responses belong to: the live
+    /// client's user when known (authoritative), else the restored
+    /// session's identity, else nil — an unauthenticated fresh client
+    /// never writes
     private var scope: CacheScope? {
-        guard let user = inner.currentUser else { return nil }
+        guard let user = inner.currentUser else { return fallbackScope }
         return CacheScope(serverURL: inner.serverURL, userID: user.id)
     }
 
@@ -118,7 +131,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         )
         if let scope {
             await cache.ingestServerUserData(scope: scope, items: page.items)
-            if startIndex == 0, !query.isFiltering, query.sort == .name, query.direction == .ascending {
+            if startIndex == 0, query.isDefaultBrowse {
                 await cache.write(page, scope: scope, key: .libraryFirstPage(libraryID: libraryId))
             }
         }

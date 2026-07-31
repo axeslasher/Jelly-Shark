@@ -81,15 +81,24 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         accessToken = nil
     }
 
+    /// Optional gate awaited before serving the current user, so restore
+    /// tests can hold background validation in flight
+    var fetchCurrentUserDelay: (() async -> Void)?
+
     func fetchCurrentUser() async throws -> User {
         fetchCurrentUserCallCount += 1
+        await fetchCurrentUserDelay?()
         let user = try fetchCurrentUserResult.get()
         currentUser = user
         return user
     }
 
+    /// Optional gate awaited before serving the library list
+    var librariesDelay: (() async -> Void)?
+
     func getLibraries() async throws -> [Library] {
-        try librariesResult.get()
+        await librariesDelay?()
+        return try librariesResult.get()
     }
 
     func getLibraryItems(
@@ -132,14 +141,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var mediaItemFailureIds: Set<String> = []
     var mediaItemRequests: [String] = []
 
+    /// Optional gate awaited before serving an item detail, for in-flight tests
+    var mediaItemDelay: (() async -> Void)?
+
     func getMediaItem(itemId: String) async throws -> MediaItem {
-        try lock.withLock {
+        let result: Result<MediaItem, Error> = lock.withLock {
             mediaItemRequests.append(itemId)
             if mediaItemFailureIds.contains(itemId) {
-                throw APIError.generic("Item fetch failed")
+                return .failure(APIError.generic("Item fetch failed"))
             }
-            return mediaItemsById[itemId] ?? MediaItem(id: itemId, name: "Item", type: .movie)
+            return .success(mediaItemsById[itemId] ?? MediaItem(id: itemId, name: "Item", type: .movie))
         }
+        await mediaItemDelay?()
+        return try result.get()
     }
 
     var similarItemsResult: Result<[MediaItem], Error> = .success([])

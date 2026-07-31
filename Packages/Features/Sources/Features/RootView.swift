@@ -7,7 +7,7 @@ import SwiftUI
 public struct RootView: View {
     @State private var themeManager = ThemeManager.shared
     @State private var session = AppSession()
-    @State private var connectionViewModel = ServerConnectionViewModel()
+    @State private var connectionViewModel: ServerConnectionViewModel
     @State private var homePreferences = HomePreferences()
     @State private var selectedTab: AppTab = .home
 
@@ -26,7 +26,11 @@ public struct RootView: View {
         @State private var pendingSwitch: Task<Void, Never>?
     #endif
 
-    public init() {}
+    /// - Parameter cache: the app's metadata cache; nil (previews, tests)
+    ///   runs the whole connection flow cache-less
+    public init(cache: MediaCacheStore? = nil) {
+        _connectionViewModel = State(initialValue: ServerConnectionViewModel(cache: cache))
+    }
 
     /// Wraps `selectedTab` to work around a tvOS `sidebarAdaptable` bug: if the
     /// outgoing tab's `NavigationStack` has a pushed view (e.g. a media

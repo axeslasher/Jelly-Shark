@@ -7,10 +7,16 @@
 
 import DesignSystem
 import Features
+import JellyfinKit
 import SwiftUI
 
 @main
 struct Jelly_SharkApp: App {
+    /// Created here because the App struct is instantiated exactly once per
+    /// process — `RootView.init` re-runs on every body re-evaluation, and
+    /// each `makePersistent()` call opens the store files.
+    private let mediaCache = MediaCacheStore.makePersistent()
+
     init() {
         // Size the shared cache for encoded poster/backdrop artwork bytes.
         // Both artwork paths land in it: `ArtworkLoader` fetches through its
@@ -25,7 +31,7 @@ struct Jelly_SharkApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootView(cache: mediaCache)
                 // The theme system is committed to dark surfaces with light
                 // type; declaring the app dark keeps system-drawn chrome
                 // (focus platters, materials, glass) in its dark variants

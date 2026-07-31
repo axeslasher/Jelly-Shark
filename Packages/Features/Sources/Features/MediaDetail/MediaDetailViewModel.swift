@@ -149,6 +149,7 @@ public final class MediaDetailViewModel {
     // MARK: - Configuration
 
     private var client: (any JellyfinClientProtocol)?
+    private var cache: ScopedCache?
     private var item: MediaItem?
 
     /// Reload only when the connection or page item actually changes
@@ -172,11 +173,16 @@ public final class MediaDetailViewModel {
 
     /// Attach the client and page item (called by the view on appearance and
     /// when the pushed item changes). Only an actual change schedules a load.
-    public func attach(client: (any JellyfinClientProtocol)?, item: MediaItem) {
+    public func attach(
+        client: (any JellyfinClientProtocol)?,
+        item: MediaItem,
+        cache: ScopedCache? = nil,
+    ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let itemChanged = item.id != self.item?.id
         self.client = client
         self.item = item
+        self.cache = cache
         if clientChanged || itemChanged {
             needsLoad = true
         }
@@ -210,6 +216,20 @@ public final class MediaDetailViewModel {
         // No client means the session is still being established (or was
         // torn down) — park at `.loading`; the stub keeps the page rendered.
         guard let client, let item else { return }
+
+        // Enrich the first frame from the cached detail while the fresh
+        // fetch runs: the page renders the pushed stub either way, this
+        // fills in the overview, runtime, technical badges, and credits
+        // without the pop-in beat. `status` stays `.loading` — kin sections
+        // (seasons, collection items, similar) remain network-only.
+        if let cache {
+            let cached = await cache.read(MediaItem.self, key: .mediaDetail(itemID: item.id))
+            guard generation == loadGeneration else { return }
+            if let cached {
+                detailedItem = cached
+                deriveCredits()
+            }
+        }
 
         do {
             let detail = try await client.getMediaItem(itemId: item.id)

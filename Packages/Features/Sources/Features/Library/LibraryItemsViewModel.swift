@@ -75,6 +75,13 @@ public final class LibraryItemsViewModel {
     private let prefetchDistance: Int
 
     private var client: (any JellyfinClientProtocol)?
+    private var cache: ScopedCache?
+
+    /// True while a grid hydrated from the cache awaits its fresh first
+    /// page. Pagination is held until the refresh lands: the cached page and
+    /// the server's current page 0 may disagree, and appending page 1 to the
+    /// stale grid would splice two different orderings together.
+    private var isRefreshingHydratedPage = false
 
     /// The library id the view last attached with, and whether it has
     /// attached at all — a nil id is a real value (the unscoped grid), so
@@ -159,10 +166,12 @@ public final class LibraryItemsViewModel {
     public func attach(
         client: (any JellyfinClientProtocol)?,
         initialQuery: LibraryQuery = LibraryQuery(),
+        cache: ScopedCache? = nil,
     ) {
         let clientChanged = (client as AnyObject?) !== (self.client as AnyObject?)
         let libraryChanged = !hasAttached || initialQuery.library?.id != attachedLibraryID
         self.client = client
+        self.cache = cache
         attachedLibraryID = initialQuery.library?.id
         hasAttached = true
         if clientChanged || libraryChanged {
@@ -193,6 +202,21 @@ public final class LibraryItemsViewModel {
             state = .failed(APIError.notAuthenticated.localizedDescription)
             isLoadingFilterOptions = false
             return
+        }
+
+        // Hydrate the default browse's first page from the last visit while
+        // the fresh page-0 fetch below reconciles. Filtered or re-sorted
+        // seeds are never cached (`isDefaultBrowse` is shared with the write
+        // side, so the two conditions cannot drift).
+        if items.isEmpty, query.isDefaultBrowse, let cache {
+            let cached = await cache.read(MediaItemPage.self, key: .libraryFirstPage(libraryID: query.library?.id))
+            guard generation == loadGeneration else { return }
+            if let cached, !cached.items.isEmpty {
+                items = cached.items
+                totalCount = cached.totalRecordCount ?? cached.items.count
+                state = .loaded
+                isRefreshingHydratedPage = true
+            }
         }
 
         // Menu options load alongside the first page; their failure is
@@ -234,6 +258,9 @@ public final class LibraryItemsViewModel {
         let generation = loadGeneration
 
         isLoadingMore = false
+        // The new query owns the grid now; the hydrated-page refresh (if one
+        // was in flight) is superseded by this fetch
+        isRefreshingHydratedPage = false
         isReloading = true
         // Keep the current items visible while the new query loads; only an
         // already-empty grid shows the spinner
@@ -284,8 +311,9 @@ public final class LibraryItemsViewModel {
     /// Prefetch the next page when the given item is near the end of the grid.
     public func loadMoreIfNeeded(currentItem: MediaItem) {
         // No prefetch off the stale grid during a reload: its item count
-        // would page the *new* query from the wrong offset
-        guard !isLoadingMore, !isReloading, hasMore, state == .loaded else { return }
+        // would page the *new* query from the wrong offset. Same for a
+        // hydrated grid still awaiting its fresh page 0.
+        guard !isLoadingMore, !isReloading, !isRefreshingHydratedPage, hasMore, state == .loaded else { return }
         guard let client else { return }
         guard let index = items.firstIndex(of: currentItem),
               index >= items.count - prefetchDistance else { return }
@@ -456,13 +484,25 @@ public final class LibraryItemsViewModel {
             items = page.items
             totalCount = page.totalRecordCount ?? page.items.count
             isReloading = false
+            isRefreshingHydratedPage = false
             state = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
-            items = []
-            totalCount = nil
-            isReloading = false
-            state = .failed(error.localizedDescription)
+            if isRefreshingHydratedPage {
+                // The hydrated grid stands (offline, or the server hiccuped).
+                // The flag deliberately stays true: paging against the stale
+                // cached page 0 would splice two orderings, so pagination
+                // holds until a *successful* refresh clears it. The retry
+                // owed can't ride the failed-state re-arm below because the
+                // state never failed, so it's re-armed here.
+                isReloading = false
+                needsInitialLoad = true
+            } else {
+                items = []
+                totalCount = nil
+                isReloading = false
+                state = .failed(error.localizedDescription)
+            }
         }
     }
 }

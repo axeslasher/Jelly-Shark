@@ -393,7 +393,7 @@ public struct MediaDetailView: View {
             // Keyed on the session as well as the item: a sign-out must drop
             // this page rather than leave it for whoever signs in next.
             .task(id: SessionScopedID(content: item.id, isConnected: session.isConnected)) {
-                viewModel.attach(client: session.client, item: item)
+                viewModel.attach(client: session.client, item: item, cache: session.scopedCache)
                 await viewModel.load()
             }
             .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in

@@ -13,6 +13,12 @@ public final class AppSession {
     /// The active, authenticated Jellyfin client, if connected
     public private(set) var client: (any JellyfinClientProtocol)?
 
+    /// The metadata cache bound to the connected user's scope, published
+    /// alongside the client so view models hydrate from — and never across —
+    /// the signed-in profile. Nil when the composition root runs cache-less
+    /// (previews, tests).
+    public private(set) var scopedCache: ScopedCache?
+
     /// Whether there is an authenticated connection to a server
     public var isConnected: Bool {
         client?.isAuthenticated ?? false
@@ -20,14 +26,16 @@ public final class AppSession {
 
     public init() {}
 
-    /// Store the client after a successful connection
-    public func setClient(_ client: any JellyfinClientProtocol) {
+    /// Store the client (and its cache scope) after a successful connection
+    public func setClient(_ client: any JellyfinClientProtocol, scopedCache: ScopedCache? = nil) {
         self.client = client
+        self.scopedCache = scopedCache
     }
 
     /// Clear the client on disconnect
     public func clearClient() {
         client = nil
+        scopedCache = nil
     }
 }
 

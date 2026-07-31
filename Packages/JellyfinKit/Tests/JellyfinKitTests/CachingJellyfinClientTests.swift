@@ -51,6 +51,17 @@ struct CachingJellyfinClientTests {
         #expect(await store.read([Library].self, scope: scope, key: .libraries) == nil)
     }
 
+    @Test func fallbackScopeCoversTheValidationWindow() async throws {
+        // A restored client knows its user id from the Keychain but its
+        // `currentUser` stays nil until validation returns — the fallback
+        // scope keeps writes flowing through that window
+        stub.currentUser = nil
+        stub.librariesResult = [Library(id: "lib-1", name: "Films")]
+        let restored = CachingJellyfinClient(wrapping: stub, cache: store, scope: scope)
+        _ = try await restored.getLibraries()
+        #expect(await store.read([Library].self, scope: scope, key: .libraries) != nil)
+    }
+
     @Test func getMediaItemPersistsDetailAndIngestsUserData() async throws {
         let detail = item("m-1", userData: UserData(isFavorite: true))
         stub.mediaItemResult = detail
