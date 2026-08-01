@@ -43,6 +43,25 @@ actor AsyncGate {
             continuation.resume()
         }
         waiters.removeAll()
+        for continuation in cancelImmuneWaiters {
+            continuation.resume()
+        }
+        cancelImmuneWaiters.removeAll()
+    }
+
+    private var cancelImmuneWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Park ignoring cancellation — models a request that has not yet
+    /// noticed the cancel and is still genuinely in flight, so anything
+    /// serialized behind its build stays pending until the test decides.
+    /// The caller MUST eventually `open()` this gate: nothing else can
+    /// resume this waiter, which is exactly the property tests use it for —
+    /// and exactly why production code must never park like this (#212).
+    func waitIgnoringCancellation() async {
+        if isOpen {
+            return
+        }
+        await withCheckedContinuation { cancelImmuneWaiters.append($0) }
     }
 
     /// Runs synchronously inside the actor from `wait()`, but a cancellation
