@@ -3,7 +3,11 @@ import Foundation
 import JellyfinKit
 import Testing
 
-@Suite("PlaybackViewModel")
+/// The time limit (the trait's floor) is a tripwire, not a budget: these tests
+/// exercise builds that cancel-and-await each other (#212), and a regression in
+/// any park point's cancellation-awareness would otherwise present as a wedged
+/// runner with no named test. Sixty seconds turns that into a red test.
+@Suite("PlaybackViewModel", .timeLimit(.minutes(1)))
 @MainActor
 struct PlaybackViewModelTests {
     private func makeMovie(resumeTicks: Int64? = nil) -> MediaItem {
