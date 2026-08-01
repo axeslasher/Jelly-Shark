@@ -20,6 +20,7 @@ final class MockPlayerEngine: PlayerEngine {
     private(set) var pauseCount = 0
     private(set) var teardownCount = 0
     private(set) var resumeSeeks: [Double] = []
+    private(set) var audibleSelections: [Int] = []
     private(set) var enrichedMetadataApplications: [(chapterArtwork: [Int: Data], posterData: Data?)] = []
 
     var lastLoadedURL: URL? {
@@ -81,6 +82,11 @@ final class MockPlayerEngine: PlayerEngine {
     func seekForResume(toSeconds seconds: Double) async {
         resumeSeeks.append(seconds)
         await seekGate?()
+    }
+
+    func selectAudible(position: Int) {
+        audibleSelections.append(position)
+        selectedAudiblePosition = position
     }
 
     func teardown() {

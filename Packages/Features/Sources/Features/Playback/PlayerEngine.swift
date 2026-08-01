@@ -175,6 +175,17 @@ protocol PlayerEngine: AnyObject {
     /// subtitles are off or the group is not loaded.
     var selectedLegiblePosition: Int? { get }
 
+    /// Select the audible option at `position` in place — the same flip
+    /// AVKit's native picker performs: no rebuild, no interruption. The
+    /// session layer routes a direct-play audio switch here so the session
+    /// keeps direct play instead of dropping to a server remux (#187).
+    ///
+    /// Safe where a legible counterpart is not: the #91 latch is tripped by
+    /// *clearing* the legible selection, and audio is never legitimately
+    /// deselected — which is why this takes a non-optional position.
+    /// A position outside `audibleOptions` is refused.
+    func selectAudible(position: Int)
+
     // MARK: Metadata
 
     /// Upgrade the current item's presentation with fetched artwork —

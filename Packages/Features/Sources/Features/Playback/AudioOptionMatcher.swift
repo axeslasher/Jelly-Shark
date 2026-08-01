@@ -18,10 +18,9 @@ struct AudibleOption: Equatable {
 }
 
 /// Correlates an audible media-selection option with a Jellyfin audio
-/// stream. Only the reverse direction exists: the app never selects audio
-/// in place (audio switches rebuild the stream server-side), so matching is
-/// needed solely to reconcile a native-picker change back into view-model
-/// state.
+/// stream, in both directions: reverse to reconcile a native-picker change
+/// back into view-model state (#89), forward to steer the engine when the
+/// app's menu switches a direct-played track in place (#187).
 enum AudioOptionMatcher {
     /// The stream matching the selected option, or nil when no confident
     /// match exists (callers leave state untouched).
@@ -61,6 +60,26 @@ enum AudioOptionMatcher {
         }
 
         return nil
+    }
+
+    /// The forward direction: the position of the option matching the
+    /// target stream, or nil when no confident match exists (callers fall
+    /// back to a stream rebuild).
+    ///
+    /// Defined by inversion — the option whose reverse match lands on the
+    /// target stream, unique — so the forward pick and the reconcile pass
+    /// that observes its echo agree by construction: a selection made
+    /// through this mapping always reconciles to `.noChange`, never to a
+    /// different index.
+    static func position(
+        forTargetStream target: MediaStreamInfo,
+        streams: [MediaStreamInfo],
+        options: [AudibleOption],
+    ) -> Int? {
+        let hits = options.filter {
+            streamIndex(forSelectedOption: $0, streams: streams, options: options) == target.index
+        }
+        return hits.count == 1 ? hits[0].position : nil
     }
 
     /// Normalize a language tag to a comparable base form: Jellyfin streams
