@@ -1013,4 +1013,237 @@ struct PlaybackViewModelTests {
         #expect(engine.loadRequests.count == 2)
         #expect(engine.teardownCount == 1)
     }
+
+    // MARK: - Selection During the Initial Load (#212)
+
+    /// Park the first load inside `getPlaybackInfo` and hand the suite the
+    /// two moments it needs: when the load is genuinely in flight, and when
+    /// it may finish. Everything after `release()` runs straight through, so
+    /// the build that supersedes the parked one is not itself held up.
+    private func gatedClient() -> (client: MockJellyfinClient, gate: LoadGate) {
+        let client = MockJellyfinClient()
+        let gate = LoadGate()
+        arm(gate, on: client)
+        return (client, gate)
+    }
+
+    /// Arm a gate on a client that has already served some loads ungated —
+    /// a suite that needs a session playing first cannot park its own setup.
+    private func arm(_ gate: LoadGate, on client: MockJellyfinClient) {
+        client.playbackInfoGate = { await gate.enter() }
+    }
+
+    /// Drive a selection made while `start()` is parked mid-flight.
+    ///
+    /// The selection is not awaited before the gate opens — its own build
+    /// parks in the same gate, so awaiting it first would hang. The wait is
+    /// on the committed index instead: `select…Stream` writes it and
+    /// supersedes the parked build in one synchronous run of the main actor,
+    /// so observing the index proves the supersede already happened.
+    private func selectDuringLoad(
+        gate: LoadGate,
+        select: @escaping () async -> Void,
+        committed: @escaping () -> Bool,
+    ) async {
+        let selection = Task { await select() }
+        await waitUntil(committed)
+        #expect(committed(), "the selection never reached the view model")
+        await gate.release()
+        await selection.value
+    }
+
+    @Test("A subtitle selection during the initial load reaches the stream that plays")
+    func subtitleSelectedDuringInitialLoad() async {
+        let (client, gate) = gatedClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+        // The window the bug lives in: asked for, not yet loaded
+        #expect(!engine.isLoaded)
+
+        await selectDuringLoad(
+            gate: gate,
+            select: { await viewModel.selectSubtitleStream(index: 4) },
+            committed: { viewModel.selectedSubtitleStreamIndex == 4 },
+        )
+        await start.value
+
+        // Shape A was: the index committed, `rebuildStream` bailed on
+        // `isLoaded`, and the stream that loaded carried the *old* selection
+        // forever with no error anywhere
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].subtitleStreamIndex == 4)
+        // Only the surviving build reaches the engine — the superseded one
+        // bails before `engine.load`
+        #expect(engine.loadRequests.count == 1)
+        #expect(client.startReports.count == 1)
+    }
+
+    @Test("An audio selection during the initial load reaches the stream that plays")
+    func audioSelectedDuringInitialLoad() async {
+        let (client, gate) = gatedClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        await selectDuringLoad(
+            gate: gate,
+            select: { await viewModel.selectAudioStream(index: 2) },
+            committed: { viewModel.selectedAudioStreamIndex == 2 },
+        )
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedAudioStreamIndex == 2)
+        #expect(client.playbackInfoRequests.last?.audioStreamIndex == 2)
+        #expect(engine.loadRequests.count == 1)
+    }
+
+    @Test("A superseded build writes no state and leaves no orphaned session")
+    func supersededBuildWritesNothing() async {
+        let (client, gate) = gatedClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        await selectDuringLoad(
+            gate: gate,
+            select: { await viewModel.selectAudioStream(index: 2) },
+            committed: { viewModel.selectedAudioStreamIndex == 2 },
+        )
+        await start.value
+
+        // Shape B was: two flights racing, the loser resuming last, and the
+        // session left at `.loading` with the watchdog cancelled — an
+        // indefinite spinner, and an unresponsive player (#183) because
+        // PlaybackContainerView dismisses only on `.finished`
+        #expect(viewModel.state == .playing)
+        // The loser never touched the engine, and never flashed an error
+        // screen on its way out
+        #expect(engine.teardownCount == 0)
+        #expect(engine.playCount == 1)
+        // Its server-side session is released rather than left to the
+        // server's idle timeout
+        #expect(client.stopEncodingCalls == ["session-1"])
+    }
+
+    @Test("Rapid selections during the initial load leave one surviving build")
+    func rapidSelectionsDuringInitialLoad() async {
+        let (client, gate) = gatedClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        // Three selections stacked on the parked load, each superseding the
+        // last. Only the newest may write state — out-of-order writes are
+        // exactly what wedged the player.
+        let first = Task { await viewModel.selectAudioStream(index: 2) }
+        await waitUntil { viewModel.selectedAudioStreamIndex == 2 }
+        let second = Task { await viewModel.selectAudioStream(index: 3) }
+        await waitUntil { viewModel.selectedAudioStreamIndex == 3 }
+        let third = Task { await viewModel.selectAudioStream(index: 5) }
+        await waitUntil { viewModel.selectedAudioStreamIndex == 5 }
+
+        await gate.release()
+        await first.value
+        await second.value
+        await third.value
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedAudioStreamIndex == 5)
+        // Whatever else ran, the stream that is playing is the last one asked
+        // for, and it is the only one that reached the engine
+        #expect(client.playbackInfoRequests.last?.audioStreamIndex == 5)
+        #expect(engine.loadRequests.count == 1)
+        #expect(client.startReports.count == 1)
+    }
+
+    @Test("An explicit subtitle off survives a load restarted by a later selection")
+    func explicitSubtitleOffSurvivesRestart() async {
+        let client = MockJellyfinClient()
+        let gate = LoadGate()
+        // The server nominates a burn-in default, which a fresh start seeds
+        // because only the app can honor it
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 4)
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+
+        // Ungated: this session has to reach `.playing` before there is a
+        // rebuild to park
+        await viewModel.start()
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        arm(gate, on: client)
+
+        // Turn it off, and park the rebuild that follows. A rebuild tears the
+        // engine down first, so a selection landing here restarts the load
+        // rather than rebuilding again — which runs the seeding path a second
+        // time, on a session whose `nil` now means "the viewer said off".
+        let turnOff = Task { await viewModel.selectSubtitleStream(index: nil) }
+        await waitUntil { client.playbackInfoRequests.count == 2 }
+
+        await selectDuringLoad(
+            gate: gate,
+            select: { await viewModel.selectAudioStream(index: 2) },
+            committed: { viewModel.selectedAudioStreamIndex == 2 },
+        )
+        await turnOff.value
+
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(client.playbackInfoRequests.last?.subtitleStreamIndex == Int??.some(nil))
+        #expect(client.playbackInfoRequests.last?.audioStreamIndex == 2)
+    }
+
+    @Test("stop() during the initial load leaves the session stopped")
+    func stopDuringInitialLoad() async {
+        let (client, gate) = gatedClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        // What `PlaybackContainerView.onDisappear` does to a load still in
+        // flight. `stop()` disowns the build rather than waiting on it, so it
+        // finishes while the gate still holds that build — the build must not
+        // then come back and arm a watchdog behind the teardown.
+        await viewModel.stop()
+        await gate.release()
+        await start.value
+
+        #expect(viewModel.state != .playing)
+        #expect(engine.playCount == 0)
+        #expect(client.startReports.isEmpty)
+    }
+}
+
+/// A one-shot gate a mock can park inside so a suite can act while a load is
+/// genuinely in flight (#212).
+///
+/// `enter()` parks its caller; `release()` frees it and lets every later
+/// caller straight through, so the build that supersedes a parked one is
+/// never held up by the same gate. Suites detect the parked build from the
+/// request the mock recorded on its way in, not from the gate.
+actor LoadGate {
+    private var parked: [CheckedContinuation<Void, Never>] = []
+    private var isReleased = false
+
+    func enter() async {
+        guard !isReleased else { return }
+        await withCheckedContinuation { parked.append($0) }
+    }
+
+    func release() {
+        isReleased = true
+        for waiter in parked {
+            waiter.resume()
+        }
+        parked.removeAll()
+    }
 }

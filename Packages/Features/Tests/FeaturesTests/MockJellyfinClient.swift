@@ -275,6 +275,15 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Capability declarations received by playback calls, in arrival order
     var receivedCapabilities: [PlaybackCapabilities] = []
 
+    /// Play session ids released with `stopEncoding`, in arrival order
+    var stopEncodingCalls: [String] = []
+
+    /// Suspension point inside `getPlaybackInfo`, awaited after the request
+    /// is recorded and before the stub answers. Lets a suite hold a load
+    /// open and act on the view model while it is genuinely in flight —
+    /// the only window in which the #212 race exists.
+    var playbackInfoGate: (@Sendable () async -> Void)?
+
     func getPlaybackInfo(
         itemId: String,
         startTimeTicks: Int64?,
@@ -284,7 +293,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     ) async throws -> PlaybackSessionInfo {
         playbackInfoRequests.append((itemId, startTimeTicks, audioStreamIndex, subtitleStreamIndex))
         receivedCapabilities.append(capabilities)
+        await playbackInfoGate?()
         return try playbackInfoResult.get()
+    }
+
+    func stopEncoding(playSessionId: String) async {
+        stopEncodingCalls.append(playSessionId)
     }
 
     func resolveStream(
