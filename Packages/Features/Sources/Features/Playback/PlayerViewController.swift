@@ -1,6 +1,7 @@
 #if canImport(UIKit)
     import AVKit
     import JellyfinKit
+    import OSLog
     import SwiftUI
 
     /// SwiftUI bridge to AVPlayerViewController
@@ -23,11 +24,29 @@
         let onSelectSubtitle: (Int?) -> Void
         let onToggleFavorite: () -> Void
 
+        /// The player's own close control was used — tear down the presentation
+        /// that hosts this controller.
+        ///
+        /// This app embeds `AVPlayerViewController` in a
+        /// `UIViewControllerRepresentable` inside a `fullScreenCover`, which is
+        /// exactly the case AVKit's documentation calls out: "If you've
+        /// embedded the player view controller in another view, the delegate
+        /// may need to manually dismiss the view controller." Nothing did, so
+        /// AVKit's back button had nowhere to go — and when AVKit's fullscreen
+        /// window went away anyway, the app's own window was still hidden
+        /// behind it (#183).
+        let onRequestDismiss: () -> Void
+
         /// Caches the cast tab so SwiftUI updates don't rebuild it — AVKit
         /// re-lays out its info tabs whenever the array is reassigned, which
         /// would flicker (and drop focus from) an open panel. The transport
         /// bar's custom items are cached for the same reason.
-        final class Coordinator {
+        ///
+        /// Also the player's delegate: AVKit holds it weakly, and the
+        /// coordinator is the only object here with the right lifetime.
+        final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+            private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
+
             var castViewController: CastInfoViewController?
             var castPeople: [CastMember] = []
 
@@ -49,6 +68,55 @@
             /// What the track menus were last built from; unchanged means
             /// the assigned items are still correct
             var trackMenuSignature: String?
+
+            /// Latest dismissal handler, refreshed every update pass for the
+            /// same reason `onToggleFavorite` is: the delegate outlives the
+            /// representable value that installed it.
+            var onRequestDismiss: () -> Void = {}
+
+            // The two platforms expose disjoint halves of this protocol, and
+            // only visionOS needs either. tvOS owns the *dismissal* family
+            // (`playerViewControllerShouldDismiss` and friends, unavailable on
+            // visionOS) and needs none of it: AVKit shares the app's window
+            // there, so the Menu button already unwinds correctly. visionOS
+            // owns the *fullscreen-presentation* family (unavailable on tvOS),
+            // which is the half #183 needs — deliberately nothing is
+            // implemented for tvOS, so its behaviour is untouched.
+            #if os(visionOS)
+                /// AVKit's fullscreen presentation is ending — its window is
+                /// going away.
+                ///
+                /// The app's own window was hidden when AVKit went fullscreen
+                /// and is restored only through AVKit's dismissal flow. Left
+                /// alone, the cover stays presented over a hidden window: the
+                /// back button appears dead, and whenever AVKit's window does
+                /// go, only bare chrome is left (#183). Tearing down the cover
+                /// here is what hands the window back.
+                func playerViewController(
+                    _: AVPlayerViewController,
+                    willEndFullScreenPresentationWithAnimationCoordinator _: UIViewControllerTransitionCoordinator,
+                ) {
+                    // Logged because whether AVKit calls this at all, for a
+                    // controller embedded in a representable, is not something
+                    // any suite here can answer — the device log is the only
+                    // place the answer shows up
+                    Self.logger.info("[player] fullscreen presentation ending → dismissing")
+                    onRequestDismiss()
+                }
+
+                /// AVKit asking the app to put its own interface back after a
+                /// fullscreen exit. The app's answer is the same one: there is
+                /// no interface to restore *underneath* this player, so the
+                /// cover goes.
+                func playerViewController(
+                    _: AVPlayerViewController,
+                    restoreUserInterfaceForFullScreenExitWithCompletionHandler completionHandler: @escaping (Bool) -> Void,
+                ) {
+                    Self.logger.info("[player] restore UI after fullscreen exit → dismissing")
+                    onRequestDismiss()
+                    completionHandler(true)
+                }
+            #endif
         }
 
         func makeCoordinator() -> Coordinator {
@@ -58,12 +126,15 @@
         func makeUIViewController(context: Context) -> AVPlayerViewController {
             let controller = AVPlayerViewController()
             controller.player = player
+            controller.delegate = context.coordinator
+            context.coordinator.onRequestDismiss = onRequestDismiss
             configureMenus(for: controller, coordinator: context.coordinator)
             configureCastTab(for: controller, coordinator: context.coordinator)
             return controller
         }
 
         func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+            context.coordinator.onRequestDismiss = onRequestDismiss
             if controller.player !== player {
                 controller.player = player
             }

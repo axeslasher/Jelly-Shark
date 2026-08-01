@@ -18,6 +18,15 @@ public final class PlaybackViewModel {
         case idle
         case loading
         case playing
+
+        /// A replacement stream is building under a player that is still
+        /// mounted, holding its last frame.
+        ///
+        /// Distinct from `.loading` because the presentation is distinct: a
+        /// cold start has no player surface to keep, a rebuild does, and
+        /// tearing that surface down mid-rebuild is what wedges visionOS
+        /// (#183). The engine stays `isLoaded` throughout.
+        case rebuilding
         case failed(String)
         case finished
     }
@@ -368,16 +377,28 @@ public final class PlaybackViewModel {
 
     /// Abandon a failed session and start the same item over, in place.
     ///
-    /// A full `stop()` first, not a bare `start()`: `failDelivery` leaves the
-    /// paused engine and — on a transcode — the server-side ffmpeg alive on
-    /// purpose, so the failed session stays diagnosable while the error screen
-    /// is up. Retrying without tearing that down would orphan the encode and
-    /// stack a second one on top of it. `stop()` is idempotent and
-    /// `failDelivery` does not set `hasStopped`, so this runs the real
-    /// teardown, and `start()` clears the flag again.
+    /// Which arm depends on whether a player survived the failure, the same
+    /// discriminator `applySelection` routes on:
+    ///
+    /// - **Still loaded** — the failure arrived from `.playing` or a rebuild,
+    ///   so a player is mounted and holding a frame. Rebuilding keeps it
+    ///   mounted, which is the whole point on visionOS (#183), and
+    ///   `performRebuild` releases the outgoing session's encode itself.
+    /// - **Not loaded** — a cold start failed and there is nothing to keep. A
+    ///   full `stop()` first, not a bare `start()`: `failDelivery` leaves the
+    ///   paused engine and — on a transcode — the server-side ffmpeg alive on
+    ///   purpose, so the failed session stays diagnosable while the error
+    ///   screen is up. Retrying without tearing that down would orphan the
+    ///   encode and stack a second one on top of it. `stop()` is idempotent
+    ///   and `failDelivery` does not set `hasStopped`, so this runs the real
+    ///   teardown, and `start()` clears the flag again.
     public func retry() async {
-        await stop()
-        await start()
+        if engine.isLoaded {
+            await rebuildStream()
+        } else {
+            await stop()
+            await start()
+        }
     }
 
     /// Stop playback, report the final position, and tear down. Idempotent.
@@ -783,7 +804,14 @@ public final class PlaybackViewModel {
     private func performRebuild(generation: Int) async {
         guard !hasStopped else { return }
 
-        let positionTicks = currentPositionTicks()
+        // Where the viewer actually is — except before the first frame, when
+        // the playhead still reads zero. A rebuild committed during startup,
+        // or a retry after a delivery that never delivered, must resume where
+        // this session launched rather than restart the item.
+        let livePosition = currentPositionTicks()
+        let positionTicks = livePosition > 0
+            ? livePosition
+            : item.userData?.playbackPositionTicks ?? 0
 
         // The old session gets no stopped report (the new one sends a fresh
         // start), so explicitly release its server-side transcode rather
@@ -794,9 +822,14 @@ public final class PlaybackViewModel {
         disarmSessionEvents()
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
-        engine.teardown()
 
-        state = .loading
+        // Suspend, don't tear down: the player stays assigned so the hosting
+        // view keeps its last frame while the replacement builds. Dropping it
+        // here unmounted the player view, and on visionOS that strands the
+        // app behind AVKit's fullscreen window (#183).
+        engine.suspendForRebuild()
+
+        state = .rebuilding
 
         do {
             let session = try await client.getPlaybackInfo(
@@ -1346,7 +1379,7 @@ public final class PlaybackViewModel {
     private func failDelivery(message: String, cause: String) {
         guard !hasStopped, engine.isLoaded else { return }
         switch state {
-        case .playing, .loading: break
+        case .playing, .loading, .rebuilding: break
         case .idle, .failed, .finished: return
         }
 

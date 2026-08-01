@@ -19,6 +19,7 @@ final class MockPlayerEngine: PlayerEngine {
     private(set) var playCount = 0
     private(set) var pauseCount = 0
     private(set) var teardownCount = 0
+    private(set) var suspendCount = 0
     private(set) var resumeSeeks: [Double] = []
     private(set) var audibleSelections: [Int] = []
     private(set) var enrichedMetadataApplications: [(chapterArtwork: [Int: Data], posterData: Data?)] = []
@@ -95,6 +96,20 @@ final class MockPlayerEngine: PlayerEngine {
         currentTimeSeconds = nil
         transportStatus = .paused
         currentErrorDescription = nil
+        audibleOptions = []
+        legibleOptions = []
+        selectedAudiblePosition = nil
+        selectedLegiblePosition = nil
+    }
+
+    /// Mirrors the real engine: the player survives, so `isLoaded` and the
+    /// position survive with it. The media-selection state goes because it
+    /// lives on the observers `suspendForRebuild` drops — which is what makes
+    /// a mid-rebuild audio selection decline the in-place arm (#187) and take
+    /// the serialized rebuild instead.
+    func suspendForRebuild() {
+        suspendCount += 1
+        transportStatus = .paused
         audibleOptions = []
         legibleOptions = []
         selectedAudiblePosition = nil
