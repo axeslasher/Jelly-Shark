@@ -18,6 +18,15 @@ public final class PlaybackViewModel {
         case idle
         case loading
         case playing
+
+        /// A replacement stream is building under a player that is still
+        /// mounted, holding its last frame.
+        ///
+        /// Distinct from `.loading` because the presentation is distinct: a
+        /// cold start has no player surface to keep, a rebuild does, and
+        /// tearing that surface down mid-rebuild is what wedges visionOS
+        /// (#183). The engine stays `isLoaded` throughout.
+        case rebuilding
         case failed(String)
         case finished
     }
@@ -87,6 +96,12 @@ public final class PlaybackViewModel {
     /// it the play() ramp would emit progress heartbeats before the start
     /// report reaches the server.
     private var steadyStateEventsArmed = false
+
+    /// Where the current build told the engine to resume, kept for a rebuild
+    /// that finds no playhead to read — a selection landing during the resume
+    /// seek supersedes the build before the engine has a position, and
+    /// restarting the item from the beginning is the wrong answer.
+    private var sessionResumeTicks: Int64 = 0
 
     /// Bumped per `engine.load`; async completions capture it and are
     /// dropped when a rebuild or autoplay has moved the session on
@@ -277,7 +292,7 @@ public final class PlaybackViewModel {
     /// `getPlaybackInfo` flights racing to write `state`, `playSessionId` and
     /// `mediaSource`. When the superseded flight resumed last the session sat
     /// at `.loading` with the first-frame watchdog cancelled, so nothing timed
-    /// out — and since `PlaybackContainerView` dismisses only on `.finished`,
+    /// out — and since a state-driven dismissal happens only on `.finished`,
     /// that is an unresponsive player rather than an error screen (#183).
     ///
     /// The superseded build is cancelled *and awaited* before this one begins,
@@ -368,16 +383,28 @@ public final class PlaybackViewModel {
 
     /// Abandon a failed session and start the same item over, in place.
     ///
-    /// A full `stop()` first, not a bare `start()`: `failDelivery` leaves the
-    /// paused engine and — on a transcode — the server-side ffmpeg alive on
-    /// purpose, so the failed session stays diagnosable while the error screen
-    /// is up. Retrying without tearing that down would orphan the encode and
-    /// stack a second one on top of it. `stop()` is idempotent and
-    /// `failDelivery` does not set `hasStopped`, so this runs the real
-    /// teardown, and `start()` clears the flag again.
+    /// Which arm depends on whether a player survived the failure, the same
+    /// discriminator `applySelection` routes on:
+    ///
+    /// - **Still loaded** — the failure arrived from `.playing` or a rebuild,
+    ///   so a player is mounted and holding a frame. Rebuilding keeps it
+    ///   mounted, which is the whole point on visionOS (#183), and
+    ///   `performRebuild` releases the outgoing session's encode itself.
+    /// - **Not loaded** — a cold start failed and there is nothing to keep. A
+    ///   full `stop()` first, not a bare `start()`: `failDelivery` leaves the
+    ///   paused engine and — on a transcode — the server-side ffmpeg alive on
+    ///   purpose, so the failed session stays diagnosable while the error
+    ///   screen is up. Retrying without tearing that down would orphan the
+    ///   encode and stack a second one on top of it. `stop()` is idempotent
+    ///   and `failDelivery` does not set `hasStopped`, so this runs the real
+    ///   teardown, and `start()` clears the flag again.
     public func retry() async {
-        await stop()
-        await start()
+        if engine.isLoaded {
+            await rebuildStream()
+        } else {
+            await stop()
+            await start()
+        }
     }
 
     /// Stop playback, report the final position, and tear down. Idempotent.
@@ -621,6 +648,12 @@ public final class PlaybackViewModel {
     private var metadataArtworkTask: Task<Void, Never>?
 
     private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64, generation: Int) async {
+        // Where this session is anchored, for a rebuild that finds no
+        // playhead to read. Recorded per build rather than taken from the
+        // launching item, so it follows autoplay to the next episode and
+        // survives successive rebuilds.
+        sessionResumeTicks = resumeTicks
+
         // The old session's delivery lives until its replacement is chosen,
         // exactly as the interposer did before the delivery seam existed
         delivery?.stop()
@@ -783,7 +816,17 @@ public final class PlaybackViewModel {
     private func performRebuild(generation: Int) async {
         guard !hasStopped else { return }
 
-        let positionTicks = currentPositionTicks()
+        // Where the viewer actually is. `currentPositionTicks()` reads zero
+        // for two very different things — a playhead genuinely at the start
+        // of the item, and no playhead at all (a selection landing during the
+        // resume seek, before the engine has one) — and only the second
+        // should fall back to this session's anchor. A viewer sitting at 0:00
+        // who switches a track must not be thrown forward, so ask
+        // `currentTimeSeconds` directly rather than reading the collapsed
+        // zero as "not started".
+        let positionTicks = engine.currentTimeSeconds == nil
+            ? sessionResumeTicks
+            : currentPositionTicks()
 
         // The old session gets no stopped report (the new one sends a fresh
         // start), so explicitly release its server-side transcode rather
@@ -794,9 +837,14 @@ public final class PlaybackViewModel {
         disarmSessionEvents()
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
-        engine.teardown()
 
-        state = .loading
+        // Suspend, don't tear down: the player stays assigned so the hosting
+        // view keeps its last frame while the replacement builds. Dropping it
+        // here unmounted the player view, and on visionOS that strands the
+        // app behind AVKit's fullscreen window (#183).
+        engine.suspendForRebuild()
+
+        state = .rebuilding
 
         do {
             let session = try await client.getPlaybackInfo(
@@ -841,8 +889,9 @@ public final class PlaybackViewModel {
         }
     }
 
-    /// Reset every per-session event gate and cancel the watchdog. Runs on
-    /// stop and rebuild, before the engine tears the session down.
+    /// Reset every per-session event gate and cancel the watchdog. Runs
+    /// immediately before the engine leaves the session behind — a full
+    /// teardown on stop, a suspend on rebuild.
     private func disarmSessionEvents() {
         firstFrameWatchdog?.cancel()
         firstFrameWatchdog = nil
@@ -1346,7 +1395,7 @@ public final class PlaybackViewModel {
     private func failDelivery(message: String, cause: String) {
         guard !hasStopped, engine.isLoaded else { return }
         switch state {
-        case .playing, .loading: break
+        case .playing, .loading, .rebuilding: break
         case .idle, .failed, .finished: return
         }
 

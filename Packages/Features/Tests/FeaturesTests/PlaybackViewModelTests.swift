@@ -555,6 +555,44 @@ struct PlaybackViewModelTests {
         #expect(engine.resumeSeeks == [30, 30])
         // The state the correction is actually for still comes through
         #expect(viewModel.isFavorite == true)
+        // Which arm ran, stated rather than assumed: `start()` succeeded, so
+        // a player survived and `retry()` rebuilds under it. Without this the
+        // test would keep passing if the routing changed, because both arms
+        // happen to land on the same 30s here.
+        #expect(engine.suspendCount == 1)
+        #expect(engine.teardownCount == 0)
+        await viewModel.stop()
+    }
+
+    @Test("A cold-start retry repeats the launch position through the restart arm")
+    func coldStartRetryKeepsLaunchResumePosition() async {
+        let client = MockJellyfinClient()
+        client.playbackExtrasResult = .success(PlaybackExtras(
+            userData: UserData(playbackPositionTicks: 600_000_000, isFavorite: true),
+        ))
+        client.playbackInfoResult = .failure(APIError.networkError("offline"))
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 300_000_000))
+
+        await viewModel.start()
+        guard case .failed = viewModel.state else {
+            Issue.record("Expected .failed, got \(viewModel.state)")
+            return
+        }
+
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-2",
+                mediaSources: [MediaSource(id: "source-1")],
+            ),
+        )
+        await viewModel.retry()
+
+        // Nothing loaded to keep, so this is the stop-and-restart arm, and
+        // `performStart` reads the launching item's 30s — the pin #194 added,
+        // which now needs its own test since the loaded case rebuilds instead
+        #expect(engine.teardownCount == 1)
+        #expect(engine.suspendCount == 0)
+        #expect(engine.resumeSeeks == [30])
         await viewModel.stop()
     }
 
@@ -739,7 +777,8 @@ struct PlaybackViewModelTests {
         await viewModel.selectAudioStream(index: 2)
 
         #expect(engine.loadRequests.count == 2)
-        #expect(engine.teardownCount == 1)
+        #expect(engine.suspendCount == 1)
+        #expect(engine.teardownCount == 0)
         #expect(client.playbackExtrasRequests == ["movie-1"])
         let metadata = try #require(engine.lastMetadata)
         #expect(metadata.chapters.count == 2)
@@ -1012,10 +1051,12 @@ struct PlaybackViewModelTests {
         #expect(client.streamResolutions.count == 2)
         #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 4)
         #expect(client.startReports.count == 2)
-        // The rebuild is a fresh load on a torn-down session, not an
-        // in-place swap
+        // The rebuild is a fresh load on a suspended session, not an in-place
+        // swap — and never a teardown, which would unmount the player view
+        // out from under AVKit's fullscreen window (#183)
         #expect(engine.loadRequests.count == 2)
-        #expect(engine.teardownCount == 1)
+        #expect(engine.suspendCount == 1)
+        #expect(engine.teardownCount == 0)
     }
 
     // MARK: - In-Place Audio Switching (#187)
@@ -1253,8 +1294,8 @@ struct PlaybackViewModelTests {
 
         // Shape B was: two flights racing, the loser resuming last, and the
         // session left at `.loading` with the watchdog cancelled — an
-        // indefinite spinner, and an unresponsive player (#183) because
-        // PlaybackContainerView dismisses only on `.finished`
+        // indefinite spinner, and an unresponsive player (#183), since no
+        // playback state other than `.finished` dismisses the container
         #expect(viewModel.state == .playing)
         // The loser never touched the engine on its way out
         #expect(engine.teardownCount == 0)
@@ -1388,10 +1429,16 @@ struct PlaybackViewModelTests {
             client: client,
             item: makeMovie(resumeTicks: 36_000_000_000),
         )
-        // Shape B's exact window: the engine is loaded but `start()` has
-        // not finished. The mock's playhead stays nil, so the rebuild's
-        // own resume path does not re-enter this gate.
-        engine.seekGate = { try? await gate.wait() }
+        // Shape B's exact window: the engine is loaded but `start()` has not
+        // finished. Only the first seek parks — the rebuild resumes to the
+        // same position now that it falls back to the launch resume point
+        // instead of restarting at zero (#183), so an unconditional gate
+        // would park the successor against a gate nothing will open.
+        engine.seekGate = {
+            if engine.resumeSeeks.count == 1 {
+                try? await gate.wait()
+            }
+        }
 
         let start = Task { await viewModel.start() }
         await waitUntil { engine.resumeSeeks.count == 1 }
@@ -1401,9 +1448,12 @@ struct PlaybackViewModelTests {
         await start.value
 
         #expect(viewModel.state == .playing)
-        // `applySelection` found a loaded engine and rebuilt: one teardown,
-        // a second load, and only the rebuild's stream ever played
-        #expect(engine.teardownCount == 1)
+        // `applySelection` found a loaded engine and rebuilt: one suspend —
+        // never a teardown, which would drop the player out from under the
+        // hosting view (#183) — a second load, and only the rebuild's stream
+        // ever played
+        #expect(engine.suspendCount == 1)
+        #expect(engine.teardownCount == 0)
         #expect(engine.loadRequests.count == 2)
         #expect(engine.playCount == 1)
         #expect(client.playbackInfoRequests.count == 2)
@@ -1529,7 +1579,7 @@ struct PlaybackViewModelTests {
     func failedStartRetryReachesPlaying() async {
         let client = MockJellyfinClient()
         client.playbackInfoResult = .failure(APIError.networkError("offline"))
-        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
 
         await viewModel.start()
         guard case .failed = viewModel.state else {
@@ -1548,5 +1598,130 @@ struct PlaybackViewModelTests {
         await viewModel.retry()
 
         #expect(viewModel.state == .playing)
+        // A cold start left no player to keep, so retry() takes the
+        // stop-and-restart arm rather than the in-place rebuild (#183)
+        #expect(engine.teardownCount == 1)
+        #expect(engine.suspendCount == 0)
+    }
+
+    // MARK: - A Rebuild Keeps the Player Mounted (#183)
+
+    @Test("A rebuild with no playhead yet resumes where the session was anchored")
+    func rebuildBeforeAnyPlayheadResumesAtAnchor() async {
+        let client = MockJellyfinClient()
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie(resumeTicks: 300_000_000))
+
+        // The mock's playhead stays nil, which is the engine's state when a
+        // selection lands during the resume seek — no position to read yet
+        await viewModel.start()
+        await viewModel.selectAudioStream(index: 2)
+
+        #expect(viewModel.state == .playing)
+        #expect(client.playbackInfoRequests.last?.startTimeTicks == 300_000_000)
+    }
+
+    @Test("A rebuild at the very start of the item stays there")
+    func rebuildAtZeroStaysAtZero() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 300_000_000))
+
+        await viewModel.start()
+        // The viewer scrubbed back to the beginning. This is a real playhead
+        // reading zero, not the absence of one — falling back to the anchor
+        // here would throw them 30s forward from where they are.
+        engine.currentTimeSeconds = 0
+
+        await viewModel.selectAudioStream(index: 2)
+
+        #expect(viewModel.state == .playing)
+        #expect(client.playbackInfoRequests.last?.startTimeTicks == nil)
+    }
+
+    @Test("A rebuild holds the player while the replacement stream builds")
+    func rebuildHoldsPlayerWhileBuilding() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        // Park the *rebuild's* request, not the initial load's, so the
+        // assertions below land inside the window that used to unmount the
+        // player view
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 2 {
+                try? await gate.wait()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(viewModel.state == .playing)
+
+        let selection = Task { await viewModel.selectAudioStream(index: 2) }
+        await waitUntil { client.playbackInfoRequests.count == 2 }
+
+        // The frozen frame, expressed where a suite can see it: a state
+        // distinct from a cold start, and a player still there to render.
+        // `PlaybackContainerView` puts `.rebuilding` and `.playing` through
+        // the same branch, so together these two are the whole invariant.
+        #expect(viewModel.state == .rebuilding)
+        #expect(engine.isLoaded)
+        #expect(engine.suspendCount == 1)
+        #expect(engine.teardownCount == 0)
+
+        await gate.open()
+        await selection.value
+
+        #expect(viewModel.state == .playing)
+        #expect(engine.loadRequests.count == 2)
+        #expect(engine.teardownCount == 0)
+    }
+
+    @Test("A failed rebuild leaves the player mounted behind the error")
+    func failedRebuildKeepsPlayerMounted() async {
+        let client = MockJellyfinClient()
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 2 {
+                throw APIError.networkError("rebuild failed")
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        await viewModel.selectAudioStream(index: 2)
+
+        guard case .failed = viewModel.state else {
+            Issue.record("Expected .failed, got \(viewModel.state)")
+            return
+        }
+        // The precondition the visionOS error screen depends on: it is
+        // presented from a player that is still mounted, over the frame that
+        // player is still holding
+        #expect(engine.isLoaded)
+        #expect(engine.teardownCount == 0)
+    }
+
+    @Test("retry() after a failed rebuild rebuilds in place")
+    func retryAfterFailedRebuildStaysMounted() async {
+        let client = MockJellyfinClient()
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 2 {
+                throw APIError.networkError("rebuild failed")
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        await viewModel.selectAudioStream(index: 2)
+        guard case .failed = viewModel.state else {
+            Issue.record("Expected .failed, got \(viewModel.state)")
+            return
+        }
+
+        await viewModel.retry()
+
+        // The loaded arm: a third build, never a teardown, and the selection
+        // that failed carried into it
+        #expect(viewModel.state == .playing)
+        #expect(engine.teardownCount == 0)
+        #expect(client.playbackInfoRequests.count == 3)
+        #expect(client.playbackInfoRequests[2].audioStreamIndex == 2)
     }
 }

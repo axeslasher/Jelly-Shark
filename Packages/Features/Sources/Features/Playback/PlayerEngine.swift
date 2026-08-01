@@ -136,6 +136,22 @@ protocol PlayerEngine: AnyObject {
     /// Pause, drop the player, and remove every observer. Idempotent.
     func teardown()
 
+    /// Pause and silence the current session but *hold* the player, for a
+    /// stream rebuild.
+    ///
+    /// Removes every observer and invalidates in-flight callbacks, as
+    /// `teardown` does, but keeps the player (and the metadata `load` was
+    /// given) so the hosting view goes on rendering its last frame while the
+    /// replacement stream builds. On visionOS that is not cosmetic —
+    /// unmounting the player view while AVKit's fullscreen window is up
+    /// leaves the app's own window hidden with nothing to restore it (#183).
+    ///
+    /// `load` re-arms from scratch (it removes observers and bumps its own
+    /// generation), so this exists only to stop the outgoing session's events
+    /// during the window before the successor arrives. `isLoaded` stays true
+    /// across it, deliberately: the session layer routes on it.
+    func suspendForRebuild()
+
     // MARK: State
 
     var isLoaded: Bool { get }

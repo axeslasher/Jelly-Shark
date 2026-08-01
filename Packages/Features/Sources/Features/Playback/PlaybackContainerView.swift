@@ -14,8 +14,9 @@ public struct PlaybackContainerView: View {
 
     /// The concrete engine, held alongside the view model: the AVKit
     /// hosting below needs the typed `player` the `PlayerEngine` protocol
-    /// deliberately doesn't expose, and reading it here keeps SwiftUI
-    /// re-rendering when a mid-session rebuild swaps the player instance.
+    /// deliberately doesn't expose, and reading it here is what gets the
+    /// first load onto the screen. A rebuild keeps the same instance and
+    /// swaps the item inside it, so nothing here re-renders mid-session.
     @State private var playerEngine: AVFoundationPlayerEngine
 
     /// Focus for the error screen's Close button. `.failed` used to be
@@ -46,7 +47,11 @@ public struct PlaybackContainerView: View {
                 ProgressView()
                     .scaleEffect(1.5)
 
-            case .playing:
+            // A rebuild renders the same branch as playback on purpose: the
+            // player stays mounted holding its last frame, and no loading
+            // chrome goes over it. Splitting to a spinner here is what tore
+            // the player view out from under AVKit's fullscreen window (#183).
+            case .playing, .rebuilding:
                 playerView
 
             case let .failed(message):
@@ -85,6 +90,12 @@ public struct PlaybackContainerView: View {
     @ViewBuilder
     private var playerView: some View {
         #if canImport(UIKit)
+            // The engine holds its player across a rebuild (it suspends
+            // rather than tears down), so within `.playing` and `.rebuilding`
+            // this is never nil and the representable is never unmounted
+            // mid-session. That is the invariant #183 turns on: SwiftUI
+            // removing this view while AVKit's fullscreen window is up leaves
+            // the app's own window hidden with nothing to restore it.
             if let player = playerEngine.player {
                 PlayerViewControllerRepresentable(
                     player: player,
@@ -103,6 +114,14 @@ public struct PlaybackContainerView: View {
                     },
                     onToggleFavorite: {
                         Task { await viewModel.toggleFavorite() }
+                    },
+                    // The player's own close control routes here rather than
+                    // into AVKit's self-dismissal, which an embedded
+                    // controller cannot perform. Tearing down the whole cover
+                    // is the path that hands the window back — `onDisappear`
+                    // still runs `stop()` and reports the final position.
+                    onRequestDismiss: {
+                        dismiss()
                     },
                 )
                 #if os(visionOS)

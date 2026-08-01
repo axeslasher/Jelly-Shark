@@ -10,9 +10,10 @@ import OSLog
 /// in the view layer that hosts the player — never in `PlaybackViewModel`.
 ///
 /// `@Observable` is load-bearing: `PlaybackContainerView` reads `player` in
-/// its body to feed `AVPlayerViewController`, and a mid-session rebuild
-/// (track switch) swaps the player instance. Without observation the view
-/// would keep rendering the dead player.
+/// its body to feed `AVPlayerViewController`, and the first load has to reach
+/// the view. A mid-session rebuild deliberately does *not* change the
+/// instance — it replaces the item underneath (see `load`) — so within a
+/// session the view sees one player from first frame to teardown.
 @Observable
 @MainActor
 final class AVFoundationPlayerEngine: PlayerEngine {
@@ -178,7 +179,8 @@ final class AVFoundationPlayerEngine: PlayerEngine {
 
     /// Stale-callback fence. Every async completion and observer callback
     /// captures the generation of the `load` that armed it and is dropped
-    /// when a newer `load`/`teardown` has moved the session on — one owner
+    /// when a newer `load`, a `teardown`, or a `suspendForRebuild` has moved
+    /// the session on — one owner
     /// for the guards the view model used to spell as
     /// `player?.currentItem === playerItem` (#85).
     @ObservationIgnored private var generation = 0
@@ -215,12 +217,30 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         let generation = generation
 
         let playerItem = AVPlayerItem(url: url)
-        let player = AVPlayer(playerItem: playerItem)
-        // The master playlist marks every text rendition AUTOSELECT=YES;
-        // left on, AVPlayer would enable subtitles from system accessibility
-        // preferences behind the app's explicit selection state
-        player.appliesMediaSelectionCriteriaAutomatically = false
-        self.player = player
+
+        // Replace the *item*, not the player, when a session is already up.
+        //
+        // A rebuild keeps `AVPlayerViewController` mounted (#183), and handing
+        // a mounted controller a different `AVPlayer` is not a shape AVKit
+        // supports on visionOS: its RealityKit video entity loses its player
+        // component ("no videoPlayerComponent on <VideoEntity:…>", followed by
+        // a burst of SwiftUI runtime faults from AVKit's own internals).
+        // Apple's own guidance for changing what a mounted player shows is
+        // `replaceCurrentItem` — swapping the controller's player is only for
+        // a controller SwiftUI is about to rebuild anyway.
+        let player: AVPlayer
+        if let existing = self.player {
+            existing.replaceCurrentItem(with: playerItem)
+            player = existing
+        } else {
+            player = AVPlayer(playerItem: playerItem)
+            // The master playlist marks every text rendition AUTOSELECT=YES;
+            // left on, AVPlayer would enable subtitles from system
+            // accessibility preferences behind the app's explicit selection
+            // state. A player property, so it survives item replacement.
+            player.appliesMediaSelectionCriteriaAutomatically = false
+            self.player = player
+        }
         sessionMetadata = metadata
 
         applyMetadata(metadata, to: playerItem)
@@ -259,6 +279,12 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         sessionMetadata = nil
         player?.pause()
         player = nil
+    }
+
+    func suspendForRebuild() {
+        removeObservers()
+        generation += 1
+        player?.pause()
     }
 
     private func removeObservers() {
