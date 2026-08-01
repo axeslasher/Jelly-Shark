@@ -272,9 +272,15 @@ public final class PlaybackViewModel {
     ///
     /// The superseded build is cancelled *and awaited* before this one begins,
     /// so exactly one build is ever live. Awaiting it cannot wedge the new
-    /// one: every state write in a build body sits behind `isCurrentLoad`, so
-    /// a superseded build does no further work — it only has to unwind the
-    /// single request it is already suspended on.
+    /// one, but only because every point a build can park on honors
+    /// cancellation: `URLSession` natively, `PlaybackLocalServer.start()`
+    /// via its cancellation handler, and the test suite's `AsyncGate` by
+    /// construction. Anyone adding an `await` to a build body inherits that
+    /// obligation — an uncancellable suspension here recreates the deadlock
+    /// that sank the first attempt at this fix. Past the cancel, every state
+    /// write in a build body sits behind `isCurrentLoad`, so a superseded
+    /// build does no further work — it only has to unwind the single request
+    /// it is already suspended on.
     private func runLoad(_ body: @escaping (Int) async -> Void) async {
         loadGeneration += 1
         let generation = loadGeneration
@@ -283,9 +289,14 @@ public final class PlaybackViewModel {
 
         let task = Task { @MainActor in
             await superseded?.value
-            // A third build may have arrived while the first was unwinding;
-            // the newest one owns the session and this one never starts
-            guard self.loadGeneration == generation else { return }
+            // A third build may have arrived while the first was unwinding —
+            // the newest one owns the session and this one never starts. The
+            // cancellation check is `stop()`'s: it cancels a build that has
+            // not begun, and without the check that build would still run its
+            // body, whose first line un-stops the torn-down session (#212).
+            // `retry()` survives this — its `stop(); start()` spawns a fresh,
+            // never-cancelled task.
+            guard !Task.isCancelled, self.loadGeneration == generation else { return }
             await body(generation)
         }
         loadTask = task
@@ -395,6 +406,9 @@ public final class PlaybackViewModel {
 
     /// Switch to a different audio stream (rebuilds the stream, preserving position)
     public func selectAudioStream(index: Int) async {
+        // Post-stop nothing can honor a selection, so refuse the commit too:
+        // an index committed here would silently leak into a later retry()
+        guard !hasStopped else { return }
         guard index != selectedAudioStreamIndex else { return }
         selectedAudioStreamIndex = index
         await applySelection()
@@ -415,6 +429,7 @@ public final class PlaybackViewModel {
     /// and the latch is process-global — it survives full recreation of the
     /// item, player, and player view controller (#91).
     public func selectSubtitleStream(index: Int?) async {
+        guard !hasStopped else { return }
         guard index != selectedSubtitleStreamIndex else { return }
         selectedSubtitleStreamIndex = index
         hasExplicitSubtitleSelection = true
@@ -436,7 +451,14 @@ public final class PlaybackViewModel {
     /// Reading `isLoaded` and bumping the generation inside `runLoad` happen
     /// in one synchronous run of the main actor, so no build can slip in
     /// between the decision and the supersede it is based on.
+    ///
+    /// The stop-guard is this method's contract with every future branch
+    /// added here (#187 will add an in-place path): a session that has
+    /// stopped applies nothing, because the `start()` arm below would
+    /// otherwise un-stop it — `performStart` clears `hasStopped` — and
+    /// resurrect a player the container already dismissed.
     private func applySelection() async {
+        guard !hasStopped else { return }
         if engine.isLoaded {
             await rebuildStream()
         } else {
