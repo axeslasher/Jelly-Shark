@@ -73,7 +73,7 @@ struct InstantConnectTests {
         let rig = Rig()
         await rig.seedCache()
         let gate = AsyncGate()
-        rig.client.fetchCurrentUserDelay = { await gate.wait() }
+        rig.client.fetchCurrentUserDelay = { try? await gate.wait() }
         rig.client.librariesResult = .success([Library(id: "lib-2", name: "Shows", collectionType: .tvshows)])
 
         await rig.viewModel.restoreSession()
@@ -101,7 +101,7 @@ struct InstantConnectTests {
         let rig = Rig()
         await rig.seedCache()
         let gate = AsyncGate()
-        rig.client.fetchCurrentUserDelay = { await gate.wait() }
+        rig.client.fetchCurrentUserDelay = { try? await gate.wait() }
         rig.client.fetchCurrentUserResult = .failure(APIError.unauthorized)
 
         await rig.viewModel.restoreSession()
@@ -197,7 +197,7 @@ struct HomeHydrationTests {
         let client = MockJellyfinClient()
         client.resumeItemsResult = .success([makeMovie("fresh-r")])
         let gate = AsyncGate()
-        client.latestItemsDelay = { await gate.wait() }
+        client.latestItemsDelay = { try? await gate.wait() }
 
         let viewModel = HomeViewModel()
         viewModel.attach(client: client, libraries: [], cache: cache)
@@ -305,7 +305,7 @@ struct LibraryHydrationTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["fresh-1"]))]
         let gate = AsyncGate()
-        client.libraryItemsDelay = { await gate.wait() }
+        client.libraryItemsDelay = { try? await gate.wait() }
 
         let viewModel = LibraryItemsViewModel()
         viewModel.attach(client: client, cache: cache)
@@ -328,7 +328,7 @@ struct LibraryHydrationTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["fresh-1"]))]
         let gate = AsyncGate()
-        client.libraryItemsDelay = { await gate.wait() }
+        client.libraryItemsDelay = { try? await gate.wait() }
 
         let viewModel = LibraryItemsViewModel()
         viewModel.attach(client: client, initialQuery: LibraryQuery(favoritesOnly: true), cache: cache)
@@ -354,7 +354,7 @@ struct LibraryHydrationTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["fresh-1", "fresh-2"], total: 3))]
         let gate = AsyncGate()
-        client.libraryItemsDelay = { await gate.wait() }
+        client.libraryItemsDelay = { try? await gate.wait() }
 
         let viewModel = LibraryItemsViewModel()
         viewModel.attach(client: client, cache: cache)
@@ -448,7 +448,7 @@ struct MediaDetailHydrationTests {
         let client = MockJellyfinClient()
         client.mediaItemsById["m-1"] = MediaItem(id: "m-1", name: "Fresh", type: .movie)
         let gate = AsyncGate()
-        client.mediaItemDelay = { await gate.wait() }
+        client.mediaItemDelay = { try? await gate.wait() }
 
         let viewModel = MediaDetailViewModel()
         viewModel.attach(client: client, item: stub, cache: cache)
