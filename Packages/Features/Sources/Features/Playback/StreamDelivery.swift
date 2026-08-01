@@ -129,6 +129,12 @@ final class InterposedHLSDelivery: StreamDelivery {
         }
 
         guard let interposedURL = await server.start() else {
+            // A cancelled build is not a degraded one: its result is always
+            // discarded at the caller's supersede guard, so spend nothing on
+            // it — no re-resolve, no misleading "listener unavailable" log
+            if Task.isCancelled {
+                return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
+            }
             // Degraded path: nothing will strip the WebVTT timestamp map,
             // so re-resolve with the interposer assumption off — a
             // delivered text subtitle falls back to TS + H.264, where the
