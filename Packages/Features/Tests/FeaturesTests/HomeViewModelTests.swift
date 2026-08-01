@@ -333,7 +333,7 @@ struct HomeViewModelTests {
         client.latestItemsHandler = { [self] libraryId in
             libraryId == nil ? .success([movie("hero-1")]) : .success([])
         }
-        client.latestItemsDelay = { await gate.wait() }
+        client.latestItemsDelay = { try? await gate.wait() }
 
         let viewModel = HomeViewModel()
         viewModel.attach(client: client, libraries: [])

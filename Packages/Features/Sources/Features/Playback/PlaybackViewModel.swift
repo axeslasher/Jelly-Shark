@@ -92,6 +92,26 @@ public final class PlaybackViewModel {
     /// dropped when a rebuild or autoplay has moved the session on
     private var sessionEpoch = 0
 
+    /// The stream build currently in flight — a `start()` or a
+    /// `rebuildStream()`. Held so a newer build can supersede it (#212).
+    private var loadTask: Task<Void, Never>?
+
+    /// Bumped per stream build. A build whose generation has moved on has
+    /// been superseded and must write no session state — the same shape
+    /// `AVFoundationPlayerEngine` uses for its async completions, one level
+    /// up, where the two entry points that build a stream actually live.
+    private var loadGeneration = 0
+
+    /// Whether the viewer has chosen a subtitle track this session.
+    ///
+    /// The server's burn-in default is seeded only until they do. A
+    /// selection made during the initial load restarts that load carrying
+    /// it, so `selectedSubtitleStreamIndex == nil` can no longer stand in
+    /// for "nobody has chosen yet" — an explicit "off" and a fresh session
+    /// look identical, and the seed would turn subtitles back on under the
+    /// viewer (#212).
+    private var hasExplicitSubtitleSelection = false
+
     /// Whether the current stream has the selected subtitle burned into the
     /// video, in which case no legible rendition exists to toggle
     private var sessionUsesBurnIn = false
@@ -130,8 +150,24 @@ public final class PlaybackViewModel {
 
     /// Load the stream and begin playback (resuming from a saved position if any)
     public func start() async {
+        await runLoad { generation in
+            await self.performStart(generation: generation)
+        }
+    }
+
+    private func performStart(generation: Int) async {
         state = .loading
         hasStopped = false
+
+        // A restart-shaped supersede — a selection during load routed here by
+        // `applySelection` because no engine session exists yet — replaces a
+        // build that may have already adopted its play session (it got past
+        // its post-info guard before losing the race). The successor owns the
+        // session slot, so it releases what its predecessor adopted. Every
+        // other arrival (fresh start, retry, autoplay) finds this already
+        // released and nil: stop() and the rebuild path funnel through the
+        // same helper.
+        await releaseAdoptedSession()
 
         let resumeTicks = item.userData?.playbackPositionTicks ?? 0
 
@@ -143,6 +179,10 @@ public final class PlaybackViewModel {
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
                 capabilities: engine.capabilities,
             )
+            guard isCurrentLoad(generation) else {
+                await releaseSupersededSession(session)
+                return
+            }
 
             guard let source = session.defaultMediaSource else {
                 state = .failed("No playable media sources for this item")
@@ -159,10 +199,12 @@ public final class PlaybackViewModel {
             // composite them). A text default is deliberately NOT seeded:
             // AVKit owns text subtitles, and the master playlist's
             // DEFAULT=YES flag plus the viewer's system caption preference
-            // decide auto-on natively. Seeding only on fresh starts keeps an
-            // explicit mid-session "off" alive across rebuilds; autoplay
+            // decide auto-on natively. Seeding only until the viewer chooses
+            // keeps an explicit mid-session "off" alive across rebuilds and
+            // across a load this very selection restarted (#212); autoplay
             // resets the selection so each episode reseeds.
-            if selectedSubtitleStreamIndex == nil,
+            if !hasExplicitSubtitleSelection,
+               selectedSubtitleStreamIndex == nil,
                source.subtitleRequiresBurnIn(at: source.defaultSubtitleStreamIndex)
             {
                 selectedSubtitleStreamIndex = source.defaultSubtitleStreamIndex
@@ -190,6 +232,7 @@ public final class PlaybackViewModel {
             // a failed fetch just means scrubbing stays blind and the
             // chapter panel stays empty, exactly as before.
             let extras = await (try? client.getPlaybackExtras(itemId: item.id)) ?? nil
+            guard isCurrentLoad(generation) else { return }
             trickplayInfo = extras?.trickplay?.info(forMediaSourceId: source.id)
             chapters = extras?.chapters ?? []
             // The launching item is the fallback: shelf items rarely carry
@@ -211,11 +254,117 @@ public final class PlaybackViewModel {
                 userState.ingest(serverItems: [fresh])
             }
 
-            await beginPlayback(resolution: resolution, resumeTicks: resumeTicks)
+            await beginPlayback(resolution: resolution, resumeTicks: resumeTicks, generation: generation)
         } catch {
+            // A superseded build's error is not the session's error: the
+            // cancellation that superseded it would otherwise flash an error
+            // screen between two healthy loads
+            guard isCurrentLoad(generation) else { return }
             state = .failed(error.localizedDescription)
         }
     }
+
+    // MARK: - Load Serialization
+
+    /// Run one stream build, superseding any build already in flight.
+    ///
+    /// `start()` and `rebuildStream()` are the only two async entry points
+    /// that build a stream, and nothing serialized them before #212. A track
+    /// selection made during the initial load therefore either bailed at
+    /// `rebuildStream`'s `isLoaded` guard — committing the index and never
+    /// asking the server for it — or ran `disarmSessionEvents()` and
+    /// `engine.teardown()` underneath the in-flight `start()`, leaving two
+    /// `getPlaybackInfo` flights racing to write `state`, `playSessionId` and
+    /// `mediaSource`. When the superseded flight resumed last the session sat
+    /// at `.loading` with the first-frame watchdog cancelled, so nothing timed
+    /// out — and since `PlaybackContainerView` dismisses only on `.finished`,
+    /// that is an unresponsive player rather than an error screen (#183).
+    ///
+    /// The superseded build is cancelled *and awaited* before this one begins,
+    /// so exactly one build is ever live. Awaiting it cannot wedge the new
+    /// one, but only because every point a build can park on honors
+    /// cancellation: `URLSession` natively, `PlaybackLocalServer.start()`
+    /// via its cancellation handler, and the test suite's `AsyncGate` by
+    /// construction. Anyone adding an `await` to a build body inherits that
+    /// obligation — an uncancellable suspension here recreates the deadlock
+    /// that sank the first attempt at this fix. Past the cancel, every state
+    /// write in a build body sits behind `isCurrentLoad`, so a superseded
+    /// build does no further work — it only has to unwind the single request
+    /// it is already suspended on.
+    private func runLoad(_ body: @escaping (Int) async -> Void) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        let superseded = loadTask
+        superseded?.cancel()
+
+        let task = Task { @MainActor in
+            await superseded?.value
+            // A third build may have arrived while the first was unwinding —
+            // the newest one owns the session and this one never starts. The
+            // cancellation check is `stop()`'s: it cancels a build that has
+            // not begun, and without the check that build would still run its
+            // body, whose first line un-stops the torn-down session (#212).
+            // `retry()` survives this — its `stop(); start()` spawns a fresh,
+            // never-cancelled task.
+            guard !Task.isCancelled, self.loadGeneration == generation else { return }
+            await body(generation)
+        }
+        loadTask = task
+        await task.value
+
+        if loadGeneration == generation {
+            loadTask = nil
+        }
+    }
+
+    /// Whether the build holding `generation` still owns session state.
+    ///
+    /// Checked after every suspension point inside a build body: false means
+    /// a newer build has superseded this one, or `stop()` has ended the
+    /// session underneath it, and either way it must write nothing.
+    private func isCurrentLoad(_ generation: Int) -> Bool {
+        loadGeneration == generation && !hasStopped
+    }
+
+    /// Release the server-side session a superseded build opened.
+    ///
+    /// `getPlaybackInfo` allocates a play session — and on a transcode an
+    /// ffmpeg — before this build learned it had lost the race. Nothing will
+    /// ever report it stopped, so without this each selection made during a
+    /// load leaves one behind until the server's idle timeout, exactly the
+    /// orphan `rebuildStream` already avoids for the session it replaces.
+    ///
+    /// This covers the *unadopted* case only — the build lost the race at
+    /// the post-info guard, before writing `playSessionId`. A build
+    /// superseded later has adopted its session, and its releaser is
+    /// whatever replaced it: `releaseAdoptedSession()`.
+    private func releaseSupersededSession(_ session: PlaybackSessionInfo) async {
+        guard let playSessionId = session.playSessionId else { return }
+        Self.logger.info("[load] superseded build releasing session \(playSessionId, privacy: .public)")
+        await client.stopEncoding(playSessionId: playSessionId)
+    }
+
+    /// Release the adopted session's server-side encode, exactly once.
+    ///
+    /// The invariant: `playSessionId` non-nil means the session it names has
+    /// not been released. Every path that ends or replaces an adopted
+    /// session funnels through here — `stop()`, a rebuild's teardown of its
+    /// predecessor, and a restart-shaped supersede (#212's `applySelection`
+    /// while no engine session exists) — so the loser of a race releases
+    /// nothing itself and stays write-free, the successor releases what it
+    /// replaces, and nothing is released twice or left for the server's
+    /// idle timeout. The nil-out happens before the suspension, so two
+    /// callers cannot both see the same id. Direct play opens no encode, so
+    /// there is nothing to stop.
+    private func releaseAdoptedSession() async {
+        guard let playSessionId else { return }
+        self.playSessionId = nil
+        if playMethod != .directPlay {
+            await client.stopEncoding(playSessionId: playSessionId)
+        }
+    }
+
+    // MARK: - Lifecycle
 
     /// Abandon a failed session and start the same item over, in place.
     ///
@@ -235,6 +384,12 @@ public final class PlaybackViewModel {
     public func stop() async {
         guard !hasStopped else { return }
         hasStopped = true
+
+        // A build still in flight would otherwise arm a watchdog and reach
+        // `.playing` on a session that has already been torn down. Cancelled,
+        // not awaited: `hasStopped` closes `isCurrentLoad` for it either way,
+        // and waiting here would block teardown on a network round trip.
+        loadTask?.cancel()
 
         let positionTicks = currentPositionTicks()
 
@@ -272,9 +427,7 @@ public final class PlaybackViewModel {
 
         // Belt to the stopped report's suspenders: release the transcode
         // explicitly (Swiftfin does the same on teardown)
-        if playMethod != .directPlay, let playSessionId {
-            await client.stopEncoding(playSessionId: playSessionId)
-        }
+        await releaseAdoptedSession()
     }
 
     /// Headshot URL for the player's cast tab (the view has no client access)
@@ -286,9 +439,12 @@ public final class PlaybackViewModel {
 
     /// Switch to a different audio stream (rebuilds the stream, preserving position)
     public func selectAudioStream(index: Int) async {
+        // Post-stop nothing can honor a selection, so refuse the commit too:
+        // an index committed here would silently leak into a later retry()
+        guard !hasStopped else { return }
         guard index != selectedAudioStreamIndex else { return }
         selectedAudioStreamIndex = index
-        await rebuildStream()
+        await applySelection()
     }
 
     /// Switch subtitles to the given stream index, or nil to turn them off.
@@ -306,9 +462,41 @@ public final class PlaybackViewModel {
     /// and the latch is process-global — it survives full recreation of the
     /// item, player, and player view controller (#91).
     public func selectSubtitleStream(index: Int?) async {
+        guard !hasStopped else { return }
         guard index != selectedSubtitleStreamIndex else { return }
         selectedSubtitleStreamIndex = index
-        await rebuildStream()
+        hasExplicitSubtitleSelection = true
+        await applySelection()
+    }
+
+    /// Put the committed selection onto the stream.
+    ///
+    /// A loaded engine means there is a session to rebuild. No loaded engine
+    /// means the initial load is still in flight, and it has already sent its
+    /// `getPlaybackInfo` with the *previous* selection — `start()` captures
+    /// the indices before it suspends — so the only way to honor this one is
+    /// to start that load over carrying it. Before #212 this case fell
+    /// through `rebuildStream`'s `isLoaded` guard, which left the index
+    /// committed to view-model state and never asked for: the menu claimed a
+    /// track the server was never told about, silently and for the rest of
+    /// the session.
+    ///
+    /// Reading `isLoaded` and bumping the generation inside `runLoad` happen
+    /// in one synchronous run of the main actor, so no build can slip in
+    /// between the decision and the supersede it is based on.
+    ///
+    /// The stop-guard is this method's contract with every future branch
+    /// added here (#187 will add an in-place path): a session that has
+    /// stopped applies nothing, because the `start()` arm below would
+    /// otherwise un-stop it — `performStart` clears `hasStopped` — and
+    /// resurrect a player the container already dismissed.
+    private func applySelection() async {
+        guard !hasStopped else { return }
+        if engine.isLoaded {
+            await rebuildStream()
+        } else {
+            await start()
+        }
     }
 
     // MARK: - User-Data Actions
@@ -345,6 +533,7 @@ public final class PlaybackViewModel {
         item = next
         selectedAudioStreamIndex = nil
         selectedSubtitleStreamIndex = nil
+        hasExplicitSubtitleSelection = false
         await start()
     }
 
@@ -372,7 +561,7 @@ public final class PlaybackViewModel {
     /// current session
     private var metadataArtworkTask: Task<Void, Never>?
 
-    private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64) async {
+    private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64, generation: Int) async {
         // The old session's delivery lives until its replacement is chosen,
         // exactly as the interposer did before the delivery seam existed
         delivery?.stop()
@@ -392,6 +581,13 @@ public final class PlaybackViewModel {
             client: client,
         )
         let delivered = await delivery.prepare()
+        // Stopped, not abandoned: an HLS delivery has a loopback server
+        // listening by now, and a superseded build is the one thing that
+        // knows this one was never adopted
+        guard isCurrentLoad(generation) else {
+            delivery.stop()
+            return
+        }
         self.delivery = delivery
         // Delivery may correct the method (the degraded interposer fallback
         // does); the corrected value is what start reports must carry
@@ -417,6 +613,10 @@ public final class PlaybackViewModel {
 
         if resumeTicks > 0 {
             await engine.seekForResume(toSeconds: PlaybackTicks.seconds(fromTicks: resumeTicks))
+            // The resume seek is the last suspension before the session goes
+            // live; past this point a superseded build would be arming a
+            // watchdog and reporting a start for a stream nobody is watching
+            guard isCurrentLoad(generation) else { return }
         }
 
         engine.play()
@@ -442,6 +642,10 @@ public final class PlaybackViewModel {
             Self.logger.error("[report] start FAILED \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks): \(error, privacy: .public)")
         }
 
+        // The build that supersedes this one disarms and re-arms both of
+        // these itself; opening them here would leave a heartbeat loop
+        // running against a session it is about to tear down
+        guard isCurrentLoad(generation) else { return }
         startProgressReporting()
         steadyStateEventsArmed = true
     }
@@ -504,16 +708,28 @@ public final class PlaybackViewModel {
     }
 
     private func rebuildStream() async {
-        guard engine.isLoaded else { return }
+        await runLoad { generation in
+            await self.performRebuild(generation: generation)
+        }
+    }
+
+    /// Rebuild the stream for the current selection, preserving position.
+    ///
+    /// There is no `engine.isLoaded` guard here anymore: `applySelection` is
+    /// what decides a rebuild is the right shape, and it decides that in the
+    /// same synchronous run of the main actor that supersedes the build in
+    /// flight. A guard here would only be re-reading state nothing could have
+    /// changed — and it is exactly the guard that used to swallow selections
+    /// made during the initial load (#212).
+    private func performRebuild(generation: Int) async {
+        guard !hasStopped else { return }
 
         let positionTicks = currentPositionTicks()
 
         // The old session gets no stopped report (the new one sends a fresh
         // start), so explicitly release its server-side transcode rather
         // than leaving an orphaned ffmpeg until the idle timeout
-        if playMethod != .directPlay, let oldSession = playSessionId {
-            await client.stopEncoding(playSessionId: oldSession)
-        }
+        await releaseAdoptedSession()
 
         progressTask?.cancel()
         disarmSessionEvents()
@@ -531,6 +747,10 @@ public final class PlaybackViewModel {
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
                 capabilities: engine.capabilities,
             )
+            guard isCurrentLoad(generation) else {
+                await releaseSupersededSession(session)
+                return
+            }
 
             guard let source = session.defaultMediaSource else {
                 state = .failed("No playable media sources for this item")
@@ -555,8 +775,9 @@ public final class PlaybackViewModel {
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "rebuild")
 
-            await beginPlayback(resolution: resolution, resumeTicks: positionTicks)
+            await beginPlayback(resolution: resolution, resumeTicks: positionTicks, generation: generation)
         } catch {
+            guard isCurrentLoad(generation) else { return }
             state = .failed(error.localizedDescription)
         }
     }

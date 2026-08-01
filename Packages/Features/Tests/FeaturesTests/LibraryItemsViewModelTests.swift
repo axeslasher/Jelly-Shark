@@ -334,7 +334,7 @@ struct LibraryItemsViewModelTests {
 
         // Gate page 2 so the query change lands while it is in flight
         let gate = AsyncGate()
-        client.libraryItemsDelay = { await gate.wait() }
+        client.libraryItemsDelay = { try? await gate.wait() }
         viewModel.loadMoreIfNeeded(currentItem: viewModel.items.last!)
 
         client.libraryItemsDelay = nil
@@ -798,25 +798,5 @@ struct LibraryItemsViewModelTests {
         await viewModel.setFavorite(true, for: viewModel.items[0])
 
         #expect(viewModel.items[0].userData?.isFavorite != true)
-    }
-}
-
-/// A reusable async gate: `wait()` suspends until `open()` is called.
-/// Target-visible: HomeViewModelTests gates in-flight loads with it too.
-actor AsyncGate {
-    private var isOpen = false
-    private var waiters: [CheckedContinuation<Void, Never>] = []
-
-    func wait() async {
-        if isOpen {
-            return
-        }
-        await withCheckedContinuation { waiters.append($0) }
-    }
-
-    func open() {
-        isOpen = true
-        waiters.forEach { $0.resume() }
-        waiters.removeAll()
     }
 }

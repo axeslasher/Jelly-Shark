@@ -71,7 +71,7 @@ struct UserStateOverlayTests {
         await home.load()
 
         let gate = AsyncGate()
-        client.userDataDelay = { await gate.wait() }
+        client.userDataDelay = { try? await gate.wait() }
         let toggle = Task { await home.setPlayed(true, for: movie("m-1")) }
 
         // An unrelated refresh lands while the mark call is held in flight —

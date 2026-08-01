@@ -117,8 +117,12 @@ final class PlaybackLocalServer: @unchecked Sendable {
 
     /// Start listening on an ephemeral loopback port
     /// - Returns: The interposed master playlist URL, or nil if the listener
-    ///   could not start (callers fall back to the original URL)
+    ///   could not start (callers fall back to the original URL) or the
+    ///   calling task was cancelled (callers must unwind, not fall back)
     func start() async -> URL? {
+        // A cancelled build must not bind a port it will never serve from
+        guard !Task.isCancelled else { return nil }
+
         let listener: NWListener
         do {
             let parameters = NWParameters.tcp
@@ -134,26 +138,39 @@ final class PlaybackLocalServer: @unchecked Sendable {
             self?.accept(connection)
         }
 
-        let port: UInt16? = await withCheckedContinuation { continuation in
-            nonisolated(unsafe) var resumed = false
-            listener.stateUpdateHandler = { state in
-                guard !resumed else { return }
-                switch state {
-                case .ready:
-                    resumed = true
-                    continuation.resume(returning: listener.port?.rawValue)
-                case .failed, .cancelled:
-                    resumed = true
-                    continuation.resume(returning: nil)
-                default:
-                    break
+        // The readiness wait honors task cancellation, and must: a stream
+        // build superseded by a newer one (#212) is cancelled-and-awaited,
+        // and an uncancellable park here would chain-block every later build
+        // behind an unbounded network-listener wait. Cancelling the listener
+        // drives its state to `.cancelled`, which resumes through the same
+        // handler as a natural failure — no second resume path.
+        let port: UInt16? = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                nonisolated(unsafe) var resumed = false
+                listener.stateUpdateHandler = { state in
+                    guard !resumed else { return }
+                    switch state {
+                    case .ready:
+                        resumed = true
+                        continuation.resume(returning: listener.port?.rawValue)
+                    case .failed, .cancelled:
+                        resumed = true
+                        continuation.resume(returning: nil)
+                    default:
+                        break
+                    }
                 }
+                listener.start(queue: self.queue)
             }
-            listener.start(queue: self.queue)
+        } onCancel: {
+            listener.cancel()
         }
 
         guard let port else {
-            Self.logger.warning("[server] listener failed to become ready")
+            // A cancelled build's nil is not a failure — don't log it as one
+            if !Task.isCancelled {
+                Self.logger.warning("[server] listener failed to become ready")
+            }
             stop()
             return nil
         }

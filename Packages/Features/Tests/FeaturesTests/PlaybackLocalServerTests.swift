@@ -223,4 +223,21 @@ struct PlaybackLocalServerTests {
         #expect(iframe.statusCode == 404)
         #expect(initSegment.statusCode == 404)
     }
+
+    @Test("start() on an already-cancelled task returns nil without binding a port")
+    func startOnCancelledTaskUnwinds() async {
+        let server = makeServer(info: nil)
+        defer { server.stop() }
+
+        // Self-cancel before start() so the outcome is deterministic — a
+        // cancel racing an in-flight start() would sometimes win a port
+        // first. This is the shape a stream build superseded before its
+        // delivery stood up takes (#212).
+        let url = await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await server.start()
+        }.value
+
+        #expect(url == nil)
+    }
 }

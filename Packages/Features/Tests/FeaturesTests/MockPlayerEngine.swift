@@ -66,8 +66,21 @@ final class MockPlayerEngine: PlayerEngine {
         transportStatus = .paused
     }
 
+    /// Suspension point inside `seekForResume` — the only async engine call,
+    /// and it sits after `engine.load()` and before `engine.play()`: exactly
+    /// the "engine loaded but `start()` unfinished" window that is Shape B
+    /// in #212. Needs a fixture resuming from a nonzero position, since the
+    /// seek is conditional on `resumeTicks > 0`.
+    ///
+    /// Non-throwing on purpose: the protocol's seek doesn't throw, and
+    /// AVPlayer seeks complete rather than unwind — tests park with
+    /// `try? await gate.wait()` and the view model's post-seek supersede
+    /// guard does the discarding, exactly as on device.
+    var seekGate: (() async -> Void)?
+
     func seekForResume(toSeconds seconds: Double) async {
         resumeSeeks.append(seconds)
+        await seekGate?()
     }
 
     func teardown() {

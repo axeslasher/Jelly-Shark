@@ -3,7 +3,11 @@ import Foundation
 import JellyfinKit
 import Testing
 
-@Suite("PlaybackViewModel")
+/// The time limit (the trait's floor) is a tripwire, not a budget: these tests
+/// exercise builds that cancel-and-await each other (#212), and a regression in
+/// any park point's cancellation-awareness would otherwise present as a wedged
+/// runner with no named test. Sixty seconds turns that into a red test.
+@Suite("PlaybackViewModel", .timeLimit(.minutes(1)))
 @MainActor
 struct PlaybackViewModelTests {
     private func makeMovie(resumeTicks: Int64? = nil) -> MediaItem {
@@ -1012,5 +1016,394 @@ struct PlaybackViewModelTests {
         // in-place swap
         #expect(engine.loadRequests.count == 2)
         #expect(engine.teardownCount == 1)
+    }
+
+    // MARK: - Selection During the Initial Load (#212)
+
+    // These tests park a build inside a mock and act while it is genuinely
+    // in flight. The gate is cancellation-aware, so the selection that
+    // supersedes a parked build can be awaited *directly* — the parked
+    // build unwinds through its own cancellation, and no test ever has to
+    // open the gate to avoid a deadlock. A `try await` park models a
+    // request the cancel kills; a `try? await` park models one that
+    // completes despite it.
+
+    @Test("A subtitle selection during the initial load reaches the stream that plays")
+    func subtitleSelectedDuringInitialLoad() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 1 {
+                try await gate.wait()
+            }
+        }
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+        // The window the bug lives in: asked for, not yet loaded
+        #expect(!engine.isLoaded)
+
+        // Awaited directly, gate never opened: the parked build must unwind
+        // through its own cancellation or this test times out — the old
+        // harness's deadlock is now the assertion
+        await viewModel.selectSubtitleStream(index: 4)
+        await start.value
+
+        // Shape A was: the index committed, `rebuildStream` bailed on
+        // `isLoaded`, and the stream that loaded carried the *old* selection
+        // forever with no error anywhere
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].subtitleStreamIndex == 4)
+        // Only the surviving build reaches the engine — the superseded one
+        // unwound before `engine.load`
+        #expect(engine.loadRequests.count == 1)
+        #expect(client.startReports.count == 1)
+    }
+
+    @Test("An audio selection during the initial load reaches the stream that plays")
+    func audioSelectedDuringInitialLoad() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 1 {
+                try await gate.wait()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        await viewModel.selectAudioStream(index: 2)
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedAudioStreamIndex == 2)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].audioStreamIndex == 2)
+        #expect(engine.loadRequests.count == 1)
+    }
+
+    @Test("A superseded build writes no state and releases the session it opened")
+    func supersededBuildWritesNothingAndReleasesItsSession() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        // `try?`: the losing build's request completes *despite* the cancel,
+        // so it reaches its post-info guard holding a live play session —
+        // the one thing that must then release it
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 1 {
+                try? await gate.wait()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        await viewModel.selectAudioStream(index: 2)
+        await start.value
+
+        // Shape B was: two flights racing, the loser resuming last, and the
+        // session left at `.loading` with the watchdog cancelled — an
+        // indefinite spinner, and an unresponsive player (#183) because
+        // PlaybackContainerView dismisses only on `.finished`
+        #expect(viewModel.state == .playing)
+        // The loser never touched the engine on its way out
+        #expect(engine.teardownCount == 0)
+        #expect(engine.playCount == 1)
+        // Its server-side session is released rather than left to the
+        // server's idle timeout
+        #expect(client.stopEncodingCalls == ["session-1"])
+    }
+
+    @Test("A superseded build's error is never published over the load that replaced it")
+    func supersededBuildErrorNeverPublished() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        // The losing build's request fails with a real error — not
+        // cancellation — after it has already lost the race
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 1 {
+                do { try await gate.wait() } catch { throw APIError.networkError("torn down") }
+            }
+        }
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        await viewModel.selectAudioStream(index: 2)
+        await start.value
+
+        // The loser's catch writes nothing: no error screen flashes over a
+        // healthy load
+        #expect(viewModel.state == .playing)
+    }
+
+    @Test("Rapid selections during the initial load leave one surviving build")
+    func rapidSelectionsDuringInitialLoad() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.playbackInfoGate = { ordinal in
+            if ordinal < 4 {
+                try await gate.wait()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        // Three selections stacked on the parked load, each superseding the
+        // last. The waits are on the *requests*, not the committed indices:
+        // a request proves the build got past the pending-cancellation
+        // guard, which keeps the final count deterministic.
+        let first = Task { await viewModel.selectAudioStream(index: 2) }
+        await waitUntil { client.playbackInfoRequests.count == 2 }
+        let second = Task { await viewModel.selectAudioStream(index: 3) }
+        await waitUntil { client.playbackInfoRequests.count == 3 }
+        await viewModel.selectAudioStream(index: 5)
+        await first.value
+        await second.value
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedAudioStreamIndex == 5)
+        // Whatever else ran, the stream that is playing is the last one
+        // asked for, and it is the only one that reached the engine
+        #expect(client.playbackInfoRequests.count == 4)
+        #expect(client.playbackInfoRequests.last?.audioStreamIndex == 5)
+        #expect(engine.loadRequests.count == 1)
+        #expect(client.startReports.count == 1)
+    }
+
+    @Test("A selection during the extras fetch restarts the load carrying it")
+    func selectionDuringExtrasRestartsCarryingIt() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.playbackExtrasGate = { ordinal in
+            if ordinal == 1 {
+                try await gate.wait()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackExtrasRequests.count == 1 }
+        // Past playback info, before the engine load — `applySelection`
+        // must restart, not rebuild
+        #expect(!engine.isLoaded)
+
+        await viewModel.selectAudioStream(index: 2)
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].audioStreamIndex == 2)
+        #expect(engine.loadRequests.count == 1)
+        #expect(engine.teardownCount == 0)
+    }
+
+    @Test("A restart-shaped supersede releases the session its predecessor adopted")
+    func restartSupersedeReleasesAdoptedSession() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.playbackExtrasGate = { ordinal in
+            if ordinal == 1 {
+                try await gate.wait()
+            }
+        }
+        // Non-direct-play, so the adopted session holds a server-side
+        // encode worth releasing
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackExtrasRequests.count == 1 }
+
+        // The parked build got past its post-info guard: it has adopted
+        // "session-1". Its own unwind writes nothing — the successor is
+        // what releases the session it replaces.
+        await viewModel.selectAudioStream(index: 2)
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        #expect(client.stopEncodingCalls == ["session-1"])
+        #expect(client.startReports.count == 1)
+    }
+
+    @Test("A selection during the resume seek rebuilds once")
+    func selectionDuringResumeSeekRebuildsOnce() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        let (viewModel, engine) = makePlayback(
+            client: client,
+            item: makeMovie(resumeTicks: 36_000_000_000),
+        )
+        // Shape B's exact window: the engine is loaded but `start()` has
+        // not finished. The mock's playhead stays nil, so the rebuild's
+        // own resume path does not re-enter this gate.
+        engine.seekGate = { try? await gate.wait() }
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { engine.resumeSeeks.count == 1 }
+        #expect(engine.isLoaded)
+
+        await viewModel.selectAudioStream(index: 2)
+        await start.value
+
+        #expect(viewModel.state == .playing)
+        // `applySelection` found a loaded engine and rebuilt: one teardown,
+        // a second load, and only the rebuild's stream ever played
+        #expect(engine.teardownCount == 1)
+        #expect(engine.loadRequests.count == 2)
+        #expect(engine.playCount == 1)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].audioStreamIndex == 2)
+        #expect(client.startReports.count == 1)
+    }
+
+    @Test("stop() during the initial load leaves the session stopped")
+    func stopDuringInitialLoad() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 1 {
+                try await gate.wait()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        // What `PlaybackContainerView.onDisappear` does to a load still in
+        // flight: stop() cancels the build rather than waiting on it, and
+        // the build must not come back and arm a watchdog behind the
+        // teardown
+        await viewModel.stop()
+        await start.value
+
+        #expect(viewModel.state != .playing)
+        #expect(!engine.isLoaded)
+        #expect(engine.playCount == 0)
+        #expect(client.startReports.isEmpty)
+    }
+
+    @Test("A selection after stop() is refused, not committed")
+    func selectionAfterStopIsRefused() async {
+        let client = MockJellyfinClient()
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        await viewModel.stop()
+
+        await viewModel.selectAudioStream(index: 2)
+
+        // Nothing can honor it, so nothing may remember it either — a
+        // committed index would leak into a later retry()
+        #expect(viewModel.selectedAudioStreamIndex != 2)
+        #expect(client.playbackInfoRequests.count == 1)
+    }
+
+    @Test("A pending build cancelled by stop() never starts")
+    func pendingBuildCancelledByStopNeverStarts() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        // Cancel-immune on purpose: the parked build must stay in flight
+        // while stop() lands, so the selection's build is still *pending*
+        // behind it — the one window where only the spawned task's own
+        // cancellation check can stop the body from running
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 1 {
+                await gate.waitIgnoringCancellation()
+            }
+        }
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        let start = Task { await viewModel.start() }
+        await waitUntil { client.playbackInfoRequests.count == 1 }
+
+        let selection = Task { await viewModel.selectAudioStream(index: 2) }
+        await waitUntil { viewModel.selectedAudioStreamIndex == 2 }
+
+        // The selection's build is pending behind the parked one; stop()
+        // cancels it before its body ever runs
+        await viewModel.stop()
+        await gate.open()
+        await selection.value
+        await start.value
+
+        // Had the pending body run, it would have un-stopped the session
+        // and sent a second request
+        #expect(client.playbackInfoRequests.count == 1)
+        #expect(!engine.isLoaded)
+        #expect(engine.playCount == 0)
+        #expect(client.startReports.isEmpty)
+    }
+
+    @Test("An explicit subtitle off survives a load restarted by a later selection")
+    func explicitSubtitleOffSurvivesRestart() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        // The server nominates a burn-in default, which a fresh start seeds
+        // because only the app can honor it
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 4)
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+
+        // Ungated: this session has to reach `.playing` before there is a
+        // rebuild to park
+        await viewModel.start()
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        client.playbackInfoGate = { ordinal in
+            if ordinal == 2 {
+                try await gate.wait()
+            }
+        }
+
+        // Turn it off, and park the rebuild that follows. A rebuild tears
+        // the engine down first, so a selection landing here restarts the
+        // load rather than rebuilding again — which runs the seeding path a
+        // second time, on a session whose `nil` now means "the viewer said
+        // off".
+        let turnOff = Task { await viewModel.selectSubtitleStream(index: nil) }
+        await waitUntil { client.playbackInfoRequests.count == 2 }
+
+        await viewModel.selectAudioStream(index: 2)
+        await turnOff.value
+
+        #expect(viewModel.state == .playing)
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(client.playbackInfoRequests.last?.subtitleStreamIndex == Int??.some(nil))
+        #expect(client.playbackInfoRequests.last?.audioStreamIndex == 2)
+    }
+
+    @Test("A failed start still reaches .playing through retry()")
+    func failedStartRetryReachesPlaying() async {
+        let client = MockJellyfinClient()
+        client.playbackInfoResult = .failure(APIError.networkError("offline"))
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        guard case .failed = viewModel.state else {
+            Issue.record("Expected .failed, got \(viewModel.state)")
+            return
+        }
+
+        // retry()'s stop(); start() spawns a fresh, never-cancelled build —
+        // the pending-build cancellation guard must not swallow it
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-2",
+                mediaSources: [MediaSource(id: "source-1")],
+            ),
+        )
+        await viewModel.retry()
+
+        #expect(viewModel.state == .playing)
     }
 }

@@ -275,6 +275,23 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Capability declarations received by playback calls, in arrival order
     var receivedCapabilities: [PlaybackCapabilities] = []
 
+    /// Play session ids released with `stopEncoding`, in arrival order
+    var stopEncodingCalls: [String] = []
+
+    /// Suspension point inside `getPlaybackInfo`, awaited after the request
+    /// is recorded and before the stub answers, keyed by the request's
+    /// 1-based ordinal so a test can park any build — including the one
+    /// *superseding* a parked one. This is the only window in which the
+    /// #212 race exists.
+    ///
+    /// Deliberately no `Task.checkCancellation()` after the await: the hook
+    /// decides what a cancelled build's request did. A gate parked with
+    /// `try await` models a request the cancel killed mid-flight; one parked
+    /// with `try? await` models a request that completed despite the cancel,
+    /// which is the only way to exercise the cleanup for a build that lost
+    /// the race but still opened a play session.
+    var playbackInfoGate: (@Sendable (Int) async throws -> Void)?
+
     func getPlaybackInfo(
         itemId: String,
         startTimeTicks: Int64?,
@@ -282,9 +299,17 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         subtitleStreamIndex: Int?,
         capabilities: PlaybackCapabilities,
     ) async throws -> PlaybackSessionInfo {
-        playbackInfoRequests.append((itemId, startTimeTicks, audioStreamIndex, subtitleStreamIndex))
-        receivedCapabilities.append(capabilities)
+        let ordinal = lock.withLock {
+            playbackInfoRequests.append((itemId, startTimeTicks, audioStreamIndex, subtitleStreamIndex))
+            receivedCapabilities.append(capabilities)
+            return playbackInfoRequests.count
+        }
+        try await playbackInfoGate?(ordinal)
         return try playbackInfoResult.get()
+    }
+
+    func stopEncoding(playSessionId: String) async {
+        lock.withLock { stopEncodingCalls.append(playSessionId) }
     }
 
     func resolveStream(
@@ -342,8 +367,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var playbackExtrasRequests: [String] = []
     var playbackExtrasResult: Result<PlaybackExtras, Error> = .success(PlaybackExtras())
 
+    /// Suspension point inside `getPlaybackExtras`, keyed like
+    /// `playbackInfoGate`. This is the window between the playback-info
+    /// response and the engine load: a selection landing here finds
+    /// `engine.isLoaded` still false. A throw is absorbed by the view
+    /// model's `try?` around the extras fetch — safe by construction.
+    var playbackExtrasGate: (@Sendable (Int) async throws -> Void)?
+
     func getPlaybackExtras(itemId: String) async throws -> PlaybackExtras {
-        lock.withLock { playbackExtrasRequests.append(itemId) }
+        let ordinal = lock.withLock {
+            playbackExtrasRequests.append(itemId)
+            return playbackExtrasRequests.count
+        }
+        try await playbackExtrasGate?(ordinal)
         return try playbackExtrasResult.get()
     }
 
