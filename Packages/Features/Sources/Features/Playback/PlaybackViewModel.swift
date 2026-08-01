@@ -92,6 +92,22 @@ public final class PlaybackViewModel {
     /// dropped when a rebuild or autoplay has moved the session on
     private var sessionEpoch = 0
 
+    /// Bumped per stream build. A build whose generation has moved on has
+    /// been superseded and must write no session state — the same shape
+    /// `AVFoundationPlayerEngine` uses for its async completions, one level
+    /// up, where the two entry points that build a stream actually live.
+    private var loadGeneration = 0
+
+    /// Whether the viewer has chosen a subtitle track this session.
+    ///
+    /// The server's burn-in default is seeded only until they do. A
+    /// selection made during the initial load restarts that load carrying
+    /// it, so `selectedSubtitleStreamIndex == nil` can no longer stand in
+    /// for "nobody has chosen yet" — an explicit "off" and a fresh session
+    /// look identical, and the seed would turn subtitles back on under the
+    /// viewer (#212).
+    private var hasExplicitSubtitleSelection = false
+
     /// Whether the current stream has the selected subtitle burned into the
     /// video, in which case no legible rendition exists to toggle
     private var sessionUsesBurnIn = false
@@ -130,6 +146,10 @@ public final class PlaybackViewModel {
 
     /// Load the stream and begin playback (resuming from a saved position if any)
     public func start() async {
+        await performStart(generation: beginLoad())
+    }
+
+    private func performStart(generation: Int) async {
         state = .loading
         hasStopped = false
 
@@ -143,6 +163,10 @@ public final class PlaybackViewModel {
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
                 capabilities: engine.capabilities,
             )
+            guard isCurrentLoad(generation) else {
+                await releaseSupersededSession(session)
+                return
+            }
 
             guard let source = session.defaultMediaSource else {
                 state = .failed("No playable media sources for this item")
@@ -159,10 +183,12 @@ public final class PlaybackViewModel {
             // composite them). A text default is deliberately NOT seeded:
             // AVKit owns text subtitles, and the master playlist's
             // DEFAULT=YES flag plus the viewer's system caption preference
-            // decide auto-on natively. Seeding only on fresh starts keeps an
-            // explicit mid-session "off" alive across rebuilds; autoplay
+            // decide auto-on natively. Seeding only until the viewer chooses
+            // keeps an explicit mid-session "off" alive across rebuilds and
+            // across a load this very selection restarted (#212); autoplay
             // resets the selection so each episode reseeds.
-            if selectedSubtitleStreamIndex == nil,
+            if !hasExplicitSubtitleSelection,
+               selectedSubtitleStreamIndex == nil,
                source.subtitleRequiresBurnIn(at: source.defaultSubtitleStreamIndex)
             {
                 selectedSubtitleStreamIndex = source.defaultSubtitleStreamIndex
@@ -190,6 +216,7 @@ public final class PlaybackViewModel {
             // a failed fetch just means scrubbing stays blind and the
             // chapter panel stays empty, exactly as before.
             let extras = await (try? client.getPlaybackExtras(itemId: item.id)) ?? nil
+            guard isCurrentLoad(generation) else { return }
             trickplayInfo = extras?.trickplay?.info(forMediaSourceId: source.id)
             chapters = extras?.chapters ?? []
             // The launching item is the fallback: shelf items rarely carry
@@ -211,8 +238,12 @@ public final class PlaybackViewModel {
                 userState.ingest(serverItems: [fresh])
             }
 
-            await beginPlayback(resolution: resolution, resumeTicks: resumeTicks)
+            await beginPlayback(resolution: resolution, resumeTicks: resumeTicks, generation: generation)
         } catch {
+            // A superseded build's failure is not the session's failure —
+            // publishing it would throw an error screen over the load that
+            // replaced it
+            guard isCurrentLoad(generation) else { return }
             state = .failed(error.localizedDescription)
         }
     }
@@ -234,6 +265,10 @@ public final class PlaybackViewModel {
     /// Stop playback, report the final position, and tear down. Idempotent.
     public func stop() async {
         guard !hasStopped else { return }
+        // Also disowns any build still in flight: `hasStopped` is half of
+        // `isCurrentLoad`, so a load that has not finished will find the
+        // session gone at its next check and unwind without arming a
+        // watchdog or reaching `.playing` behind this teardown (#212)
         hasStopped = true
 
         let positionTicks = currentPositionTicks()
@@ -282,13 +317,64 @@ public final class PlaybackViewModel {
         client.headshotURL(for: member)
     }
 
+    // MARK: - Load Serialization
+
+    /// Claim the session for a new stream build, superseding any in flight.
+    ///
+    /// `start()` and `rebuildStream()` are the only two async entry points
+    /// that build a stream, and nothing separated them before #212. A track
+    /// selection made during the initial load therefore either bailed at
+    /// `rebuildStream`'s `isLoaded` guard — committing the index and never
+    /// asking the server for it — or ran `disarmSessionEvents()` and
+    /// `engine.teardown()` underneath the in-flight `start()`, leaving two
+    /// `getPlaybackInfo` flights racing to write `state`, `playSessionId` and
+    /// `mediaSource`. When the superseded flight resumed last the session sat
+    /// at `.loading` with the first-frame watchdog cancelled, so nothing timed
+    /// out — and since `PlaybackContainerView` dismisses only on `.finished`,
+    /// that is an unresponsive player rather than an error screen (#183).
+    ///
+    /// What the generation buys is that only the newest build may *write*.
+    /// Two builds can still overlap in flight — the loser is not cancelled,
+    /// it simply finds at its next `isCurrentLoad` check that it no longer
+    /// owns the session and unwinds without touching anything. That is
+    /// deliberately the shape `AVFoundationPlayerEngine` already uses for its
+    /// own async completions, and it needs no task to await: every
+    /// unstructured `Task` in this class is fire-and-forget, and awaiting one
+    /// from `@MainActor` code is a deadlock this file should not invite.
+    private func beginLoad() -> Int {
+        loadGeneration += 1
+        return loadGeneration
+    }
+
+    /// Whether the build holding `generation` still owns session state.
+    ///
+    /// Checked after every suspension point inside a build body: false means
+    /// a newer build has superseded this one, or `stop()` has ended the
+    /// session underneath it, and either way it must write nothing.
+    private func isCurrentLoad(_ generation: Int) -> Bool {
+        loadGeneration == generation && !hasStopped
+    }
+
+    /// Release the server-side session a superseded build opened.
+    ///
+    /// `getPlaybackInfo` allocates a play session — and on a transcode an
+    /// ffmpeg — before this build learned it had lost the race. Nothing will
+    /// ever report it stopped, so without this each selection made during a
+    /// load leaves one behind until the server's idle timeout, exactly the
+    /// orphan `rebuildStream` already avoids for the session it replaces.
+    private func releaseSupersededSession(_ session: PlaybackSessionInfo) async {
+        guard let playSessionId = session.playSessionId else { return }
+        Self.logger.info("[load] superseded build releasing session \(playSessionId, privacy: .public)")
+        await client.stopEncoding(playSessionId: playSessionId)
+    }
+
     // MARK: - Track Selection
 
     /// Switch to a different audio stream (rebuilds the stream, preserving position)
     public func selectAudioStream(index: Int) async {
         guard index != selectedAudioStreamIndex else { return }
         selectedAudioStreamIndex = index
-        await rebuildStream()
+        await applySelection()
     }
 
     /// Switch subtitles to the given stream index, or nil to turn them off.
@@ -308,7 +394,31 @@ public final class PlaybackViewModel {
     public func selectSubtitleStream(index: Int?) async {
         guard index != selectedSubtitleStreamIndex else { return }
         selectedSubtitleStreamIndex = index
-        await rebuildStream()
+        hasExplicitSubtitleSelection = true
+        await applySelection()
+    }
+
+    /// Put the committed selection onto the stream.
+    ///
+    /// A loaded engine means there is a session to rebuild. No loaded engine
+    /// means the initial load is still in flight, and it has already sent its
+    /// `getPlaybackInfo` with the *previous* selection — `start()` captures
+    /// the indices before it suspends — so the only way to honor this one is
+    /// to start that load over carrying it. Before #212 this case fell
+    /// through `rebuildStream`'s `isLoaded` guard, which left the index
+    /// committed to view-model state and never asked for: the menu claimed a
+    /// track the server was never told about, silently and for the rest of
+    /// the session.
+    ///
+    /// Reading `isLoaded` and bumping the generation inside `beginLoad`
+    /// happen in one synchronous run of the main actor, so no build can slip
+    /// in between the decision and the supersede it is based on.
+    private func applySelection() async {
+        if engine.isLoaded {
+            await rebuildStream()
+        } else {
+            await start()
+        }
     }
 
     // MARK: - User-Data Actions
@@ -345,6 +455,7 @@ public final class PlaybackViewModel {
         item = next
         selectedAudioStreamIndex = nil
         selectedSubtitleStreamIndex = nil
+        hasExplicitSubtitleSelection = false
         await start()
     }
 
@@ -372,7 +483,7 @@ public final class PlaybackViewModel {
     /// current session
     private var metadataArtworkTask: Task<Void, Never>?
 
-    private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64) async {
+    private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64, generation: Int) async {
         // The old session's delivery lives until its replacement is chosen,
         // exactly as the interposer did before the delivery seam existed
         delivery?.stop()
@@ -392,6 +503,13 @@ public final class PlaybackViewModel {
             client: client,
         )
         let delivered = await delivery.prepare()
+        // Stopped, not abandoned: an HLS delivery has a loopback server
+        // listening by now, and a superseded build is the one thing that
+        // knows this one was never adopted
+        guard isCurrentLoad(generation) else {
+            delivery.stop()
+            return
+        }
         self.delivery = delivery
         // Delivery may correct the method (the degraded interposer fallback
         // does); the corrected value is what start reports must carry
@@ -417,6 +535,10 @@ public final class PlaybackViewModel {
 
         if resumeTicks > 0 {
             await engine.seekForResume(toSeconds: PlaybackTicks.seconds(fromTicks: resumeTicks))
+            // The resume seek is the last suspension before the session goes
+            // live; past this point a superseded build would be arming a
+            // watchdog and reporting a start for a stream nobody is watching
+            guard isCurrentLoad(generation) else { return }
         }
 
         engine.play()
@@ -442,6 +564,10 @@ public final class PlaybackViewModel {
             Self.logger.error("[report] start FAILED \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks): \(error, privacy: .public)")
         }
 
+        // The build that supersedes this one disarms and re-arms both of
+        // these itself; opening them here would leave a heartbeat loop
+        // running against a session it is about to tear down
+        guard isCurrentLoad(generation) else { return }
         startProgressReporting()
         steadyStateEventsArmed = true
     }
@@ -504,7 +630,19 @@ public final class PlaybackViewModel {
     }
 
     private func rebuildStream() async {
-        guard engine.isLoaded else { return }
+        await performRebuild(generation: beginLoad())
+    }
+
+    /// Rebuild the stream for the current selection, preserving position.
+    ///
+    /// There is no `engine.isLoaded` guard here anymore: `applySelection` is
+    /// what decides a rebuild is the right shape, and it decides that in the
+    /// same synchronous run of the main actor that supersedes the build in
+    /// flight. A guard here would only be re-reading state nothing could have
+    /// changed — and it is exactly the guard that used to swallow selections
+    /// made during the initial load (#212).
+    private func performRebuild(generation: Int) async {
+        guard !hasStopped else { return }
 
         let positionTicks = currentPositionTicks()
 
@@ -531,6 +669,10 @@ public final class PlaybackViewModel {
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
                 capabilities: engine.capabilities,
             )
+            guard isCurrentLoad(generation) else {
+                await releaseSupersededSession(session)
+                return
+            }
 
             guard let source = session.defaultMediaSource else {
                 state = .failed("No playable media sources for this item")
@@ -555,8 +697,9 @@ public final class PlaybackViewModel {
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "rebuild")
 
-            await beginPlayback(resolution: resolution, resumeTicks: positionTicks)
+            await beginPlayback(resolution: resolution, resumeTicks: positionTicks, generation: generation)
         } catch {
+            guard isCurrentLoad(generation) else { return }
             state = .failed(error.localizedDescription)
         }
     }
