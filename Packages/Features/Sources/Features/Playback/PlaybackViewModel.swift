@@ -159,6 +159,16 @@ public final class PlaybackViewModel {
         state = .loading
         hasStopped = false
 
+        // A restart-shaped supersede — a selection during load routed here by
+        // `applySelection` because no engine session exists yet — replaces a
+        // build that may have already adopted its play session (it got past
+        // its post-info guard before losing the race). The successor owns the
+        // session slot, so it releases what its predecessor adopted. Every
+        // other arrival (fresh start, retry, autoplay) finds this already
+        // released and nil: stop() and the rebuild path funnel through the
+        // same helper.
+        await releaseAdoptedSession()
+
         let resumeTicks = item.userData?.playbackPositionTicks ?? 0
 
         do {
@@ -323,10 +333,35 @@ public final class PlaybackViewModel {
     /// ever report it stopped, so without this each selection made during a
     /// load leaves one behind until the server's idle timeout, exactly the
     /// orphan `rebuildStream` already avoids for the session it replaces.
+    ///
+    /// This covers the *unadopted* case only — the build lost the race at
+    /// the post-info guard, before writing `playSessionId`. A build
+    /// superseded later has adopted its session, and its releaser is
+    /// whatever replaced it: `releaseAdoptedSession()`.
     private func releaseSupersededSession(_ session: PlaybackSessionInfo) async {
         guard let playSessionId = session.playSessionId else { return }
         Self.logger.info("[load] superseded build releasing session \(playSessionId, privacy: .public)")
         await client.stopEncoding(playSessionId: playSessionId)
+    }
+
+    /// Release the adopted session's server-side encode, exactly once.
+    ///
+    /// The invariant: `playSessionId` non-nil means the session it names has
+    /// not been released. Every path that ends or replaces an adopted
+    /// session funnels through here — `stop()`, a rebuild's teardown of its
+    /// predecessor, and a restart-shaped supersede (#212's `applySelection`
+    /// while no engine session exists) — so the loser of a race releases
+    /// nothing itself and stays write-free, the successor releases what it
+    /// replaces, and nothing is released twice or left for the server's
+    /// idle timeout. The nil-out happens before the suspension, so two
+    /// callers cannot both see the same id. Direct play opens no encode, so
+    /// there is nothing to stop.
+    private func releaseAdoptedSession() async {
+        guard let playSessionId else { return }
+        self.playSessionId = nil
+        if playMethod != .directPlay {
+            await client.stopEncoding(playSessionId: playSessionId)
+        }
     }
 
     // MARK: - Lifecycle
@@ -392,9 +427,7 @@ public final class PlaybackViewModel {
 
         // Belt to the stopped report's suspenders: release the transcode
         // explicitly (Swiftfin does the same on teardown)
-        if playMethod != .directPlay, let playSessionId {
-            await client.stopEncoding(playSessionId: playSessionId)
-        }
+        await releaseAdoptedSession()
     }
 
     /// Headshot URL for the player's cast tab (the view has no client access)
@@ -696,9 +729,7 @@ public final class PlaybackViewModel {
         // The old session gets no stopped report (the new one sends a fresh
         // start), so explicitly release its server-side transcode rather
         // than leaving an orphaned ffmpeg until the idle timeout
-        if playMethod != .directPlay, let oldSession = playSessionId {
-            await client.stopEncoding(playSessionId: oldSession)
-        }
+        await releaseAdoptedSession()
 
         progressTask?.cancel()
         disarmSessionEvents()
