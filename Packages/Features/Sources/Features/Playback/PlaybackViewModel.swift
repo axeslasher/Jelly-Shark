@@ -97,6 +97,12 @@ public final class PlaybackViewModel {
     /// report reaches the server.
     private var steadyStateEventsArmed = false
 
+    /// Where the current build told the engine to resume, kept for a rebuild
+    /// that finds no playhead to read — a selection landing during the resume
+    /// seek supersedes the build before the engine has a position, and
+    /// restarting the item from the beginning is the wrong answer.
+    private var sessionResumeTicks: Int64 = 0
+
     /// Bumped per `engine.load`; async completions capture it and are
     /// dropped when a rebuild or autoplay has moved the session on
     private var sessionEpoch = 0
@@ -286,7 +292,7 @@ public final class PlaybackViewModel {
     /// `getPlaybackInfo` flights racing to write `state`, `playSessionId` and
     /// `mediaSource`. When the superseded flight resumed last the session sat
     /// at `.loading` with the first-frame watchdog cancelled, so nothing timed
-    /// out — and since `PlaybackContainerView` dismisses only on `.finished`,
+    /// out — and since a state-driven dismissal happens only on `.finished`,
     /// that is an unresponsive player rather than an error screen (#183).
     ///
     /// The superseded build is cancelled *and awaited* before this one begins,
@@ -642,6 +648,12 @@ public final class PlaybackViewModel {
     private var metadataArtworkTask: Task<Void, Never>?
 
     private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64, generation: Int) async {
+        // Where this session is anchored, for a rebuild that finds no
+        // playhead to read. Recorded per build rather than taken from the
+        // launching item, so it follows autoplay to the next episode and
+        // survives successive rebuilds.
+        sessionResumeTicks = resumeTicks
+
         // The old session's delivery lives until its replacement is chosen,
         // exactly as the interposer did before the delivery seam existed
         delivery?.stop()
@@ -804,14 +816,17 @@ public final class PlaybackViewModel {
     private func performRebuild(generation: Int) async {
         guard !hasStopped else { return }
 
-        // Where the viewer actually is — except before the first frame, when
-        // the playhead still reads zero. A rebuild committed during startup,
-        // or a retry after a delivery that never delivered, must resume where
-        // this session launched rather than restart the item.
-        let livePosition = currentPositionTicks()
-        let positionTicks = livePosition > 0
-            ? livePosition
-            : item.userData?.playbackPositionTicks ?? 0
+        // Where the viewer actually is. `currentPositionTicks()` reads zero
+        // for two very different things — a playhead genuinely at the start
+        // of the item, and no playhead at all (a selection landing during the
+        // resume seek, before the engine has one) — and only the second
+        // should fall back to this session's anchor. A viewer sitting at 0:00
+        // who switches a track must not be thrown forward, so ask
+        // `currentTimeSeconds` directly rather than reading the collapsed
+        // zero as "not started".
+        let positionTicks = engine.currentTimeSeconds == nil
+            ? sessionResumeTicks
+            : currentPositionTicks()
 
         // The old session gets no stopped report (the new one sends a fresh
         // start), so explicitly release its server-side transcode rather
@@ -874,8 +889,9 @@ public final class PlaybackViewModel {
         }
     }
 
-    /// Reset every per-session event gate and cancel the watchdog. Runs on
-    /// stop and rebuild, before the engine tears the session down.
+    /// Reset every per-session event gate and cancel the watchdog. Runs
+    /// immediately before the engine leaves the session behind — a full
+    /// teardown on stop, a suspend on rebuild.
     private func disarmSessionEvents() {
         firstFrameWatchdog?.cancel()
         firstFrameWatchdog = nil

@@ -179,7 +179,8 @@ final class AVFoundationPlayerEngine: PlayerEngine {
 
     /// Stale-callback fence. Every async completion and observer callback
     /// captures the generation of the `load` that armed it and is dropped
-    /// when a newer `load`/`teardown` has moved the session on — one owner
+    /// when a newer `load`, a `teardown`, or a `suspendForRebuild` has moved
+    /// the session on — one owner
     /// for the guards the view model used to spell as
     /// `player?.currentItem === playerItem` (#85).
     @ObservationIgnored private var generation = 0

@@ -139,12 +139,12 @@ protocol PlayerEngine: AnyObject {
     /// Pause and silence the current session but *hold* the player, for a
     /// stream rebuild.
     ///
-    /// Everything `teardown` does except dropping the player: the instance
-    /// stays assigned so the hosting view keeps rendering its last frame
-    /// while the replacement stream builds. On visionOS that is not
-    /// cosmetic — unmounting the player view while AVKit's fullscreen window
-    /// is up leaves the app's own window hidden with nothing to restore it
-    /// (#183).
+    /// Removes every observer and invalidates in-flight callbacks, as
+    /// `teardown` does, but keeps the player (and the metadata `load` was
+    /// given) so the hosting view goes on rendering its last frame while the
+    /// replacement stream builds. On visionOS that is not cosmetic —
+    /// unmounting the player view while AVKit's fullscreen window is up
+    /// leaves the app's own window hidden with nothing to restore it (#183).
     ///
     /// `load` re-arms from scratch (it removes observers and bumps its own
     /// generation), so this exists only to stop the outgoing session's events

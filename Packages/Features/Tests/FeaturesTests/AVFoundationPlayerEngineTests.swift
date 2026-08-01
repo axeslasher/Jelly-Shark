@@ -108,11 +108,12 @@ struct AVFoundationPlayerEngineTests {
         engine.teardown()
     }
 
-    @Test("A second load swaps the player instance")
-    func secondLoadSwapsPlayer() throws {
+    @Test("A second load keeps the player and replaces the item inside it")
+    func secondLoadReplacesItemInPlace() throws {
         let engine = AVFoundationPlayerEngine()
         engine.load(url: streamURL, metadata: makeMetadata(), loadsLegibleOptions: false)
         let first = try #require(engine.player)
+        let firstItem = try #require(first.currentItem)
 
         engine.load(
             url: URL(string: "https://example.com/Videos/movie-1/master.m3u8")!,
@@ -120,6 +121,26 @@ struct AVFoundationPlayerEngineTests {
             loadsLegibleOptions: true,
         )
 
+        // The instance is what AVKit holds. Handing a mounted
+        // `AVPlayerViewController` a different `AVPlayer` costs its video
+        // entity the player component on visionOS, so a rebuild swaps the
+        // item and leaves the player alone (#183). This test asserted the
+        // opposite until that was measured on device.
+        #expect(engine.player === first)
+        #expect(first.currentItem !== firstItem)
+        engine.teardown()
+    }
+
+    @Test("A load after teardown builds a fresh player")
+    func loadAfterTeardownBuildsFreshPlayer() throws {
+        let engine = AVFoundationPlayerEngine()
+        engine.load(url: streamURL, metadata: makeMetadata(), loadsLegibleOptions: false)
+        let first = try #require(engine.player)
+
+        engine.teardown()
+        engine.load(url: streamURL, metadata: makeMetadata(), loadsLegibleOptions: false)
+
+        // Nothing survives a teardown, so there is no instance to keep
         #expect(engine.player !== first)
         engine.teardown()
     }
