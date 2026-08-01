@@ -437,14 +437,16 @@ public final class PlaybackViewModel {
 
     // MARK: - Track Selection
 
-    /// Switch to a different audio stream (rebuilds the stream, preserving position)
+    /// Switch to a different audio stream. On a direct-played source the
+    /// track flips in place on the player (#187); every other shape rebuilds
+    /// the stream, preserving position.
     public func selectAudioStream(index: Int) async {
         // Post-stop nothing can honor a selection, so refuse the commit too:
         // an index committed here would silently leak into a later retry()
         guard !hasStopped else { return }
         guard index != selectedAudioStreamIndex else { return }
         selectedAudioStreamIndex = index
-        await applySelection()
+        await applySelection(.audio)
     }
 
     /// Switch subtitles to the given stream index, or nil to turn them off.
@@ -466,10 +468,26 @@ public final class PlaybackViewModel {
         guard index != selectedSubtitleStreamIndex else { return }
         selectedSubtitleStreamIndex = index
         hasExplicitSubtitleSelection = true
-        await applySelection()
+        await applySelection(.subtitle)
+    }
+
+    /// Which track type a selection changed. The router below treats them
+    /// differently — only audio has an in-place arm.
+    private enum TrackSelection {
+        case audio
+        case subtitle
     }
 
     /// Put the committed selection onto the stream.
+    ///
+    /// The in-place arm (#187): an audio switch on a direct-played source
+    /// flips the embedded track on the player — the same flip AVKit's
+    /// native picker performs — so the session keeps direct play instead of
+    /// dropping to a server remux for the rest of it.
+    /// `switchAudibleInPlace` steers confidently or not at all; when it
+    /// declines, the selection falls through to the rebuild, which always
+    /// honors it. Subtitles never take this arm: post-#90 the app's menu
+    /// carries only burn-in tracks, and burn-in is a stream-shape change.
     ///
     /// A loaded engine means there is a session to rebuild. No loaded engine
     /// means the initial load is still in flight, and it has already sent its
@@ -483,20 +501,61 @@ public final class PlaybackViewModel {
     ///
     /// Reading `isLoaded` and bumping the generation inside `runLoad` happen
     /// in one synchronous run of the main actor, so no build can slip in
-    /// between the decision and the supersede it is based on.
+    /// between the decision and the supersede it is based on. The in-place
+    /// arm suspends only after the engine call, so nothing can supersede
+    /// the switch between deciding it and making it either.
     ///
-    /// The stop-guard is this method's contract with every future branch
-    /// added here (#187 will add an in-place path): a session that has
-    /// stopped applies nothing, because the `start()` arm below would
-    /// otherwise un-stop it — `performStart` clears `hasStopped` — and
-    /// resurrect a player the container already dismissed.
-    private func applySelection() async {
+    /// The stop-guard is this method's contract with every branch: a
+    /// session that has stopped applies nothing, because the `start()` arm
+    /// below would otherwise un-stop it — `performStart` clears
+    /// `hasStopped` — and resurrect a player the container already
+    /// dismissed.
+    private func applySelection(_ change: TrackSelection) async {
         guard !hasStopped else { return }
+
+        if change == .audio, switchAudibleInPlace() {
+            // One heartbeat so the server's session view follows the
+            // switch, exactly as the reconcile pass does for the native
+            // picker's own flips
+            await reportProgress()
+            return
+        }
+
         if engine.isLoaded {
             await rebuildStream()
         } else {
             await start()
         }
+    }
+
+    /// Flip the committed audio index on the engine without a rebuild, when
+    /// that can be done confidently. Direct play only: the file streams
+    /// as-is, so every embedded track is present and selectable in place.
+    /// An HLS session's audio is muxed server-side — a different track is a
+    /// different stream there, which is what the rebuild is for.
+    ///
+    /// Returns false — and the caller rebuilds instead — when the engine
+    /// isn't loaded, the audible group has nothing to switch (a lone option
+    /// is a muxed rendition), or no unambiguous stream→option mapping
+    /// exists. The reconcile pass observes the selection's echo and lands
+    /// on `.noChange` because the forward matcher is the reverse matcher
+    /// inverted (`AudioOptionMatcher.position`).
+    private func switchAudibleInPlace() -> Bool {
+        guard playMethod == .directPlay, engine.isLoaded,
+              engine.audibleOptions.count > 1,
+              let index = selectedAudioStreamIndex,
+              let source = mediaSource,
+              let target = source.audioStreams.first(where: { $0.index == index }),
+              let position = AudioOptionMatcher.position(
+                  forTargetStream: target,
+                  streams: source.audioStreams,
+                  options: engine.audibleOptions,
+              )
+        else { return false }
+
+        engine.selectAudible(position: position)
+        Self.logger.info("[audio] in-place switch → index \(index) (option position \(position))")
+        return true
     }
 
     // MARK: - User-Data Actions

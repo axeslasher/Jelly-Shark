@@ -1018,6 +1018,149 @@ struct PlaybackViewModelTests {
         #expect(engine.teardownCount == 1)
     }
 
+    // MARK: - In-Place Audio Switching (#187)
+
+    /// The #187 shape: a direct-playable file carrying several embedded
+    /// audio variants of one language — only the ordinal tells them apart
+    private static let multiAudioStreams = [
+        MediaStreamInfo(index: 1, type: .audio, displayTitle: "Mono - English - AAC", language: "eng", codec: "aac"),
+        MediaStreamInfo(index: 2, type: .audio, displayTitle: "Stereo - English - AAC", language: "eng", codec: "aac"),
+        MediaStreamInfo(index: 3, type: .audio, displayTitle: "Surround 5.1 - English - AC3", language: "eng", codec: "ac3"),
+    ]
+
+    /// What AVFoundation surfaces for the same file's audible group: same
+    /// order, names that don't equal Jellyfin's titles
+    private static let multiAudioOptions = [
+        AudibleOption(position: 0, displayName: "Mono - English", languageTag: "en"),
+        AudibleOption(position: 1, displayName: "Stereo - English", languageTag: "en"),
+        AudibleOption(position: 2, displayName: "Surround 5.1 - English", languageTag: "en"),
+    ]
+
+    private func stubMultiAudioSource(on client: MockJellyfinClient, directPlay: Bool = true) {
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-1",
+                mediaSources: [
+                    MediaSource(
+                        id: "source-1",
+                        container: "mov",
+                        supportsDirectPlay: directPlay,
+                        supportsDirectStream: true,
+                        supportsTranscoding: true,
+                        defaultAudioStreamIndex: 1,
+                        audioStreams: Self.multiAudioStreams,
+                    ),
+                ],
+            ),
+        )
+    }
+
+    @Test("A direct-play audio switch flips the track in place — no rebuild")
+    func directPlayAudioSwitchesInPlace() async {
+        let client = MockJellyfinClient()
+        stubMultiAudioSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(client.startReports[0].playMethod == .directPlay)
+        engine.audibleOptions = Self.multiAudioOptions
+
+        await viewModel.selectAudioStream(index: 3)
+
+        // The switch happened on the player, the way the native picker's
+        // does — same session, same stream, no interruption
+        #expect(engine.audibleSelections == [2])
+        #expect(viewModel.selectedAudioStreamIndex == 3)
+        #expect(viewModel.state == .playing)
+        #expect(engine.loadRequests.count == 1)
+        #expect(engine.teardownCount == 0)
+        #expect(client.playbackInfoRequests.count == 1)
+        #expect(client.streamResolutions.count == 1)
+        // One heartbeat so the server's session view follows the switch —
+        // and what it reports is still a direct-play session
+        #expect(client.progressReports.last?.audioStreamIndex == 3)
+        #expect(client.progressReports.last?.playMethod == .directPlay)
+    }
+
+    @Test("An HLS session's audio switch still rebuilds — the server muxes the track")
+    func hlsAudioSwitchStillRebuilds() async {
+        let client = MockJellyfinClient()
+        stubMultiAudioSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        #expect(client.startReports[0].playMethod == .directStream)
+        // Even if a remux surfaced a switchable-looking group, the track
+        // that plays is the one the server muxed — only a rebuild changes it
+        engine.audibleOptions = Self.multiAudioOptions
+
+        await viewModel.selectAudioStream(index: 3)
+
+        #expect(engine.audibleSelections.isEmpty)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests[1].audioStreamIndex == 3)
+        #expect(client.streamResolutions.count == 2)
+        #expect(engine.loadRequests.count == 2)
+    }
+
+    @Test("Direct play falls back to a rebuild when no option matches confidently")
+    func directPlayAudioFallsBackWithoutConfidentMatch() async {
+        let client = MockJellyfinClient()
+        stubMultiAudioSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        // AVFoundation surfaced fewer options than Jellyfin lists streams:
+        // no matcher tier can place index 3, and guessing would flip the
+        // wrong track silently. The rebuild always honors the selection.
+        engine.audibleOptions = [
+            AudibleOption(position: 0, displayName: "Stereo", languageTag: "en"),
+            AudibleOption(position: 1, displayName: "Surround", languageTag: "en"),
+        ]
+
+        await viewModel.selectAudioStream(index: 3)
+
+        #expect(engine.audibleSelections.isEmpty)
+        #expect(client.streamResolutions.count == 2)
+        #expect(viewModel.selectedAudioStreamIndex == 3)
+    }
+
+    @Test("A lone audible option leaves nothing to switch in place")
+    func loneAudibleOptionRebuilds() async {
+        let client = MockJellyfinClient()
+        stubMultiAudioSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        // The muxed-rendition shape: one anonymous option (#187's evidence
+        // logs it as "Unknown"), which is a fact about the stream, not a
+        // switchable group
+        engine.audibleOptions = [AudibleOption(position: 0, displayName: "Unknown", languageTag: nil)]
+
+        await viewModel.selectAudioStream(index: 2)
+
+        #expect(engine.audibleSelections.isEmpty)
+        #expect(client.streamResolutions.count == 2)
+    }
+
+    @Test("The in-place switch's reconcile echo lands on noChange")
+    func inPlaceSwitchEchoReconcilesToNoChange() {
+        // The property the in-place path leans on: the selection it makes
+        // posts a mediaSelectionDidChange like any other, and the reconcile
+        // pass must map it back to the index already committed — anything
+        // else would rewrite the selection out from under the viewer.
+        // Guaranteed because the forward matcher is the reverse matcher
+        // inverted; pinned here with the exact fixture the routing tests use.
+        let selected = Self.multiAudioOptions[2]
+        let decision = PlaybackViewModel.audioReconcileDecision(
+            selectedOption: selected,
+            currentIndex: 3,
+            streams: Self.multiAudioStreams,
+            options: Self.multiAudioOptions,
+        )
+        #expect(decision == .noChange)
+    }
+
     // MARK: - Selection During the Initial Load (#212)
 
     // These tests park a build inside a mock and act while it is genuinely

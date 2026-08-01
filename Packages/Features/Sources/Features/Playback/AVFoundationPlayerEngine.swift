@@ -338,6 +338,18 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             .flatMap { group.options.firstIndex(of: $0) }
     }
 
+    func selectAudible(position: Int) {
+        guard let item = player?.currentItem, let group = audibleGroup else {
+            Self.logger.warning("[audio] selectAudible(\(position)) with no loaded audible group")
+            return
+        }
+        guard group.options.indices.contains(position) else {
+            Self.logger.warning("[audio] selectAudible(\(position)) out of range (\(group.options.count) options)")
+            return
+        }
+        item.select(group.options[position], in: group)
+    }
+
     /// Load the media-selection groups of the freshly created player item,
     /// then announce readiness so the session layer can arm reconciliation.
     private func loadMediaSelectionOptions(
