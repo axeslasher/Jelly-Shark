@@ -135,6 +135,28 @@ struct StreamURLBuilderTests {
         #expect(query["hevc-rangetype"] == capabilities.hevcRangeTypesParameter)
     }
 
+    @Test("The audio ceiling leaves lossy multichannel tracks copyable")
+    func audioCeilingPermitsPassthrough() {
+        // AudioBitrate is a ceiling the server copies under and re-encodes over.
+        // Dropping it below these rates silently re-encodes tracks that could
+        // have passed through — which is how Dolby Atmos was being destroyed
+        // before #222. These are the rates that actually have to fit.
+        let dolbyAtmosEAC3 = 768_000
+        let dolbyDigitalAC3 = 640_000
+        #expect(StreamURLBuilder.audioBitrate >= dolbyAtmosEAC3)
+        #expect(StreamURLBuilder.audioBitrate >= dolbyDigitalAC3)
+    }
+
+    @Test("The video budget stays positive once audio is reserved")
+    func videoBudgetSurvivesAudioReservation() {
+        // The split is max(total - audio, audio), so raising the audio ceiling
+        // eats into video. Guard that the shipped budget still leaves video the
+        // overwhelming majority.
+        let total = PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate
+        let video = max(total - StreamURLBuilder.audioBitrate, StreamURLBuilder.audioBitrate)
+        #expect(video > total / 2)
+    }
+
     @Test("HDR range support is declared only on the HEVC passthrough path")
     func rangeTypeFollowsPassthrough() throws {
         func rangeType(

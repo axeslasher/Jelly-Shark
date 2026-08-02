@@ -55,10 +55,26 @@ public struct StreamResolution: Sendable, Equatable {
 /// server remuxes when the codecs are compatible and transcodes otherwise,
 /// and the playlist spans the full duration so AVPlayer can seek anywhere.
 enum StreamURLBuilder {
-    /// Audio bitrate ceiling carved out of the streaming budget when the
-    /// server re-encodes; the rest goes to video. Matches the split the
-    /// server itself computes in PlaybackInfo's TranscodingUrl.
-    static let audioBitrate = 192_000
+    /// Audio bitrate ceiling carved out of the streaming budget; the rest goes
+    /// to video.
+    ///
+    /// This is a *ceiling*, not a target — the server stream-copies any audio
+    /// that fits under it and only re-encodes what doesn't. So it must sit above
+    /// the real-world lossy multichannel rates, or tracks that could have passed
+    /// through untouched get needlessly re-encoded.
+    ///
+    /// It used to be 192 kbps (the split the server computes for its own
+    /// re-encodes), which silently destroyed **every Dolby Atmos E-AC-3 track**:
+    /// those run 384–768 kbps, so the ceiling forced a re-encode to AAC and the
+    /// object metadata with it. Measured 2026-08-02 against Jellyfin 10.11.11 —
+    /// with the identical codec list and only this value raised, the server
+    /// switched from `AudioCodec=aac` to `AudioCodec=copy` and delivered `ec-3`
+    /// (#222, docs/PLAYBACK_MATRIX.md).
+    ///
+    /// 1.5 Mbps covers E-AC-3 and AC-3 comfortably. It cannot let an
+    /// undecodable track through: `AudioCodec` below already bounds copying to
+    /// `aac,ac3,eac3`, so TrueHD and DTS still re-encode regardless of headroom.
+    static let audioBitrate = 1_536_000
 
     /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
     ///
