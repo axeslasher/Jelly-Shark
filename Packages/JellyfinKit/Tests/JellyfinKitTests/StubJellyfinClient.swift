@@ -204,6 +204,10 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         fatalError("unstubbed resolveStream")
     }
 
+    func staticStreamURL(for _: MediaSource, parameters _: StreamParameters) throws -> URL {
+        fatalError("unstubbed staticStreamURL")
+    }
+
     func reportPlaybackStart(
         itemId _: String,
         mediaSourceId _: String?,

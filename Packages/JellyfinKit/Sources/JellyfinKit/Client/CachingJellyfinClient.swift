@@ -262,6 +262,10 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         )
     }
 
+    public func staticStreamURL(for source: MediaSource, parameters: StreamParameters) throws -> URL {
+        try inner.staticStreamURL(for: source, parameters: parameters)
+    }
+
     public func reportPlaybackStart(
         itemId: String,
         mediaSourceId: String?,
