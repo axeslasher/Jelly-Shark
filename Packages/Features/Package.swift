@@ -32,6 +32,11 @@ let package = Package(
         .testTarget(
             name: "FeaturesTests",
             dependencies: ["Features"],
+            resources: [
+                // Real ffmpeg-muxed MKV (same file as JellyfinKit's copy)
+                // backing the progressive server's HTTP protocol tests.
+                .copy("Fixtures"),
+            ],
         ),
     ],
 )

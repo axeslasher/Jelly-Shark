@@ -142,6 +142,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
                   let path = requestLine.split(separator: " ").dropFirst().first,
                   path == "/stream.mp4"
             else {
+                Self.logger.warning("[progressive] refused request: \(lines.first.map(String.init) ?? "<empty>", privacy: .public)")
                 self.send(status: "404 Not Found", on: connection)
                 return
             }
@@ -150,6 +151,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
                 .first { $0.lowercased().hasPrefix("range:") }
                 .map { $0.dropFirst("range:".count).trimmingCharacters(in: .whitespaces) }
 
+            Self.logger.debug("[progressive] GET range=\(rangeHeader ?? "none", privacy: .public)")
             Task { await self.serve(rangeHeader: rangeHeader, on: connection) }
         }
     }
@@ -164,6 +166,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
 
         if let rangeHeader {
             guard let requested = Self.parseByteRange(rangeHeader, totalSize: total) else {
+                Self.logger.warning("[progressive] unsatisfiable range \(rangeHeader, privacy: .public)")
                 headers["Content-Range"] = "bytes */\(total)"
                 send(status: "416 Range Not Satisfiable", headers: headers, on: connection)
                 return
@@ -176,6 +179,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
         }
 
         let regions = layout.regions(for: range)
+        Self.logger.debug("[progressive] \(status, privacy: .public) \(range.lowerBound)-\(range.upperBound) (\(regions.count) regions)")
         sendHead(status: status, headers: headers, contentLength: Int(range.upperBound - range.lowerBound), on: connection)
         await streamRegions(regions, on: connection)
     }
@@ -221,7 +225,10 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
                 }
             }
             let sent = await sendChunk(chunk, on: connection)
-            guard sent else { return } // peer went away (a scrub abort)
+            guard sent else {
+                Self.logger.debug("[progressive] peer closed mid-response")
+                return // a scrub abort; nothing is wrong
+            }
         }
         connection.cancel()
     }
@@ -231,6 +238,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
             return cached
         }
         let slot = layout.slots[index]
+        let started = ContinuousClock.now
         let span = try await demuxer.readClusters(from: slot.clusterOffset, to: slot.clusterEndBound)
         let fragment = try remuxer.makeFragment(
             sequence: index + 1,
@@ -238,6 +246,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
             nextClusterTimeTicks: slot.nextTimeTicks,
         )
         let padded = try layout.padded(fragment: fragment, slot: index)
+        Self.logger.debug("[progressive] fragment \(index) produced: \(padded.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
         queue.sync {
             fragmentCache.append((index, padded))
             if fragmentCache.count > Self.fragmentCacheLimit {
