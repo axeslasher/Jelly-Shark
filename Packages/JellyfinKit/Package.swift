@@ -47,6 +47,12 @@ let package = Package(
         .testTarget(
             name: "JellyfinKitTests",
             dependencies: ["JellyfinKit"],
+            resources: [
+                // Real ffmpeg-muxed MKV for the demuxer's end-to-end test;
+                // the shapes ffmpeg does not produce (lacing, BlockGroups,
+                // SeekHead variants) are hand-built in MatroskaFixture.swift.
+                .copy("Fixtures"),
+            ],
         ),
     ],
 )
