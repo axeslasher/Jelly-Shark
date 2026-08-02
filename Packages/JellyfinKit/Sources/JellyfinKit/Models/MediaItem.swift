@@ -92,6 +92,12 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// that has them.
     public let parentArtwork: ParentArtwork?
 
+    /// Every playable version of this item, in server order (populated on
+    /// fetches whose `fields` include MediaSources — detail pages and the
+    /// Home hero's sources). Nil means the fetch didn't ask, NOT that the
+    /// item is single-version.
+    public let mediaSources: [MediaSource]?
+
     public init(
         id: String,
         name: String,
@@ -123,6 +129,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable, Codable {
         parentIndexNumber: Int? = nil,
         people: [CastMember]? = nil,
         parentArtwork: ParentArtwork? = nil,
+        mediaSources: [MediaSource]? = nil,
     ) {
         self.id = id
         self.name = name
@@ -154,6 +161,7 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable, Codable {
         self.parentIndexNumber = parentIndexNumber
         self.people = people
         self.parentArtwork = parentArtwork
+        self.mediaSources = mediaSources
     }
 }
 
@@ -322,6 +330,60 @@ public struct MediaTechnicalInfo: Sendable, Equatable, Hashable, Codable {
         self.videoCodec = videoCodec
         self.bitrate = bitrate
         self.frameRate = frameRate
+    }
+}
+
+// MARK: - Stream Label Helpers
+
+///
+/// Shared by the SDK adapter (badging an item's default source) and
+/// `MediaSource.versionLabel` (labeling each version in the picker), so the
+/// thresholds and codec spellings exist exactly once.
+public extension MediaTechnicalInfo {
+    /// Resolution class from pixel dimensions. Thresholds are deliberately
+    /// loose (mirroring jellyfin-web) so cropped/anamorphic encodes still
+    /// classify as their marketing resolution — a 3840×1600 scope film is "4K".
+    static func resolutionLabel(width: Int?, height: Int?) -> String? {
+        let width = width ?? 0
+        let height = height ?? 0
+        guard width > 0 || height > 0 else { return nil }
+
+        switch (width, height) {
+        case (7600..., _), (_, 4300...):
+            return "8K"
+        case (3800..., _), (_, 2100...):
+            return "4K"
+        case (1800..., _), (_, 1000...):
+            return "1080p"
+        case (1200..., _), (_, 700...):
+            return "720p"
+        default:
+            return "SD"
+        }
+    }
+
+    /// Marketing spelling for a video codec identifier ("hevc" → "HEVC",
+    /// "h264" → "H.264"); unknown codecs just uppercase.
+    static func videoCodecLabel(from codec: String) -> String? {
+        let codec = codec.lowercased()
+        guard !codec.isEmpty else { return nil }
+        switch codec {
+        case "hevc", "h265": return "HEVC"
+        case "h264", "avc": return "H.264"
+        case "av1": return "AV1"
+        case "vp9": return "VP9"
+        case "mpeg2video": return "MPEG-2"
+        case "vc1": return "VC-1"
+        default: return codec.uppercased()
+        }
+    }
+
+    /// First container name, uppercased — servers report comma lists like
+    /// "mov,mp4,m4a" for some formats.
+    static func containerLabel(from container: String) -> String? {
+        let first = container.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) }
+        guard let first, !first.isEmpty else { return nil }
+        return first.uppercased()
     }
 }
 

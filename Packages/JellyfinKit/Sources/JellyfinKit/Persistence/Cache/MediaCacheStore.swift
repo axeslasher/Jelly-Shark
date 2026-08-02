@@ -118,7 +118,8 @@ public actor MediaCacheStore {
     /// Bump when anything about the on-disk format changes: a `@Model`
     /// shape, a cached Codable model, or a key format. The old store is
     /// wiped and refilled from the server — never migrated.
-    static let schemaVersion = 1
+    /// v2: `MediaItem` gained `mediaSources` (#147).
+    static let schemaVersion = 2
 
     static let versionDefaultsKey = "mediaCacheSchemaVersion"
 

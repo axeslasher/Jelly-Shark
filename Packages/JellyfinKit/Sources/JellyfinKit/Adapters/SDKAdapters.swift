@@ -68,6 +68,7 @@ extension MediaItem {
             parentIndexNumber: dto.parentIndexNumber,
             people: dto.people.map(CastMember.members(from:)),
             parentArtwork: ParentArtwork(from: dto),
+            mediaSources: dto.mediaSources.map { $0.compactMap { MediaSource(from: $0) } },
         )
     }
 }
@@ -256,50 +257,20 @@ extension MediaTechnicalInfo {
         return name?.isEmpty == false ? name : nil
     }
 
-    /// First container name, uppercased — servers report comma lists like
-    /// "mov,mp4,m4a" for some formats.
-    private static func containerLabel(from container: String) -> String? {
-        let first = container.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) }
-        guard let first, !first.isEmpty else { return nil }
-        return first.uppercased()
-    }
-
+    /// Threshold and spelling logic lives on `MediaTechnicalInfo` itself
+    /// (shared with `MediaSource.versionLabel` — `containerLabel(from:)` is
+    /// called directly); these wrappers just adapt the SDK stream shape.
     private static func videoCodecLabel(for stream: JellyfinAPI.MediaStream) -> String? {
-        guard let codec = stream.codec?.lowercased(), !codec.isEmpty else { return nil }
-        switch codec {
-        case "hevc", "h265": return "HEVC"
-        case "h264", "avc": return "H.264"
-        case "av1": return "AV1"
-        case "vp9": return "VP9"
-        case "mpeg2video": return "MPEG-2"
-        case "vc1": return "VC-1"
-        default: return codec.uppercased()
-        }
+        stream.codec.flatMap(MediaTechnicalInfo.videoCodecLabel(from:))
     }
 
-    /// Resolution class from pixel dimensions. Thresholds are deliberately
-    /// loose (mirroring jellyfin-web) so cropped/anamorphic encodes still
-    /// classify as their marketing resolution — a 3840×1600 scope film is "4K".
     private static func resolutionLabel(for stream: JellyfinAPI.MediaStream) -> String? {
-        let width = stream.width ?? 0
-        let height = stream.height ?? 0
-        guard width > 0 || height > 0 else { return nil }
-
-        switch (width, height) {
-        case (7600..., _), (_, 4300...):
-            return "8K"
-        case (3800..., _), (_, 2100...):
-            return "4K"
-        case (1800..., _), (_, 1000...):
-            return "1080p"
-        case (1200..., _), (_, 700...):
-            return "720p"
-        default:
-            return "SD"
-        }
+        MediaTechnicalInfo.resolutionLabel(width: stream.width, height: stream.height)
     }
 
-    private static func videoRangeLabel(for stream: JellyfinAPI.MediaStream) -> String? {
+    /// Internal (not private): the playback adapter stamps the same label
+    /// onto each source's video stream for `MediaSource.versionLabel`.
+    static func videoRangeLabel(for stream: JellyfinAPI.MediaStream) -> String? {
         switch stream.videoRangeType {
         case .dovi, .doviWithHDR10, .doviWithHLG, .doviWithSDR,
              .doviWithEL, .doviWithHDR10Plus, .doviWithELHDR10Plus:
