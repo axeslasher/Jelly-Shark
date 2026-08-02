@@ -142,10 +142,15 @@ public enum TrickplayHLSPlaylist {
     /// Clamp values are measured, not guessed (#146, against a Synology
     /// DS1522+ software-transcoding a ~60 Mbps 4K HDR10 HEVC source):
     /// 1080p/15M sustains 1.14x realtime unthrottled, 720p/8M sustains
-    /// 1.45x. 1080p is the default for quality; if field behavior shows
-    /// mid-play starvation on weaker servers, 720p is the retreat, or
-    /// rewrite both injected variants into an H.264 ladder and let ABR
-    /// downshift.
+    /// 1.45x. Field behavior then showed the starvation this bench warned
+    /// about — 0.88x measured on a 25 Mbps source, a frozen player (#172) —
+    /// and the 720p retreat was REJECTED: it permanently degrades every
+    /// SDR-display session to accommodate one server's CPU, and the clamp
+    /// only treats the symptom of being on the wrong delivery path. The fix
+    /// is `ProgressiveRemuxDelivery` (#172), which takes HDR MKV sessions
+    /// off HLS entirely on SDR displays. This clamp still governs whatever
+    /// stays on HLS here: non-MKV HDR sources, and progressive-delivery
+    /// fallbacks.
     static let sdrFallbackMaxWidth = 1920
     static let sdrFallbackVideoBitrate = 15_000_000
 
