@@ -110,3 +110,108 @@ struct PlayMethodAdapterTests {
         #expect(JellyfinAPI.PlayMethod(from: .transcode) == .transcode)
     }
 }
+
+@Suite("Version Facts")
+struct VersionFactsTests {
+    @Test("The adapter keeps the version facts and the video stream")
+    func versionFactsMapping() throws {
+        let info = JellyfinAPI.MediaSourceInfo(
+            bitrate: 24_500_000,
+            id: "source-1",
+            mediaStreams: [
+                JellyfinAPI.MediaStream(
+                    bitDepth: 10,
+                    bitRate: 22_000_000,
+                    codec: "hevc",
+                    height: 2160,
+                    index: 0,
+                    type: .video,
+                    videoRangeType: .hdr10,
+                    width: 3840,
+                ),
+                JellyfinAPI.MediaStream(codec: "aac", index: 1, type: .audio),
+            ],
+            name: "4K HDR",
+            size: 42_000_000_000,
+        )
+
+        let source = try #require(MediaSource(from: info))
+
+        #expect(source.name == "4K HDR")
+        #expect(source.sizeBytes == 42_000_000_000)
+        #expect(source.bitrate == 24_500_000)
+
+        let video = try #require(source.videoStream)
+        #expect(video.width == 3840)
+        #expect(video.height == 2160)
+        #expect(video.bitRate == 22_000_000)
+        #expect(video.bitDepth == 10)
+        #expect(video.videoRange == "HDR10")
+        // The video stream is carried, not re-partitioned into the track lists.
+        #expect(source.audioStreams.count == 1)
+        #expect(source.subtitleStreams.isEmpty)
+    }
+
+    @Test("MediaItem carries its source list only when the fetch asked for it")
+    func mediaItemSourceList() {
+        let with = MediaItem(from: JellyfinAPI.BaseItemDto(
+            id: "item-1",
+            mediaSources: [
+                JellyfinAPI.MediaSourceInfo(id: "source-1"),
+                JellyfinAPI.MediaSourceInfo(id: "source-2"),
+            ],
+        ))
+        #expect(with.mediaSources?.map(\.id) == ["source-1", "source-2"])
+
+        let without = MediaItem(from: JellyfinAPI.BaseItemDto(id: "item-1"))
+        #expect(without.mediaSources == nil)
+    }
+}
+
+@Suite("Version Labeling")
+struct VersionLabelingTests {
+    @Test("Name leads; the technical facts become the detail line")
+    func nameLed() {
+        let source = MediaSource(
+            id: "source-1",
+            name: "Director's Cut",
+            container: "mkv",
+            videoCodec: "hevc",
+            sizeBytes: 42_000_000_000,
+            videoStream: MediaStreamInfo(
+                index: 0,
+                type: .video,
+                width: 3840,
+                height: 2160,
+                videoRange: "Dolby Vision",
+            ),
+        )
+
+        #expect(source.versionLabel == "Director's Cut")
+        let size = Int64(42_000_000_000).formatted(.byteCount(style: .file))
+        #expect(source.versionDetail == "4K · Dolby Vision · HEVC · MKV · \(size)")
+    }
+
+    @Test("Without a name the technical summary is the label, with no detail")
+    func technicalFallback() {
+        let source = MediaSource(
+            id: "source-1",
+            container: "mp4",
+            videoCodec: "h264",
+            videoStream: MediaStreamInfo(index: 0, type: .video, width: 1920, height: 1080),
+        )
+
+        #expect(source.versionLabel == "1080p · H.264 · MP4")
+        #expect(source.versionDetail == nil)
+    }
+
+    @Test("A blank name falls through, and the label is never empty")
+    func fallbacks() {
+        let containerOnly = MediaSource(id: "source-1", name: "  ", container: "mkv")
+        #expect(containerOnly.versionLabel == "MKV")
+        #expect(containerOnly.versionDetail == nil)
+
+        let bare = MediaSource(id: "source-1")
+        #expect(bare.versionLabel == "Version")
+    }
+}

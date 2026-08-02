@@ -50,7 +50,7 @@ struct EpisodesSection: View {
     /// menu is the only path from here to an episode's own detail page.
     let menu: (MediaItem) -> ShelfMenuHandlers
     /// Clicking an episode card plays it immediately via the owner's player
-    @Binding var playbackItem: MediaItem?
+    @Binding var playbackItem: PlaybackRequest?
 
     /// Which season pill owns focus; focusing one anchors the shelf to that
     /// season's first episode.

@@ -106,10 +106,11 @@ public struct MediaDetailView: View {
     /// Pending region snap (see `onChange(of: focusedRegion)`).
     @State private var regionSnapTask: Task<Void, Never>?
 
-    /// The item currently being played, driving the player cover. Set by the
-    /// hero Play button (resolved next-up episode / the movie itself) and by
-    /// episode cards, which play immediately on click.
-    @State private var playbackItem: MediaItem?
+    /// The playback request currently presented, driving the player cover:
+    /// the item plus any version choice. Set by the hero Play button
+    /// (resolved next-up episode / the movie itself) and by episode cards,
+    /// which play immediately on click.
+    @State private var playbackItem: PlaybackRequest?
 
     @State private var isPresentingOverview = false
 
@@ -398,7 +399,12 @@ public struct MediaDetailView: View {
             }
             .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
                 if let client = session.client {
-                    PlaybackContainerView(client: client, item: target, userState: session.userState)
+                    PlaybackContainerView(
+                        client: client,
+                        item: target.item,
+                        userState: session.userState,
+                        mediaSourceId: target.mediaSourceId,
+                    )
                 }
             }
             .fullScreenCover(isPresented: $isPresentingOverview) {
@@ -655,4 +661,5 @@ private struct ScrollSnapMetrics: Equatable {
     }
     .withThemeEnvironment()
     .environment(AppSession())
+    .environment(PlaybackPreferences())
 }

@@ -45,7 +45,7 @@ struct EpisodeShelfStack: View, Equatable {
     /// season accent and first-focus steering from it.
     @FocusState.Binding var focusedEpisodeId: String?
     /// Clicking a card plays it immediately via the host's player
-    @Binding var playbackItem: MediaItem?
+    @Binding var playbackItem: PlaybackRequest?
 
     var body: some View {
         LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
@@ -56,7 +56,7 @@ struct EpisodeShelfStack: View, Equatable {
                         width: cardWidth,
                         menu: menu(episode),
                     ) {
-                        playbackItem = episode
+                        playbackItem = PlaybackRequest(item: episode)
                     }
                     .focused($focusedEpisodeId, equals: episode.id)
                 } else {

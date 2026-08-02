@@ -23,9 +23,13 @@ public struct PlaybackSessionInfo: Sendable, Equatable {
 }
 
 /// A playable source for a media item (file/version with its streams)
-public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
+public struct MediaSource: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Unique identifier for this media source
     public let id: String
+
+    /// Jellyfin's own version name (e.g., "1080p", "Director's Cut") —
+    /// the label other clients lead with in their version pickers
+    public let name: String?
 
     /// Container format (e.g., "mkv", "mp4")
     public let container: String?
@@ -52,11 +56,21 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
     /// Runtime in ticks (1 tick = 100 nanoseconds)
     public let runTimeTicks: Int64?
 
+    /// File size in bytes
+    public let sizeBytes: Int64?
+
+    /// Overall bitrate in bits per second
+    public let bitrate: Int?
+
     /// Index of the default audio stream
     public let defaultAudioStreamIndex: Int?
 
     /// Index of the default subtitle stream
     public let defaultSubtitleStreamIndex: Int?
+
+    /// The primary video stream, carrying the dimensions and dynamic-range
+    /// facts a version label is made of
+    public let videoStream: MediaStreamInfo?
 
     /// Audio streams available in this source
     public let audioStreams: [MediaStreamInfo]
@@ -66,6 +80,7 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
 
     public init(
         id: String,
+        name: String? = nil,
         container: String? = nil,
         videoCodec: String? = nil,
         supportsDirectPlay: Bool = false,
@@ -74,12 +89,16 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
         transcodingURL: String? = nil,
         eTag: String? = nil,
         runTimeTicks: Int64? = nil,
+        sizeBytes: Int64? = nil,
+        bitrate: Int? = nil,
         defaultAudioStreamIndex: Int? = nil,
         defaultSubtitleStreamIndex: Int? = nil,
+        videoStream: MediaStreamInfo? = nil,
         audioStreams: [MediaStreamInfo] = [],
         subtitleStreams: [MediaStreamInfo] = [],
     ) {
         self.id = id
+        self.name = name
         self.container = container
         self.videoCodec = videoCodec
         self.supportsDirectPlay = supportsDirectPlay
@@ -88,8 +107,11 @@ public struct MediaSource: Identifiable, Sendable, Equatable, Hashable {
         self.transcodingURL = transcodingURL
         self.eTag = eTag
         self.runTimeTicks = runTimeTicks
+        self.sizeBytes = sizeBytes
+        self.bitrate = bitrate
         self.defaultAudioStreamIndex = defaultAudioStreamIndex
         self.defaultSubtitleStreamIndex = defaultSubtitleStreamIndex
+        self.videoStream = videoStream
         self.audioStreams = audioStreams
         self.subtitleStreams = subtitleStreams
     }
@@ -157,10 +179,57 @@ public extension MediaSource {
     }
 }
 
+// MARK: - Version Labeling
+
+public extension MediaSource {
+    /// Primary line for a version picker entry: Jellyfin's own version name
+    /// when the server has one, else the technical summary, else the raw
+    /// container so the entry is never blank.
+    var versionLabel: String {
+        if let name, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return name
+        }
+        return versionTechnicalSummary
+            ?? container.flatMap(MediaTechnicalInfo.containerLabel(from:))
+            ?? "Version"
+    }
+
+    /// Technical second line ("4K · Dolby Vision · HEVC · MKV · 48.2 GB");
+    /// nil when the primary line is already the technical summary, so a
+    /// two-line rendering never repeats itself.
+    var versionDetail: String? {
+        guard name?.trimmingCharacters(in: .whitespaces).isEmpty == false else { return nil }
+        return versionTechnicalSummary
+    }
+
+    private var versionTechnicalSummary: String? {
+        var parts: [String] = []
+        if let resolution = MediaTechnicalInfo.resolutionLabel(
+            width: videoStream?.width,
+            height: videoStream?.height,
+        ) {
+            parts.append(resolution)
+        }
+        if let range = videoStream?.videoRange {
+            parts.append(range)
+        }
+        if let codec = videoCodec.flatMap(MediaTechnicalInfo.videoCodecLabel(from:)) {
+            parts.append(codec)
+        }
+        if let container = container.flatMap(MediaTechnicalInfo.containerLabel(from:)) {
+            parts.append(container)
+        }
+        if let sizeBytes {
+            parts.append(sizeBytes.formatted(.byteCount(style: .file)))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+}
+
 /// A single stream (audio, subtitle, video) within a media source
-public struct MediaStreamInfo: Sendable, Equatable, Hashable {
+public struct MediaStreamInfo: Sendable, Equatable, Hashable, Codable {
     /// The kind of stream
-    public enum StreamType: String, Sendable {
+    public enum StreamType: String, Sendable, Codable {
         case audio
         case subtitle
         case video
@@ -194,6 +263,22 @@ public struct MediaStreamInfo: Sendable, Equatable, Hashable {
     /// Server-relative delivery URL for external streams
     public let deliveryURL: String?
 
+    /// Frame width in pixels (video streams)
+    public let width: Int?
+
+    /// Frame height in pixels (video streams)
+    public let height: Int?
+
+    /// Stream bitrate in bits per second
+    public let bitRate: Int?
+
+    /// Color depth in bits (video streams)
+    public let bitDepth: Int?
+
+    /// Display-ready dynamic-range label ("Dolby Vision", "HDR10+", "HDR10",
+    /// "HLG", "HDR"); nil for SDR — absence is the default, not a badge
+    public let videoRange: String?
+
     public init(
         index: Int,
         type: StreamType,
@@ -204,6 +289,11 @@ public struct MediaStreamInfo: Sendable, Equatable, Hashable {
         isExternal: Bool = false,
         isTextSubtitleStream: Bool = false,
         deliveryURL: String? = nil,
+        width: Int? = nil,
+        height: Int? = nil,
+        bitRate: Int? = nil,
+        bitDepth: Int? = nil,
+        videoRange: String? = nil,
     ) {
         self.index = index
         self.type = type
@@ -214,6 +304,11 @@ public struct MediaStreamInfo: Sendable, Equatable, Hashable {
         self.isExternal = isExternal
         self.isTextSubtitleStream = isTextSubtitleStream
         self.deliveryURL = deliveryURL
+        self.width = width
+        self.height = height
+        self.bitRate = bitRate
+        self.bitDepth = bitDepth
+        self.videoRange = videoRange
     }
 }
 

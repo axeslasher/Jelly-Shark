@@ -27,20 +27,24 @@ extension MediaSource {
         guard let id = info.id else { return nil }
 
         let streams = info.mediaStreams?.map { MediaStreamInfo(from: $0) } ?? []
-        let videoCodec = info.mediaStreams?.first { $0.type == .video }?.codec
+        let videoStream = streams.first { $0.type == .video }
 
         self.init(
             id: id,
+            name: info.name,
             container: info.container,
-            videoCodec: videoCodec,
+            videoCodec: videoStream?.codec,
             supportsDirectPlay: info.isSupportsDirectPlay ?? false,
             supportsDirectStream: info.isSupportsDirectStream ?? false,
             supportsTranscoding: info.isSupportsTranscoding ?? false,
             transcodingURL: info.transcodingURL,
             eTag: info.eTag,
             runTimeTicks: info.runTimeTicks.map(Int64.init),
+            sizeBytes: info.size.map(Int64.init),
+            bitrate: info.bitrate,
             defaultAudioStreamIndex: info.defaultAudioStreamIndex,
             defaultSubtitleStreamIndex: info.defaultSubtitleStreamIndex,
+            videoStream: videoStream,
             audioStreams: streams.filter { $0.type == .audio },
             subtitleStreams: streams.filter { $0.type == .subtitle },
         )
@@ -78,6 +82,11 @@ extension MediaStreamInfo {
             isExternal: stream.isExternal ?? false,
             isTextSubtitleStream: stream.isTextSubtitleStream ?? false,
             deliveryURL: stream.deliveryURL,
+            width: stream.width,
+            height: stream.height,
+            bitRate: stream.bitRate,
+            bitDepth: stream.bitDepth,
+            videoRange: MediaTechnicalInfo.videoRangeLabel(for: stream),
         )
     }
 }

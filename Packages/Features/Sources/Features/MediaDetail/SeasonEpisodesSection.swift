@@ -29,7 +29,7 @@ struct SeasonEpisodesSection: View {
     /// menu is the only path from here to a sibling's own detail page.
     let menu: (MediaItem) -> ShelfMenuHandlers
     /// Clicking an episode card plays it immediately via the owner's player
-    @Binding var playbackItem: MediaItem?
+    @Binding var playbackItem: PlaybackRequest?
 
     /// Which episode card owns focus; written once on region entry to steer
     /// first focus onto the parked episode.

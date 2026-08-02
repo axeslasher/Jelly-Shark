@@ -232,6 +232,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     public func getPlaybackInfo(
         itemId: String,
+        mediaSourceId: String?,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
@@ -239,6 +240,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     ) async throws -> PlaybackSessionInfo {
         try await inner.getPlaybackInfo(
             itemId: itemId,
+            mediaSourceId: mediaSourceId,
             startTimeTicks: startTimeTicks,
             audioStreamIndex: audioStreamIndex,
             subtitleStreamIndex: subtitleStreamIndex,

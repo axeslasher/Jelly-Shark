@@ -74,6 +74,13 @@ public final class PlaybackViewModel {
     /// and resolve semantics identical when the container constructs the
     /// model without one (previews, tests) — one code path, not two.
     private let userState: UserStateStore
+
+    /// The version the launch surface pinned this session to (#147). Used in
+    /// place of the server's default source on every build, and cleared when
+    /// autoplay advances — a version choice belongs to one item and must not
+    /// leak into the next episode.
+    private var preferredMediaSourceId: String?
+
     private var playSessionId: String?
     private var playMethod: PlayMethod = .transcode
     private var progressTask: Task<Void, Never>?
@@ -144,18 +151,22 @@ public final class PlaybackViewModel {
     ///   - item: The item to play
     ///   - engine: The rendering/transport engine to drive
     ///   - progressInterval: How often to report progress (injectable for tests)
+    ///   - mediaSourceId: The version the launch surface chose; nil plays the
+    ///     server default
     init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
         engine: any PlayerEngine,
         progressInterval: Duration = .seconds(10),
         userState: UserStateStore? = nil,
+        mediaSourceId: String? = nil,
     ) {
         self.client = client
         self.item = item
         self.engine = engine
         self.progressInterval = progressInterval
         self.userState = userState ?? UserStateStore()
+        preferredMediaSourceId = mediaSourceId
         engine.onEvent = { [weak self] event in
             self?.handleEngineEvent(event)
         }
@@ -189,6 +200,7 @@ public final class PlaybackViewModel {
         do {
             let session = try await client.getPlaybackInfo(
                 itemId: item.id,
+                mediaSourceId: preferredMediaSourceId,
                 startTimeTicks: resumeTicks > 0 ? resumeTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
@@ -199,7 +211,7 @@ public final class PlaybackViewModel {
                 return
             }
 
-            guard let source = session.defaultMediaSource else {
+            guard let source = chosenMediaSource(in: session) else {
                 state = .failed("No playable media sources for this item")
                 return
             }
@@ -330,6 +342,16 @@ public final class PlaybackViewModel {
         if loadGeneration == generation {
             loadTask = nil
         }
+    }
+
+    /// The source this session should play: the pinned version when the
+    /// response carries it, else the server default. The request already pins
+    /// `mediaSourceId`, so a well-behaved server returns only the chosen
+    /// source and the lookup is belt-and-suspenders — but a server that
+    /// ignores the pin must not silently play a different version than the
+    /// menu claimed.
+    private func chosenMediaSource(in session: PlaybackSessionInfo) -> MediaSource? {
+        session.mediaSources.first { $0.id == preferredMediaSourceId } ?? session.defaultMediaSource
     }
 
     /// Whether the build holding `generation` still owns session state.
@@ -620,6 +642,7 @@ public final class PlaybackViewModel {
         selectedAudioStreamIndex = nil
         selectedSubtitleStreamIndex = nil
         hasExplicitSubtitleSelection = false
+        preferredMediaSourceId = nil
         await start()
     }
 
@@ -849,6 +872,7 @@ public final class PlaybackViewModel {
         do {
             let session = try await client.getPlaybackInfo(
                 itemId: item.id,
+                mediaSourceId: preferredMediaSourceId,
                 startTimeTicks: positionTicks > 0 ? positionTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
@@ -859,7 +883,7 @@ public final class PlaybackViewModel {
                 return
             }
 
-            guard let source = session.defaultMediaSource else {
+            guard let source = chosenMediaSource(in: session) else {
                 state = .failed("No playable media sources for this item")
                 return
             }
