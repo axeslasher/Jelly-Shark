@@ -26,6 +26,7 @@ struct PlaybackViewModelTests {
         client: MockJellyfinClient,
         item: MediaItem,
         progressInterval: Duration = .seconds(10),
+        mediaSourceId: String? = nil,
     ) -> (viewModel: PlaybackViewModel, engine: MockPlayerEngine) {
         let engine = MockPlayerEngine()
         let viewModel = PlaybackViewModel(
@@ -33,6 +34,7 @@ struct PlaybackViewModelTests {
             item: item,
             engine: engine,
             progressInterval: progressInterval,
+            mediaSourceId: mediaSourceId,
         )
         return (viewModel, engine)
     }
@@ -182,6 +184,46 @@ struct PlaybackViewModelTests {
         #expect(client.stopReports.count == 1)
         #expect(client.stopReports[0].itemId == "ep-1")
         #expect(client.startReports.count == 2)
+    }
+
+    @Test("A pinned version is requested, played, and resolved")
+    func pinnedVersionPlays() async {
+        let client = MockJellyfinClient()
+        client.playbackInfoResult = .success(PlaybackSessionInfo(
+            playSessionId: "s",
+            mediaSources: [MediaSource(id: "source-1"), MediaSource(id: "source-2")],
+        ))
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie(), mediaSourceId: "source-2")
+
+        await viewModel.start()
+
+        #expect(viewModel.state == .playing)
+        #expect(client.playbackInfoMediaSourceIds == ["source-2"])
+        #expect(viewModel.mediaSource?.id == "source-2")
+        // The chosen id reaches the stream URL builder's parameters too.
+        #expect(client.streamResolutions.last?.1.mediaSourceId == "source-2")
+    }
+
+    @Test("Autoplay does not carry the previous item's version choice")
+    func autoplayDropsVersionChoice() async {
+        let client = MockJellyfinClient()
+        client.playbackInfoResult = .success(PlaybackSessionInfo(
+            playSessionId: "s",
+            mediaSources: [MediaSource(id: "source-1"), MediaSource(id: "source-2")],
+        ))
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+
+        let (viewModel, _) = makePlayback(client: client, item: episode, mediaSourceId: "source-2")
+        await viewModel.start()
+        #expect(viewModel.mediaSource?.id == "source-2")
+
+        await viewModel.handlePlaybackEnded()
+        await viewModel.playNextEpisodeNow()
+
+        #expect(viewModel.item.id == "ep-2")
+        #expect(client.playbackInfoMediaSourceIds == ["source-2", nil])
+        #expect(viewModel.mediaSource?.id == "source-1")
     }
 
     @Test("Movies finish without consulting next episode")

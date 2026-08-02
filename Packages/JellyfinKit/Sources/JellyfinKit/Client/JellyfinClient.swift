@@ -183,6 +183,9 @@ public protocol JellyfinClientProtocol: Sendable {
     /// Fetch playback information for an item (media sources and play session)
     /// - Parameters:
     ///   - itemId: The item ID
+    ///   - mediaSourceId: Pin the session to one of the item's media sources
+    ///     (a version the viewer picked); nil lets the server lead with its
+    ///     default ordering
     ///   - startTimeTicks: Intended start position in ticks
     ///   - audioStreamIndex: Preferred audio stream index
     ///   - subtitleStreamIndex: Preferred subtitle stream index
@@ -192,6 +195,7 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Playback session info with available media sources
     func getPlaybackInfo(
         itemId: String,
+        mediaSourceId: String?,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
@@ -979,7 +983,9 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.userID = userId
             parameters.parentID = libraryId
             parameters.limit = limit
-            parameters.fields = [.overview, .genres, .dateCreated]
+            // `.mediaSources` so the Home hero (curated from /Latest) can
+            // offer its version picker without a per-item fetch (#147)
+            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
 
             let response = try await sdkClient.send(
                 Paths.getLatestMedia(parameters: parameters),
@@ -997,6 +1003,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     public func getPlaybackInfo(
         itemId: String,
+        mediaSourceId: String?,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
@@ -1019,6 +1026,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 // (observed: ~2.5 Mbps cutoff). Apple TV is a wired/strong-
                 // wifi LAN device; the engine declares a generous ceiling.
                 maxStreamingBitrate: capabilities.maxStreamingBitrate,
+                mediaSourceID: mediaSourceId,
                 startTimeTicks: startTimeTicks.map(Int.init),
                 subtitleStreamIndex: subtitleStreamIndex,
                 userID: userId,

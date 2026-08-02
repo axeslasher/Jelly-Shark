@@ -18,8 +18,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     var accessToken: String?
 
-    // Recorded calls
+    /// Recorded calls
     var playbackInfoRequests: [(itemId: String, startTimeTicks: Int64?, audioStreamIndex: Int?, subtitleStreamIndex: Int?)] = []
+
+    /// The `mediaSourceId` pin of each `getPlaybackInfo` call, in order
+    /// (parallel to `playbackInfoRequests`)
+    var playbackInfoMediaSourceIds: [String?] = []
     var streamResolutions: [(sourceId: String, parameters: StreamParameters, playMethod: PlayMethod)] = []
     var startReports: [(itemId: String, positionTicks: Int64, playMethod: PlayMethod)] = []
     var progressReports: [(itemId: String, positionTicks: Int64, isPaused: Bool, playMethod: PlayMethod, audioStreamIndex: Int?, subtitleStreamIndex: Int?)] = []
@@ -294,6 +298,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getPlaybackInfo(
         itemId: String,
+        mediaSourceId: String?,
         startTimeTicks: Int64?,
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
@@ -301,6 +306,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     ) async throws -> PlaybackSessionInfo {
         let ordinal = lock.withLock {
             playbackInfoRequests.append((itemId, startTimeTicks, audioStreamIndex, subtitleStreamIndex))
+            playbackInfoMediaSourceIds.append(mediaSourceId)
             receivedCapabilities.append(capabilities)
             return playbackInfoRequests.count
         }

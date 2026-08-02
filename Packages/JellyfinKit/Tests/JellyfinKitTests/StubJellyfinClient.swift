@@ -186,6 +186,7 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func getPlaybackInfo(
         itemId _: String,
+        mediaSourceId _: String?,
         startTimeTicks _: Int64?,
         audioStreamIndex _: Int?,
         subtitleStreamIndex _: Int?,
