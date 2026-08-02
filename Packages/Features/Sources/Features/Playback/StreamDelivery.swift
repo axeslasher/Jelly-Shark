@@ -2,6 +2,9 @@ import AVFoundation
 import Foundation
 import JellyfinKit
 import OSLog
+#if os(tvOS)
+    import UIKit
+#endif
 
 /// The stream the delivery layer settled on: what the engine should load,
 /// and the play method that is actually true of it. Delivery may correct
@@ -52,21 +55,20 @@ enum StreamDeliverySelector {
     /// Whether the ATTACHED DISPLAY can take HDR — which is what the
     /// `-12927` variant gate follows, so it is what this gate must follow.
     ///
-    /// `availableHDRModes` is the display-anchored signal ("each value
-    /// indicates that an appropriate HDR display is available", and it posts
-    /// a change notification on display connect/disconnect).
-    /// `eligibleForHDRPlayback` reads as device capability — "whether the
-    /// current device can present content to an HDR display" — and an Apple
-    /// TV 4K can, whatever panel it is driving; the 2026-08-02 device run
-    /// (every HDR MKV session routed to the HLS tone-map on a 1080p SDR
-    /// panel) is consistent with it staying true there. visionOS keeps the
-    /// eligibility property: its display is HDR, and `availableHDRModes` is
-    /// a tvOS/iOS API.
+    /// Neither AVPlayer class property tracks it. Measured 2026-08-02 on the
+    /// Apple TV 4K driving the 1080p SDR panel — the same rig where #146
+    /// captured the variant gate refusing HDR variants — BOTH claim HDR:
+    /// `eligibleForHDRPlayback=true` (device capability by its own doc
+    /// wording) and `availableHDRModes=[.hdr10]` (despite "an appropriate
+    /// HDR display is available"). The screen's EDR headroom is the signal
+    /// that describes what the panel can actually render: 1.0 means SDR is
+    /// the ceiling. visionOS keeps the eligibility property — its display is
+    /// HDR and the UIScreen API is unavailable there.
     static var displaySupportsHDR: Bool {
         #if os(visionOS)
             AVPlayer.eligibleForHDRPlayback
         #else
-            !AVPlayer.availableHDRModes.isEmpty
+            UIScreen.main.potentialEDRHeadroom > 1.0
         #endif
     }
 
@@ -85,11 +87,11 @@ enum StreamDeliverySelector {
         // Both HDR signals are logged so a device run can arbitrate them.
         let source = context.mediaSource
         #if os(visionOS)
-            let hdrModes = "n/a"
+            let displaySignals = "n/a"
         #else
-            let hdrModes = String(AVPlayer.availableHDRModes.rawValue)
+            let displaySignals = "hdrModes=\(AVPlayer.availableHDRModes.rawValue) edrPotential=\(UIScreen.main.potentialEDRHeadroom) edrCurrent=\(UIScreen.main.currentEDRHeadroom) gamut=\(UIScreen.main.traitCollection.displayGamut.rawValue)"
         #endif
-        logger.info("[delivery] \(progressive ? "progressive" : "HLS interposer", privacy: .public) — displayHDR=\(displaySupportsHDR) hdrModes=\(hdrModes, privacy: .public) eligibleForHDR=\(AVPlayer.eligibleForHDRPlayback) container=\(source?.container ?? "nil", privacy: .public) range=\(source?.videoStream?.videoRange ?? "nil", privacy: .public) codec=\(source?.videoCodec ?? "nil", privacy: .public)")
+        logger.info("[delivery] \(progressive ? "progressive" : "HLS interposer", privacy: .public) — displayHDR=\(displaySupportsHDR) eligibleForHDR=\(AVPlayer.eligibleForHDRPlayback) \(displaySignals, privacy: .public) container=\(source?.container ?? "nil", privacy: .public) range=\(source?.videoStream?.videoRange ?? "nil", privacy: .public) codec=\(source?.videoCodec ?? "nil", privacy: .public)")
         if progressive {
             return ProgressiveRemuxDelivery(resolution: resolution, context: context, client: client)
         }
