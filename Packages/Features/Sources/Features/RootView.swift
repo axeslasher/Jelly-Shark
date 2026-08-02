@@ -9,6 +9,7 @@ public struct RootView: View {
     @State private var session = AppSession()
     @State private var connectionViewModel: ServerConnectionViewModel
     @State private var homePreferences = HomePreferences()
+    @State private var playbackPreferences = PlaybackPreferences()
     @State private var selectedTab: AppTab = .home
 
     /// One navigation path per tab, owned here (the tab views don't create
@@ -127,6 +128,7 @@ public struct RootView: View {
         .environment(session)
         .environment(connectionViewModel)
         .environment(homePreferences)
+        .environment(playbackPreferences)
         .environment(\.openSettings) {
             tabSelection.wrappedValue = .settings
         }

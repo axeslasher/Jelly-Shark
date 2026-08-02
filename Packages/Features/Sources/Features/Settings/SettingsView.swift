@@ -7,6 +7,7 @@ public struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
     @Environment(ServerConnectionViewModel.self) private var connection
     @Environment(HomePreferences.self) private var homePreferences
+    @Environment(PlaybackPreferences.self) private var playbackPreferences
 
     public init() {}
 
@@ -21,8 +22,9 @@ public struct SettingsView: View {
     /// binding) so it can pop to root before a tab switch — see RootView's
     /// `tabSelection` for the tvOS bug this works around.
     public var body: some View {
-        // @Bindable so the Toggle can bind into the @Observable preferences.
+        // @Bindable so the Toggles can bind into the @Observable preferences.
         @Bindable var homePreferences = homePreferences
+        @Bindable var playbackPreferences = playbackPreferences
 
         List {
             pageTitle("Settings")
@@ -69,6 +71,15 @@ public struct SettingsView: View {
 
             // Playback Section
             Section {
+                Toggle(isOn: $playbackPreferences.asksVersionBeforePlaying) {
+                    settingsRow(
+                        icon: "square.stack.3d.up.fill",
+                        title: "Ask Which Version",
+                        subtitle: "When a title has several versions, ask before playing instead of a long-press menu",
+                    )
+                }
+                .tint(theme.accent)
+
                 settingsRow(
                     icon: "play.circle.fill",
                     title: "Playback",
@@ -258,4 +269,5 @@ private struct ThemeRowLabel: View {
     .environment(AppSession())
     .environment(ServerConnectionViewModel())
     .environment(HomePreferences())
+    .environment(PlaybackPreferences())
 }

@@ -11,6 +11,10 @@ struct MediaDetailHeroSection: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
     @Environment(\.pushMediaDetail) private var pushMediaDetail
+    @Environment(PlaybackPreferences.self) private var playbackPreferences
+
+    /// The pending ask-before-playing choice; non-nil presents the alert.
+    @State private var versionAlertTarget: VersionAlertTarget?
 
     /// Owns the watched/favorite toggles' optimistic state and server calls.
     let viewModel: MediaDetailViewModel
@@ -30,7 +34,7 @@ struct MediaDetailHeroSection: View {
     /// What the Play button plays — nil (button disabled) while a series page
     /// hasn't resolved its playable episode yet
     let playTarget: MediaItem?
-    @Binding var playbackItem: MediaItem?
+    @Binding var playbackItem: PlaybackRequest?
     @Binding var isPresentingOverview: Bool
 
     /// Watched state shown by the button: the view model's pending optimistic
@@ -161,9 +165,33 @@ struct MediaDetailHeroSection: View {
             .foregroundStyle(theme.primary)
     }
 
+    /// Versions of what Play will start. The page's own (detail-fetched) item
+    /// carries the list when it IS the play target — movies and episode pages;
+    /// a resolved target (series next-up episode) rarely carries sources and
+    /// then offers no picker, which is today's behavior.
+    private var versionSources: [MediaSource] {
+        guard let playTarget else { return [] }
+        let sources = playTarget.id == item.id
+            ? item.mediaSources ?? playTarget.mediaSources
+            : playTarget.mediaSources
+        return sources ?? []
+    }
+
+    private var versionPresentation: VersionPickerPresentation {
+        VersionPicker.presentation(
+            sourceCount: versionSources.count,
+            asksBeforePlaying: playbackPreferences.asksVersionBeforePlaying,
+        )
+    }
+
     private var playButton: some View {
         Button {
-            playbackItem = playTarget
+            guard let playTarget else { return }
+            if versionPresentation == .alert {
+                versionAlertTarget = VersionAlertTarget(item: playTarget, sources: versionSources)
+            } else {
+                playbackItem = PlaybackRequest(item: playTarget)
+            }
         } label: {
             HStack(spacing: SpacingTokens.sm) {
                 Image(systemName: playIcon)
@@ -173,6 +201,16 @@ struct MediaDetailHeroSection: View {
         }
         .glassButtonStyle(tint: theme.focusFill)
         .disabled(session.client == nil || playTarget == nil)
+        .versionSelectMenu(
+            sources: versionSources,
+            isActive: versionPresentation == .menu,
+        ) { source in
+            guard let playTarget else { return }
+            playbackItem = PlaybackRequest(item: playTarget, mediaSourceId: source.id)
+        }
+        .versionSelectAlert(target: $versionAlertTarget) { request in
+            playbackItem = request
+        }
     }
 
     /// Secondary actions beneath Play: icon-only circular toggles for watched

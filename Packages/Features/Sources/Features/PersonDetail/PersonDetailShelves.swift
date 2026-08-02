@@ -26,7 +26,7 @@ struct PersonShelfSection: View {
     let icon: String
     let items: [MediaItem]
     let style: Style
-    @Binding var playbackItem: MediaItem?
+    @Binding var playbackItem: PlaybackRequest?
 
     var body: some View {
         if !items.isEmpty {
@@ -37,7 +37,7 @@ struct PersonShelfSection: View {
                         item.posterShelfItem(client: session.client)
                     case .episode:
                         item.episodeShelfItem(client: session.client, showsSeriesName: true) {
-                            playbackItem = item
+                            playbackItem = PlaybackRequest(item: item)
                         }
                     }
                 }

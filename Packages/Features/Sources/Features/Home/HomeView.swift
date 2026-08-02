@@ -26,7 +26,7 @@ struct HomeView: View {
     /// The item being played, driving the player cover — set by the hero Play
     /// button and the Continue Watching / Next Up cards (which play
     /// immediately on click).
-    @State private var playbackItem: MediaItem?
+    @State private var playbackItem: PlaybackRequest?
 
     /// The live scroll values, on an @Observable object instead of @State:
     /// per-tick writes then invalidate only the views whose bodies read the
@@ -111,7 +111,12 @@ struct HomeView: View {
         }
         .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: target, userState: session.userState)
+                PlaybackContainerView(
+                    client: client,
+                    item: target.item,
+                    userState: session.userState,
+                    mediaSourceId: target.mediaSourceId,
+                )
             }
         }
     }
@@ -173,7 +178,7 @@ struct HomeView: View {
                         // crossing only, so this body never sees the ramp.
                         showsResumeHeader: viewModel.currentHeroItem == nil
                             || scroll.revealsShelfHeader,
-                        onPlay: { playbackItem = $0 },
+                        onPlay: { playbackItem = PlaybackRequest(item: $0) },
                         menu: { item in
                             ShelfMenuHandlers(
                                 viewDetails: { pushMediaDetail?(item) },
@@ -387,4 +392,5 @@ private struct HeroBackdropBridge: View {
     .environment(AppSession())
     .environment(ServerConnectionViewModel())
     .environment(HomePreferences())
+    .environment(PlaybackPreferences())
 }

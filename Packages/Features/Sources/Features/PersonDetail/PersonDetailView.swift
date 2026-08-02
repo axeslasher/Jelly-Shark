@@ -21,7 +21,7 @@ public struct PersonDetailView: View {
     @State private var viewModel = PersonDetailViewModel()
 
     /// The episode currently being played, driving the player cover.
-    @State private var playbackItem: MediaItem?
+    @State private var playbackItem: PlaybackRequest?
 
     /// Whether the full biography is presented in its reading overlay.
     @State private var isPresentingBiography = false
@@ -96,7 +96,12 @@ public struct PersonDetailView: View {
         }
         .fullScreenCover(item: $playbackItem) { target in
             if let client = session.client {
-                PlaybackContainerView(client: client, item: target, userState: session.userState)
+                PlaybackContainerView(
+                    client: client,
+                    item: target.item,
+                    userState: session.userState,
+                    mediaSourceId: target.mediaSourceId,
+                )
             }
         }
         .fullScreenCover(isPresented: $isPresentingBiography) {

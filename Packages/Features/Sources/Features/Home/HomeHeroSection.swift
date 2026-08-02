@@ -22,6 +22,12 @@ struct HomeHeroSection: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(PlaybackPreferences.self) private var playbackPreferences
+
+    /// The pending ask-before-playing choice; non-nil presents the alert.
+    /// Captured at press time, so an auto-advance under the alert cannot
+    /// redirect the choice to another page's item.
+    @State private var versionAlertTarget: VersionAlertTarget?
 
     let items: [MediaItem]
     let index: Int
@@ -36,7 +42,7 @@ struct HomeHeroSection: View {
     /// What Play starts for the current item — nil no-ops the button
     /// (still resolving, or a box set).
     let playTarget: MediaItem?
-    let onPlay: (MediaItem) -> Void
+    let onPlay: (PlaybackRequest) -> Void
     let onNext: () -> Void
     /// A user-driven page change (edge navigation or swipe) — the owner
     /// records it and resets the auto-advance countdown.
@@ -164,6 +170,11 @@ struct HomeHeroSection: View {
         .onChange(of: items.isEmpty, initial: true) { _, isEmpty in
             guard !isEmpty, !isContentVisible else { return }
             revealContent(after: HomeHeroMotion.initialRevealDelay)
+        }
+        // Attached once here, not per page: every page's Play button funnels
+        // into the same captured target, and one presenter must own it.
+        .versionSelectAlert(target: $versionAlertTarget) { request in
+            onPlay(request)
         }
     }
 
@@ -446,7 +457,15 @@ struct HomeHeroSection: View {
     private func playButton(for item: MediaItem, at pageIndex: Int) -> some View {
         Button {
             guard pageIndex == index, let playTarget else { return }
-            onPlay(playTarget)
+            let sources = playTarget.mediaSources ?? []
+            if VersionPicker.presentation(
+                sourceCount: sources.count,
+                asksBeforePlaying: playbackPreferences.asksVersionBeforePlaying,
+            ) == .alert {
+                versionAlertTarget = VersionAlertTarget(item: playTarget, sources: sources)
+            } else {
+                onPlay(PlaybackRequest(item: playTarget))
+            }
         } label: {
             HStack(spacing: SpacingTokens.sm) {
                 Image(systemName: "play.fill")
@@ -458,6 +477,21 @@ struct HomeHeroSection: View {
             .jsStyle(.headline)
         }
         .glassButtonStyle(tint: theme.focusFill)
+        // The menu reads the PAGE's item, not the resolved play target: it
+        // stays correct on every page without depending on `index`, so an
+        // auto-advance can neither retarget an open menu nor tear the
+        // modifier off mid-choice. For movie/episode slots the page item IS
+        // the play target; series slots resolve to a next-up episode that
+        // carries no source list, so they get no menu either way.
+        .versionSelectMenu(
+            sources: item.mediaSources ?? [],
+            isActive: VersionPicker.presentation(
+                sourceCount: item.mediaSources?.count ?? 0,
+                asksBeforePlaying: playbackPreferences.asksVersionBeforePlaying,
+            ) == .menu,
+        ) { source in
+            onPlay(PlaybackRequest(item: item, mediaSourceId: source.id))
+        }
     }
 
     /// Display-only page indicators; paging is driven by edge navigation,
