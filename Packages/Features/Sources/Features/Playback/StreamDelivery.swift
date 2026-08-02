@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import JellyfinKit
 import OSLog
@@ -42,17 +43,23 @@ struct DeliveryContext {
 
 /// Picks the delivery for a resolved stream. The rule is the play method:
 /// direct play takes the original file untouched; every HLS session runs
-/// through the loopback interposer.
+/// through the loopback interposer — except the one case HLS structurally
+/// cannot serve (#172): an HDR MKV on an SDR display goes progressive.
 @MainActor
 enum StreamDeliverySelector {
     static func delivery(
         for resolution: StreamResolution,
         context: DeliveryContext,
         client: any JellyfinClientProtocol,
+        displaySupportsHDR: Bool = AVPlayer.eligibleForHDRPlayback,
     ) -> any StreamDelivery {
-        resolution.playMethod == .directPlay
-            ? DirectDelivery(resolution: resolution)
-            : InterposedHLSDelivery(resolution: resolution, context: context, client: client)
+        if resolution.playMethod == .directPlay {
+            return DirectDelivery(resolution: resolution)
+        }
+        if ProgressiveRemuxDelivery.isEligible(context: context, displaySupportsHDR: displaySupportsHDR) {
+            return ProgressiveRemuxDelivery(resolution: resolution, context: context, client: client)
+        }
+        return InterposedHLSDelivery(resolution: resolution, context: context, client: client)
     }
 }
 
@@ -166,5 +173,127 @@ final class InterposedHLSDelivery: StreamDelivery {
     func stop() {
         localServer?.stop()
         localServer = nil
+    }
+}
+
+// MARK: - Progressive remux
+
+/// The non-HLS delivery mode (#172): demux the original MKV over ranged
+/// HTTP, remux to fMP4 in-app, and serve it progressively from loopback.
+///
+/// Selected only for the case HLS structurally cannot serve: an HDR source
+/// on an SDR display. AVFoundation's eligibility gate (`-12927`, #146)
+/// rules HDR variants out of any HLS master — whoever wrote it — and the
+/// server-side fallback is a software tone-map a decode-bound host delivers
+/// at 0.88× realtime (a frozen player). A progressive asset has no variants
+/// to be ruled ineligible; the display pipeline tone-maps on-device, which
+/// the same hardware demonstrably does well (the #172 premise test).
+///
+/// Everything here can fail somewhere real — the origin may ignore `Range`,
+/// the file may have no Cues, the codecs may not be carriable — so every
+/// failure falls back to the interposed HLS delivery this session would
+/// otherwise have used. That path is degraded (the tone-map), never dead.
+///
+/// Known gaps, accepted for this mode: no subtitle renditions and no
+/// trickplay (both are HLS constructs, #176 step 3 territory), and the
+/// embedded default audio selection policy of the remuxer rather than the
+/// session's chosen track.
+@MainActor
+final class ProgressiveRemuxDelivery: StreamDelivery {
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
+
+    private let resolution: StreamResolution
+    private let context: DeliveryContext
+    private let client: any JellyfinClientProtocol
+
+    private var server: ProgressiveRemuxServer?
+    /// The HLS delivery every failure falls back to; also what `stop()`
+    /// must tear down when the fallback was taken.
+    private var fallback: InterposedHLSDelivery?
+
+    init(
+        resolution: StreamResolution,
+        context: DeliveryContext,
+        client: any JellyfinClientProtocol,
+    ) {
+        self.resolution = resolution
+        self.context = context
+        self.client = client
+    }
+
+    /// Whether this session is the HDR-on-SDR MKV case. Everything else
+    /// keeps its current path untouched.
+    static func isEligible(context: DeliveryContext, displaySupportsHDR: Bool) -> Bool {
+        guard !displaySupportsHDR,
+              let source = context.mediaSource,
+              let container = source.container?.lowercased(),
+              container.split(separator: ",").contains(where: { $0 == "mkv" || $0 == "matroska" }),
+              source.videoStream?.videoRange != nil,
+              let codec = source.videoCodec?.lowercased(),
+              codec == "hevc" || codec == "h264"
+        else { return false }
+        return true
+    }
+
+    func prepare() async -> DeliveredStream {
+        do {
+            return try await prepareProgressive()
+        } catch {
+            guard !Task.isCancelled else {
+                return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
+            }
+            Self.logger.warning("[progressive] unavailable (\(error, privacy: .public)); falling back to HLS delivery")
+            let fallback = InterposedHLSDelivery(resolution: resolution, context: context, client: client)
+            self.fallback = fallback
+            return await fallback.prepare()
+        }
+    }
+
+    private func prepareProgressive() async throws -> DeliveredStream {
+        guard let source = context.mediaSource else {
+            throw MatroskaError.malformed("no media source")
+        }
+        let staticURL = try client.staticStreamURL(for: source, parameters: StreamParameters(
+            itemId: context.itemId,
+            mediaSourceId: source.id,
+            playSessionId: context.playSessionId,
+            audioStreamIndex: context.audioStreamIndex,
+            subtitleStreamIndex: context.subtitleStreamIndex,
+        ))
+
+        let byteSource = try await RangedHTTPByteSource.probe(url: staticURL)
+        let demuxer = MatroskaDemuxer(source: byteSource)
+        let index = try await demuxer.loadIndex()
+        // Option (a) from #176: a source whose audio is all TrueHD/DTS has
+        // no carriable track; declining to the server path is the only
+        // honest move (a silent film would play smoothly and wrongly).
+        guard let tracks = MatroskaFMP4Remuxer.selectTracks(from: index), tracks.audio != nil else {
+            throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec(
+                index.tracks.first { $0.type == .audio }?.codecID ?? "none",
+            )
+        }
+        let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+
+        let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
+        let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
+        let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
+        let layout = ProgressiveMP4Layout(index: index, initSegment: initSegment, timescale: remuxer.timescale)
+
+        let server = ProgressiveRemuxServer(demuxer: demuxer, remuxer: remuxer, layout: layout)
+        guard let url = await server.start() else {
+            throw MatroskaError.malformed("loopback listener unavailable")
+        }
+        self.server = server
+        Self.logger.info("[progressive] session up: \(layout.slots.count) fragments, video track \(tracks.video.number), audio \(tracks.audio?.codecID ?? "none", privacy: .public)")
+        // directStream is the honest method: streams are copied, container
+        // owned by the app, no server encode anywhere in the session.
+        return DeliveredStream(url: url, playMethod: .directStream)
+    }
+
+    func stop() {
+        server?.stop()
+        server = nil
+        fallback?.stop()
+        fallback = nil
     }
 }
