@@ -161,9 +161,11 @@ This is a description of the framework, not a policy choice. **No delivery path 
 
 TrueHD-only Atmos — the common UHD Blu-ray remux shape — is unreachable by every path the app has or plans. Tracked as #221. It is **codec-shaped, not container-shaped**, so it lies outside what #172 or #176 could ever fix.
 
-### ❌ Verified defect: the app's audio budget destroys E-AC-3 Atmos
+### ✅ Fixed: the audio budget used to destroy E-AC-3 Atmos
 
-`StreamURLBuilder.swift:61` sets `audioBitrate = 192_000` and `:170` sends it as `AudioBitrate` on **every** HLS request. Source A's Atmos track is **768 kbps**. Under a 192 kbps ceiling the server cannot stream-copy it and is obliged to re-encode.
+**Fixed in #222** — `StreamURLBuilder.audioBitrate` raised from 192 kbps to 1.5 Mbps. Recorded here because the mechanism is non-obvious and worth not reintroducing.
+
+`AudioBitrate` is a **ceiling the server copies under and re-encodes over**, not a target. The old 192 kbps value was correct as the audio share of a *re-encode* budget, but it was sent unconditionally — so on Source A's **768 kbps** Atmos track the server could not stream-copy and was obliged to re-encode to AAC, taking the object metadata with it.
 
 ✅ Measured 2026-08-02, five runs, each with a unique `DeviceId`/`PlaySessionId`:
 
@@ -175,17 +177,13 @@ TrueHD-only Atmos — the common UHD Blu-ray remux shape — is unreachable by e
 | D | `eac3,ac3,aac` | *omitted* | **`copy`** | **`eac3`** |
 | E | `eac3` | *omitted* | **`copy`** | **`eac3`** |
 
-Run B is the control that matters: **the codec list is unchanged from what the app sends today** and only the budget was raised — and the server switched to `copy`. Codec ordering is irrelevant; the ceiling is the entire cause.
+Run B is the control that matters, and it is also the verification of the fix: **the codec list is unchanged from what the app sends** and only the budget was raised — and the server switched to `copy`. Codec ordering is irrelevant; the ceiling was the entire cause.
 
-⚠️ By the same mechanism, AC-3 5.1 at 640 kbps is also above the ceiling and should also be re-encoded. Not directly measured.
+⚠️ By the same mechanism, AC-3 5.1 at 640 kbps was also above the old ceiling and should also have been re-encoding. Not directly measured, but 1.5 Mbps clears it too.
 
-The constant is not wrong in itself — the comment at `:59-61` correctly describes it as the audio share of the streaming budget when the server *re-encodes*. The defect is that it is sent **unconditionally**, including on sessions where the audio could have passed through untouched.
+Raising the ceiling cannot let an undecodable track through: `AudioCodec=aac,ac3,eac3` already bounds what may be copied, so TrueHD and DTS still re-encode regardless of headroom. The cost is that a genuine re-encode is now permitted a higher bitrate than it needs.
 
-Fix options, in ascending order of care:
-
-1. Raise the constant above lossy-passthrough rates (~1.5 Mbps). Safe, because the `AudioCodec` list already bounds what may be copied — a TrueHD source still cannot copy into `aac,ac3,eac3` and re-encodes regardless. Costs a slightly higher re-encode bitrate when one does occur.
-2. Omit `AudioBitrate` when the selected stream's codec is already client-playable, send it otherwise. Correct, but requires knowing the selected stream at URL build time.
-3. Derive the budget from the selected stream's actual bitrate.
+Two more precise fixes were considered and not taken, since they need the selected audio stream at URL-build time: omitting `AudioBitrate` entirely when the source codec is already client-playable, or deriving the ceiling from that stream's actual bitrate. Worth revisiting if the re-encode bitrate ever matters.
 
 ---
 
