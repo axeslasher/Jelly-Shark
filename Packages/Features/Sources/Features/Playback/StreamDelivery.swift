@@ -47,16 +47,50 @@ struct DeliveryContext {
 /// cannot serve (#172): an HDR MKV on an SDR display goes progressive.
 @MainActor
 enum StreamDeliverySelector {
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
+
+    /// Whether the ATTACHED DISPLAY can take HDR — which is what the
+    /// `-12927` variant gate follows, so it is what this gate must follow.
+    ///
+    /// `availableHDRModes` is the display-anchored signal ("each value
+    /// indicates that an appropriate HDR display is available", and it posts
+    /// a change notification on display connect/disconnect).
+    /// `eligibleForHDRPlayback` reads as device capability — "whether the
+    /// current device can present content to an HDR display" — and an Apple
+    /// TV 4K can, whatever panel it is driving; the 2026-08-02 device run
+    /// (every HDR MKV session routed to the HLS tone-map on a 1080p SDR
+    /// panel) is consistent with it staying true there. visionOS keeps the
+    /// eligibility property: its display is HDR, and `availableHDRModes` is
+    /// a tvOS/iOS API.
+    static var displaySupportsHDR: Bool {
+        #if os(visionOS)
+            AVPlayer.eligibleForHDRPlayback
+        #else
+            !AVPlayer.availableHDRModes.isEmpty
+        #endif
+    }
+
     static func delivery(
         for resolution: StreamResolution,
         context: DeliveryContext,
         client: any JellyfinClientProtocol,
-        displaySupportsHDR: Bool = AVPlayer.eligibleForHDRPlayback,
+        displaySupportsHDR: Bool = StreamDeliverySelector.displaySupportsHDR,
     ) -> any StreamDelivery {
         if resolution.playMethod == .directPlay {
             return DirectDelivery(resolution: resolution)
         }
-        if ProgressiveRemuxDelivery.isEligible(context: context, displaySupportsHDR: displaySupportsHDR) {
+        let progressive = ProgressiveRemuxDelivery.isEligible(context: context, displaySupportsHDR: displaySupportsHDR)
+        // The inputs, not just the verdict: a wrong clause here routes the
+        // session silently, which is invisible to every suite in the repo.
+        // Both HDR signals are logged so a device run can arbitrate them.
+        let source = context.mediaSource
+        #if os(visionOS)
+            let hdrModes = "n/a"
+        #else
+            let hdrModes = String(AVPlayer.availableHDRModes.rawValue)
+        #endif
+        logger.info("[delivery] \(progressive ? "progressive" : "HLS interposer", privacy: .public) — displayHDR=\(displaySupportsHDR) hdrModes=\(hdrModes, privacy: .public) eligibleForHDR=\(AVPlayer.eligibleForHDRPlayback) container=\(source?.container ?? "nil", privacy: .public) range=\(source?.videoStream?.videoRange ?? "nil", privacy: .public) codec=\(source?.videoCodec ?? "nil", privacy: .public)")
+        if progressive {
             return ProgressiveRemuxDelivery(resolution: resolution, context: context, client: client)
         }
         return InterposedHLSDelivery(resolution: resolution, context: context, client: client)
