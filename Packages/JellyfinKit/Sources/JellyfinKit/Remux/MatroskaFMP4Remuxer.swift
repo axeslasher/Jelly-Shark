@@ -43,6 +43,11 @@ public struct MatroskaFMP4Remuxer: Sendable {
     /// timestamp scale (1ms ticks -> 1000). Sample times pass through 1:1.
     public let timescale: Int
 
+    /// The carried tracks' IDs, video first — what a sidx must reference.
+    public var trackIDs: [Int] {
+        [tracks.video.number] + (tracks.audio.map { [$0.number] } ?? [])
+    }
+
     private let videoContext: VideoContext
     private let audioDefaultDurationTicks: Int?
 

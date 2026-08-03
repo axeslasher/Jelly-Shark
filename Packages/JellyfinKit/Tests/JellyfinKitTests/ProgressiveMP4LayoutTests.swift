@@ -14,7 +14,7 @@ struct ProgressiveMP4LayoutTests {
         let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
         let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
         let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
-        let layout = ProgressiveMP4Layout(index: index, initSegment: initSegment, timescale: remuxer.timescale)
+        let layout = ProgressiveMP4Layout(index: index, initSegment: initSegment, timescale: remuxer.timescale, trackIDs: remuxer.trackIDs)
         return (demuxer, remuxer, layout)
     }
 
@@ -29,23 +29,35 @@ struct ProgressiveMP4LayoutTests {
         #expect(layout.totalSize == expected)
     }
 
-    @Test("The sidx indexes every slot with its exact budgeted size")
+    @Test("One sidx per track indexes every slot with its exact budgeted size")
     func sidxShape() async throws {
-        let (_, _, layout) = try await makeLayout()
+        let (_, remuxer, layout) = try await makeLayout()
         let boxes = MP4Box.parse(layout.sidx)
-        #expect(boxes.count == 1)
-        #expect(boxes[0].type == "sidx")
+        // The per-track shape (ffmpeg global_sidx) is what AVFoundation
+        // honors; a single track-independent sidx is silently ignored and
+        // playback degrades to a full-moof scan over HTTP.
+        #expect(boxes.count == remuxer.trackIDs.count)
+        #expect(boxes.allSatisfy { $0.type == "sidx" })
 
-        let payload = [UInt8](boxes[0].payload)
-        #expect(payload[0] == 1) // version
-        // version/flags(4) + reference_ID(4) + timescale(4) + EPT(8) +
-        // first_offset(8) + reserved(2), then reference_count(2).
-        let referenceCount = Int(payload[30]) << 8 | Int(payload[31])
-        #expect(referenceCount == layout.slots.count)
-        for (i, slot) in layout.slots.enumerated() {
-            let entry = 32 + i * 12
-            let size = payload[entry ..< entry + 4].reduce(0) { ($0 << 8) | Int($1) }
-            #expect(size == slot.size)
+        for (boxIndex, box) in boxes.enumerated() {
+            let payload = [UInt8](box.payload)
+            #expect(payload[0] == 1) // version
+            // version/flags(4) + reference_ID(4) + timescale(4) + EPT(8) +
+            // first_offset(8) + reserved(2), then reference_count(2).
+            let referenceID = payload[4 ..< 8].reduce(0) { ($0 << 8) | Int($1) }
+            #expect(referenceID == remuxer.trackIDs[boxIndex])
+            // Each box's first_offset skips the sidx boxes after it, so
+            // every track's index is anchored at moof 0.
+            let firstOffset = payload[20 ..< 28].reduce(0) { ($0 << 8) | Int($1) }
+            let remaining = boxes.dropFirst(boxIndex + 1).map(\.payload.count).reduce(0) { $0 + $1 + 8 }
+            #expect(firstOffset == remaining)
+            let referenceCount = Int(payload[30]) << 8 | Int(payload[31])
+            #expect(referenceCount == layout.slots.count)
+            for (i, slot) in layout.slots.enumerated() {
+                let entry = 32 + i * 12
+                let size = payload[entry ..< entry + 4].reduce(0) { ($0 << 8) | Int($1) }
+                #expect(size == slot.size)
+            }
         }
     }
 
@@ -119,7 +131,8 @@ struct ProgressiveMP4LayoutTests {
         #expect(UInt64(file.count) == layout.totalSize)
 
         let types = MP4Box.parse(file).map(\.type)
-        #expect(types.prefix(3) == ["ftyp", "moov", "sidx"])
-        #expect(Array(types.dropFirst(3)) == Array(repeating: ["moof", "mdat"], count: layout.slots.count).flatMap(\.self))
+        let sidxCount = MP4Box.parse(layout.sidx).count
+        #expect(Array(types.prefix(2 + sidxCount)) == ["ftyp", "moov"] + Array(repeating: "sidx", count: sidxCount))
+        #expect(Array(types.dropFirst(2 + sidxCount)) == Array(repeating: ["moof", "mdat"], count: layout.slots.count).flatMap(\.self))
     }
 }

@@ -313,7 +313,7 @@ final class ProgressiveRemuxDelivery: StreamDelivery {
         let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
         let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
         let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
-        let layout = ProgressiveMP4Layout(index: index, initSegment: initSegment, timescale: remuxer.timescale)
+        let layout = ProgressiveMP4Layout(index: index, initSegment: initSegment, timescale: remuxer.timescale, trackIDs: remuxer.trackIDs)
 
         let server = ProgressiveRemuxServer(demuxer: demuxer, remuxer: remuxer, layout: layout)
         guard let url = await server.start() else {

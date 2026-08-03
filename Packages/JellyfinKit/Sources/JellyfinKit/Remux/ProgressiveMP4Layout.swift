@@ -39,14 +39,15 @@ public struct ProgressiveMP4Layout: Sendable {
     }
 
     public let initSegment: Data
+    /// One `sidx` box per track, concatenated — see `segmentIndex`.
     public let sidx: Data
     public let slots: [Slot]
     /// Total size of the served file in bytes.
     public let totalSize: UInt64
 
-    /// Build the layout from a loaded index. `timescale` and `durationTicks`
-    /// must match what the init segment declares.
-    public init(index: MatroskaIndex, initSegment: Data, timescale: Int) {
+    /// Build the layout from a loaded index. `timescale` and `trackIDs`
+    /// (video first) must match what the init segment declares.
+    public init(index: MatroskaIndex, initSegment: Data, timescale: Int, trackIDs: [Int]) {
         self.initSegment = initSegment
 
         // Slot budget: span bytes (the remux can only shrink the payload)
@@ -71,10 +72,11 @@ public struct ProgressiveMP4Layout: Sendable {
         }
 
         // The sidx indexes every slot with its exact (budgeted) size, so its
-        // own size depends only on the slot count.
+        // own size depends only on the slot and track counts.
         let durationTicks = Int((index.durationTicks ?? 0).rounded())
         sidx = Self.segmentIndex(
             timescale: timescale,
+            trackIDs: trackIDs,
             slots: provisional.map(\.slot),
             totalDurationTicks: durationTicks,
         )
@@ -183,9 +185,18 @@ public struct ProgressiveMP4Layout: Sendable {
 
     // MARK: - sidx
 
-    /// A version-1 `sidx` indexing every slot: exact (budgeted) sizes and
-    /// cue-derived durations, so seeks jump straight to a fragment.
-    private static func segmentIndex(timescale: Int, slots: [Slot], totalDurationTicks: Int) -> Data {
+    /// One version-1 `sidx` per track, each indexing every slot with its
+    /// exact (budgeted) size and cue-derived duration, so seeks jump
+    /// straight to a fragment.
+    ///
+    /// Per-track boxes are load-bearing, not style: AVFoundation ignored a
+    /// single track-independent `reference_ID = 1` sidx and fell back to
+    /// scanning every moof over HTTP before readiness — a startup measured
+    /// in tens of minutes on a long feature. ffmpeg's `global_sidx` shape
+    /// (one sidx per track, actual track IDs, each `first_offset` skipping
+    /// the sidx boxes after it) was honored under identical conditions:
+    /// ready in seconds, a handful of requests. Mirror it exactly.
+    private static func segmentIndex(timescale: Int, trackIDs: [Int], slots: [Slot], totalDurationTicks: Int) -> Data {
         func uint32(_ value: Int) -> Data {
             let v = UInt32(clamping: value)
             return Data([UInt8(v >> 24), UInt8((v >> 16) & 0xFF), UInt8((v >> 8) & 0xFF), UInt8(v & 0xFF)])
@@ -194,23 +205,30 @@ public struct ProgressiveMP4Layout: Sendable {
             Data((0 ..< 8).reversed().map { UInt8((value >> ($0 * 8)) & 0xFF) })
         }
 
-        var payload = Data([1, 0, 0, 0]) // version 1, flags 0
-        payload += uint32(1) // reference_ID: track-independent movie index
-        payload += uint32(timescale)
-        payload += uint64(slots.first.map(\.timeTicks) ?? 0) // earliest_presentation_time
-        payload += uint64(0) // first_offset: fragments start right after sidx
-        payload += Data([0, 0]) // reserved
-        payload += Data([UInt8(slots.count >> 8), UInt8(slots.count & 0xFF)])
-        for slot in slots {
-            payload += uint32(slot.size) // reference_type 0 (media) + size
-            let duration: Int = if let next = slot.nextTimeTicks {
-                Int(next) - Int(slot.timeTicks)
-            } else {
-                max(totalDurationTicks - Int(slot.timeTicks), 0)
+        let boxSize = 40 + 12 * slots.count
+        var output = Data()
+        for (trackIndex, trackID) in trackIDs.enumerated() {
+            var payload = Data([1, 0, 0, 0]) // version 1, flags 0
+            payload += uint32(trackID) // reference_ID
+            payload += uint32(timescale)
+            payload += uint64(slots.first.map(\.timeTicks) ?? 0) // earliest_presentation_time
+            // first_offset is anchored to the byte after THIS box; skip the
+            // remaining sidx boxes so every track's index lands on moof 0.
+            payload += uint64(UInt64((trackIDs.count - 1 - trackIndex) * boxSize))
+            payload += Data([0, 0]) // reserved
+            payload += Data([UInt8(slots.count >> 8), UInt8(slots.count & 0xFF)])
+            for slot in slots {
+                payload += uint32(slot.size) // reference_type 0 (media) + size
+                let duration: Int = if let next = slot.nextTimeTicks {
+                    Int(next) - Int(slot.timeTicks)
+                } else {
+                    max(totalDurationTicks - Int(slot.timeTicks), 0)
+                }
+                payload += uint32(duration)
+                payload += uint32(0x8000_0000) // starts_with_SAP, type unknown
             }
-            payload += uint32(duration)
-            payload += uint32(0x9000_0000) // starts_with_SAP, SAP type 1
+            output += uint32(8 + payload.count) + Data("sidx".utf8) + payload
         }
-        return uint32(8 + payload.count) + Data("sidx".utf8) + payload
+        return output
     }
 }
