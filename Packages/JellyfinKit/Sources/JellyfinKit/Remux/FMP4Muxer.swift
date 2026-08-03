@@ -7,9 +7,9 @@ import Foundation
 //
 // The initialization segment carries real track headers (hvcC/avcC copied
 // from Matroska CodecPrivate, dvcC/dvvC from BlockAdditionMapping, audio
-// configuration from `AudioSampleEntryConfiguration`) plus `mvex`, so the
-// file is valid with any number of `moof`/`mdat` pairs appended — which is
-// what makes #172's progressive mode possible without a full sample index.
+// configuration from `AudioSampleEntryConfiguration`) plus `mvex`, so any
+// `moof`/`mdat` pair is decodable against it — which is what makes #172's
+// segment-at-a-time HLS delivery possible without a full sample index.
 
 public enum FMP4Muxer {
     public enum VideoCodec: Sendable, Equatable {
@@ -84,18 +84,18 @@ public enum FMP4Muxer {
     // MARK: - Initialization segment
 
     /// `ftyp` + `moov` for the given tracks. `timescale` is ticks per second
-    /// (from the Matroska timestamp scale, typically 1000); `durationTicks`
-    /// the total duration in those ticks.
+    /// (from the Matroska timestamp scale, typically 1000).
     public static func initializationSegment(
         video: VideoTrack?,
         audio: AudioTrack?,
         timescale: Int,
-        durationTicks: Int,
     ) -> Data {
-        // The total duration is declared ONLY in mehd. A moov-level duration
-        // would be read as pre-fragment content and AVFoundation extends it
-        // with the fragments, doubling the reported runtime (measured on the
-        // macOS host during #176).
+        // The moov declares NO duration anywhere — not mvhd/tkhd/mdhd (a
+        // moov-level duration is read as pre-fragment content and the
+        // fragments extend it, doubling the reported runtime; measured on
+        // the macOS host during #176) and not mehd. In the HLS delivery
+        // the media playlist owns duration, and ffmpeg's fMP4 init segment
+        // — the shape the device rounds verified — is duration-free too.
         var traks = Data()
         var trexes = Data()
         var maxTrackID = 0
@@ -109,8 +109,7 @@ public enum FMP4Muxer {
             trexes += trex(trackID: audio.trackID)
             maxTrackID = max(maxTrackID, audio.trackID)
         }
-        let mehd = fullBox("mehd", version: 1, flags: 0, payload: uint64(durationTicks))
-        let mvex = box("mvex", mehd + trexes)
+        let mvex = box("mvex", trexes)
         let moov = box("moov", mvhd(timescale: timescale, durationTicks: 0, nextTrackID: maxTrackID + 1) + traks + mvex)
         return ftyp() + moov
     }
@@ -180,7 +179,8 @@ public enum FMP4Muxer {
     // MARK: - Track boxes
 
     private static func ftyp() -> Data {
-        box("ftyp", fourCC("iso6") + uint32(0) + fourCC("iso6") + fourCC("mp41"))
+        // The exact brand set of the ffmpeg head AVFoundation trusts.
+        box("ftyp", fourCC("isom") + uint32(512) + fourCC("isom") + fourCC("iso6") + fourCC("dby1") + fourCC("iso2") + fourCC("mp41"))
     }
 
     private static func videoTrak(_ track: VideoTrack, timescale: Int, durationTicks: Int) -> Data {

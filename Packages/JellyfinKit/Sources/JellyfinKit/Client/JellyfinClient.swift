@@ -224,6 +224,13 @@ public protocol JellyfinClientProtocol: Sendable {
         assumeInterposer: Bool,
     ) throws -> StreamResolution
 
+    /// Build the `static=true` original-file URL for a media source,
+    /// regardless of the negotiated play method. The remux HLS delivery
+    /// (#172) reads the original container over HTTP `Range` through this
+    /// URL even when the session would otherwise be server HLS.
+    /// - Throws: `APIError.notAuthenticated` if there is no access token
+    func staticStreamURL(for source: MediaSource, parameters: StreamParameters) throws -> URL
+
     /// Report that playback has started
     func reportPlaybackStart(
         itemId: String,
@@ -1099,6 +1106,23 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         return StreamResolution(url: url, playMethod: method)
+    }
+
+    public func staticStreamURL(for source: MediaSource, parameters: StreamParameters) throws -> URL {
+        guard let accessToken = _accessToken else {
+            throw APIError.notAuthenticated
+        }
+        guard let url = StreamURLBuilder.directPlayURL(
+            serverURL: serverURL,
+            accessToken: accessToken,
+            deviceId: configuration.deviceID,
+            parameters: parameters,
+            container: source.container,
+            eTag: source.eTag,
+        ) else {
+            throw APIError.invalidURL
+        }
+        return url
     }
 
     /// Ask the server to stop the transcode backing a play session. A

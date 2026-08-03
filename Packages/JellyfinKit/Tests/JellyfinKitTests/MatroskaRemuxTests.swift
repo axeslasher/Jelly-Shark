@@ -190,17 +190,21 @@ struct FMP4MuxerTests {
 
     @Test("Init segment: ftyp + moov with a trak and trex per track")
     func initSegmentStructure() {
-        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: audioTrack, timescale: 1000, durationTicks: 8000)
+        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: audioTrack, timescale: 1000)
 
         #expect(MP4Box.parse(segment).map(\.type) == ["ftyp", "moov"])
         #expect(MP4Box.findAll("moov/trak", in: segment).count == 2)
         #expect(MP4Box.findAll("moov/mvex/trex", in: segment).count == 2)
-        #expect(MP4Box.find("moov/mvex/mehd", in: segment) != nil)
+        // No duration anywhere in the moov — not even mehd. The sidx is the
+        // only place duration lives; answering it here makes AVFoundation
+        // skip the sidx and scan every moof over HTTP (2026-08-02 device
+        // round).
+        #expect(MP4Box.find("moov/mvex/mehd", in: segment) == nil)
     }
 
     @Test("hvc1 sample entry carries the hvcC record and the dvvC box")
     func hevcSampleEntry() throws {
-        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: nil, timescale: 1000, durationTicks: 8000)
+        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: nil, timescale: 1000)
         let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
         let hvc1 = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
         #expect(hvc1.type == "hvc1")
@@ -213,7 +217,7 @@ struct FMP4MuxerTests {
 
     @Test("Audio sample entry uses the configuration's type and box")
     func audioSampleEntry() throws {
-        let segment = FMP4Muxer.initializationSegment(video: nil, audio: audioTrack, timescale: 1000, durationTicks: 8000)
+        let segment = FMP4Muxer.initializationSegment(video: nil, audio: audioTrack, timescale: 1000)
         let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
         let entry = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
         #expect(entry.type == "ec-3")

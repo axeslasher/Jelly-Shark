@@ -77,6 +77,8 @@ public struct MatroskaTrack: Sendable, Equatable {
         public var type: UInt32 = 0
         public var value: UInt64 = 0
         public var extraData: Data?
+
+        public init() {}
     }
 }
 

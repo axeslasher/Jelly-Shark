@@ -43,6 +43,11 @@ public struct MatroskaFMP4Remuxer: Sendable {
     /// timestamp scale (1ms ticks -> 1000). Sample times pass through 1:1.
     public let timescale: Int
 
+    /// The carried tracks' IDs, video first — what a sidx must reference.
+    public var trackIDs: [Int] {
+        [tracks.video.number] + (tracks.audio.map { [$0.number] } ?? [])
+    }
+
     private let videoContext: VideoContext
     private let audioDefaultDurationTicks: Int?
 
@@ -119,7 +124,6 @@ public struct MatroskaFMP4Remuxer: Sendable {
     /// Build the init segment. AC-3/E-AC-3 configuration is parsed from the
     /// first audio frame, so the first cluster must be supplied.
     public func makeInitializationSegment(firstCluster: MatroskaCluster) throws -> Data {
-        let durationTicks = Int((index.durationTicks ?? 0).rounded())
         let video = FMP4Muxer.VideoTrack(
             trackID: tracks.video.number,
             codec: videoContext.codec,
@@ -143,7 +147,6 @@ public struct MatroskaFMP4Remuxer: Sendable {
             video: video,
             audio: audio,
             timescale: timescale,
-            durationTicks: durationTicks,
         )
     }
 
