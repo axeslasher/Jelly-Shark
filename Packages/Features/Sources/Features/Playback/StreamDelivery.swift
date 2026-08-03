@@ -68,9 +68,21 @@ enum StreamDeliverySelector {
         #if os(visionOS)
             AVPlayer.eligibleForHDRPlayback
         #else
-            UIScreen.main.potentialEDRHeadroom > 1.0
+            (activeScreen?.potentialEDRHeadroom ?? 1.0) > 1.0
         #endif
     }
+
+    #if !os(visionOS)
+        /// The attached display, found through the active scene — the
+        /// non-deprecated route to what `UIScreen.main` answered; tvOS has
+        /// exactly one. A missing scene reads as SDR, which routes an HDR
+        /// source progressive — the delivery that plays on either panel.
+        private static var activeScreen: UIScreen? {
+            UIApplication.shared.connectedScenes
+                .compactMap { ($0 as? UIWindowScene)?.screen }
+                .first
+        }
+    #endif
 
     static func delivery(
         for resolution: StreamResolution,
@@ -89,7 +101,9 @@ enum StreamDeliverySelector {
         #if os(visionOS)
             let displaySignals = "n/a"
         #else
-            let displaySignals = "hdrModes=\(AVPlayer.availableHDRModes.rawValue) edrPotential=\(UIScreen.main.potentialEDRHeadroom) edrCurrent=\(UIScreen.main.currentEDRHeadroom) gamut=\(UIScreen.main.traitCollection.displayGamut.rawValue)"
+            let displaySignals = activeScreen.map {
+                "edrPotential=\($0.potentialEDRHeadroom) edrCurrent=\($0.currentEDRHeadroom) gamut=\($0.traitCollection.displayGamut.rawValue)"
+            } ?? "screen=nil"
         #endif
         logger.info("[delivery] \(progressive ? "progressive" : "HLS interposer", privacy: .public) — displayHDR=\(displaySupportsHDR) eligibleForHDR=\(AVPlayer.eligibleForHDRPlayback) \(displaySignals, privacy: .public) container=\(source?.container ?? "nil", privacy: .public) range=\(source?.videoStream?.videoRange ?? "nil", privacy: .public) codec=\(source?.videoCodec ?? "nil", privacy: .public)")
         if progressive {
