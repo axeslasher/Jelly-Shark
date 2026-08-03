@@ -45,6 +45,12 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
     private var fragmentCache: [(index: Int, data: Data)] = []
     private static let fragmentCacheLimit = 2
 
+    /// Productions in flight, so overlapping connections share one remux.
+    /// The 2026-08-02 device round showed every fragment produced twice: an
+    /// aborted open-ended read races its own follow-up request, and a span
+    /// remux is expensive enough that racing it doubles the serve latency.
+    private var fragmentTasks: [Int: Task<Data, Error>] = [:]
+
     init(demuxer: MatroskaDemuxer, remuxer: MatroskaFMP4Remuxer, layout: ProgressiveMP4Layout) {
         self.demuxer = demuxer
         self.remuxer = remuxer
@@ -263,20 +269,38 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
         if let cached = queue.sync(execute: { fragmentCache.first { $0.index == index }?.data }) {
             return cached
         }
-        let slot = layout.slots[index]
-        let started = ContinuousClock.now
-        let span = try await demuxer.readClusters(from: slot.clusterOffset, to: slot.clusterEndBound)
-        let fragment = try remuxer.makeFragment(
-            sequence: index + 1,
-            cluster: span,
-            nextClusterTimeTicks: slot.nextTimeTicks,
-        )
-        let padded = try layout.padded(fragment: fragment, slot: index)
-        Self.logger.info("[progressive] fragment \(index) produced: \(padded.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
-        queue.sync {
-            fragmentCache.append((index, padded))
-            if fragmentCache.count > Self.fragmentCacheLimit {
-                fragmentCache.removeFirst()
+        let (task, isProducer) = queue.sync { () -> (Task<Data, Error>, Bool) in
+            if let inFlight = fragmentTasks[index] {
+                return (inFlight, false)
+            }
+            let task = Task { [demuxer, remuxer, layout] in
+                let slot = layout.slots[index]
+                let started = ContinuousClock.now
+                let span = try await demuxer.readClusters(from: slot.clusterOffset, to: slot.clusterEndBound)
+                let fragment = try remuxer.makeFragment(
+                    sequence: index + 1,
+                    cluster: span,
+                    nextClusterTimeTicks: slot.nextTimeTicks,
+                )
+                let padded = try layout.padded(fragment: fragment, slot: index)
+                Self.logger.info("[progressive] fragment \(index) produced: \(padded.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
+                return padded
+            }
+            fragmentTasks[index] = task
+            return (task, true)
+        }
+        defer {
+            if isProducer {
+                queue.sync { fragmentTasks[index] = nil }
+            }
+        }
+        let padded = try await task.value
+        if isProducer {
+            queue.sync {
+                fragmentCache.append((index, padded))
+                if fragmentCache.count > Self.fragmentCacheLimit {
+                    fragmentCache.removeFirst()
+                }
             }
         }
         return padded
