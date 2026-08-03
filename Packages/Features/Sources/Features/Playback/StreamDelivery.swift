@@ -20,8 +20,8 @@ struct DeliveredStream {
 /// Sits between stream resolution (JellyfinKit's `resolveStream`) and the
 /// engine's `load`: a delivery may pass the URL through untouched, or stand
 /// up machinery of its own — today the loopback interposer, and this is the
-/// seam where a future in-app remux (#176) or progressive path (#172) plugs
-/// in as a new conformance rather than a branch in `PlaybackViewModel`.
+/// seam where the in-app remux HLS path (#172/#176) plugs in as a
+/// conformance rather than a branch in `PlaybackViewModel`.
 @MainActor
 protocol StreamDelivery: AnyObject {
     /// Prepare the stream and return what the engine should load. Never
@@ -46,8 +46,9 @@ struct DeliveryContext {
 
 /// Picks the delivery for a resolved stream. The rule is the play method:
 /// direct play takes the original file untouched; every HLS session runs
-/// through the loopback interposer — except the one case HLS structurally
-/// cannot serve (#172): an HDR MKV on an SDR display goes progressive.
+/// through the loopback interposer — except the one case server HLS
+/// structurally cannot serve (#172): an HDR MKV on an SDR display gets an
+/// app-remuxed, master-less HLS session instead.
 @MainActor
 enum StreamDeliverySelector {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
@@ -76,7 +77,7 @@ enum StreamDeliverySelector {
         /// The attached display, found through the active scene — the
         /// non-deprecated route to what `UIScreen.main` answered; tvOS has
         /// exactly one. A missing scene reads as SDR, which routes an HDR
-        /// source progressive — the delivery that plays on either panel.
+        /// source to the remux delivery, which plays on either panel.
         private static var activeScreen: UIScreen? {
             UIApplication.shared.connectedScenes
                 .compactMap { ($0 as? UIWindowScene)?.screen }
@@ -93,7 +94,7 @@ enum StreamDeliverySelector {
         if resolution.playMethod == .directPlay {
             return DirectDelivery(resolution: resolution)
         }
-        let progressive = ProgressiveRemuxDelivery.isEligible(context: context, displaySupportsHDR: displaySupportsHDR)
+        let remuxHLS = RemuxHLSDelivery.isEligible(context: context, displaySupportsHDR: displaySupportsHDR)
         // The inputs, not just the verdict: a wrong clause here routes the
         // session silently, which is invisible to every suite in the repo.
         // Both HDR signals are logged so a device run can arbitrate them.
@@ -105,9 +106,9 @@ enum StreamDeliverySelector {
                 "edrPotential=\($0.potentialEDRHeadroom) edrCurrent=\($0.currentEDRHeadroom) gamut=\($0.traitCollection.displayGamut.rawValue)"
             } ?? "screen=nil"
         #endif
-        logger.info("[delivery] \(progressive ? "progressive" : "HLS interposer", privacy: .public) — displayHDR=\(displaySupportsHDR) eligibleForHDR=\(AVPlayer.eligibleForHDRPlayback) \(displaySignals, privacy: .public) container=\(source?.container ?? "nil", privacy: .public) range=\(source?.videoStream?.videoRange ?? "nil", privacy: .public) codec=\(source?.videoCodec ?? "nil", privacy: .public)")
-        if progressive {
-            return ProgressiveRemuxDelivery(resolution: resolution, context: context, client: client)
+        logger.info("[delivery] \(remuxHLS ? "remux HLS" : "HLS interposer", privacy: .public) — displayHDR=\(displaySupportsHDR) eligibleForHDR=\(AVPlayer.eligibleForHDRPlayback) \(displaySignals, privacy: .public) container=\(source?.container ?? "nil", privacy: .public) range=\(source?.videoStream?.videoRange ?? "nil", privacy: .public) codec=\(source?.videoCodec ?? "nil", privacy: .public)")
+        if remuxHLS {
+            return RemuxHLSDelivery(resolution: resolution, context: context, client: client)
         }
         return InterposedHLSDelivery(resolution: resolution, context: context, client: client)
     }
@@ -226,18 +227,23 @@ final class InterposedHLSDelivery: StreamDelivery {
     }
 }
 
-// MARK: - Progressive remux
+// MARK: - Remux HLS
 
-/// The non-HLS delivery mode (#172): demux the original MKV over ranged
-/// HTTP, remux to fMP4 in-app, and serve it progressively from loopback.
+/// The app-owned HLS delivery mode (#172): demux the original MKV over
+/// ranged HTTP, remux to fMP4 segments in-app, and serve them behind a
+/// master-less media playlist from loopback.
 ///
-/// Selected only for the case HLS structurally cannot serve: an HDR source
-/// on an SDR display. AVFoundation's eligibility gate (`-12927`, #146)
-/// rules HDR variants out of any HLS master — whoever wrote it — and the
-/// server-side fallback is a software tone-map a decode-bound host delivers
-/// at 0.88× realtime (a frozen player). A progressive asset has no variants
-/// to be ruled ineligible; the display pipeline tone-maps on-device, which
-/// the same hardware demonstrably does well (the #172 premise test).
+/// Selected only for the case server HLS structurally cannot serve: an HDR
+/// source on an SDR display. AVFoundation's eligibility gate (#146) fires
+/// at variant selection over declared master attributes — a master
+/// declaring 4K PQ is refused (`-11868`, CoreMedia `-17223`) whoever wrote
+/// it — and the server-side fallback is a software tone-map a decode-bound
+/// host delivers at 0.88× realtime (a frozen player). A media playlist
+/// with no master never reaches variant selection, so nothing can be ruled
+/// ineligible, and the display pipeline tone-maps the segments on-device
+/// (measured 2026-08-02: genuine 4K PQ segments reach `readyToPlay` and
+/// buffer on the SDR-panel rig). A progressive fMP4 was tried first and is
+/// a dead end — the file reader ignores `sidx` and linear-scans the file.
 ///
 /// Everything here can fail somewhere real — the origin may ignore `Range`,
 /// the file may have no Cues, the codecs may not be carriable — so every
@@ -245,18 +251,17 @@ final class InterposedHLSDelivery: StreamDelivery {
 /// otherwise have used. That path is degraded (the tone-map), never dead.
 ///
 /// Known gaps, accepted for this mode: no subtitle renditions and no
-/// trickplay (both are HLS constructs, #176 step 3 territory), and the
-/// embedded default audio selection policy of the remuxer rather than the
-/// session's chosen track.
+/// trickplay (#176 step 3 territory), and the embedded default audio
+/// selection policy of the remuxer rather than the session's chosen track.
 @MainActor
-final class ProgressiveRemuxDelivery: StreamDelivery {
+final class RemuxHLSDelivery: StreamDelivery {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
     private let resolution: StreamResolution
     private let context: DeliveryContext
     private let client: any JellyfinClientProtocol
 
-    private var server: ProgressiveRemuxServer?
+    private var server: RemuxHLSServer?
     /// The HLS delivery every failure falls back to; also what `stop()`
     /// must tear down when the fallback was taken.
     private var fallback: InterposedHLSDelivery?
@@ -287,19 +292,19 @@ final class ProgressiveRemuxDelivery: StreamDelivery {
 
     func prepare() async -> DeliveredStream {
         do {
-            return try await prepareProgressive()
+            return try await prepareRemuxHLS()
         } catch {
             guard !Task.isCancelled else {
                 return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
             }
-            Self.logger.warning("[progressive] unavailable (\(error, privacy: .public)); falling back to HLS delivery")
+            Self.logger.warning("[remux-hls] unavailable (\(error, privacy: .public)); falling back to interposed HLS delivery")
             let fallback = InterposedHLSDelivery(resolution: resolution, context: context, client: client)
             self.fallback = fallback
             return await fallback.prepare()
         }
     }
 
-    private func prepareProgressive() async throws -> DeliveredStream {
+    private func prepareRemuxHLS() async throws -> DeliveredStream {
         guard let source = context.mediaSource else {
             throw MatroskaError.malformed("no media source")
         }
@@ -327,14 +332,14 @@ final class ProgressiveRemuxDelivery: StreamDelivery {
         let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
         let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
         let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
-        let layout = ProgressiveMP4Layout(index: index, initSegment: initSegment, timescale: remuxer.timescale, trackIDs: remuxer.trackIDs)
+        let plan = HLSSegmentPlan(index: index, timescale: remuxer.timescale)
 
-        let server = ProgressiveRemuxServer(demuxer: demuxer, remuxer: remuxer, layout: layout)
+        let server = RemuxHLSServer(demuxer: demuxer, remuxer: remuxer, plan: plan, initSegment: initSegment)
         guard let url = await server.start() else {
             throw MatroskaError.malformed("loopback listener unavailable")
         }
         self.server = server
-        Self.logger.info("[progressive] session up: \(layout.slots.count) fragments, video track \(tracks.video.number), audio \(tracks.audio?.codecID ?? "none", privacy: .public)")
+        Self.logger.info("[remux-hls] session up: \(plan.segments.count) segments, video track \(tracks.video.number), audio \(tracks.audio?.codecID ?? "none", privacy: .public)")
         // directStream is the honest method: streams are copied, container
         // owned by the app, no server encode anywhere in the session.
         return DeliveredStream(url: url, playMethod: .directStream)

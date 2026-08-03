@@ -133,7 +133,29 @@ A locally-remuxed progressive HDR file — `hvc1`, `color_transfer=smpte2084`, `
 
 So `-12927` is a property of **HLS variant selection**, not of HDR content on SDR displays. The gate evaluates `EXT-X-STREAM-INF` entries and rules some ineligible; an asset with no manifest has nothing to be ruled ineligible. #146's "the gate cannot be blinded" is correct **within HLS**, and does not extend to non-HLS delivery.
 
-> ⚠️ **This is load-bearing for #176.** An app-side remuxer serving HLS through `PlaybackLocalServer` hits the *same* gate — correct `hvc1` and `dvcC` do not help, because the gate is about manifests, not containers. Delivering HDR to SDR displays requires a **non-HLS** mode. A *fragmented* MP4 (`moov` with `mvex`/`mehd`, then `moof`/`mdat` pairs) satisfies that without a complete sample index — each fragment carries its own — so the init needs only track headers and total duration, all of which the source MKV already provides.
+> ⚠️ **Superseded 2026-08-02, same day, by device measurement (below).** This block previously concluded that delivering HDR to SDR displays "requires a non-HLS mode" via a progressive fragmented MP4. Both halves of that were falsified on the device: the progressive mode is dead, and the gate turns out not to reach master-less HLS at all.
+
+### The gate reads declared master attributes — and a media playlist has none
+
+✅ Measured 2026-08-02 on the Apple TV 4K + 1080p SDR panel rig, via headless `RunCodeSnippet` probes loading `AVPlayerItem`s from a LAN HTTP server (verdicts beaconed back as HTTP requests; assets were synthesized `libx265` PQ content with `color_transfer=smpte2084` verified via ffprobe). All four cells same device, same session:
+
+| Playlist | Declares | Content | Verdict |
+|---|---|---|---|
+| Master, `RESOLUTION=1920x1080` + `VIDEO-RANGE=PQ` | 1080p PQ | 1080p PQ | ✅ plays, all segments fetched |
+| Master, `RESOLUTION=3840x2160` + `VIDEO-RANGE=PQ` | 4K PQ | either | ❌ instant refusal, only the master ever fetched |
+| Master, 4K PQ + `SUPPLEMENTAL-CODECS="dvh1.08.01/db4h"` | 4K DV | 1080p PQ | ❌ instant refusal, same codes |
+| **Media playlist, no master** (`EXT-X-MAP` + fMP4 segments) | nothing | genuine 4K PQ | ✅ `readyToPlay`, `rate=1.0`, init + segments fetched and buffered |
+
+Two consequences:
+
+1. **The gate keys on declared 4K attributes, not `VIDEO-RANGE=PQ`.** A 1080p PQ master plays on the SDR panel. On tvOS 26.6 the refusal surfaces as `AVFoundationErrorDomain -11868` with underlying `CoreMediaErrorDomain -17223` (not the `-12927` recorded from #146 — same gate, different surface error).
+2. **A media playlist with no master never reaches variant selection** — nothing is declared, so nothing can be ruled ineligible — and the display pipeline tone-maps genuine 4K PQ segments on-device. This is the delivery mode #172 now implements (`RemuxHLSDelivery` → `RemuxHLSServer`, serving `HLSSegmentPlan`'s playlist over the in-app Matroska remux).
+
+⚠️ Not yet verified in that probe: frame advancement (headless snippets have no display surface; playhead stayed at 0.00) and audio (the probe content had none). Final acceptance is an in-app device round on the panel.
+
+### Progressive fMP4 is dead: the file reader ignores `sidx`
+
+❌ Measured 2026-08-02, two device rounds against the branch's loopback progressive server, with structurally different `moov`s (one with `mehd`, one declaring no duration anywhere): identical failure signature — AVPlayer linear-scans the whole virtual file with 16KB-aligned resume ranges, never jumps via the index, never reads the tail, buffered stays 0.0s until the first-frame watchdog kills the session (~30s). AVFoundation's progressive (file-parser) reader drives off `moov` sample tables and categorically ignores `sidx`; only the manifest-driven stack consumes segment indexes. A full-`moov` progressive head is unreachable for a live remux — per-sample tables require scanning the entire source. Hence the pivot above.
 
 ### The SDR fallback is app-clamped, and it starves
 
@@ -141,7 +163,7 @@ The 15 Mbps / 1080p cap on the SDR path is **ours, not the server's**. `Trickpla
 
 ❌ It does not sustain playback. Measured 2026-08-02 on Apple TV 4K against the 1080p panel: the server ran `libx264` + `tonemapx` at **`speed=0.881x`**, and the playhead advanced 95.86s in 114s of wall clock — **0.84× realtime** — before freezing permanently. The clamp's own comment records a bench figure of 1.14× for 1080p/15M and names 720p/8M as the retreat, but the field is worse than the bench even on an easier source, because a real session also serves trickplay tiles, subtitle renditions and artwork.
 
-⚠️ The 720p retreat was **considered and rejected** (#172): it permanently degrades every SDR-display session to accommodate one server's CPU, and no other client makes that trade — Swiftfin defaults to VLCKit, Infuse ships its own decode stack, and neither routes 4K HDR through a server-side tone-map. The clamp treats the symptom of being on the wrong delivery path. **The `TrickplayHLSPlaylist` comment still reads as live guidance and should be corrected when #172 is picked up.**
+⚠️ The 720p retreat was **considered and rejected** (#172): it permanently degrades every SDR-display session to accommodate one server's CPU, and no other client makes that trade — Swiftfin defaults to VLCKit, Infuse ships its own decode stack, and neither routes 4K HDR through a server-side tone-map. The clamp treats the symptom of being on the wrong delivery path. The `TrickplayHLSPlaylist` comment was corrected on the #172 branch; the clamp still governs whatever stays on server HLS (non-MKV HDR sources, and remux-delivery fallbacks).
 
 ---
 

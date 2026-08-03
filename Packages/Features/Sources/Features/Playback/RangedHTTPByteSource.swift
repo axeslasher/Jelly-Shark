@@ -11,7 +11,7 @@ struct RangedHTTPByteSource: MatroskaByteSource {
     private let session: URLSession
 
     enum SourceError: Error {
-        /// The origin ignored `Range` — progressive delivery is impossible.
+        /// The origin ignored `Range` — the remux delivery is impossible.
         case rangeNotSupported
         case badResponse(Int)
     }

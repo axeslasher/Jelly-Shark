@@ -7,9 +7,9 @@ import Foundation
 //
 // The initialization segment carries real track headers (hvcC/avcC copied
 // from Matroska CodecPrivate, dvcC/dvvC from BlockAdditionMapping, audio
-// configuration from `AudioSampleEntryConfiguration`) plus `mvex`, so the
-// file is valid with any number of `moof`/`mdat` pairs appended — which is
-// what makes #172's progressive mode possible without a full sample index.
+// configuration from `AudioSampleEntryConfiguration`) plus `mvex`, so any
+// `moof`/`mdat` pair is decodable against it — which is what makes #172's
+// segment-at-a-time HLS delivery possible without a full sample index.
 
 public enum FMP4Muxer {
     public enum VideoCodec: Sendable, Equatable {
@@ -93,11 +93,9 @@ public enum FMP4Muxer {
         // The moov declares NO duration anywhere — not mvhd/tkhd/mdhd (a
         // moov-level duration is read as pre-fragment content and the
         // fragments extend it, doubling the reported runtime; measured on
-        // the macOS host during #176) and not mehd either: with a duration
-        // already answered, AVFoundation never engages the sidx and scans
-        // every moof over HTTP before readiness (2026-08-02 device round).
-        // The ffmpeg head it demonstrably trusts carries duration only in
-        // the sidx; mirror that.
+        // the macOS host during #176) and not mehd. In the HLS delivery
+        // the media playlist owns duration, and ffmpeg's fMP4 init segment
+        // — the shape the device rounds verified — is duration-free too.
         var traks = Data()
         var trexes = Data()
         var maxTrackID = 0

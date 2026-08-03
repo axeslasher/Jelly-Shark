@@ -147,10 +147,10 @@ public enum TrickplayHLSPlaylist {
     /// and the 720p retreat was REJECTED: it permanently degrades every
     /// SDR-display session to accommodate one server's CPU, and the clamp
     /// only treats the symptom of being on the wrong delivery path. The fix
-    /// is `ProgressiveRemuxDelivery` (#172), which takes HDR MKV sessions
-    /// off HLS entirely on SDR displays. This clamp still governs whatever
-    /// stays on HLS here: non-MKV HDR sources, and progressive-delivery
-    /// fallbacks.
+    /// is `RemuxHLSDelivery` (#172), which takes HDR MKV sessions off
+    /// server-side HLS entirely on SDR displays. This clamp still governs
+    /// whatever stays on the server path here: non-MKV HDR sources, and
+    /// remux-delivery fallbacks.
     static let sdrFallbackMaxWidth = 1920
     static let sdrFallbackVideoBitrate = 15_000_000
 

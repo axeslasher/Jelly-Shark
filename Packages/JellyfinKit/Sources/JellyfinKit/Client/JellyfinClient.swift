@@ -225,9 +225,9 @@ public protocol JellyfinClientProtocol: Sendable {
     ) throws -> StreamResolution
 
     /// Build the `static=true` original-file URL for a media source,
-    /// regardless of the negotiated play method. The progressive remux
+    /// regardless of the negotiated play method. The remux HLS delivery
     /// (#172) reads the original container over HTTP `Range` through this
-    /// URL even when the session would otherwise be HLS.
+    /// URL even when the session would otherwise be server HLS.
     /// - Throws: `APIError.notAuthenticated` if there is no access token
     func staticStreamURL(for source: MediaSource, parameters: StreamParameters) throws -> URL
 

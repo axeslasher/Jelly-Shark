@@ -34,7 +34,7 @@ let package = Package(
             dependencies: ["Features"],
             resources: [
                 // Real ffmpeg-muxed MKV (same file as JellyfinKit's copy)
-                // backing the progressive server's HTTP protocol tests.
+                // backing the remux HLS server's HTTP protocol tests.
                 .copy("Fixtures"),
             ],
         ),
