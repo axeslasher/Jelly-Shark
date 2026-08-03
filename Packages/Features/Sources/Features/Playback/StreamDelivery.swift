@@ -246,13 +246,25 @@ final class InterposedHLSDelivery: StreamDelivery {
 /// a dead end — the file reader ignores `sidx` and linear-scans the file.
 ///
 /// Everything here can fail somewhere real — the origin may ignore `Range`,
-/// the file may have no Cues, the codecs may not be carriable — so every
-/// failure falls back to the interposed HLS delivery this session would
-/// otherwise have used. That path is degraded (the tone-map), never dead.
+/// the file may have no Cues, the codecs may not be carriable (DTS-only
+/// audio is the common case) — so failures descend a ladder:
 ///
-/// Known gaps, accepted for this mode: no subtitle renditions and no
-/// trickplay (#176 step 3 territory), and the embedded default audio
-/// selection policy of the remuxer rather than the session's chosen track.
+/// 1. The in-app remux above.
+/// 2. The SERVER's copy variant, master-less: re-resolve the session's HLS
+///    URL, fetch the master, and hand the engine the media playlist of the
+///    variant marked `AllowVideoStreamCopy=true`. Video is stream-copied
+///    (9.89× realtime measured — no tone-map starvation), unsupported audio
+///    is transcoded server-side, and with no master there is nothing for
+///    the eligibility gate to rule ineligible. Measured 2026-08-02 on the
+///    SDR-panel rig with a 4K DV profile 7 + DTS-HD MA source: readyToPlay
+///    in 4s, rate 1.0 sustained, buffer 100s ahead.
+/// 3. The interposed HLS delivery this session would otherwise have used —
+///    degraded (the tone-map), never dead.
+///
+/// Known gaps, accepted for modes 1 and 2: no subtitle renditions and no
+/// trickplay (#176 step 3 territory; both live in the master this delivery
+/// exists to avoid). Mode 1 additionally plays the remuxer's default audio
+/// selection rather than the session's chosen track; mode 2 honors it.
 @MainActor
 final class RemuxHLSDelivery: StreamDelivery {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
@@ -297,11 +309,78 @@ final class RemuxHLSDelivery: StreamDelivery {
             guard !Task.isCancelled else {
                 return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
             }
-            Self.logger.warning("[remux-hls] unavailable (\(error, privacy: .public)); falling back to interposed HLS delivery")
+            Self.logger.warning("[remux-hls] unavailable (\(error, privacy: .public)); trying the master-less copy variant")
+            if let copyVariant = await prepareCopyVariant() {
+                return copyVariant
+            }
+            guard !Task.isCancelled else {
+                return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
+            }
+            Self.logger.warning("[copy-variant] unavailable; falling back to interposed HLS delivery")
             let fallback = InterposedHLSDelivery(resolution: resolution, context: context, client: client)
             self.fallback = fallback
             return await fallback.prepare()
         }
+    }
+
+    /// Ladder rung 2: the server's stream-copy variant served master-less.
+    /// Returns nil on any miss so the caller descends to the interposer.
+    private func prepareCopyVariant() async -> DeliveredStream? {
+        guard let source = context.mediaSource else { return nil }
+        // Re-resolve rather than reuse `resolution.url`: the engine's
+        // declared ranges exclude DOVIWithEL (profile 7), so the session's
+        // own master has no copy variant for those sources. Widening is
+        // safe here and only here — the base layer decodes as PQ and the
+        // display tone-maps on-device. Same PlaySessionId, so the app's
+        // existing stop reporting still kills the server transcode.
+        let resolved: StreamResolution
+        do {
+            resolved = try client.resolveStream(
+                for: source,
+                parameters: StreamParameters(
+                    itemId: context.itemId,
+                    mediaSourceId: source.id,
+                    playSessionId: context.playSessionId,
+                    audioStreamIndex: context.audioStreamIndex,
+                    subtitleStreamIndex: context.subtitleStreamIndex,
+                ),
+                capabilities: context.capabilities.includingEnhancementLayerRange(),
+                assumeInterposer: false,
+            )
+        } catch {
+            Self.logger.warning("[copy-variant] re-resolve failed: \(error, privacy: .public)")
+            return nil
+        }
+        guard resolved.playMethod != .directPlay else { return nil }
+
+        // The m3u8 endpoint only OFFERS a copy variant when the request
+        // itself declares `AllowVideoStreamCopy=true` — measured 2026-08-02
+        // against the rig: the app's exact param set gains the copy variant
+        // with the flag and loses it without, independent of every other
+        // parameter. PlaybackInfo-issued TranscodingUrls carry the flag;
+        // this hand-built URL must too. The server echoes it into the
+        // variant URI, so the media playlist inherits it.
+        guard var components = URLComponents(url: resolved.url, resolvingAgainstBaseURL: false) else { return nil }
+        components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: "AllowVideoStreamCopy", value: "true")]
+        guard let masterURL = components.url else { return nil }
+
+        guard let (data, response) = try? await URLSession.shared.data(from: masterURL),
+              (response as? HTTPURLResponse)?.statusCode == 200
+        else {
+            Self.logger.warning("[copy-variant] master fetch failed")
+            return nil
+        }
+        let master = String(decoding: data, as: UTF8.self)
+        guard let uri = HLSMasterCopyVariant.uri(inMaster: master) else {
+            Self.logger.warning("[copy-variant] master offers no AllowVideoStreamCopy=true variant")
+            return nil
+        }
+        guard let mediaURL = URL(string: uri, relativeTo: masterURL)?.absoluteURL else {
+            Self.logger.warning("[copy-variant] variant URI did not resolve against the master URL")
+            return nil
+        }
+        Self.logger.info("[copy-variant] session up: serving the copy variant's media playlist master-less")
+        return DeliveredStream(url: mediaURL, playMethod: resolved.playMethod)
     }
 
     private func prepareRemuxHLS() async throws -> DeliveredStream {

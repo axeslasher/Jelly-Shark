@@ -153,6 +153,17 @@ Two consequences:
 
 ⚠️ Not yet verified in that probe: frame advancement (headless snippets have no display surface; playhead stayed at 0.00) and audio (the probe content had none). Final acceptance is an in-app device round on the panel.
 
+### The server's own copy variant also plays master-less
+
+✅ Measured 2026-08-02, same rig, against a real library source: 4K Dolby Vision **profile 7** (`DOVIWithEL`) MKV with DTS-HD MA audio — a source the in-app remux declines (`A_DTS` is not carriable). A PlaybackInfo negotiation permitting hevc copy produced a Jellyfin master in the #146 shape: the copy variant (`VIDEO-RANGE=PQ`, `hvc1.2.4.L153.B0`, `AllowVideoStreamCopy=true`) beside two injected SDR re-encode variants. Loading that variant's `main.m3u8` **directly, no master** on the SDR-panel Apple TV:
+
+- `readyToPlay` in **4s**; playhead tracked wall clock at **rate 1.0 for 48s+**, buffer grew to **102s ahead**, never `isPlaybackBufferEmpty`.
+- Server side ran as `FFmpeg.DirectStream`: `-codec:v:0 copy -codec:a:0 ac3` at **9.89× realtime** (the tone-map re-encode of the same class of source runs 0.88× and starves).
+- Profile 7 is copied signalled as plain PQ HEVC — AVFoundation decodes the HDR10-compatible base layer and ignores the unsignalled EL/RPU NALs; the display tone-maps on-device. Note: the app's engine capabilities exclude `DOVIWithEL`, so the session's own master omits the copy variant — the delivery re-resolves with the range widened for exactly this resolve.
+- ⚠️ ffmpeg logged a benign-looking `dts ... out of range` timestamp warning during the copy; nothing observable client-side, but worth remembering if A/V sync issues surface.
+
+This is `RemuxHLSDelivery`'s ladder rung 2 (`HLSMasterCopyVariant`): remux → master-less server copy variant → interposed HLS tone-map.
+
 ### Progressive fMP4 is dead: the file reader ignores `sidx`
 
 ❌ Measured 2026-08-02, two device rounds against the branch's loopback progressive server, with structurally different `moov`s (one with `mehd`, one declaring no duration anywhere): identical failure signature — AVPlayer linear-scans the whole virtual file with 16KB-aligned resume ranges, never jumps via the index, never reads the tail, buffered stays 0.0s until the first-frame watchdog kills the session (~30s). AVFoundation's progressive (file-parser) reader drives off `moov` sample tables and categorically ignores `sidx`; only the manifest-driven stack consumes segment indexes. A full-`moov` progressive head is unreachable for a live remux — per-sample tables require scanning the entire source. Hence the pivot above.
