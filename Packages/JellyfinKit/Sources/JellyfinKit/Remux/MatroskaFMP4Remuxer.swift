@@ -124,7 +124,6 @@ public struct MatroskaFMP4Remuxer: Sendable {
     /// Build the init segment. AC-3/E-AC-3 configuration is parsed from the
     /// first audio frame, so the first cluster must be supplied.
     public func makeInitializationSegment(firstCluster: MatroskaCluster) throws -> Data {
-        let durationTicks = Int((index.durationTicks ?? 0).rounded())
         let video = FMP4Muxer.VideoTrack(
             trackID: tracks.video.number,
             codec: videoContext.codec,
@@ -148,7 +147,6 @@ public struct MatroskaFMP4Remuxer: Sendable {
             video: video,
             audio: audio,
             timescale: timescale,
-            durationTicks: durationTicks,
         )
     }
 
