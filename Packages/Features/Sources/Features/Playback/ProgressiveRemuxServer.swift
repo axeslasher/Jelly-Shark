@@ -29,6 +29,16 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
 
+    /// Startup diagnosis instrumentation: the request pattern is the one
+    /// signal that distinguishes a healthy session (head + a handful of
+    /// forward reads, ready in seconds) from AVFoundation rejecting the
+    /// sidx and scanning every moof before readiness (a sequential march
+    /// of small ranges, one span remux each — minutes of apparent stall).
+    /// Numbered requests with elapsed time make that legible in one glance
+    /// at the console.
+    private let startedAt = ContinuousClock.now
+    private var requestCount = 0
+
     /// Padded fragments already produced, newest last. Playback walks
     /// forward with overlapping ranges, so a shallow cache absorbs nearly
     /// every re-request; bounded because entries are span-sized.
@@ -98,7 +108,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
             return nil
         }
 
-        Self.logger.info("[progressive] listening on 127.0.0.1:\(port) (\(self.layout.slots.count) fragments, \(self.layout.totalSize) bytes)")
+        Self.logger.info("[progressive] listening on 127.0.0.1:\(port) (\(self.layout.slots.count) fragments, \(self.layout.totalSize) bytes; head = \(self.layout.initSegment.count) init + \(self.layout.sidx.count) sidx)")
         return URL(string: "http://127.0.0.1:\(port)/stream.mp4")
     }
 
@@ -151,14 +161,17 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
                 .first { $0.lowercased().hasPrefix("range:") }
                 .map { $0.dropFirst("range:".count).trimmingCharacters(in: .whitespaces) }
 
-            Self.logger.debug("[progressive] GET range=\(rangeHeader ?? "none", privacy: .public)")
-            Task { await self.serve(rangeHeader: rangeHeader, on: connection) }
+            self.requestCount += 1
+            let request = self.requestCount
+            let elapsed = ContinuousClock.now - self.startedAt
+            Self.logger.info("[progressive] #\(request) +\(elapsed, privacy: .public) GET range=\(rangeHeader ?? "none", privacy: .public)")
+            Task { await self.serve(request: request, rangeHeader: rangeHeader, on: connection) }
         }
     }
 
     // MARK: - Serving
 
-    private func serve(rangeHeader: String?, on connection: NWConnection) async {
+    private func serve(request: Int, rangeHeader: String?, on connection: NWConnection) async {
         let total = layout.totalSize
         let range: Range<UInt64>
         var status = "200 OK"
@@ -179,9 +192,22 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
         }
 
         let regions = layout.regions(for: range)
-        Self.logger.debug("[progressive] \(status, privacy: .public) \(range.lowerBound)-\(range.upperBound) (\(regions.count) regions)")
+        Self.logger.info("[progressive] #\(request) \(status, privacy: .public) \(range.lowerBound)-\(range.upperBound) → \(Self.describe(regions), privacy: .public)")
         sendHead(status: status, headers: headers, contentLength: Int(range.upperBound - range.lowerBound), on: connection)
         await streamRegions(regions, on: connection)
+    }
+
+    /// Compact region summary for the request log: "head+f0…f5850 (5852)".
+    private static func describe(_ regions: [ProgressiveMP4Layout.Region]) -> String {
+        func name(_ region: ProgressiveMP4Layout.Region) -> String {
+            switch region {
+            case .head: "head"
+            case let .fragment(index, _): "f\(index)"
+            }
+        }
+        guard let first = regions.first else { return "empty" }
+        guard regions.count > 1, let last = regions.last else { return name(first) }
+        return "\(name(first))…\(name(last)) (\(regions.count))"
     }
 
     /// `bytes=a-b`, `bytes=a-`, or `bytes=-suffix` → a half-open range.
@@ -246,7 +272,7 @@ final class ProgressiveRemuxServer: @unchecked Sendable {
             nextClusterTimeTicks: slot.nextTimeTicks,
         )
         let padded = try layout.padded(fragment: fragment, slot: index)
-        Self.logger.debug("[progressive] fragment \(index) produced: \(padded.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
+        Self.logger.info("[progressive] fragment \(index) produced: \(padded.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
         queue.sync {
             fragmentCache.append((index, padded))
             if fragmentCache.count > Self.fragmentCacheLimit {
