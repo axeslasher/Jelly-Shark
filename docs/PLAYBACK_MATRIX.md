@@ -133,7 +133,15 @@ A locally-remuxed progressive HDR file — `hvc1`, `color_transfer=smpte2084`, `
 
 So `-12927` is a property of **HLS variant selection**, not of HDR content on SDR displays. The gate evaluates `EXT-X-STREAM-INF` entries and rules some ineligible; an asset with no manifest has nothing to be ruled ineligible. #146's "the gate cannot be blinded" is correct **within HLS**, and does not extend to non-HLS delivery.
 
-> ⚠️ **This is load-bearing for #176.** An app-side remuxer serving HLS through `PlaybackLocalServer` hits the *same* gate — correct `hvc1` and `dvcC` do not help, because the gate is about manifests, not containers. Delivering HDR to SDR displays requires a **non-HLS** mode, which means a progressive MP4 with a `moov` at the head, which means the full sample index must be known before the first byte is served. An in-app demuxer reading Matroska Cues is the only component that would have it.
+> ⚠️ **This is load-bearing for #176.** An app-side remuxer serving HLS through `PlaybackLocalServer` hits the *same* gate — correct `hvc1` and `dvcC` do not help, because the gate is about manifests, not containers. Delivering HDR to SDR displays requires a **non-HLS** mode. A *fragmented* MP4 (`moov` with `mvex`/`mehd`, then `moof`/`mdat` pairs) satisfies that without a complete sample index — each fragment carries its own — so the init needs only track headers and total duration, all of which the source MKV already provides.
+
+### The SDR fallback is app-clamped, and it starves
+
+The 15 Mbps / 1080p cap on the SDR path is **ours, not the server's**. `TrickplayHLSPlaylist.clampedSDRURI` injects `VideoBitrate=15000000&MaxWidth=1920`, and `clampedSDRTagLine` rewrites the advertised `BANDWIDTH`/`RESOLUTION` to match. (Recorded because #172 previously carried this as an open question against server-side stream limits — nothing server-side is involved.)
+
+❌ It does not sustain playback. Measured 2026-08-02 on Apple TV 4K against the 1080p panel: the server ran `libx264` + `tonemapx` at **`speed=0.881x`**, and the playhead advanced 95.86s in 114s of wall clock — **0.84× realtime** — before freezing permanently. The clamp's own comment records a bench figure of 1.14× for 1080p/15M and names 720p/8M as the retreat, but the field is worse than the bench even on an easier source, because a real session also serves trickplay tiles, subtitle renditions and artwork.
+
+⚠️ The 720p retreat was **considered and rejected** (#172): it permanently degrades every SDR-display session to accommodate one server's CPU, and no other client makes that trade — Swiftfin defaults to VLCKit, Infuse ships its own decode stack, and neither routes 4K HDR through a server-side tone-map. The clamp treats the symptom of being on the wrong delivery path. **The `TrickplayHLSPlaylist` comment still reads as live guidance and should be corrected when #172 is picked up.**
 
 ---
 
@@ -234,6 +242,30 @@ For contrast, the **tone-map** path on this host runs at **~0.4× realtime** wit
 
 ---
 
+## What the source MKV already contains
+
+Measured 2026-08-02 with a Swift Matroska parser against two real sources (`docs/spikes/176-mkv-demux/`). This matters because it bounds what an in-app remuxer would have to *construct* versus merely copy — and the answer is that it constructs almost nothing.
+
+| Wanted for an fMP4 | Where it already is | Consequence |
+|---|---|---|
+| `hvc1` sample entry config | `CodecPrivate` for `V_MPEGH/ISO/HEVC` **is** the `hvcC` payload, byte-identical | ✅ copy, not synthesise — this is the tag Jellyfin's progressive path gets wrong |
+| Video sample data | Length-prefixed NALUs, **not** Annex B | ✅ byte copy; no bitstream conversion, decode, or re-encode |
+| Dolby Vision config | 24-byte `DOVIDecoderConfigurationRecord` under a `BlockAdditionMapping` of type `dvcC` | ✅ the box ffmpeg refuses to write is in the file |
+| Seek index | `Cues`, reachable directly via `SeekHead` | ✅ 8,759 and 78,069 cue points parsed on the two sources |
+| Duration | `Info` → `Duration` × `TimestampScale` | ✅ needed for `mehd` on a fragmented init |
+
+✅ Indexing cost over `Range`: **five requests, under 4 MB** on both a 25 GB / 6-track source and a 65 GB / 37-track one, with cue offsets landing exactly on Cluster elements at 12.9 GB and 29 GB depth.
+
+### Dolby Vision profile 7 needs a NAL filter
+
+Profile 7 is dual-layer, and the observed source carries it **single-track**: the enhancement layer is remapped to `UNSPEC63` and the RPU to `UNSPEC62`, both in the video track at `nuh_layer_id=0`.
+
+**Apple does not decode profile 7** — tvOS supports profile 5 and 8.1; profile 7 is a disc format. The established conversion is to drop the `UNSPEC63` NALUs, keep the base slices and the `UNSPEC62` RPU, and author a `dvcC` declaring profile 8.1. `DvBlSignalCompatibilityId 6` confirms the base layer is HDR10-compatible.
+
+✅ On the measured source that costs nothing: across 40 sampled frames the EL was **5,958 bytes — 0.05% of video payload**, ~149 bytes per frame, *smaller than the RPU*. That is a **MEL** (Minimal Enhancement Layer), not a FEL, so the conversion is lossless in practice. A FEL would be 20–30% of the bitrate; EL byte share is a cheap way to tell them apart.
+
+---
+
 ## Range and seekability
 
 | Endpoint | `Accept-Ranges` | Behaviour |
@@ -270,7 +302,6 @@ The progressive stream additionally has **no `moov` at the head** (top-level box
 
 | Question | Tracked |
 |---|---|
-| Can a **DV-signalled** progressive file be produced at all? ffmpeg declined to write `dvcC`/`dvvC` even with `-strict unofficial` | #172 — matters only if a progressive mode is built |
 | Does declaring `DOVIWithEL` select a strip-to-HDR10 copy, or another tone-map? | #172 comments |
 | Is there any tvOS path to TrueHD Atmos? | #221 |
 | Does `startTimeTicks` content actually start at the requested offset? | #172 |
