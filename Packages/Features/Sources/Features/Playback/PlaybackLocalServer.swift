@@ -68,9 +68,13 @@ final class PlaybackLocalServer: @unchecked Sendable {
     /// data must be preferred explicitly
     private let session: URLSession
 
-    private let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.playback-server")
-    private var listener: NWListener?
-    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private let http = LoopbackHTTPListener(
+        queueLabel: "com.justinlascelle.jellyshark.playback-server",
+        logPrefix: "[server]",
+    )
+    private var queue: DispatchQueue {
+        http.queue
+    }
 
     /// Origin URLs of the subtitle renditions the served master redirected
     /// to `/subs/{n}.m3u8`, index-aligned; refreshed on every master serve
@@ -107,6 +111,17 @@ final class PlaybackLocalServer: @unchecked Sendable {
             configuration.protocolClasses = protocolClasses
         }
         session = URLSession(configuration: configuration)
+
+        http.route = { [weak self] target, connection in
+            guard let self else { return }
+            // A head that is not a GET draws a dropped connection here (the
+            // remux server answers 404 instead; this server predates it).
+            guard let target else {
+                connection.cancel()
+                return
+            }
+            Task { await self.route(path: target, on: connection) }
+        }
     }
 
     deinit {
@@ -120,118 +135,14 @@ final class PlaybackLocalServer: @unchecked Sendable {
     ///   could not start (callers fall back to the original URL) or the
     ///   calling task was cancelled (callers must unwind, not fall back)
     func start() async -> URL? {
-        // A cancelled build must not bind a port it will never serve from
-        guard !Task.isCancelled else { return nil }
-
-        let listener: NWListener
-        do {
-            let parameters = NWParameters.tcp
-            parameters.requiredInterfaceType = .loopback
-            listener = try NWListener(using: parameters)
-        } catch {
-            Self.logger.warning("[server] failed to create listener: \(error, privacy: .public)")
-            return nil
-        }
-
-        self.listener = listener
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.accept(connection)
-        }
-
-        // The readiness wait honors task cancellation, and must: a stream
-        // build superseded by a newer one (#212) is cancelled-and-awaited,
-        // and an uncancellable park here would chain-block every later build
-        // behind an unbounded network-listener wait. Cancelling the listener
-        // drives its state to `.cancelled`, which resumes through the same
-        // handler as a natural failure — no second resume path.
-        let port: UInt16? = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                nonisolated(unsafe) var resumed = false
-                listener.stateUpdateHandler = { state in
-                    guard !resumed else { return }
-                    switch state {
-                    case .ready:
-                        resumed = true
-                        continuation.resume(returning: listener.port?.rawValue)
-                    case .failed, .cancelled:
-                        resumed = true
-                        continuation.resume(returning: nil)
-                    default:
-                        break
-                    }
-                }
-                listener.start(queue: self.queue)
-            }
-        } onCancel: {
-            listener.cancel()
-        }
-
-        guard let port else {
-            // A cancelled build's nil is not a failure — don't log it as one
-            if !Task.isCancelled {
-                Self.logger.warning("[server] listener failed to become ready")
-            }
-            stop()
-            return nil
-        }
-
+        guard let port = await http.start() else { return nil }
         let trickplay = info.map { "width=\($0.widthKey), thumbnails=\($0.thumbnailCount)" } ?? "none"
         Self.logger.info("[server] listening on 127.0.0.1:\(port) (trickplay: \(trickplay, privacy: .public))")
         return URL(string: "http://127.0.0.1:\(port)/master.m3u8")
     }
 
     func stop() {
-        listener?.cancel()
-        listener = nil
-        queue.async { [connections] in
-            for connection in connections.values {
-                connection.cancel()
-            }
-        }
-    }
-
-    // MARK: - Connections
-
-    private func accept(_ connection: NWConnection) {
-        connections[ObjectIdentifier(connection)] = connection
-        // Delivered on `queue` (the queue the connection starts on), where
-        // the connections dictionary is always accessed
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            if case .failed = state {
-                self.drop(connection)
-            } else if case .cancelled = state {
-                self.connections[ObjectIdentifier(connection)] = nil
-            }
-        }
-        connection.start(queue: queue)
-        receiveRequest(on: connection)
-    }
-
-    private func drop(_ connection: NWConnection) {
-        connection.cancel()
-    }
-
-    private func receiveRequest(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, _, error in
-            guard let self, error == nil, let data, !data.isEmpty else {
-                self?.drop(connection)
-                return
-            }
-
-            // GET requests fit comfortably in one read; only the request
-            // line matters
-            let head = String(decoding: data, as: UTF8.self)
-            guard let requestLine = head.split(separator: "\r\n").first,
-                  requestLine.hasPrefix("GET "),
-                  let path = requestLine.split(separator: " ").dropFirst().first
-            else {
-                self.drop(connection)
-                return
-            }
-
-            Task { await self.route(path: String(path), on: connection) }
-        }
+        http.stop()
     }
 
     // MARK: - Routing
@@ -243,13 +154,13 @@ final class PlaybackLocalServer: @unchecked Sendable {
             await serveMaster(on: connection)
         case "/iframe.m3u8":
             guard let info else {
-                send(status: "404 Not Found", on: connection)
+                http.send(status: "404 Not Found", on: connection)
                 return
             }
-            send(body: Data(iframePlaylist(info: info).utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+            http.send(body: Data(iframePlaylist(info: info).utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
         case "/init.mp4":
             guard let info else {
-                send(status: "404 Not Found", on: connection)
+                http.send(status: "404 Not Found", on: connection)
                 return
             }
             let segment = TrickplayIFrameMuxer.initializationSegment(
@@ -257,14 +168,14 @@ final class PlaybackLocalServer: @unchecked Sendable {
                 thumbnailHeight: info.thumbnailHeight,
                 durationMilliseconds: info.thumbnailCount * info.intervalMilliseconds,
             )
-            send(body: segment, contentType: "video/mp4", on: connection)
+            http.send(body: segment, contentType: "video/mp4", on: connection)
         default:
             if let index = subtitleIndex(fromPath: path) {
                 await serveSubtitlePlaylist(index: index, on: connection)
             } else if let info, let index = segmentIndex(fromPath: path) {
                 await serveSegment(thumbnailIndex: index, info: info, on: connection)
             } else {
-                send(status: "404 Not Found", on: connection)
+                http.send(status: "404 Not Found", on: connection)
             }
         }
     }
@@ -283,7 +194,7 @@ final class PlaybackLocalServer: @unchecked Sendable {
             // now, and a silent bounce to the origin would restore the 10s
             // timestamp offset — fail loudly instead.
             Self.logger.warning("[server] master fetch failed: \(error, privacy: .public)")
-            send(status: "502 Bad Gateway", on: connection)
+            http.send(status: "502 Bad Gateway", on: connection)
             return
         }
 
@@ -304,12 +215,12 @@ final class PlaybackLocalServer: @unchecked Sendable {
             // the origin is safe: playback survives, thumbnails are given
             // up, and no mistimed subtitle can result.
             Self.logger.warning("[server] origin response is not a master playlist (no #EXT-X-STREAM-INF); redirecting to origin")
-            send(status: "302 Found", headers: ["Location": originalMasterURL.absoluteString], on: connection)
+            http.send(status: "302 Found", headers: ["Location": originalMasterURL.absoluteString], on: connection)
             return
         }
 
         queue.sync { subtitleOriginURLs = rewrite.subtitleOriginURLs }
-        send(body: Data(rewrite.playlist.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+        http.send(body: Data(rewrite.playlist.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
     }
 
     private func iframePlaylist(info: TrickplayInfo) -> String {
@@ -334,7 +245,7 @@ final class PlaybackLocalServer: @unchecked Sendable {
         }
         guard let origin else {
             Self.logger.warning("[server] no subtitle origin recorded for /subs/\(index)")
-            send(status: "404 Not Found", on: connection)
+            http.send(status: "404 Not Found", on: connection)
             return
         }
 
@@ -354,12 +265,12 @@ final class PlaybackLocalServer: @unchecked Sendable {
                 originalURL: origin,
                 stripTimestampMap: videoSegmentsAreFMP4,
             )
-            send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
+            http.send(body: Data(rewritten.utf8), contentType: "application/vnd.apple.mpegurl", on: connection)
         } catch {
             // Failing loudly drops cues on screen; a silent fallback to
             // the origin playlist would render them 10 seconds late
             Self.logger.warning("[server] subtitle playlist \(index) failed: \(error, privacy: .public)")
-            send(status: "502 Bad Gateway", on: connection)
+            http.send(status: "502 Bad Gateway", on: connection)
         }
     }
 
@@ -398,11 +309,11 @@ final class PlaybackLocalServer: @unchecked Sendable {
                 durationMilliseconds: info.intervalMilliseconds,
                 jpegData: jpeg,
             )
-            send(body: segment, contentType: "video/mp4", on: connection)
+            http.send(body: segment, contentType: "video/mp4", on: connection)
         } catch {
             // Costs one preview frame; playback is unaffected
             Self.logger.debug("[server] segment \(thumbnailIndex) failed: \(error, privacy: .public)")
-            send(status: "404 Not Found", on: connection)
+            http.send(status: "404 Not Found", on: connection)
         }
     }
 
@@ -445,33 +356,5 @@ final class PlaybackLocalServer: @unchecked Sendable {
             return nil
         }
         return output as Data
-    }
-
-    // MARK: - HTTP plumbing
-
-    private func send(
-        status: String = "200 OK",
-        headers: [String: String] = [:],
-        body: Data = Data(),
-        contentType: String? = nil,
-        on connection: NWConnection,
-    ) {
-        var head = "HTTP/1.1 \(status)\r\n"
-        if let contentType {
-            head += "Content-Type: \(contentType)\r\n"
-        }
-        head += "Content-Length: \(body.count)\r\n"
-        for (name, value) in headers {
-            head += "\(name): \(value)\r\n"
-        }
-        head += "Connection: close\r\n\r\n"
-
-        connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { [weak self] _ in
-            self?.drop(connection)
-        })
-    }
-
-    private func send(body: Data, contentType: String, on connection: NWConnection) {
-        send(status: "200 OK", body: body, contentType: contentType, on: connection)
     }
 }

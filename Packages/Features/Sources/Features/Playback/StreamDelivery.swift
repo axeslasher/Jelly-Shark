@@ -31,6 +31,12 @@ protocol StreamDelivery: AnyObject {
 
     /// Release anything the delivery stood up. Idempotent.
     func stop()
+
+    /// Called at most once when the delivery fails permanently mid-session
+    /// — the stream it stood up can no longer serve, retries included, and
+    /// only a rebuild that avoids this rung recovers. Deliveries that
+    /// cannot fail this way never call it.
+    var onPermanentFailure: (() -> Void)? { get set }
 }
 
 /// Everything a delivery needs to know about the session it serves.
@@ -42,6 +48,10 @@ struct DeliveryContext {
     let subtitleStreamIndex: Int?
     let trickplayInfo: TrickplayInfo?
     let capabilities: PlaybackCapabilities
+    /// A remux HLS session for this item already failed mid-file, so the
+    /// rebuild must start from the copy variant instead of standing the
+    /// remux up again to fail on the same cluster.
+    var avoidInAppRemux = false
 }
 
 /// Picks the delivery for a resolved stream. The rule is the play method:
@@ -120,6 +130,7 @@ enum StreamDeliverySelector {
 @MainActor
 final class DirectDelivery: StreamDelivery {
     private let resolution: StreamResolution
+    var onPermanentFailure: (() -> Void)?
 
     init(resolution: StreamResolution) {
         self.resolution = resolution
@@ -144,6 +155,7 @@ final class InterposedHLSDelivery: StreamDelivery {
     private let resolution: StreamResolution
     private let context: DeliveryContext
     private let client: any JellyfinClientProtocol
+    var onPermanentFailure: (() -> Void)?
 
     /// The loopback server interposing the master playlist; nil until
     /// `prepare` succeeds or when the listener could not start
@@ -263,8 +275,10 @@ final class InterposedHLSDelivery: StreamDelivery {
 ///
 /// Known gaps, accepted for modes 1 and 2: no subtitle renditions and no
 /// trickplay (#176 step 3 territory; both live in the master this delivery
-/// exists to avoid). Mode 1 additionally plays the remuxer's default audio
-/// selection rather than the session's chosen track; mode 2 honors it.
+/// exists to avoid). Mode 1 only ever plays the remuxer's default audio
+/// pick, so a session committed to any other track — or whose default the
+/// remux cannot carry — skips straight to mode 2, which honors the
+/// selection (`rung1DeclineReason`).
 @MainActor
 final class RemuxHLSDelivery: StreamDelivery {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
@@ -272,6 +286,7 @@ final class RemuxHLSDelivery: StreamDelivery {
     private let resolution: StreamResolution
     private let context: DeliveryContext
     private let client: any JellyfinClientProtocol
+    var onPermanentFailure: (() -> Void)?
 
     private var server: RemuxHLSServer?
     /// The HLS delivery every failure falls back to; also what `stop()`
@@ -303,6 +318,10 @@ final class RemuxHLSDelivery: StreamDelivery {
     }
 
     func prepare() async -> DeliveredStream {
+        if let reason = Self.rung1DeclineReason(context: context) {
+            Self.logger.info("[remux-hls] skipping the in-app remux (\(reason, privacy: .public)); trying the master-less copy variant")
+            return await descendLadder()
+        }
         do {
             return try await prepareRemuxHLS()
         } catch {
@@ -310,17 +329,57 @@ final class RemuxHLSDelivery: StreamDelivery {
                 return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
             }
             Self.logger.warning("[remux-hls] unavailable (\(error, privacy: .public)); trying the master-less copy variant")
-            if let copyVariant = await prepareCopyVariant() {
-                return copyVariant
-            }
-            guard !Task.isCancelled else {
-                return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
-            }
-            Self.logger.warning("[copy-variant] unavailable; falling back to interposed HLS delivery")
-            let fallback = InterposedHLSDelivery(resolution: resolution, context: context, client: client)
-            self.fallback = fallback
-            return await fallback.prepare()
+            return await descendLadder()
         }
+    }
+
+    /// Audio codecs (Jellyfin stream-info spelling) the remux can carry —
+    /// `MatroskaFMP4Remuxer.supportedAudioCodecIDs` seen from the server's
+    /// metadata instead of the Matroska track header.
+    private static let remuxCarriableAudioCodecs: Set<String> = ["aac", "ac3", "eac3", "flac"]
+
+    /// Why rung 1 must not even be attempted for this session, or nil to
+    /// attempt it.
+    ///
+    /// The audio clauses close a dead control: rung 1 plays the remuxer's
+    /// own pick — the source's default carriable track — and ignores the
+    /// session's committed audio index. An audio selection used to rebuild
+    /// straight back into rung 1, which re-picked the same default: a
+    /// spinner, the same track playing, and the menu's checkmark on a track
+    /// that never played. Descending to the copy variant instead honors the
+    /// selection server-side (the video stays stream-copied). The same
+    /// honesty argument covers a default track the remux cannot carry:
+    /// substituting a different track while the session reports the default
+    /// is the identical lie, so that session starts on rung 2 too.
+    static func rung1DeclineReason(context: DeliveryContext) -> String? {
+        if context.avoidInAppRemux {
+            return "a remux session already failed mid-file"
+        }
+        guard let source = context.mediaSource else { return nil }
+        if let requested = context.audioStreamIndex, requested != source.defaultAudioStreamIndex {
+            return "session audio stream \(requested) is not the default"
+        }
+        if let defaultIndex = source.defaultAudioStreamIndex,
+           let codec = source.audioStreams.first(where: { $0.index == defaultIndex })?.codec?.lowercased(),
+           !remuxCarriableAudioCodecs.contains(codec)
+        {
+            return "default audio codec \(codec) is not carriable"
+        }
+        return nil
+    }
+
+    /// Rungs 2 and 3, in order: the copy variant, then the interposer.
+    private func descendLadder() async -> DeliveredStream {
+        if let copyVariant = await prepareCopyVariant() {
+            return copyVariant
+        }
+        guard !Task.isCancelled else {
+            return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
+        }
+        Self.logger.warning("[copy-variant] unavailable; falling back to interposed HLS delivery")
+        let fallback = InterposedHLSDelivery(resolution: resolution, context: context, client: client)
+        self.fallback = fallback
+        return await fallback.prepare()
     }
 
     /// Ladder rung 2: the server's stream-copy variant served master-less.
@@ -414,6 +473,15 @@ final class RemuxHLSDelivery: StreamDelivery {
         let plan = HLSSegmentPlan(index: index, timescale: remuxer.timescale)
 
         let server = RemuxHLSServer(demuxer: demuxer, remuxer: remuxer, plan: plan, initSegment: initSegment)
+        // A deterministic mid-file production failure (the file, not the
+        // network) can never heal on retry — surface it so the session
+        // rebuilds on the next rung instead of 500ing the same segment
+        // forever (#176's failure posture).
+        server.onUnrecoverableSegmentFailure = { [weak self] in
+            Task { @MainActor in
+                self?.onPermanentFailure?()
+            }
+        }
         guard let url = await server.start() else {
             throw MatroskaError.malformed("loopback listener unavailable")
         }

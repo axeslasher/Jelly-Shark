@@ -29,9 +29,21 @@ final class RemuxHLSServer: @unchecked Sendable {
     private let initSegment: Data
     private let playlist: Data
 
-    private let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.remux-hls-server")
-    private var listener: NWListener?
-    private var connections: [ObjectIdentifier: NWConnection] = [:]
+    private let http = LoopbackHTTPListener(
+        queueLabel: "com.justinlascelle.jellyshark.remux-hls-server",
+        logPrefix: "[remux-hls]",
+    )
+    private var queue: DispatchQueue {
+        http.queue
+    }
+
+    /// Called at most once, off the main actor, when segment production
+    /// fails with a deterministic error — the file's structure, not the
+    /// network — so no amount of AVPlayer retrying can heal it and the
+    /// delivery should rebuild on its next rung (#176's failure posture).
+    var onUnrecoverableSegmentFailure: (@Sendable () -> Void)?
+    /// One-shot guard for the callback; accessed on `queue`.
+    private var unrecoverableFailureReported = false
 
     /// Startup diagnosis instrumentation: the request pattern is the one
     /// signal that distinguishes a healthy session (playlist + init + a
@@ -68,129 +80,63 @@ final class RemuxHLSServer: @unchecked Sendable {
         self.plan = plan
         self.initSegment = initSegment
         playlist = Data(plan.mediaPlaylist().utf8)
+        http.route = { [weak self] target, connection in
+            self?.route(target, on: connection)
+        }
     }
 
     deinit {
         stop()
     }
 
-    // MARK: - Lifecycle (same listener pattern as PlaybackLocalServer)
+    // MARK: - Lifecycle
 
     /// Start listening on an ephemeral loopback port.
     /// - Returns: The media playlist URL, or nil if the listener could not
     ///   start or the calling task was cancelled.
     func start() async -> URL? {
-        guard !Task.isCancelled else { return nil }
-
-        let listener: NWListener
-        do {
-            let parameters = NWParameters.tcp
-            parameters.requiredInterfaceType = .loopback
-            listener = try NWListener(using: parameters)
-        } catch {
-            Self.logger.warning("[remux-hls] failed to create listener: \(error, privacy: .public)")
-            return nil
-        }
-
-        self.listener = listener
-        listener.newConnectionHandler = { [weak self] connection in
-            self?.accept(connection)
-        }
-
-        let port: UInt16? = await withTaskCancellationHandler {
-            await withCheckedContinuation { continuation in
-                nonisolated(unsafe) var resumed = false
-                listener.stateUpdateHandler = { state in
-                    guard !resumed else { return }
-                    switch state {
-                    case .ready:
-                        resumed = true
-                        continuation.resume(returning: listener.port?.rawValue)
-                    case .failed, .cancelled:
-                        resumed = true
-                        continuation.resume(returning: nil)
-                    default:
-                        break
-                    }
-                }
-                listener.start(queue: self.queue)
-            }
-        } onCancel: {
-            listener.cancel()
-        }
-
-        guard let port else {
-            if !Task.isCancelled {
-                Self.logger.warning("[remux-hls] listener failed to become ready")
-            }
-            stop()
-            return nil
-        }
-
+        guard let port = await http.start() else { return nil }
         Self.logger.info("[remux-hls] listening on 127.0.0.1:\(port) (\(self.plan.segments.count) segments, init \(self.initSegment.count) bytes)")
         return URL(string: "http://127.0.0.1:\(port)/\(HLSSegmentPlan.playlistPath)")
     }
 
     func stop() {
-        listener?.cancel()
-        listener = nil
-        queue.async { [connections] in
-            for connection in connections.values {
-                connection.cancel()
-            }
+        http.stop()
+        // Cancel in-flight productions too: each rides ranged URLSession
+        // reads, so an abandoned one would otherwise keep pulling span-sized
+        // data from the origin after the session is gone.
+        let tasks = queue.sync { () -> [Task<Data, Error>] in
+            defer { segmentTasks.removeAll() }
+            return Array(segmentTasks.values)
+        }
+        for task in tasks {
+            task.cancel()
         }
     }
 
-    // MARK: - Connections
+    // MARK: - Routing (on the listener queue)
 
-    private func accept(_ connection: NWConnection) {
-        connections[ObjectIdentifier(connection)] = connection
-        connection.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
-            if case .failed = state {
-                connection.cancel()
-            } else if case .cancelled = state {
-                self.connections[ObjectIdentifier(connection)] = nil
-            }
+    private func route(_ target: String?, on connection: NWConnection) {
+        guard let target else {
+            http.send(status: "404 Not Found", on: connection)
+            return
         }
-        connection.start(queue: queue)
-        receiveRequest(on: connection)
-    }
 
-    private func receiveRequest(on connection: NWConnection) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self] data, _, _, error in
-            guard let self, error == nil, let data, !data.isEmpty else {
-                connection.cancel()
-                return
-            }
+        requestCount += 1
+        let request = requestCount
+        let elapsed = ContinuousClock.now - startedAt
+        let path = String(target.dropFirst())
+        Self.logger.info("[remux-hls] #\(request) +\(elapsed, privacy: .public) GET \(path, privacy: .public)")
 
-            let head = String(decoding: data, as: UTF8.self)
-            let lines = head.split(separator: "\r\n")
-            guard let requestLine = lines.first,
-                  requestLine.hasPrefix("GET "),
-                  let target = requestLine.split(separator: " ").dropFirst().first
-            else {
-                Self.logger.warning("[remux-hls] refused request: \(lines.first.map(String.init) ?? "<empty>", privacy: .public)")
-                self.send(status: "404 Not Found", on: connection)
-                return
-            }
-
-            self.requestCount += 1
-            let request = self.requestCount
-            let elapsed = ContinuousClock.now - self.startedAt
-            let path = String(target.dropFirst())
-            Self.logger.info("[remux-hls] #\(request) +\(elapsed, privacy: .public) GET \(path, privacy: .public)")
-
-            if path == HLSSegmentPlan.playlistPath {
-                self.send(self.playlist, contentType: "application/vnd.apple.mpegurl", on: connection)
-            } else if path == HLSSegmentPlan.initSegmentPath {
-                self.send(self.initSegment, contentType: "video/mp4", on: connection)
-            } else if let index = HLSSegmentPlan.segmentIndex(fromPath: path), self.plan.segments.indices.contains(index) {
-                Task { await self.serveSegment(index, request: request, on: connection) }
-            } else {
-                Self.logger.warning("[remux-hls] 404 \(path, privacy: .public)")
-                self.send(status: "404 Not Found", on: connection)
-            }
+        if path == HLSSegmentPlan.playlistPath {
+            http.send(body: playlist, contentType: "application/vnd.apple.mpegurl", on: connection)
+        } else if path == HLSSegmentPlan.initSegmentPath {
+            http.send(body: initSegment, contentType: "video/mp4", on: connection)
+        } else if let index = HLSSegmentPlan.segmentIndex(fromPath: path), plan.segments.indices.contains(index) {
+            Task { await self.serveSegment(index, request: request, on: connection) }
+        } else {
+            Self.logger.warning("[remux-hls] 404 \(path, privacy: .public)")
+            http.send(status: "404 Not Found", on: connection)
         }
     }
 
@@ -202,14 +148,30 @@ final class RemuxHLSServer: @unchecked Sendable {
             data = try await segment(at: index)
         } catch {
             // Nothing has been sent yet, so the honest failure is a 500:
-            // AVPlayer retries or stalls into the delivery watchdog, and
-            // nothing corrupt is ever served.
+            // AVPlayer retries or stalls, and nothing corrupt is ever
+            // served. What happens next depends on the error's class: a
+            // demux/remux error is the file's structure and will fail
+            // identically on every retry, so it demotes the delivery; a
+            // network error can heal, so the retries are left to run.
             Self.logger.warning("[remux-hls] segment \(index) failed: \(error, privacy: .public)")
-            send(status: "500 Internal Server Error", on: connection)
+            if error is MatroskaError || error is MatroskaFMP4Remuxer.RemuxError {
+                reportUnrecoverableFailure()
+            }
+            http.send(status: "500 Internal Server Error", on: connection)
             return
         }
         Self.logger.info("[remux-hls] #\(request) 200 seg\(index) \(data.count) bytes")
-        send(data, contentType: "video/iso.segment", on: connection)
+        http.send(body: data, contentType: "video/iso.segment", on: connection)
+    }
+
+    private func reportUnrecoverableFailure() {
+        let firstReport = queue.sync { () -> Bool in
+            defer { unrecoverableFailureReported = true }
+            return !unrecoverableFailureReported
+        }
+        if firstReport {
+            onUnrecoverableSegmentFailure?()
+        }
     }
 
     private func segment(at index: Int) async throws -> Data {
@@ -250,24 +212,5 @@ final class RemuxHLSServer: @unchecked Sendable {
             }
         }
         return produced
-    }
-
-    // MARK: - HTTP plumbing
-
-    private func send(_ body: Data, contentType: String, on connection: NWConnection) {
-        var head = "HTTP/1.1 200 OK\r\n"
-        head += "Content-Length: \(body.count)\r\n"
-        head += "Content-Type: \(contentType)\r\n"
-        head += "Connection: close\r\n\r\n"
-        connection.send(content: Data(head.utf8) + body, completion: .contentProcessed { _ in
-            connection.cancel()
-        })
-    }
-
-    private func send(status: String, on connection: NWConnection) {
-        let head = "HTTP/1.1 \(status)\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-        connection.send(content: Data(head.utf8), completion: .contentProcessed { _ in
-            connection.cancel()
-        })
     }
 }

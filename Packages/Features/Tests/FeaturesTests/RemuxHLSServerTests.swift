@@ -36,6 +36,25 @@ struct RemuxHLSServerTests {
         try #require(URL(string: path, relativeTo: playlistURL))
     }
 
+    /// Lock-guarded call counter for the demotion callback, which fires off
+    /// the main actor.
+    private final class FailureReportCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+
+        func bump() {
+            lock.lock()
+            count += 1
+            lock.unlock()
+        }
+
+        var value: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return count
+        }
+    }
+
     @Test("The playlist is served verbatim with the HLS content type")
     func playlist() async throws {
         let (server, url, plan, _) = try await makeServer()
@@ -83,6 +102,45 @@ struct RemuxHLSServerTests {
         let (first, _) = try await get(segmentURL)
         let (second, _) = try await get(segmentURL)
         #expect(first == second)
+    }
+
+    @Test("A deterministic segment failure answers 500 and reports demotion once")
+    func unrecoverableSegmentFailure() async throws {
+        let fixtureURL = try #require(Bundle.module.url(forResource: "hevc-ac3", withExtension: "mkv", subdirectory: "Fixtures"))
+        let demuxer = try MatroskaDemuxer(source: DataByteSource(Data(contentsOf: fixtureURL)))
+        let index = try await demuxer.loadIndex()
+        let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
+        let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+        let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
+        let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
+        let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
+
+        // A plan whose only cue points at the EBML header instead of a
+        // Cluster: production throws the same MatroskaError on every
+        // attempt — the mid-file shape a corrupt file produces.
+        let poisoned = MatroskaIndex(
+            timestampScaleNs: index.timestampScaleNs,
+            durationTicks: index.durationTicks,
+            tracks: index.tracks,
+            cues: [MatroskaCuePoint(timeTicks: 0, clusterOffset: 0)],
+            segmentDataStart: index.segmentDataStart,
+            segmentDataEnd: index.segmentDataEnd,
+        )
+        let plan = HLSSegmentPlan(index: poisoned, timescale: remuxer.timescale)
+        let server = RemuxHLSServer(demuxer: demuxer, remuxer: remuxer, plan: plan, initSegment: initSegment)
+        let reports = FailureReportCounter()
+        server.onUnrecoverableSegmentFailure = { reports.bump() }
+        let url = try #require(await server.start())
+        defer { server.stop() }
+
+        let segmentURL = try resolved(HLSSegmentPlan.segmentPath(0), against: url)
+        let (_, first) = try await get(segmentURL)
+        #expect(first.statusCode == 500)
+        let (_, second) = try await get(segmentURL)
+        #expect(second.statusCode == 500)
+        // The callback fires before the 500 is answered, so both responses
+        // being in hand means both reports would have landed by now.
+        #expect(reports.value == 1)
     }
 
     @Test("Unknown paths and out-of-range segments 404")

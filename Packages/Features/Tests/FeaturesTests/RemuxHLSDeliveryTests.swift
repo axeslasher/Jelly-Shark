@@ -14,6 +14,10 @@ struct RemuxHLSDeliveryTests {
         container: String? = "mkv",
         videoCodec: String? = "hevc",
         videoRange: String? = "HDR10",
+        audioStreamIndex: Int? = nil,
+        defaultAudioStreamIndex: Int? = nil,
+        audioStreams: [MediaStreamInfo] = [],
+        avoidInAppRemux: Bool = false,
     ) -> DeliveryContext {
         DeliveryContext(
             itemId: "item",
@@ -21,13 +25,16 @@ struct RemuxHLSDeliveryTests {
                 id: "source",
                 container: container,
                 videoCodec: videoCodec,
+                defaultAudioStreamIndex: defaultAudioStreamIndex,
                 videoStream: MediaStreamInfo(index: 0, type: .video, videoRange: videoRange),
+                audioStreams: audioStreams,
             ),
             playSessionId: nil,
-            audioStreamIndex: nil,
+            audioStreamIndex: audioStreamIndex,
             subtitleStreamIndex: nil,
             trickplayInfo: nil,
             capabilities: AVFoundationPlayerEngine.capabilities,
+            avoidInAppRemux: avoidInAppRemux,
         )
     }
 
@@ -42,6 +49,33 @@ struct RemuxHLSDeliveryTests {
         #expect(!RemuxHLSDelivery.isEligible(context: context(container: "mp4"), displaySupportsHDR: false))
         // Codecs the remux cannot carry stay on the server path.
         #expect(!RemuxHLSDelivery.isEligible(context: context(videoCodec: "vc1"), displaySupportsHDR: false))
+    }
+
+    @Test("Rung 1 declines sessions it could only serve dishonestly")
+    func rung1Decline() {
+        let streams = [
+            MediaStreamInfo(index: 1, type: .audio, codec: "eac3"),
+            MediaStreamInfo(index: 2, type: .audio, codec: "ac3"),
+        ]
+        // The default track with a carriable codec: attempt the remux.
+        #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
+            audioStreamIndex: 1, defaultAudioStreamIndex: 1, audioStreams: streams,
+        )) == nil)
+        // No committed index: the remuxer's pick is the session's claim.
+        #expect(RemuxHLSDelivery.rung1DeclineReason(context: context()) == nil)
+        // A non-default selection would play the default anyway — descend
+        // to the copy variant, which honors it.
+        #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
+            audioStreamIndex: 2, defaultAudioStreamIndex: 1, audioStreams: streams,
+        )) != nil)
+        // A default the remux cannot carry would be silently substituted.
+        #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
+            audioStreamIndex: 1,
+            defaultAudioStreamIndex: 1,
+            audioStreams: [MediaStreamInfo(index: 1, type: .audio, codec: "dts")],
+        )) != nil)
+        // A prior mid-file failure pins the session below rung 1.
+        #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(avoidInAppRemux: true)) != nil)
     }
 
     @Test("Selector routes the eligible case to remux HLS, everything else as before")
