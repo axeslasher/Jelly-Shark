@@ -71,35 +71,44 @@ public struct DolbyVisionConfiguration: Sendable, Equatable {
     /// to plain HDR10 (no DV box at all).
     ///
     /// - Profile 8 passes through unchanged.
-    /// - Profile 7 becomes 8.1: the EL is dropped by ``HEVCNALFilter``, so
-    ///   `elPresent` clears, and the compatibility ID maps to 1 (HDR10) —
-    ///   profile-7 sources declare 6 (UHD Blu-ray), which implies an
-    ///   HDR10-compatible base layer, and 1 is what HLS `db1p` signalling
-    ///   means on the Apple side.
+    /// - Profile 7 is UNSIGNALLED, so the fMP4 carries the HDR10 base layer
+    ///   with no DV box. Relabelling the configuration record as 8.1 was
+    ///   tried and is wrong: it leaves the source's profile-7 RPU in the
+    ///   stream, and that RPU describes a DUAL-LAYER reconstruction (NLQ
+    ///   coefficients for the EL residual) that 8.1 does not have. The
+    ///   display pipeline then engages the DV composer, applies two-layer
+    ///   mapping metadata to a base layer whose EL has just been stripped,
+    ///   and renders severe chroma corruption — device-measured 2026-08-11
+    ///   on the SDR-panel rig across four profile-7 sources, every one a
+    ///   green/magenta ruin while profile-8.1 sources on the identical code
+    ///   path were correct. An honest conversion has to REWRITE the RPU
+    ///   (what `dovi_tool --mode 2` does), which this remuxer does not do.
+    ///   Unsignalled is the same shape the copy-variant rung serves — the
+    ///   bitstream keeps its unspec62/63 NALUs, nothing claims Dolby Vision,
+    ///   the decoder ignores them, and the base layer renders correctly
+    ///   (device-verified the same day). This delivery only ever serves SDR
+    ///   displays, which tone-map either way, so no DV rendering is lost.
     /// - Profile 5 (no base-layer compatibility) passes through: tvOS decodes
     ///   it, and there is nothing to convert.
     /// - Anything else is unsignalled rather than mis-signalled.
     public func signalledForAVFoundation() -> DolbyVisionConfiguration? {
         switch profile {
         case 5, 8:
-            return self
-        case 7:
-            guard blPresent, rpuPresent else { return nil }
-            return DolbyVisionConfiguration(
-                profile: 8,
-                level: level,
-                rpuPresent: true,
-                elPresent: false,
-                blPresent: true,
-                blSignalCompatibilityID: 1,
-            )
+            self
         default:
-            return nil
+            nil
         }
     }
 
-    /// Whether ``HEVCNALFilter`` must strip enhancement-layer NALUs before
-    /// this configuration's `signalledForAVFoundation()` form is honest.
+    /// Whether ``HEVCNALFilter`` must strip enhancement-layer NALUs.
+    ///
+    /// Still true for profile 7 even though it is now unsignalled. Not for
+    /// bandwidth — the measured source's EL is a MEL at 0.05% of video
+    /// payload (PLAYBACK_MATRIX.md), so the saving is nil — but because
+    /// stripping is the shape verified end to end on the SDR-panel rig
+    /// (2026-08-11, three profile-7 sources, correct picture). An
+    /// unsignalled EL is inert, so dropping the filter would probably also
+    /// work; "probably" is not what this path is short of.
     public var requiresEnhancementLayerFilter: Bool {
         profile == 7
     }
