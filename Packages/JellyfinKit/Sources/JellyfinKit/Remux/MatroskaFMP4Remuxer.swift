@@ -213,11 +213,15 @@ public struct MatroskaFMP4Remuxer: Sendable {
             ))
         }
 
+        var data = Data(capacity: payloads.reduce(0) { $0 + $1.count })
+        for payload in payloads {
+            data.append(payload)
+        }
         return FMP4Muxer.TrackFragment(
             trackID: tracks.video.number,
             baseDecodeTime: decodeTimes[0],
             samples: samples,
-            data: payloads.reduce(Data(), +),
+            data: data,
             isVideo: true,
         )
     }
@@ -260,11 +264,15 @@ public struct MatroskaFMP4Remuxer: Sendable {
         let samples = zip(frames, durations).map { frame, duration in
             FMP4Muxer.Sample(duration: duration, size: frame.data.count, isSync: true)
         }
+        var data = Data(capacity: frames.reduce(0) { $0 + $1.data.count })
+        for frame in frames {
+            data.append(frame.data)
+        }
         return FMP4Muxer.TrackFragment(
             trackID: track.number,
             baseDecodeTime: times[0],
             samples: samples,
-            data: frames.reduce(Data()) { $0 + $1.data },
+            data: data,
             isVideo: false,
         )
     }

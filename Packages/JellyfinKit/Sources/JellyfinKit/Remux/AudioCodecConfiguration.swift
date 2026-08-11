@@ -149,8 +149,7 @@ public struct AudioSampleEntryConfiguration: Sendable, Equatable {
                 if bits.read(1) == 1 { // chanmape
                     let chanmap = bits.read(16)
                     guard bits.isValid else { return nil }
-                    // chan_loc is chanmap's beyond-5.1 bits (MSB-indexed 5–13)
-                    independents[independents.count - 1].chanLoc |= (chanmap >> 2) & 0x1FF
+                    independents[independents.count - 1].chanLoc |= Self.chanLoc(fromChanmap: chanmap)
                 }
             } else {
                 independents.append(Substream(fscod: fscod, bsid: bsid, bsmod: 0, acmod: acmod, lfeon: lfeon))
@@ -184,6 +183,24 @@ public struct AudioSampleEntryConfiguration: Sendable, Equatable {
             }
         }
         return fullBoxless("dec3", writer.data)
+    }
+
+    /// Map a dependent substream's 16-bit `chanmap` (transmission order: bit
+    /// 15 = L … bit 1 = LFE2, bit 0 = LFE) to the `dec3` box's 9-bit
+    /// `chan_loc` (TS 102 366 §F.6.1: bit 0 = Lc/Rc … bit 7 = Cvh, bit 8 =
+    /// LFE2). The fields run in OPPOSITE bit orders and chan_loc skips
+    /// chanmap's reserved bit 2, so no shift-and-mask relates them.
+    static func chanLoc(fromChanmap chanmap: Int) -> Int {
+        var chanLoc = 0
+        for bit in 0 ... 7 { // Lc/Rc, Lrs/Rrs, Cs, Ts, Lsd/Rsd, Lw/Rw, Lvh/Rvh, Cvh
+            if chanmap & (1 << (10 - bit)) != 0 {
+                chanLoc |= 1 << bit
+            }
+        }
+        if chanmap & 0x2 != 0 { // LFE2
+            chanLoc |= 1 << 8
+        }
+        return chanLoc
     }
 
     // MARK: - FLAC

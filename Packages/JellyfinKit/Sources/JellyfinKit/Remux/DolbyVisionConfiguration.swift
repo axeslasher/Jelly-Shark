@@ -5,11 +5,13 @@ import Foundation
 // Two jobs:
 //  1. Interpret the DOVIDecoderConfigurationRecord a Matroska source hands us
 //     via BlockAdditionMapping (the box ffmpeg refuses to write — spike
-//     finding 3), and re-author it for what tvOS actually decodes.
-//  2. Filter profile-7 bitstreams down to profile 8.1: Apple does not decode
-//     profile 7 (a disc format), but single-track profile 7 carries its
-//     enhancement layer as UNSPEC63 NALUs at layer 0 that can simply be
-//     dropped — the base slices and the UNSPEC62 RPU are the 8.1 stream.
+//     finding 3), and decide what to signal for what tvOS actually decodes
+//     (profiles 5/8 pass through; profile 7 is carried unsignalled).
+//  2. Strip profile 7's enhancement layer: single-track profile 7 carries
+//     its EL as UNSPEC63 NALUs at layer 0, dropped so the delivered stream
+//     is the shape verified on-device. The stream is then carried
+//     UNSIGNALLED — no DV box — per `signalledForAVFoundation()`, which
+//     holds the device evidence for why relabelling as 8.1 was abandoned.
 //     Measured in the spike: the EL of a MEL source is 0.05% of payload,
 //     smaller than the RPU itself.
 
@@ -157,16 +159,19 @@ public extension MatroskaTrack {
     }
 }
 
-/// Walks length-prefixed HEVC access units and drops the NAL types that must
-/// not survive a profile-7 → 8.1 conversion.
+/// Walks length-prefixed HEVC access units and drops profile 7's
+/// enhancement-layer NALUs (the stream is then delivered unsignalled — no DV
+/// box — per `signalledForAVFoundation()`).
 ///
 /// Single-track profile 7 remaps its layers instead of using `nuh_layer_id`:
 /// the enhancement layer is NAL type 63 (UNSPEC63) and the RPU is type 62
 /// (UNSPEC62), both at layer 0 — the spike's probe bug #2 was testing for
 /// `nuh_layer_id == 1` and missing an EL that was plainly there.
 public enum HEVCNALFilter {
-    /// NAL unit types to drop for 8.1: the enhancement layer only. The RPU
-    /// (62) stays — it is what makes the stream Dolby Vision.
+    /// Only the enhancement layer is dropped. The RPU (62) stays in the
+    /// bitstream but is inert: nothing signals Dolby Vision, so the decoder
+    /// ignores it — the device-verified shape (see
+    /// `requiresEnhancementLayerFilter`).
     private static let enhancementLayerType: UInt8 = 63
 
     /// Returns `sample` with UNSPEC63 NALUs removed, or `nil` when the

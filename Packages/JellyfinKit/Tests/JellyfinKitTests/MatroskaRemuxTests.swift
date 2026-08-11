@@ -130,6 +130,29 @@ struct AudioCodecConfigurationTests {
         #expect(payload[4] == 0)
     }
 
+    @Test("dec3 chan_loc maps the dependent substream's chanmap per Annex F")
+    func dec3ChanLoc() throws {
+        // The two fields run in opposite bit orders and chan_loc skips the
+        // reserved chanmap bit, so a shift-and-mask cannot relate them: a
+        // 7.1 source (chanmap bit 9, Lrs/Rrs) must land on chan_loc bit 1 —
+        // not bit 7 (Cvh, a top-front-center channel).
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0200) == 0x002) // Lrs/Rrs
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0400) == 0x001) // Lc/Rc
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0002) == 0x100) // LFE2
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0004) == 0) // reserved bit
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0xF801) == 0) // 5.1 + LFE bits
+
+        // End to end: independent 5.1 + a dependent substream carrying the
+        // rear pair, the plain E-AC-3 7.1 shape.
+        let track = MatroskaTrack(number: 2, type: .audio, codecID: "A_EAC3")
+        let sample = CodecFixtures.eac3Syncframe() + CodecFixtures.eac3DependentSyncframe(chanmap: 0x0200)
+        let config = try #require(AudioSampleEntryConfiguration.make(for: track, firstFrame: sample))
+        let payload = [UInt8](config.configurationBox.dropFirst(8))
+        // reserved 000, num_dep_sub 0001, then chan_loc's 9 bits
+        #expect(payload[4] == 0b0000_0010)
+        #expect(payload[5] == 0b0000_0010)
+    }
+
     @Test("AAC CodecPrivate is wrapped in an esds descriptor chain")
     func esds() throws {
         let asc = Data([0x11, 0x90]) // AAC-LC 48 kHz stereo
@@ -222,6 +245,26 @@ struct FMP4MuxerTests {
         #expect(entry.type == "ec-3")
         let children = MP4Box.parse(entry.payload.dropFirst(28))
         #expect(children.map(\.type) == ["dec3"])
+    }
+
+    @Test("Sample rates past 16 bits write a zero 16.16 field, not garbage")
+    func hiResSampleRate() throws {
+        func rateField(sampleRate: Int) throws -> Int {
+            let track = FMP4Muxer.AudioTrack(
+                trackID: 2,
+                configuration: AudioSampleEntryConfiguration(entryType: "fLaC", configurationBox: Data()),
+                channelCount: 2,
+                sampleRate: sampleRate,
+            )
+            let segment = FMP4Muxer.initializationSegment(video: nil, audio: track, timescale: 1000)
+            let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
+            let entry = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
+            return entry.payload.dropFirst(24).prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+        }
+        #expect(try rateField(sampleRate: 48000) == 48000 << 16)
+        // 96 kHz cannot be represented; ffmpeg writes 0 and the true rate
+        // rides the codec config. Clamping wrote 0xFFFFFFFF here.
+        #expect(try rateField(sampleRate: 96000) == 0)
     }
 
     @Test("Media segment data offsets point at each track's mdat region")

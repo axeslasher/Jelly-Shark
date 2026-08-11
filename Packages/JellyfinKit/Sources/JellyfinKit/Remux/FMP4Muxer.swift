@@ -131,7 +131,7 @@ public enum FMP4Muxer {
             offsetPositions.append(offsetPosition)
         }
 
-        var moof = box("moof", mfhd + trafs.reduce(Data(), +))
+        var moof = box("moof", mfhd + concatenated(trafs))
         let mdatPayloadStart = moof.count + 8
 
         // Patch each traf's trun data_offset: moof header (8) + mfhd + the
@@ -145,8 +145,18 @@ public enum FMP4Muxer {
             runningDataOffset += fragments[index].data.count
         }
 
-        let mdatPayload = fragments.reduce(Data()) { $0 + $1.data }
+        let mdatPayload = concatenated(fragments.map(\.data))
         return moof + box("mdat", mdatPayload)
+    }
+
+    /// Append into one pre-sized buffer: `reduce(Data(), +)` re-copies the
+    /// accumulated prefix on every step, quadratic on span-sized payloads.
+    private static func concatenated(_ pieces: [Data]) -> Data {
+        var data = Data(capacity: pieces.reduce(0) { $0 + $1.count })
+        for piece in pieces {
+            data.append(piece)
+        }
+        return data
     }
 
     private static func trackFragmentBox(_ fragment: TrackFragment) -> (traf: Data, dataOffsetPosition: Int) {
@@ -217,7 +227,10 @@ public enum FMP4Muxer {
         entry += Data(count: 8) // reserved
         entry += uint16(track.channelCount) + uint16(16) // channelcount, samplesize
         entry += Data(count: 4) // pre_defined, reserved
-        entry += uint32(track.sampleRate << 16) // 16.16 fixed
+        // 16.16 fixed. Rates past 16 bits (hi-res FLAC) cannot be
+        // represented; ffmpeg writes 0 and the codec config (dfLa/esds)
+        // carries the true rate — clamping would write garbage instead.
+        entry += uint32(track.sampleRate <= 0xFFFF ? track.sampleRate << 16 : 0)
         entry += track.configuration.configurationBox
         let sampleEntry = box(track.configuration.entryType, entry)
         let stsd = fullBox("stsd", version: 0, flags: 0, payload: uint32(1) + sampleEntry)

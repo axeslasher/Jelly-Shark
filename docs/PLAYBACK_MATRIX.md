@@ -282,7 +282,7 @@ For contrast, the **tone-map** path on this host runs at **~0.4× realtime** wit
 
 ## What the source MKV already contains
 
-Measured 2026-08-02 with a Swift Matroska parser against two real sources (`docs/spikes/176-mkv-demux/`). This matters because it bounds what an in-app remuxer would have to *construct* versus merely copy — and the answer is that it constructs almost nothing.
+Measured 2026-08-02 with a Swift Matroska parser against two real sources (the #176 spike, since deleted — its findings live on here and in docs/ARCHITECTURE.md's 2026-08-02 decision row; the parser itself became `MatroskaDemuxer` in JellyfinKit). This matters because it bounds what an in-app remuxer would have to *construct* versus merely copy — and the answer is that it constructs almost nothing.
 
 | Wanted for an fMP4 | Where it already is | Consequence |
 |---|---|---|
