@@ -336,6 +336,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         )
     }
 
+    func staticStreamURL(for _: MediaSource, parameters: StreamParameters) throws -> URL {
+        URL(string: "https://example.com/Videos/\(parameters.itemId)/stream.mkv?static=true")!
+    }
+
     func reportPlaybackStart(
         itemId: String,
         mediaSourceId _: String?,

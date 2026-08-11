@@ -56,7 +56,7 @@ Described by characteristics rather than title, per project convention.
 
 "❌ container" means Jellyfin's `directPlayProfiles` claims only `mp4,m4v,mov`, so MKV never direct-plays regardless of codec — the single largest reason a typical library transcodes.
 
-Two clarifications on that table. The **Progressive** column describes *Jellyfin's* progressive endpoint, which is unplayable for container reasons (`hev1`, no `moov`) — a well-formed progressive file plays fine, see the HDR section. And **Direct Play ✅ holds for HDR sources on SDR displays**, verified on device; the HLS variant-eligibility gate does not apply there.
+Three clarifications on that table. The **Progressive** column describes *Jellyfin's* progressive endpoint, which is unplayable for container reasons (`hev1`, no `moov`) — a well-formed progressive file plays fine, see the HDR section. **Direct Play ✅ holds for HDR sources on SDR displays**, verified on device; the HLS variant-eligibility gate does not apply there. And the two **HDR MKV rows no longer describe what an SDR display gets**: since #172 those sessions take `RemuxHLSDelivery` instead, which replaces the profile-7 row's `~0.4× realtime` with measured realtime playback and no server transcode at all. The columns here are server-side delivery modes, and the remux is not one; see "Acceptance round run 2026-08-11" below for what those sources actually do now.
 
 ---
 
@@ -133,7 +133,45 @@ A locally-remuxed progressive HDR file — `hvc1`, `color_transfer=smpte2084`, `
 
 So `-12927` is a property of **HLS variant selection**, not of HDR content on SDR displays. The gate evaluates `EXT-X-STREAM-INF` entries and rules some ineligible; an asset with no manifest has nothing to be ruled ineligible. #146's "the gate cannot be blinded" is correct **within HLS**, and does not extend to non-HLS delivery.
 
-> ⚠️ **This is load-bearing for #176.** An app-side remuxer serving HLS through `PlaybackLocalServer` hits the *same* gate — correct `hvc1` and `dvcC` do not help, because the gate is about manifests, not containers. Delivering HDR to SDR displays requires a **non-HLS** mode. A *fragmented* MP4 (`moov` with `mvex`/`mehd`, then `moof`/`mdat` pairs) satisfies that without a complete sample index — each fragment carries its own — so the init needs only track headers and total duration, all of which the source MKV already provides.
+> ⚠️ **Superseded 2026-08-02, same day, by device measurement (below).** This block previously concluded that delivering HDR to SDR displays "requires a non-HLS mode" via a progressive fragmented MP4. Both halves of that were falsified on the device: the progressive mode is dead, and the gate turns out not to reach master-less HLS at all.
+
+### The gate reads declared master attributes — and a media playlist has none
+
+✅ Measured 2026-08-02 on the Apple TV 4K + 1080p SDR panel rig, via headless `RunCodeSnippet` probes loading `AVPlayerItem`s from a LAN HTTP server (verdicts beaconed back as HTTP requests; assets were synthesized `libx265` PQ content with `color_transfer=smpte2084` verified via ffprobe). All four cells same device, same session:
+
+| Playlist | Declares | Content | Verdict |
+|---|---|---|---|
+| Master, `RESOLUTION=1920x1080` + `VIDEO-RANGE=PQ` | 1080p PQ | 1080p PQ | ✅ plays, all segments fetched |
+| Master, `RESOLUTION=3840x2160` + `VIDEO-RANGE=PQ` | 4K PQ | either | ❌ instant refusal, only the master ever fetched |
+| Master, 4K PQ + `SUPPLEMENTAL-CODECS="dvh1.08.01/db4h"` | 4K DV | 1080p PQ | ❌ instant refusal, same codes |
+| **Media playlist, no master** (`EXT-X-MAP` + fMP4 segments) | nothing | genuine 4K PQ | ✅ `readyToPlay`, `rate=1.0`, init + segments fetched and buffered |
+
+Two consequences:
+
+1. **The gate keys on declared 4K attributes, not `VIDEO-RANGE=PQ`.** A 1080p PQ master plays on the SDR panel. On tvOS 26.6 the refusal surfaces as `AVFoundationErrorDomain -11868` with underlying `CoreMediaErrorDomain -17223` (not the `-12927` recorded from #146 — same gate, different surface error).
+2. **A media playlist with no master never reaches variant selection** — nothing is declared, so nothing can be ruled ineligible — and the display pipeline tone-maps genuine 4K PQ segments on-device. This is the delivery mode #172 now implements (`RemuxHLSDelivery` → `RemuxHLSServer`, serving `HLSSegmentPlan`'s playlist over the in-app Matroska remux).
+
+⚠️ Not verified in that probe: frame advancement (headless snippets have no display surface; playhead stayed at 0.00) and audio (the probe content had none).
+
+✅ **Acceptance round run 2026-08-11**, in-app on the SDR-panel Apple TV, closing both gaps. DV profile 8.1 + E-AC-3 4K MKV sustained **0.994× and 0.984× realtime** with ~80s of buffer, against the 0.88× tone-map starvation this delivery exists to replace; colors confirmed correct by eye. Server side ran **zero ffmpeg jobs** for those sessions — not a cheap transcode, none at all — while the same window's copy-variant and interposer sessions each logged `-codec:v:0 copy`. Segment production ran 0.04–0.34s against ~6s of content, with three outliers to 1.35/2.07/2.17s, all absorbed by the buffer. Memory topped out at **120 MB** during 4K remux playback (span-sized buffers are the working set; note the ARCHITECTURE target of <100 MB excludes media cache). Profile-7 sources needed the signalling fix above before they passed.
+
+✅ Vision Pro, same day: all three HDR MKV sessions logged `[delivery] HLS interposer` with `displayHDR=true`, no `[remux-hls]` or `[copy-variant]` line anywhere — the delivery is inert on HDR displays, as designed.
+
+### The server's own copy variant also plays master-less
+
+✅ Measured 2026-08-02, same rig, against a real library source: 4K Dolby Vision **profile 7** (`DOVIWithEL`) MKV with DTS-HD MA audio — a source the in-app remux declines (`A_DTS` is not carriable). A PlaybackInfo negotiation permitting hevc copy produced a Jellyfin master in the #146 shape: the copy variant (`VIDEO-RANGE=PQ`, `hvc1.2.4.L153.B0`, `AllowVideoStreamCopy=true`) beside two injected SDR re-encode variants. Loading that variant's `main.m3u8` **directly, no master** on the SDR-panel Apple TV:
+
+- `readyToPlay` in **4s**; playhead tracked wall clock at **rate 1.0 for 48s+**, buffer grew to **102s ahead**, never `isPlaybackBufferEmpty`.
+- Server side ran as `FFmpeg.DirectStream`: `-codec:v:0 copy -codec:a:0 ac3` at **9.89× realtime** (the tone-map re-encode of the same class of source runs 0.88× and starves).
+- Profile 7 is copied signalled as plain PQ HEVC — AVFoundation decodes the HDR10-compatible base layer and ignores the unsignalled EL/RPU NALs; the display tone-maps on-device. Note: the app's engine capabilities exclude `DOVIWithEL`, so the session's own master omits the copy variant — the delivery re-resolves with the range widened for exactly this resolve.
+- ✅ **Declaring `DOVIWithEL` selects a stream copy, not another tone-map** (this was an open question). Confirmed again 2026-08-11 by contrast across two devices on the same profile-7 source: the widened copy variant ran `-bsf:v hevc_mp4toannexb` with the **DV RPU preserved**, while the ordinary path on Vision Pro ran `-bsf:v hevc_mp4toannexb,hevc_metadata=remove_dovi=1` and stripped it. The widening is what buys the copy, and it is scoped to that one resolve.
+- ⚠️ ffmpeg logged a benign-looking `dts ... out of range` timestamp warning during the copy; nothing observable client-side, but worth remembering if A/V sync issues surface.
+
+This is `RemuxHLSDelivery`'s ladder rung 2 (`HLSMasterCopyVariant`): remux → master-less server copy variant → interposed HLS tone-map.
+
+### Progressive fMP4 is dead: the file reader ignores `sidx`
+
+❌ Measured 2026-08-02, two device rounds against the branch's loopback progressive server, with structurally different `moov`s (one with `mehd`, one declaring no duration anywhere): identical failure signature — AVPlayer linear-scans the whole virtual file with 16KB-aligned resume ranges, never jumps via the index, never reads the tail, buffered stays 0.0s until the first-frame watchdog kills the session (~30s). AVFoundation's progressive (file-parser) reader drives off `moov` sample tables and categorically ignores `sidx`; only the manifest-driven stack consumes segment indexes. A full-`moov` progressive head is unreachable for a live remux — per-sample tables require scanning the entire source. Hence the pivot above.
 
 ### The SDR fallback is app-clamped, and it starves
 
@@ -141,7 +179,7 @@ The 15 Mbps / 1080p cap on the SDR path is **ours, not the server's**. `Trickpla
 
 ❌ It does not sustain playback. Measured 2026-08-02 on Apple TV 4K against the 1080p panel: the server ran `libx264` + `tonemapx` at **`speed=0.881x`**, and the playhead advanced 95.86s in 114s of wall clock — **0.84× realtime** — before freezing permanently. The clamp's own comment records a bench figure of 1.14× for 1080p/15M and names 720p/8M as the retreat, but the field is worse than the bench even on an easier source, because a real session also serves trickplay tiles, subtitle renditions and artwork.
 
-⚠️ The 720p retreat was **considered and rejected** (#172): it permanently degrades every SDR-display session to accommodate one server's CPU, and no other client makes that trade — Swiftfin defaults to VLCKit, Infuse ships its own decode stack, and neither routes 4K HDR through a server-side tone-map. The clamp treats the symptom of being on the wrong delivery path. **The `TrickplayHLSPlaylist` comment still reads as live guidance and should be corrected when #172 is picked up.**
+⚠️ The 720p retreat was **considered and rejected** (#172): it permanently degrades every SDR-display session to accommodate one server's CPU, and no other client makes that trade — Swiftfin defaults to VLCKit, Infuse ships its own decode stack, and neither routes 4K HDR through a server-side tone-map. The clamp treats the symptom of being on the wrong delivery path. The `TrickplayHLSPlaylist` comment was corrected on the #172 branch; the clamp still governs whatever stays on server HLS (non-MKV HDR sources, and remux-delivery fallbacks).
 
 ---
 
@@ -244,7 +282,7 @@ For contrast, the **tone-map** path on this host runs at **~0.4× realtime** wit
 
 ## What the source MKV already contains
 
-Measured 2026-08-02 with a Swift Matroska parser against two real sources (`docs/spikes/176-mkv-demux/`). This matters because it bounds what an in-app remuxer would have to *construct* versus merely copy — and the answer is that it constructs almost nothing.
+Measured 2026-08-02 with a Swift Matroska parser against two real sources (the #176 spike, since deleted — its findings live on here and in docs/ARCHITECTURE.md's 2026-08-02 decision row; the parser itself became `MatroskaDemuxer` in JellyfinKit). This matters because it bounds what an in-app remuxer would have to *construct* versus merely copy — and the answer is that it constructs almost nothing.
 
 | Wanted for an fMP4 | Where it already is | Consequence |
 |---|---|---|
@@ -260,9 +298,13 @@ Measured 2026-08-02 with a Swift Matroska parser against two real sources (`docs
 
 Profile 7 is dual-layer, and the observed source carries it **single-track**: the enhancement layer is remapped to `UNSPEC63` and the RPU to `UNSPEC62`, both in the video track at `nuh_layer_id=0`.
 
-**Apple does not decode profile 7** — tvOS supports profile 5 and 8.1; profile 7 is a disc format. The established conversion is to drop the `UNSPEC63` NALUs, keep the base slices and the `UNSPEC62` RPU, and author a `dvcC` declaring profile 8.1. `DvBlSignalCompatibilityId 6` confirms the base layer is HDR10-compatible.
+**Apple does not decode profile 7** — tvOS supports profile 5 and 8.1; profile 7 is a disc format. The remux drops the `UNSPEC63` NALUs and keeps the base slices.
 
-✅ On the measured source that costs nothing: across 40 sampled frames the EL was **5,958 bytes — 0.05% of video payload**, ~149 bytes per frame, *smaller than the RPU*. That is a **MEL** (Minimal Enhancement Layer), not a FEL, so the conversion is lossless in practice. A FEL would be 20–30% of the bitrate; EL byte share is a cheap way to tell them apart.
+❌ **Re-signalling the result as profile 8.1 does not work, and was removed.** The obvious conversion — drop the EL, keep the `UNSPEC62` RPU, author a `dvcC` declaring profile 8.1 on the strength of `DvBlSignalCompatibilityId 6` — is what this document previously described as "established". Measured 2026-08-11 on the SDR-panel Apple TV against **four** profile-7 library sources: every one decoded with intact geometry and catastrophic chroma (a green/magenta ruin), while profile-8.1 sources on the identical code path were correct. The cause is that a profile-7 RPU carries **dual-layer** composition metadata (NLQ coefficients describing reconstruction from the EL residual) which profile 8.1 does not have. Relabelling the configuration record leaves that RPU in the stream, the display pipeline engages the DV composer, and it applies two-layer mapping to a base layer whose EL has just been stripped. An honest conversion must **rewrite the RPU** (what `dovi_tool --mode 2` does); this remuxer does not, so it must not claim profile 8.1.
+
+✅ **Unsignalled is correct**: `signalledForAVFoundation()` returns `nil` for profile 7, so the init segment carries `hvcC` alone with no DV box, and the decoder renders the HDR10 base layer. Device-verified 2026-08-11 across three profile-7 sources (two AC-3, one FLAC): correct colors, fast load, no stalls. This is the same shape ladder rung 2 already served correctly — see "The server's own copy variant also plays master-less" — which is the corroborating evidence that the bitstream was never the problem, only the claim made about it. The delivery serves SDR displays exclusively, and those tone-map either way, so no DV rendering is lost.
+
+✅ Dropping the EL costs nothing on the measured source: across 40 sampled frames the EL was **5,958 bytes — 0.05% of video payload**, ~149 bytes per frame, *smaller than the RPU*. That is a **MEL** (Minimal Enhancement Layer), not a FEL. A FEL would be 20–30% of the bitrate; EL byte share is a cheap way to tell them apart.
 
 ---
 
@@ -302,7 +344,6 @@ The progressive stream additionally has **no `moov` at the head** (top-level box
 
 | Question | Tracked |
 |---|---|
-| Does declaring `DOVIWithEL` select a strip-to-HDR10 copy, or another tone-map? | #172 comments |
 | Is there any tvOS path to TrueHD Atmos? | #221 |
 | Does `startTimeTicks` content actually start at the requested offset? | #172 |
 | Could the server's native trickplay rendition replace the synthesized one? | #59 / #171 |

@@ -434,6 +434,30 @@ enum CodecFixtures {
         return writer.data
     }
 
+    /// A dependent-substream BSI (strmtyp 1) declaring a custom channel map
+    /// — the 7.1-and-up shape, where extra channels ride a dependent
+    /// substream and `chanmap` says which.
+    static func eac3DependentSyncframe(chanmap: Int, frameSizeWords: Int = 128) -> Data {
+        var writer = BitWriter()
+        writer.write(0x0B77, 16) // syncword
+        writer.write(1, 2) // strmtyp dependent
+        writer.write(0, 3) // substreamid
+        writer.write(frameSizeWords - 1, 11) // frmsiz
+        writer.write(0, 2) // fscod 48k
+        writer.write(3, 2) // numblkscod 6 blocks
+        writer.write(7, 3) // acmod 3/2
+        writer.write(1, 1) // lfeon
+        writer.write(16, 5) // bsid
+        writer.write(0, 5) // dialnorm
+        writer.write(0, 1) // compre
+        writer.write(1, 1) // chanmape
+        writer.write(chanmap, 16)
+        writer.write(0, 7) // pad to a byte boundary
+        var frame = writer.data
+        frame += Data(count: frameSizeWords * 2 - frame.count)
+        return frame
+    }
+
     /// A syntactically valid E-AC-3 independent-substream BSI: 48 kHz,
     /// 6 blocks, 3/2 + LFE, bsid 16. `frameSizeWords` controls frmsiz.
     static func eac3Syncframe(frameSizeWords: Int = 512) -> Data {

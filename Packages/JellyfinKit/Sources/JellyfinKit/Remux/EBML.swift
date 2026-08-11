@@ -68,6 +68,22 @@ struct EBMLCursor {
     /// size" (streamed muxes), returned as `.some(nil)`; a malformed VINT is
     /// `nil`.
     mutating func readSize() -> Int?? {
+        guard let (value, width) = readVINTValue() else { return nil }
+        let allOnes = (UInt64(1) << (7 * UInt64(width))) - 1
+        if value == allOnes {
+            return .some(nil)
+        }
+        return .some(Int(value))
+    }
+
+    /// A plain unsigned VINT — block track numbers and the first EBML lace
+    /// size. The all-ones rule is RFC 8794's and applies only to element
+    /// sizes: here `0xFF` is simply 127 (a legal track number, RFC 9559).
+    mutating func readVINT() -> Int? {
+        readVINTValue().map { Int($0.value) }
+    }
+
+    private mutating func readVINTValue() -> (value: UInt64, width: Int)? {
         guard let first = peek(1)?.first else { return nil }
         let w = EBML.width(ofFirstByte: first)
         guard w > 0, let raw = take(w) else { return nil }
@@ -75,11 +91,7 @@ struct EBMLCursor {
         for b in raw.dropFirst() {
             value = (value << 8) | UInt64(b)
         }
-        let allOnes = (UInt64(1) << (7 * UInt64(w))) - 1
-        if value == allOnes {
-            return .some(nil)
-        }
-        return .some(Int(value))
+        return (value, w)
     }
 
     /// A signed VINT (used by EBML lacing deltas): the unsigned value minus

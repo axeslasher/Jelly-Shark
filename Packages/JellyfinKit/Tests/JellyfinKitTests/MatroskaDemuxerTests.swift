@@ -206,6 +206,51 @@ struct MatroskaDemuxerTests {
 
     // MARK: - Track metadata
 
+    @Test("A block from track 127 parses despite the all-ones VINT encoding")
+    func track127Block() throws {
+        // Hand-built because EBMLWriter.vint never emits all-ones: track 127
+        // minimally encoded is exactly 0xFF, a legal value here — the
+        // unknown-size rule is for element sizes only (RFC 8794 vs 9559).
+        var body = Data([0xFF]) // track 127
+        body += Data([0x00, 0x00]) // relative time
+        body += Data([0x80]) // flags: keyframe, no lacing
+        body += Data(repeating: 0x11, count: 16)
+        let payload = EBMLWriter.uintElement(MatroskaID.clusterTimestamp, 0)
+            + EBMLWriter.element(MatroskaID.simpleBlock, body)
+        let cluster = try MatroskaDemuxer.parseCluster(payload)
+        #expect(cluster.frames.count == 1)
+        #expect(cluster.frames.first?.trackNumber == 127)
+    }
+
+    @Test("An EBML lace whose first frame is 127 bytes parses")
+    func ebmlLaceOf127Bytes() throws {
+        let first = Data(repeating: 0xAA, count: 127)
+        let second = Data(repeating: 0xBB, count: 5)
+        var body = Data([0x81]) // track 1
+        body += Data([0x00, 0x00]) // relative time
+        body += Data([0x86]) // flags: keyframe, EBML lacing
+        body += Data([1]) // frame count - 1
+        body += Data([0xFF]) // first lace size: 127, minimal all-ones form
+        body += first + second
+        let payload = EBMLWriter.uintElement(MatroskaID.clusterTimestamp, 0)
+            + EBMLWriter.element(MatroskaID.simpleBlock, body)
+        let cluster = try MatroskaDemuxer.parseCluster(payload)
+        #expect(cluster.frames.map(\.data) == [first, second])
+    }
+
+    @Test("A cluster header straddling the span bound throws, not traps")
+    func clusterHeaderOverrunsSpan() async throws {
+        let demuxer = MatroskaDemuxer(source: DataByteSource(simpleFixture().build()))
+        let index = try await demuxer.loadIndex()
+        let offset = try #require(index.cues.first?.clusterOffset)
+        // A bound inside the cluster's own header — the corrupt-cue shape:
+        // contentStart lands past endBound, and the span math must refuse
+        // it rather than underflow.
+        await #expect(throws: MatroskaError.self) {
+            _ = try await demuxer.readClusters(from: offset, to: offset + 4)
+        }
+    }
+
     @Test("BlockAdditionMapping surfaces the Dolby Vision configuration")
     func dolbyVisionMapping() async throws {
         let dvcC = DolbyVisionConfiguration(

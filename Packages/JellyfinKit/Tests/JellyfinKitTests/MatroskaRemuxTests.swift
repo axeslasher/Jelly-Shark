@@ -32,14 +32,13 @@ struct DolbyVisionConfigurationTests {
         #expect(String(decoding: box.subdata(in: 4 ..< 8), as: UTF8.self) == "dvvC")
     }
 
-    @Test("Profile 7 signals as 8.1: EL cleared, compatibility HDR10")
-    func profile7Conversion() {
-        let signalled = profile7.signalledForAVFoundation()
-        #expect(signalled?.profile == 8)
-        #expect(signalled?.level == 6)
-        #expect(signalled?.elPresent == false)
-        #expect(signalled?.rpuPresent == true)
-        #expect(signalled?.blSignalCompatibilityID == 1)
+    /// Device-measured 2026-08-11: signalling profile 7 as 8.1 leaves the
+    /// source's dual-layer RPU describing a reconstruction the stripped
+    /// stream can no longer perform, and every profile-7 source rendered as
+    /// chroma garbage. Unsignalled serves the HDR10 base layer instead.
+    @Test("Profile 7 is unsignalled, but still has its EL stripped")
+    func profile7IsUnsignalled() {
+        #expect(profile7.signalledForAVFoundation() == nil)
         #expect(profile7.requiresEnhancementLayerFilter)
     }
 
@@ -131,6 +130,29 @@ struct AudioCodecConfigurationTests {
         #expect(payload[4] == 0)
     }
 
+    @Test("dec3 chan_loc maps the dependent substream's chanmap per Annex F")
+    func dec3ChanLoc() throws {
+        // The two fields run in opposite bit orders and chan_loc skips the
+        // reserved chanmap bit, so a shift-and-mask cannot relate them: a
+        // 7.1 source (chanmap bit 9, Lrs/Rrs) must land on chan_loc bit 1 —
+        // not bit 7 (Cvh, a top-front-center channel).
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0200) == 0x002) // Lrs/Rrs
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0400) == 0x001) // Lc/Rc
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0002) == 0x100) // LFE2
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0x0004) == 0) // reserved bit
+        #expect(AudioSampleEntryConfiguration.chanLoc(fromChanmap: 0xF801) == 0) // 5.1 + LFE bits
+
+        // End to end: independent 5.1 + a dependent substream carrying the
+        // rear pair, the plain E-AC-3 7.1 shape.
+        let track = MatroskaTrack(number: 2, type: .audio, codecID: "A_EAC3")
+        let sample = CodecFixtures.eac3Syncframe() + CodecFixtures.eac3DependentSyncframe(chanmap: 0x0200)
+        let config = try #require(AudioSampleEntryConfiguration.make(for: track, firstFrame: sample))
+        let payload = [UInt8](config.configurationBox.dropFirst(8))
+        // reserved 000, num_dep_sub 0001, then chan_loc's 9 bits
+        #expect(payload[4] == 0b0000_0010)
+        #expect(payload[5] == 0b0000_0010)
+    }
+
     @Test("AAC CodecPrivate is wrapped in an esds descriptor chain")
     func esds() throws {
         let asc = Data([0x11, 0x90]) // AAC-LC 48 kHz stereo
@@ -190,17 +212,21 @@ struct FMP4MuxerTests {
 
     @Test("Init segment: ftyp + moov with a trak and trex per track")
     func initSegmentStructure() {
-        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: audioTrack, timescale: 1000, durationTicks: 8000)
+        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: audioTrack, timescale: 1000)
 
         #expect(MP4Box.parse(segment).map(\.type) == ["ftyp", "moov"])
         #expect(MP4Box.findAll("moov/trak", in: segment).count == 2)
         #expect(MP4Box.findAll("moov/mvex/trex", in: segment).count == 2)
-        #expect(MP4Box.find("moov/mvex/mehd", in: segment) != nil)
+        // No duration anywhere in the moov — not even mehd. The sidx is the
+        // only place duration lives; answering it here makes AVFoundation
+        // skip the sidx and scan every moof over HTTP (2026-08-02 device
+        // round).
+        #expect(MP4Box.find("moov/mvex/mehd", in: segment) == nil)
     }
 
     @Test("hvc1 sample entry carries the hvcC record and the dvvC box")
     func hevcSampleEntry() throws {
-        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: nil, timescale: 1000, durationTicks: 8000)
+        let segment = FMP4Muxer.initializationSegment(video: videoTrack, audio: nil, timescale: 1000)
         let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
         let hvc1 = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
         #expect(hvc1.type == "hvc1")
@@ -213,12 +239,32 @@ struct FMP4MuxerTests {
 
     @Test("Audio sample entry uses the configuration's type and box")
     func audioSampleEntry() throws {
-        let segment = FMP4Muxer.initializationSegment(video: nil, audio: audioTrack, timescale: 1000, durationTicks: 8000)
+        let segment = FMP4Muxer.initializationSegment(video: nil, audio: audioTrack, timescale: 1000)
         let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
         let entry = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
         #expect(entry.type == "ec-3")
         let children = MP4Box.parse(entry.payload.dropFirst(28))
         #expect(children.map(\.type) == ["dec3"])
+    }
+
+    @Test("Sample rates past 16 bits write a zero 16.16 field, not garbage")
+    func hiResSampleRate() throws {
+        func rateField(sampleRate: Int) throws -> Int {
+            let track = FMP4Muxer.AudioTrack(
+                trackID: 2,
+                configuration: AudioSampleEntryConfiguration(entryType: "fLaC", configurationBox: Data()),
+                channelCount: 2,
+                sampleRate: sampleRate,
+            )
+            let segment = FMP4Muxer.initializationSegment(video: nil, audio: track, timescale: 1000)
+            let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
+            let entry = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
+            return entry.payload.dropFirst(24).prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+        }
+        #expect(try rateField(sampleRate: 48000) == 48000 << 16)
+        // 96 kHz cannot be represented; ffmpeg writes 0 and the true rate
+        // rides the codec config. Clamping wrote 0xFFFFFFFF here.
+        #expect(try rateField(sampleRate: 96000) == 0)
     }
 
     @Test("Media segment data offsets point at each track's mdat region")
@@ -368,7 +414,13 @@ struct MatroskaFMP4RemuxerTests {
         #expect(remuxer.tracks.audio?.codecID == "A_EAC3")
     }
 
-    @Test("Init segment signals profile 8.1 for a profile-7 source")
+    /// The init segment for a profile-7 source must carry NO Dolby Vision
+    /// box. It previously declared 8.1, which is what produced chroma
+    /// corruption on every profile-7 source on the SDR-panel rig
+    /// (2026-08-11): the relabelled box left a dual-layer RPU in a stream
+    /// that no longer has its enhancement layer. Unsignalled means the
+    /// decoder renders the HDR10 base layer, which is correct.
+    @Test("Init segment carries no DV box for a profile-7 source")
     func initSegmentDolbyVision() async throws {
         let (demuxer, remuxer, index) = try await makeRemuxer()
         let first = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.segmentDataEnd)
@@ -377,11 +429,7 @@ struct MatroskaFMP4RemuxerTests {
         let stsd = try #require(MP4Box.find("moov/trak/mdia/minf/stbl/stsd", in: segment))
         let hvc1 = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
         let children = MP4Box.parse(hvc1.payload.dropFirst(78))
-        #expect(children.map(\.type) == ["hvcC", "dvvC"])
-        let dv = try #require(DolbyVisionConfiguration(recordOrBox: Data([0, 0, 0, 32]) + Data("dvvC".utf8) + children[1].payload))
-        #expect(dv.profile == 8)
-        #expect(dv.elPresent == false)
-        #expect(dv.blSignalCompatibilityID == 1)
+        #expect(children.map(\.type) == ["hvcC"])
     }
 
     @Test("Profile-7 samples lose their enhancement-layer NALUs in the mux")

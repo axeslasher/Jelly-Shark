@@ -643,6 +643,7 @@ public final class PlaybackViewModel {
         selectedSubtitleStreamIndex = nil
         hasExplicitSubtitleSelection = false
         preferredMediaSourceId = nil
+        avoidInAppRemuxDelivery = false
         await start()
     }
 
@@ -665,6 +666,12 @@ public final class PlaybackViewModel {
     /// The delivery serving the current stream to the engine; holds the
     /// loopback interposer on HLS sessions
     private var delivery: (any StreamDelivery)?
+
+    /// Set when a remux HLS session fails permanently mid-file, so every
+    /// later rebuild of this item starts from the copy variant instead of
+    /// re-remuxing to fail on the same cluster. Cleared when the item
+    /// changes (autoplay).
+    private var avoidInAppRemuxDelivery = false
 
     /// In-flight artwork enrichment (chapter thumbnails + poster) for the
     /// current session
@@ -692,9 +699,21 @@ public final class PlaybackViewModel {
                 subtitleStreamIndex: selectedSubtitleStreamIndex,
                 trickplayInfo: trickplayInfo,
                 capabilities: engine.capabilities,
+                avoidInAppRemux: avoidInAppRemuxDelivery,
             ),
             client: client,
         )
+        // Armed before `prepare`: the failure can only fire once the engine
+        // is fetching segments, but the delivery that will fire it exists
+        // now. A permanent mid-session failure (a remux that dies on the
+        // same cluster every retry) rebuilds one rung down — the position
+        // is preserved the same way every rebuild preserves it.
+        delivery.onPermanentFailure = { [weak self] in
+            guard let self, self.isCurrentLoad(generation), !self.hasStopped else { return }
+            Self.logger.warning("[delivery] permanent mid-session failure; rebuilding without the in-app remux")
+            self.avoidInAppRemuxDelivery = true
+            Task { await self.rebuildStream() }
+        }
         let delivered = await delivery.prepare()
         // Stopped, not abandoned: an HLS delivery has a loopback server
         // listening by now, and a superseded build is the one thing that

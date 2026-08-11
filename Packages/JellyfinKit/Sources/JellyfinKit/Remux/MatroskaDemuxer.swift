@@ -77,6 +77,8 @@ public struct MatroskaTrack: Sendable, Equatable {
         public var type: UInt32 = 0
         public var value: UInt64 = 0
         public var extraData: Data?
+
+        public init() {}
     }
 }
 
@@ -261,8 +263,15 @@ public struct MatroskaDemuxer: Sendable {
             }
             // Unknown-size clusters (streamed muxes) are bounded by the span.
             let contentEnd = header.size.map { header.contentStart + UInt64($0) } ?? endBound
-            let byteCount = Int(min(contentEnd, endBound) - header.contentStart)
-            guard byteCount >= 0, byteCount <= Self.maxElementSize else {
+            // The header itself may straddle `endBound` (cue offsets are
+            // untrusted file bytes) — bound-check before subtracting, or the
+            // UInt64 arithmetic traps instead of throwing.
+            let boundedEnd = min(contentEnd, endBound)
+            guard header.contentStart <= boundedEnd else {
+                throw MatroskaError.malformed("cluster header at \(cursor) overruns its span")
+            }
+            let byteCount = Int(boundedEnd - header.contentStart)
+            guard byteCount <= Self.maxElementSize else {
                 throw MatroskaError.malformed("cluster size \(byteCount) out of range")
             }
             let data = try await source.read(at: header.contentStart, count: byteCount)
@@ -551,7 +560,7 @@ public struct MatroskaDemuxer: Sendable {
         keyframe: Bool?,
         into frames: inout [MatroskaFrame],
     ) throws {
-        guard let trackOpt = c.readSize(), let track = trackOpt,
+        guard let track = c.readVINT(),
               let hi = c.byte(), let lo = c.byte(), let flags = c.byte()
         else { throw MatroskaError.malformed("unreadable block header") }
         let relative = Int16(bitPattern: UInt16(hi) << 8 | UInt16(lo))
@@ -612,7 +621,7 @@ public struct MatroskaDemuxer: Sendable {
             guard payload % frameCount == 0 else { throw MatroskaError.malformed("fixed lace not divisible") }
             return Array(repeating: payload / frameCount, count: frameCount)
         default: // 3, EBML: first size as VINT, then signed deltas
-            guard let firstOpt = c.readSize(), let first = firstOpt else {
+            guard let first = c.readVINT() else {
                 throw MatroskaError.malformed("truncated EBML lace")
             }
             var sizes = [first]

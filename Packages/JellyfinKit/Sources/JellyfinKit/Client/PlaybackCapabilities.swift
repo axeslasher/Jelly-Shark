@@ -180,4 +180,32 @@ public extension PlaybackCapabilities {
     var hevcRangeTypesParameter: String {
         videoRangeTypes.joined(separator: ",")
     }
+
+    /// These capabilities with Dolby Vision profile 7 (`DOVIWithEL`) added
+    /// to every video-range condition.
+    ///
+    /// The engine's own declaration deliberately omits `DOVIWithEL` — no
+    /// Apple platform decodes profile 7, so no ordinary delivery should let
+    /// the server copy it through. The master-less copy-variant delivery
+    /// (#172) is the exception: the variant is signalled as plain PQ HEVC,
+    /// AVFoundation decodes the HDR10-compatible base layer and ignores the
+    /// unsignalled enhancement-layer NALs, and the display pipeline
+    /// tone-maps on-device — measured sustaining rate 1.0 on the SDR-panel
+    /// rig (2026-08-02). Scope this widening to that resolve only.
+    func includingEnhancementLayerRange() -> PlaybackCapabilities {
+        var widened = self
+        widened.videoCodecRules = videoCodecRules.map { rule in
+            var rule = rule
+            rule.conditions = rule.conditions.map { condition in
+                guard condition.property == .videoRangeType,
+                      !condition.value.split(separator: "|").contains("DOVIWithEL")
+                else { return condition }
+                var condition = condition
+                condition.value += "|DOVIWithEL"
+                return condition
+            }
+            return rule
+        }
+        return widened
+    }
 }

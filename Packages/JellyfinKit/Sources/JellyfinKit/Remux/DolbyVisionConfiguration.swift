@@ -5,11 +5,13 @@ import Foundation
 // Two jobs:
 //  1. Interpret the DOVIDecoderConfigurationRecord a Matroska source hands us
 //     via BlockAdditionMapping (the box ffmpeg refuses to write — spike
-//     finding 3), and re-author it for what tvOS actually decodes.
-//  2. Filter profile-7 bitstreams down to profile 8.1: Apple does not decode
-//     profile 7 (a disc format), but single-track profile 7 carries its
-//     enhancement layer as UNSPEC63 NALUs at layer 0 that can simply be
-//     dropped — the base slices and the UNSPEC62 RPU are the 8.1 stream.
+//     finding 3), and decide what to signal for what tvOS actually decodes
+//     (profiles 5/8 pass through; profile 7 is carried unsignalled).
+//  2. Strip profile 7's enhancement layer: single-track profile 7 carries
+//     its EL as UNSPEC63 NALUs at layer 0, dropped so the delivered stream
+//     is the shape verified on-device. The stream is then carried
+//     UNSIGNALLED — no DV box — per `signalledForAVFoundation()`, which
+//     holds the device evidence for why relabelling as 8.1 was abandoned.
 //     Measured in the spike: the EL of a MEL source is 0.05% of payload,
 //     smaller than the RPU itself.
 
@@ -71,35 +73,44 @@ public struct DolbyVisionConfiguration: Sendable, Equatable {
     /// to plain HDR10 (no DV box at all).
     ///
     /// - Profile 8 passes through unchanged.
-    /// - Profile 7 becomes 8.1: the EL is dropped by ``HEVCNALFilter``, so
-    ///   `elPresent` clears, and the compatibility ID maps to 1 (HDR10) —
-    ///   profile-7 sources declare 6 (UHD Blu-ray), which implies an
-    ///   HDR10-compatible base layer, and 1 is what HLS `db1p` signalling
-    ///   means on the Apple side.
+    /// - Profile 7 is UNSIGNALLED, so the fMP4 carries the HDR10 base layer
+    ///   with no DV box. Relabelling the configuration record as 8.1 was
+    ///   tried and is wrong: it leaves the source's profile-7 RPU in the
+    ///   stream, and that RPU describes a DUAL-LAYER reconstruction (NLQ
+    ///   coefficients for the EL residual) that 8.1 does not have. The
+    ///   display pipeline then engages the DV composer, applies two-layer
+    ///   mapping metadata to a base layer whose EL has just been stripped,
+    ///   and renders severe chroma corruption — device-measured 2026-08-11
+    ///   on the SDR-panel rig across four profile-7 sources, every one a
+    ///   green/magenta ruin while profile-8.1 sources on the identical code
+    ///   path were correct. An honest conversion has to REWRITE the RPU
+    ///   (what `dovi_tool --mode 2` does), which this remuxer does not do.
+    ///   Unsignalled is the same shape the copy-variant rung serves — the
+    ///   bitstream keeps its unspec62/63 NALUs, nothing claims Dolby Vision,
+    ///   the decoder ignores them, and the base layer renders correctly
+    ///   (device-verified the same day). This delivery only ever serves SDR
+    ///   displays, which tone-map either way, so no DV rendering is lost.
     /// - Profile 5 (no base-layer compatibility) passes through: tvOS decodes
     ///   it, and there is nothing to convert.
     /// - Anything else is unsignalled rather than mis-signalled.
     public func signalledForAVFoundation() -> DolbyVisionConfiguration? {
         switch profile {
         case 5, 8:
-            return self
-        case 7:
-            guard blPresent, rpuPresent else { return nil }
-            return DolbyVisionConfiguration(
-                profile: 8,
-                level: level,
-                rpuPresent: true,
-                elPresent: false,
-                blPresent: true,
-                blSignalCompatibilityID: 1,
-            )
+            self
         default:
-            return nil
+            nil
         }
     }
 
-    /// Whether ``HEVCNALFilter`` must strip enhancement-layer NALUs before
-    /// this configuration's `signalledForAVFoundation()` form is honest.
+    /// Whether ``HEVCNALFilter`` must strip enhancement-layer NALUs.
+    ///
+    /// Still true for profile 7 even though it is now unsignalled. Not for
+    /// bandwidth — the measured source's EL is a MEL at 0.05% of video
+    /// payload (PLAYBACK_MATRIX.md), so the saving is nil — but because
+    /// stripping is the shape verified end to end on the SDR-panel rig
+    /// (2026-08-11, three profile-7 sources, correct picture). An
+    /// unsignalled EL is inert, so dropping the filter would probably also
+    /// work; "probably" is not what this path is short of.
     public var requiresEnhancementLayerFilter: Bool {
         profile == 7
     }
@@ -148,16 +159,19 @@ public extension MatroskaTrack {
     }
 }
 
-/// Walks length-prefixed HEVC access units and drops the NAL types that must
-/// not survive a profile-7 → 8.1 conversion.
+/// Walks length-prefixed HEVC access units and drops profile 7's
+/// enhancement-layer NALUs (the stream is then delivered unsignalled — no DV
+/// box — per `signalledForAVFoundation()`).
 ///
 /// Single-track profile 7 remaps its layers instead of using `nuh_layer_id`:
 /// the enhancement layer is NAL type 63 (UNSPEC63) and the RPU is type 62
 /// (UNSPEC62), both at layer 0 — the spike's probe bug #2 was testing for
 /// `nuh_layer_id == 1` and missing an EL that was plainly there.
 public enum HEVCNALFilter {
-    /// NAL unit types to drop for 8.1: the enhancement layer only. The RPU
-    /// (62) stays — it is what makes the stream Dolby Vision.
+    /// Only the enhancement layer is dropped. The RPU (62) stays in the
+    /// bitstream but is inert: nothing signals Dolby Vision, so the decoder
+    /// ignores it — the device-verified shape (see
+    /// `requiresEnhancementLayerFilter`).
     private static let enhancementLayerType: UInt8 = 63
 
     /// Returns `sample` with UNSPEC63 NALUs removed, or `nil` when the
