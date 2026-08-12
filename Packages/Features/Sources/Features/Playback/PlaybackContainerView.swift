@@ -69,17 +69,24 @@ public struct PlaybackContainerView: View {
                 Color.black
             }
 
-            if let next = viewModel.nextEpisode {
-                UpNextOverlayView(
-                    nextEpisode: next,
-                    onPlayNow: {
-                        Task { await viewModel.playNextEpisodeNow() }
-                    },
-                    onCancel: {
-                        viewModel.cancelAutoplay()
-                    },
-                )
-            }
+            // visionOS only. On tvOS the Up Next prompt is AVKit's native
+            // content proposal, presented pre-roll inside the player's own
+            // (focusable) hierarchy — the SwiftUI sibling here could never take
+            // focus from a live `AVPlayerViewController` (#186). visionOS keeps
+            // this overlay pending #182.
+            #if os(visionOS)
+                if let next = viewModel.nextEpisode {
+                    UpNextOverlayView(
+                        nextEpisode: next,
+                        onPlayNow: {
+                            Task { await viewModel.playNextEpisodeNow() }
+                        },
+                        onCancel: {
+                            viewModel.cancelAutoplay()
+                        },
+                    )
+                }
+            #endif
         }
         .ignoresSafeArea()
         .task {
@@ -131,12 +138,18 @@ public struct PlaybackContainerView: View {
                     onRequestDismiss: {
                         dismiss()
                     },
+                    // tvOS Up Next: AVKit's content proposal reports the
+                    // viewer's choice (or its countdown) through these (#186).
+                    onAcceptUpNext: {
+                        Task { await viewModel.playNextEpisodeNow() }
+                    },
+                    onDeclineUpNext: {
+                        viewModel.declineUpNext()
+                    },
+                    onDeferUpNext: {
+                        viewModel.deferUpNext()
+                    },
                 )
-                #if os(visionOS)
-                .overlay(alignment: .topTrailing) {
-                    trackSelectionMenu
-                }
-                #endif
             }
         #else
             Text("Playback is not supported on this platform")
@@ -144,69 +157,6 @@ public struct PlaybackContainerView: View {
                 .foregroundStyle(theme.secondary)
         #endif
     }
-
-    #if os(visionOS)
-        /// Audio and burn-in subtitle pickers for visionOS, where AVKit's
-        /// tvOS-only transport-bar menus are unavailable. Text subtitles are
-        /// deliberately absent: they are HLS renditions the system player's
-        /// own media-selection UI handles natively (#90). This overlay
-        /// carries only the server-side options AVKit cannot see — alternate
-        /// audio and burn-in subtitle tracks, which need a stream rebuild.
-        @ViewBuilder
-        private var trackSelectionMenu: some View {
-            let audioStreams = viewModel.mediaSource?.audioStreams ?? []
-            let subtitleStreams = (viewModel.mediaSource?.subtitleStreams ?? [])
-                .filter { !$0.isTextSubtitleStream }
-
-            if audioStreams.count > 1 || !subtitleStreams.isEmpty {
-                Menu {
-                    if audioStreams.count > 1 {
-                        Picker("Audio", selection: audioSelection) {
-                            ForEach(audioStreams, id: \.index) { stream in
-                                Text(trackTitle(for: stream)).tag(stream.index)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    }
-                    if !subtitleStreams.isEmpty {
-                        Picker("Image Subtitles", selection: subtitleSelection) {
-                            Text("Off").tag(Int?.none)
-                            ForEach(subtitleStreams, id: \.index) { stream in
-                                Text(BurnInSubtitleLabel.title(for: stream)).tag(Int?.some(stream.index))
-                            }
-                        }
-                        .pickerStyle(.menu)
-                    }
-                } label: {
-                    Image(systemName: "captions.bubble")
-                        .accessibilityLabel("Audio and Subtitles")
-                }
-                .padding(SpacingTokens.xl)
-            }
-        }
-
-        private var audioSelection: Binding<Int> {
-            Binding(
-                get: { viewModel.selectedAudioStreamIndex ?? -1 },
-                set: { index in
-                    Task { await viewModel.selectAudioStream(index: index) }
-                },
-            )
-        }
-
-        private var subtitleSelection: Binding<Int?> {
-            Binding(
-                get: { viewModel.selectedSubtitleStreamIndex },
-                set: { index in
-                    Task { await viewModel.selectSubtitleStream(index: index) }
-                },
-            )
-        }
-
-        private func trackTitle(for stream: MediaStreamInfo) -> String {
-            stream.displayTitle ?? stream.language ?? "Track \(stream.index)"
-        }
-    #endif
 
     private func errorView(_ message: String) -> some View {
         VStack(spacing: SpacingTokens.lg) {
