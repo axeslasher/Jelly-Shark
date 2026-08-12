@@ -279,6 +279,14 @@ struct PlaybackViewModelTests {
         await viewModel.start()
         engine.send(.deliveryFailed(reason: "Cannot Open", cause: "player item status failed"))
 
+        // The delivery-failure event is applied on its own main-actor turn
+        // like every other engine event (it must not mutate state inside a
+        // SwiftUI update pass), so wait for the transition rather than reading
+        // state synchronously — same as `playedToEndEventQueuesNextEpisode`.
+        await waitUntil {
+            viewModel.state == .failed(PlaybackViewModel.deliveryFailureMessage(reason: "Cannot Open"))
+        }
+
         #expect(viewModel.state == .failed(PlaybackViewModel.deliveryFailureMessage(reason: "Cannot Open")))
         // failDelivery pauses rather than tears down: the session stays
         // diagnosable until Close runs stop()
