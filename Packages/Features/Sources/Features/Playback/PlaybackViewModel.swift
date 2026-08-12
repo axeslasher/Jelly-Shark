@@ -975,7 +975,18 @@ public final class PlaybackViewModel {
             mediaSelectionReconcileArmed = true
 
         case let .deliveryFailed(reason, cause):
-            failDelivery(message: Self.deliveryFailureMessage(reason: reason), cause: cause)
+            // Deferred onto a fresh main-actor turn like every sibling case.
+            // AVKit can fire this synchronously from inside a SwiftUI update
+            // pass (e.g. while `updateUIViewController` is reconciling the
+            // player), and mutating `state` there is "publishing changes from
+            // within view updates" — undefined behaviour that lands right on
+            // top of the failure teardown. Hopping off the current call stack
+            // makes the `.failed` transition happen in its own well-defined
+            // pass.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                failDelivery(message: Self.deliveryFailureMessage(reason: reason), cause: cause)
+            }
         }
     }
 
