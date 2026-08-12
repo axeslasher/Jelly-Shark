@@ -69,17 +69,24 @@ public struct PlaybackContainerView: View {
                 Color.black
             }
 
-            if let next = viewModel.nextEpisode {
-                UpNextOverlayView(
-                    nextEpisode: next,
-                    onPlayNow: {
-                        Task { await viewModel.playNextEpisodeNow() }
-                    },
-                    onCancel: {
-                        viewModel.cancelAutoplay()
-                    },
-                )
-            }
+            // visionOS only. On tvOS the Up Next prompt is AVKit's native
+            // content proposal, presented pre-roll inside the player's own
+            // (focusable) hierarchy — the SwiftUI sibling here could never take
+            // focus from a live `AVPlayerViewController` (#186). visionOS keeps
+            // this overlay pending #182.
+            #if os(visionOS)
+                if let next = viewModel.nextEpisode {
+                    UpNextOverlayView(
+                        nextEpisode: next,
+                        onPlayNow: {
+                            Task { await viewModel.playNextEpisodeNow() }
+                        },
+                        onCancel: {
+                            viewModel.cancelAutoplay()
+                        },
+                    )
+                }
+            #endif
         }
         .ignoresSafeArea()
         .task {
@@ -130,6 +137,17 @@ public struct PlaybackContainerView: View {
                     // still runs `stop()` and reports the final position.
                     onRequestDismiss: {
                         dismiss()
+                    },
+                    // tvOS Up Next: AVKit's content proposal reports the
+                    // viewer's choice (or its countdown) through these (#186).
+                    onAcceptUpNext: {
+                        Task { await viewModel.playNextEpisodeNow() }
+                    },
+                    onDeclineUpNext: {
+                        viewModel.declineUpNext()
+                    },
+                    onDeferUpNext: {
+                        viewModel.deferUpNext()
                     },
                 )
             }

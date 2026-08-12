@@ -450,6 +450,8 @@ public final class PlaybackViewModel {
         delivery = nil
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
+        upNextProposalTask?.cancel()
+        upNextProposalTask = nil
 
         // The final playhead lands in the overlay immediately, so a shelf
         // behind the dismissing player shows the right resume bar on its
@@ -630,6 +632,79 @@ public final class PlaybackViewModel {
 
     // MARK: - Next Episode
 
+    /// Seconds before an episode's end to present the tvOS Up Next proposal.
+    ///
+    /// There is no server credits-marker signal to key this off (Jellyfin
+    /// MediaSegments/chapter markers for credits start aren't modelled in
+    /// `JellyfinKit`), so it is a hardcoded convention — 30s is the industry
+    /// norm — tunable here without any structural change (#186).
+    private static let upNextLeadSeconds: Double = 30
+
+    /// Seconds before the item's end to auto-accept the proposal if the
+    /// viewer does nothing. Shorter than the lead window so the natural
+    /// ending is on screen for a beat before cutting away.
+    private static let upNextAutoAcceptSeconds: Double = 1
+
+    /// The in-flight next-episode resolution for the current session (tvOS),
+    /// dropped by generation when a rebuild or episode change moves on
+    private var upNextProposalTask: Task<Void, Never>?
+
+    /// Resolve the next episode and its artwork during playback, then hand
+    /// the engine a pre-roll Up Next proposal (tvOS only).
+    ///
+    /// The fix for #186: the old path resolved the next episode only from
+    /// `handlePlaybackEnded`, after `didPlayToEnd` — so the prompt could not
+    /// appear until the file had already stopped, and it mounted a SwiftUI
+    /// sibling AVKit's focus environment ignored. Resolving here and letting
+    /// `AVContentProposal` present inside AVKit's own hierarchy fixes both
+    /// the timing and the focus. visionOS keeps the post-roll overlay, driven
+    /// from `handlePlaybackEnded`, pending #182.
+    private func startUpNextPrefetch() {
+        #if os(tvOS)
+            guard item.type == .episode else { return }
+            let epoch = sessionEpoch
+            let item = item
+            let client = client
+            upNextProposalTask?.cancel()
+            upNextProposalTask = Task { [weak self] in
+                let next: MediaItem?
+                do {
+                    next = try await client.getNextEpisode(after: item)
+                } catch {
+                    // Best-effort, off the critical path — a failed lookup just
+                    // means no Up Next this episode — but log it so a silently
+                    // absent prompt is distinguishable from "genuinely the last
+                    // episode" when reading device logs (#186).
+                    Self.logger.warning("[upnext] next-episode prefetch failed for \"\(item.name, privacy: .public)\": \(error, privacy: .public)")
+                    return
+                }
+                guard let next else {
+                    Self.logger.info("[upnext] no next episode after \"\(item.name, privacy: .public)\"")
+                    return
+                }
+                // Same off-critical-path async fetch-then-apply the chapter and
+                // poster artwork uses; `AVContentProposal.previewImage` wants
+                // decoded bytes, not a URL.
+                let imageData = await ChapterArtworkLoader.imageData(from: client.posterURL(for: next))
+                guard !Task.isCancelled, let self, self.sessionEpoch == epoch else { return }
+                // Seeds `nextEpisode`, which `playNextEpisodeNow()` consumes
+                // when AVKit reports the proposal accepted (or its countdown
+                // elapses). This runs only on tvOS — the whole method is
+                // `#if os(tvOS)`; visionOS resolves its next episode post-roll
+                // in `handlePlaybackEnded`.
+                self.nextEpisode = next
+                Self.logger.info("[upnext] prefetched \"\(next.name, privacy: .public)\"; handing proposal to engine")
+                self.engine.setUpNextProposal(UpNextProposal(
+                    title: next.name,
+                    episodeCode: next.episodeCode,
+                    previewImageData: imageData,
+                    leadSeconds: Self.upNextLeadSeconds,
+                    autoAcceptSeconds: Self.upNextAutoAcceptSeconds,
+                ))
+            }
+        #endif
+    }
+
     /// Start the queued next episode immediately
     public func playNextEpisodeNow() async {
         guard let next = nextEpisode else { return }
@@ -647,10 +722,43 @@ public final class PlaybackViewModel {
         await start()
     }
 
-    /// Dismiss the Up Next overlay and end the session
+    /// Dismiss the Up Next overlay and end the session.
+    ///
+    /// The visionOS post-roll path: the overlay only appears *after* the item
+    /// has finished, so cancelling there ends the session. The tvOS pre-roll
+    /// path is `declineUpNext()`, which must not end a still-playing episode.
     public func cancelAutoplay() {
         nextEpisode = nil
         state = .finished
+    }
+
+    /// Decline the tvOS pre-roll Up Next proposal without ending the session.
+    ///
+    /// Reached only through the `didReject` delegate safety net — the card
+    /// offers no decline control (back-button dismissal is `deferUpNext()`).
+    /// Clears the queued next episode and the attached proposal; the current
+    /// episode plays on to its natural end, where `handlePlaybackEnded`
+    /// finishes the session (#186).
+    public func declineUpNext() {
+        nextEpisode = nil
+        upNextProposalTask?.cancel()
+        upNextProposalTask = nil
+        engine.setUpNextProposal(nil)
+    }
+
+    /// The tvOS Up Next card was dismissed without a decision — the viewer
+    /// pressed the back button, which AVKit handles itself as a `.defer`
+    /// (resume the episode) with no delegate callback.
+    ///
+    /// A deferred proposal is still pending to AVKit: it stays attached to
+    /// the item and is re-presented when the item ends — exactly when
+    /// `handlePlaybackEnded` swaps in the next episode on the same player, so
+    /// the stale card would land on top of the new episode (#186). Detaching
+    /// the proposal here leaves AVKit nothing to re-present. The queued
+    /// episode is deliberately kept: dismissing the card means "let the
+    /// episode play out, then autoplay", which post-roll autoplay owns.
+    public func deferUpNext() {
+        engine.setUpNextProposal(nil)
     }
 
     // MARK: - Playback Internals
@@ -755,6 +863,12 @@ public final class PlaybackViewModel {
 
         engine.play()
         state = .playing
+
+        // Resolve the next episode and its artwork *now*, mid-playback, so
+        // AVKit can present the Up Next proposal ahead of this item's end
+        // rather than after it (#186). Off the critical path, like the
+        // metadata enrichment above.
+        startUpNextPrefetch()
 
         // Arm the failure paths before anything that can await: until they
         // exist a delivery failure has no way to reach `state`, and the start
@@ -879,6 +993,10 @@ public final class PlaybackViewModel {
         disarmSessionEvents()
         metadataArtworkTask?.cancel()
         metadataArtworkTask = nil
+        // The replaced player item drops its proposal; `beginPlayback` below
+        // re-runs the prefetch and re-attaches one to the new item (#186).
+        upNextProposalTask?.cancel()
+        upNextProposalTask = nil
 
         // Suspend, don't tear down: the player stays assigned so the hosting
         // view keeps its last frame while the replacement builds. Dropping it
@@ -1466,14 +1584,34 @@ public final class PlaybackViewModel {
     }
 
     func handlePlaybackEnded() async {
-        if item.type == .episode,
-           let next = try? await client.getNextEpisode(after: item)
-        {
-            nextEpisode = next
-        } else {
-            await stop()
-            state = .finished
-        }
+        #if os(tvOS)
+            // Post-roll autoplay: the next episode was prefetched during
+            // playback (`startUpNextPrefetch`) and is still queued unless the
+            // viewer declined it on the pre-roll card (`declineUpNext` clears
+            // it). So a queued episode at end-of-item means "let it roll" —
+            // autoplay it, exactly as before #186; a cleared queue (declined,
+            // a finale, or a movie) ends the session. The AVKit card is a
+            // pre-roll convenience on top of this, not the autoplay mechanism —
+            // autoplay happens even if the card is never shown (#186).
+            if nextEpisode != nil {
+                await playNextEpisodeNow()
+            } else {
+                await stop()
+                state = .finished
+            }
+        #else
+            // visionOS keeps the post-roll SwiftUI overlay pending #182: the
+            // next episode is resolved here, at end-of-item, and the overlay's
+            // own countdown drives autoplay.
+            if item.type == .episode,
+               let next = try? await client.getNextEpisode(after: item)
+            {
+                nextEpisode = next
+            } else {
+                await stop()
+                state = .finished
+            }
+        #endif
     }
 
     private func reportProgress() async {

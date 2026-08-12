@@ -37,6 +37,22 @@
         /// behind it (#183).
         let onRequestDismiss: () -> Void
 
+        /// Advance to the queued next episode — fired by the tvOS Up Next
+        /// proposal (Play Next or the automatic-acceptance countdown). Unused
+        /// on visionOS, whose overlay calls the view model directly (#186).
+        var onAcceptUpNext: () -> Void = {}
+
+        /// Decline the tvOS Up Next proposal, leaving the current episode
+        /// playing. Reached only through the `didReject` safety net — the
+        /// card offers no decline control. Unused on visionOS.
+        var onDeclineUpNext: () -> Void = {}
+
+        /// The tvOS Up Next card was dismissed without a decision (the back
+        /// button): detach the proposal so AVKit cannot re-present it at the
+        /// item boundary, but keep the queued episode — the episode plays out
+        /// and post-roll autoplay advances. Unused on visionOS.
+        var onDeferUpNext: () -> Void = {}
+
         /// Caches the cast tab so SwiftUI updates don't rebuild it — AVKit
         /// re-lays out its info tabs whenever the array is reassigned, which
         /// would flicker (and drop focus from) an open panel. The transport
@@ -95,14 +111,27 @@
             /// representable value that installed it.
             var onRequestDismiss: () -> Void = {}
 
-            // The two platforms expose disjoint halves of this protocol, and
-            // only visionOS needs either. tvOS owns the *dismissal* family
-            // (`playerViewControllerShouldDismiss` and friends, unavailable on
-            // visionOS) and needs none of it: AVKit shares the app's window
+            /// Up Next proposal handlers (tvOS), refreshed every update pass
+            /// like the others. `onAcceptUpNext` advances to the next episode
+            /// (fired by the viewer choosing Play Next *or* by AVKit's
+            /// automatic-acceptance countdown); `onDeferUpNext` detaches the
+            /// proposal after an undecided dismissal (the back button) while
+            /// keeping the queued episode for post-roll autoplay;
+            /// `onDeclineUpNext` clears the queued episode, reached only
+            /// through the `didReject` safety net (#186).
+            var onAcceptUpNext: () -> Void = {}
+            var onDeclineUpNext: () -> Void = {}
+            var onDeferUpNext: () -> Void = {}
+
+            // The platforms expose disjoint halves of this protocol. The
+            // *dismissal* family (`playerViewControllerShouldDismiss` and
+            // friends) is tvOS-only but unused: AVKit shares the app's window
             // there, so the Menu button already unwinds correctly. visionOS
             // owns the *fullscreen-presentation* family (unavailable on tvOS),
-            // which is the half #183 needs — deliberately nothing is
-            // implemented for tvOS, so its behaviour is untouched.
+            // which is the half #183 needs. The *content-proposal* family
+            // below is also tvOS-only (`API_UNAVAILABLE(..., visionos)`), and
+            // — unlike the dismissal family — tvOS now implements it, for the
+            // pre-roll Up Next prompt (#186).
             #if os(visionOS)
                 /// AVKit's fullscreen presentation is ending — its window is
                 /// going away.
@@ -138,6 +167,52 @@
                     completionHandler(true)
                 }
             #endif
+
+            // The Up Next / content-proposal family is tvOS-only
+            // (`API_UNAVAILABLE(..., visionos)` on every symbol). The proposal
+            // itself is attached to the player item by the engine; AVKit
+            // presents the app's `UpNextProposalViewController` inside its own
+            // hierarchy — there is no default card, a proposal without an
+            // installed `contentProposalViewController` presents nothing — and
+            // reports the outcome here (#186). visionOS keeps the SwiftUI
+            // overlay.
+            #if os(tvOS)
+                func playerViewController(
+                    _: AVPlayerViewController,
+                    shouldPresent _: AVContentProposal,
+                ) -> Bool {
+                    // The card VC is installed once in `makeUIViewController`
+                    // (a main-actor context) so this delegate — whose isolation
+                    // differs across SDKs — only has to approve presentation.
+                    Self.logger.info("[upnext] shouldPresent asked → yes")
+                    return true
+                }
+
+                /// The viewer chose to advance, or AVKit's
+                /// `automaticAcceptanceInterval` elapsed. The app owns loading
+                /// the next content (the proposal carries no URL), so this
+                /// calls straight into the same advance the old overlay did.
+                func playerViewController(
+                    _: AVPlayerViewController,
+                    didAccept _: AVContentProposal,
+                ) {
+                    Self.logger.info("[upnext] proposal accepted → advancing")
+                    onAcceptUpNext()
+                }
+
+                /// Safety net for an AVKit-initiated `.reject` (which tears
+                /// down the player). No app code dismisses with `.reject` —
+                /// the card's only button accepts, and the back button defers —
+                /// so this normally does not fire; if AVKit ever rejects the
+                /// proposal, clear the queued episode all the same.
+                func playerViewController(
+                    _: AVPlayerViewController,
+                    didReject _: AVContentProposal,
+                ) {
+                    Self.logger.info("[upnext] proposal rejected → declining")
+                    onDeclineUpNext()
+                }
+            #endif
         }
 
         func makeCoordinator() -> Coordinator {
@@ -149,13 +224,29 @@
             controller.player = player
             controller.delegate = context.coordinator
             context.coordinator.onRequestDismiss = onRequestDismiss
+            context.coordinator.onAcceptUpNext = onAcceptUpNext
+            context.coordinator.onDeclineUpNext = onDeclineUpNext
+            context.coordinator.onDeferUpNext = onDeferUpNext
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
+            #if os(tvOS)
+                // Install the Up Next card once, here in a main-actor context;
+                // AVKit reuses it for every proposal and the `shouldPresent`
+                // delegate only approves presentation (#186). The dismissal
+                // action routes through the coordinator's current handler.
+                let coordinator = context.coordinator
+                controller.contentProposalViewController = UpNextProposalViewController(
+                    onDismissWithoutDecision: { [weak coordinator] in coordinator?.onDeferUpNext() },
+                )
+            #endif
             return controller
         }
 
         func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
             context.coordinator.onRequestDismiss = onRequestDismiss
+            context.coordinator.onAcceptUpNext = onAcceptUpNext
+            context.coordinator.onDeclineUpNext = onDeclineUpNext
+            context.coordinator.onDeferUpNext = onDeferUpNext
             if controller.player !== player {
                 controller.player = player
             }

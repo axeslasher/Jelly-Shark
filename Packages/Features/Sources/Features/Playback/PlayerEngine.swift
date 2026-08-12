@@ -65,6 +65,40 @@ struct PlayerSessionMetadata {
     let durationSeconds: Double?
 }
 
+// MARK: - Up Next Proposal
+
+/// The next-episode data an engine needs to present a *pre-roll* Up Next
+/// prompt, as plain values.
+///
+/// The session layer resolves this during playback (title, artwork) and
+/// hands it down; the engine turns it into whatever native mechanism its
+/// platform provides — `AVContentProposal` on tvOS, which AVKit presents
+/// inside its own view-controller hierarchy ahead of the item's end (#186).
+/// Kept engine-free (no AVKit/UIKit types) so the session layer and its
+/// tests stay platform-agnostic.
+struct UpNextProposal: Equatable {
+    /// Title shown on the prompt — the next episode's name, without the
+    /// season/episode code baked in.
+    let title: String
+
+    /// The compact season/episode code ("S2E4"), shown as its own eyebrow
+    /// line so the title keeps its full width (the same call
+    /// `landscapeShelfItem` documents); nil when the item carries no numbers.
+    let episodeCode: String?
+
+    /// Decoded preview image (poster/thumb) bytes, nil when unavailable.
+    /// The engine decodes it into its platform's image type.
+    let previewImageData: Data?
+
+    /// How many seconds before the item's end to present the prompt.
+    let leadSeconds: Double
+
+    /// How many seconds before the item's end the prompt auto-accepts if
+    /// the viewer does nothing. Kept shorter than `leadSeconds` so the
+    /// natural ending stays on screen for a beat before cutting away.
+    let autoAcceptSeconds: Double
+}
+
 // MARK: - Delivery Progress
 
 /// Evidence that media is still arriving, sampled by the session layer's
@@ -209,4 +243,18 @@ protocol PlayerEngine: AnyObject {
     /// The session layer owns the fetching (it holds the client); the
     /// engine owns the application.
     func applyEnrichedMetadata(chapterArtwork: [Int: Data], posterData: Data?)
+
+    // MARK: Up Next (tvOS)
+
+    /// Attach — or clear, with nil — a pre-roll Up Next proposal to the
+    /// current item.
+    ///
+    /// tvOS-only in effect: AVKit presents `AVContentProposal` inside its own
+    /// view-controller hierarchy ahead of the item's end, which is the focus
+    /// environment a SwiftUI sibling overlay could never take from a live
+    /// player (#186). The engine builds the proposal against the *concrete*
+    /// player item's duration — an item with no known duration presents
+    /// nothing. A no-op on visionOS, where the post-roll SwiftUI overlay
+    /// stands in pending #182.
+    func setUpNextProposal(_ proposal: UpNextProposal?)
 }
