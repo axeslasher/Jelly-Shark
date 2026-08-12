@@ -1,8 +1,16 @@
 import Foundation
 
 /// The segment plan for a locally-remuxed HLS session (#172): one media
-/// playlist over cue-to-cue spans, computable from the Matroska index alone
-/// — before any cluster is read.
+/// playlist over the Matroska index, computable from the index alone — before
+/// any cluster is read.
+///
+/// Segments are **merged runs of adjacent Cues** targeting a fixed duration
+/// (#99). A source's Cues land on its scene-cut keyframes, which are wildly
+/// irregular — cutting one HLS segment per Cue produced fragments spanning
+/// ~8,000× in size (876 B to 7 MB) and a periodic frameskip on device. Every
+/// Cue is a keyframe, so every merged boundary still lands on one and seeking
+/// stays exact; grouping them into ~target-second spans just gives AVPlayer
+/// the uniform fragment cadence a fresh re-encode would.
 ///
 /// Why a media playlist and no master: both halves were measured on the
 /// Apple TV rig, 2026-08-02. AVFoundation's progressive file reader ignores
@@ -32,6 +40,14 @@ public struct HLSSegmentPlan: Sendable {
 
     public let segments: [Segment]
 
+    /// Target segment duration in seconds. Merging closes a segment at the
+    /// first Cue at or past this mark (ffmpeg's `-hls_time` semantics), so
+    /// every segment but the last is at least this long. The `-hls_time 6`
+    /// ffmpeg workbench probe from #99 played smooth on device, so 6 is the
+    /// starting guess — bisect it on device within the ~2–6s band per
+    /// `CLAUDE.md` rather than trusting a bench number.
+    public static let defaultTargetSegmentSeconds: Double = 6
+
     /// The relative URIs the playlist references; the server's routes must
     /// answer exactly these.
     public static let playlistPath = "media.m3u8"
@@ -47,32 +63,54 @@ public struct HLSSegmentPlan: Sendable {
     }
 
     /// Build the plan from a loaded index. `timescale` is ticks per second
-    /// and must match what the init segment declares.
-    public init(index: MatroskaIndex, timescale: Int) {
+    /// and must match what the init segment declares. `targetSegmentSeconds`
+    /// is the merge target (see `defaultTargetSegmentSeconds`); a value below
+    /// the finest Cue spacing degenerates to one segment per Cue.
+    public init(
+        index: MatroskaIndex,
+        timescale: Int,
+        targetSegmentSeconds: Double = HLSSegmentPlan.defaultTargetSegmentSeconds,
+    ) {
         let cues = index.cues
         let ticksPerSecond = Double(max(timescale, 1))
+        let targetTicks = max(targetSegmentSeconds, 0) * ticksPerSecond
         var segments: [Segment] = []
-        segments.reserveCapacity(cues.count)
-        for (i, cue) in cues.enumerated() {
-            let endBound = i + 1 < cues.count ? cues[i + 1].clusterOffset : index.segmentDataEnd
-            let nextTicks = i + 1 < cues.count ? Int64(cues[i + 1].timeTicks) : nil
+
+        var groupStart = 0
+        while groupStart < cues.count {
+            let start = cues[groupStart]
+            // Extend the run to the first Cue at or past the target from the
+            // group's start. Every Cue is a keyframe, so wherever the run
+            // closes it closes on a seekable boundary. Signed/Double math
+            // rather than UInt64 subtraction: Cues are sorted by offset, and
+            // a malformed file's non-monotonic times must not trap here.
+            var groupEnd = groupStart
+            while groupEnd + 1 < cues.count,
+                  Double(cues[groupEnd + 1].timeTicks) - Double(start.timeTicks) < targetTicks
+            {
+                groupEnd += 1
+            }
+            let hasNext = groupEnd + 1 < cues.count
+            let endBound = hasNext ? cues[groupEnd + 1].clusterOffset : index.segmentDataEnd
+            let nextTicks: Int64? = hasNext ? Int64(cues[groupEnd + 1].timeTicks) : nil
             let duration: Double = if let nextTicks {
-                Double(nextTicks - Int64(cue.timeTicks)) / ticksPerSecond
-            } else if let total = index.durationTicks, total > Double(cue.timeTicks) {
+                Double(nextTicks - Int64(start.timeTicks)) / ticksPerSecond
+            } else if let total = index.durationTicks, total > Double(start.timeTicks) {
                 // The final span's duration comes from the declared total.
-                (total - Double(cue.timeTicks)) / ticksPerSecond
+                (total - Double(start.timeTicks)) / ticksPerSecond
             } else {
                 // No declared duration: repeat the previous span's, which
                 // only mis-sizes the final EXTINF — a hint, not timing.
                 segments.last?.durationSeconds ?? 1
             }
             segments.append(Segment(
-                clusterOffset: cue.clusterOffset,
+                clusterOffset: start.clusterOffset,
                 clusterEndBound: endBound,
-                timeTicks: cue.timeTicks,
+                timeTicks: start.timeTicks,
                 nextTimeTicks: nextTicks,
                 durationSeconds: duration,
             ))
+            groupStart = groupEnd + 1
         }
         self.segments = segments
     }
