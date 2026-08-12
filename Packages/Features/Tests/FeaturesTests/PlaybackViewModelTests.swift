@@ -171,11 +171,9 @@ struct PlaybackViewModelTests {
         let (viewModel, _) = makePlayback(client: client, item: episode)
         await viewModel.start()
 
-        // Simulate end-of-item discovery having queued the next episode,
-        // then the user (or countdown) advancing
-        await viewModel.handlePlaybackEnded()
-        #expect(viewModel.nextEpisode == next)
-
+        // The next episode is prefetched during playback (#186), then the
+        // viewer (or the proposal countdown) advances
+        await waitUntil { viewModel.nextEpisode == next }
         await viewModel.playNextEpisodeNow()
 
         #expect(viewModel.item.id == "ep-2")
@@ -184,6 +182,47 @@ struct PlaybackViewModelTests {
         #expect(client.stopReports.count == 1)
         #expect(client.stopReports[0].itemId == "ep-1")
         #expect(client.startReports.count == 2)
+    }
+
+    @Test("The next episode is prefetched and handed to the engine as a proposal")
+    func upNextPrefetchQueuesProposal() async {
+        let client = MockJellyfinClient()
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        let next = MediaItem(
+            id: "ep-2", name: "Episode 2", type: .episode,
+            seriesId: "series-1", indexNumber: 4, parentIndexNumber: 2,
+        )
+        client.nextEpisodeResult = next
+
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
+        await viewModel.start()
+
+        // Resolved mid-playback, not at end-of-item, and handed to the engine
+        // so AVKit can present it pre-roll (#186)
+        await waitUntil { engine.lastUpNextProposal != nil }
+        #expect(viewModel.nextEpisode == next)
+        // The name and the code travel as separate fields — the card styles
+        // the code as its own eyebrow line, never baked into the title
+        #expect(engine.lastUpNextProposal?.title == "Episode 2")
+        #expect(engine.lastUpNextProposal?.episodeCode == "S2E4")
+        // Auto-accept sits inside the lead window so the ending stays visible
+        let proposal = engine.lastUpNextProposal
+        #expect((proposal?.autoAcceptSeconds ?? 0) < (proposal?.leadSeconds ?? 0))
+    }
+
+    @Test("Movies do not prefetch an Up Next proposal")
+    func moviesDoNotPrefetchUpNext() async {
+        let client = MockJellyfinClient()
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        // The prefetch is gated synchronously on item type, so a movie never
+        // launches the resolution task in the first place — nothing to await
+        #expect(client.nextEpisodeRequests.isEmpty)
+        #expect(engine.upNextProposals.isEmpty)
+        #expect(viewModel.nextEpisode == nil)
     }
 
     @Test("A pinned version is requested, played, and resolved")
@@ -218,7 +257,7 @@ struct PlaybackViewModelTests {
         await viewModel.start()
         #expect(viewModel.mediaSource?.id == "source-2")
 
-        await viewModel.handlePlaybackEnded()
+        await waitUntil { viewModel.nextEpisode != nil }
         await viewModel.playNextEpisodeNow()
 
         #expect(viewModel.item.id == "ep-2")
@@ -239,22 +278,26 @@ struct PlaybackViewModelTests {
         #expect(viewModel.state == .finished)
     }
 
-    @Test("Last episode finishes without queueing autoplay")
+    @Test("A finale prefetches nothing to queue, and finishes at end-of-item")
     func lastEpisodeFinishes() async {
         let client = MockJellyfinClient()
         client.nextEpisodeResult = nil
         let episode = MediaItem(id: "ep-9", name: "Finale", type: .episode, seriesId: "series-1")
-        let (viewModel, _) = makePlayback(client: client, item: episode)
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
-        await viewModel.handlePlaybackEnded()
-
-        #expect(client.nextEpisodeRequests == ["ep-9"])
+        // The prefetch runs (it is an episode) but the server has no next
+        // episode, so nothing is queued and no proposal reaches the engine
+        await waitUntil { client.nextEpisodeRequests == ["ep-9"] }
         #expect(viewModel.nextEpisode == nil)
+        #expect(engine.upNextProposals.isEmpty)
+
+        // Reaching the literal end finishes the session on tvOS
+        await viewModel.handlePlaybackEnded()
         #expect(viewModel.state == .finished)
     }
 
-    @Test("cancelAutoplay() finishes the session")
+    @Test("cancelAutoplay() finishes the session (visionOS post-roll path)")
     func cancelAutoplay() async {
         let client = MockJellyfinClient()
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
@@ -262,11 +305,55 @@ struct PlaybackViewModelTests {
         let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
-        await viewModel.handlePlaybackEnded()
+        await waitUntil { viewModel.nextEpisode != nil }
         viewModel.cancelAutoplay()
 
         #expect(viewModel.nextEpisode == nil)
         #expect(viewModel.state == .finished)
+    }
+
+    @Test("declineUpNext() clears the proposal but keeps the episode playing (tvOS pre-roll)")
+    func declineUpNextKeepsPlaying() async {
+        let client = MockJellyfinClient()
+        client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
+
+        await viewModel.start()
+        await waitUntil { engine.lastUpNextProposal != nil }
+        viewModel.declineUpNext()
+
+        // The queued episode and the attached proposal are cleared, but the
+        // current episode plays on — the session is not ended (#186)
+        #expect(viewModel.nextEpisode == nil)
+        #expect(viewModel.state == .playing)
+        #expect(engine.lastUpNextProposal == nil)
+    }
+
+    @Test("deferUpNext() detaches the proposal but keeps autoplay queued (tvOS back-button dismiss)")
+    func deferUpNextKeepsAutoplayQueued() async {
+        let client = MockJellyfinClient()
+        let next = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
+        client.nextEpisodeResult = next
+        let episode = MediaItem(id: "ep-1", name: "Episode 1", type: .episode, seriesId: "series-1")
+        let (viewModel, engine) = makePlayback(client: client, item: episode)
+
+        await viewModel.start()
+        await waitUntil { engine.lastUpNextProposal != nil }
+        viewModel.deferUpNext()
+
+        // Back-button dismissal: the proposal is detached — AVKit must have
+        // nothing to re-present at the item boundary — but the queued episode
+        // survives, so the episode plays out and autoplay still advances (#186)
+        #expect(engine.lastUpNextProposal == nil)
+        #expect(viewModel.nextEpisode == next)
+        #expect(viewModel.state == .playing)
+
+        engine.send(.playedToEnd)
+        // `playNextEpisodeNow` swaps `item` before its `start()` finishes, so
+        // the wait must cover the state too or the assertion races the start
+        await waitUntil { viewModel.item.id == "ep-2" && viewModel.state == .playing }
+        #expect(viewModel.state == .playing)
     }
 
     // MARK: - Engine Events
@@ -295,8 +382,8 @@ struct PlaybackViewModelTests {
         #expect(engine.isLoaded)
     }
 
-    @Test("A played-to-end event queues the next episode")
-    func playedToEndEventQueuesNextEpisode() async {
+    @Test("A played-to-end event autoplays the queued next episode on tvOS")
+    func playedToEndEventAutoplaysNextEpisode() async {
         let client = MockJellyfinClient()
         let next = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
         client.nextEpisodeResult = next
@@ -304,10 +391,17 @@ struct PlaybackViewModelTests {
         let (viewModel, engine) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
+        // The next episode is prefetched during playback and stays queued
+        // unless declined, so reaching the end autoplays it — post-roll, like
+        // before #186. The AVKit pre-roll card is a convenience on top of this.
+        await waitUntil { viewModel.nextEpisode == next }
         engine.send(.playedToEnd)
-        await waitUntil { viewModel.nextEpisode != nil }
+        // `playNextEpisodeNow` swaps `item` before its `start()` finishes, so
+        // the wait must cover the state too or the assertion races the start
+        await waitUntil { viewModel.item.id == "ep-2" && viewModel.state == .playing }
 
-        #expect(viewModel.nextEpisode == next)
+        #expect(viewModel.item.id == "ep-2")
+        #expect(viewModel.state == .playing)
     }
 
     @Test("A native-picker subtitle change reconciles into app state")
@@ -431,7 +525,7 @@ struct PlaybackViewModelTests {
         #expect(client.progressReports.isEmpty)
     }
 
-    @Test("A played-to-end event before the gate opens does not queue autoplay")
+    @Test("A played-to-end event before the gate opens does not finish the session")
     func playedToEndBeforeGateIsDropped() async {
         let client = MockJellyfinClient()
         client.nextEpisodeResult = MediaItem(id: "ep-2", name: "Episode 2", type: .episode, seriesId: "series-1")
@@ -444,7 +538,10 @@ struct PlaybackViewModelTests {
         await viewModel.start()
         await drainEvents()
 
-        #expect(viewModel.nextEpisode == nil)
+        // The event fired in the closed-gate window is dropped, so
+        // handlePlaybackEnded never runs and the session stays live. (The
+        // mid-playback prefetch legitimately queues the next episode; the
+        // gate governs end-of-item handling, not the prefetch.)
         #expect(viewModel.state == .playing)
     }
 
@@ -657,7 +754,7 @@ struct PlaybackViewModelTests {
         await viewModel.toggleFavorite()
         #expect(viewModel.isFavorite == true)
 
-        await viewModel.handlePlaybackEnded()
+        await waitUntil { viewModel.nextEpisode != nil }
         await viewModel.playNextEpisodeNow()
 
         // The overlay keys by item id, so ep-1's confirmed favorite cannot
@@ -842,7 +939,7 @@ struct PlaybackViewModelTests {
         let (viewModel, _) = makePlayback(client: client, item: episode)
 
         await viewModel.start()
-        await viewModel.handlePlaybackEnded()
+        await waitUntil { viewModel.nextEpisode != nil }
         await viewModel.playNextEpisodeNow()
 
         #expect(client.playbackExtrasRequests == ["ep-1", "ep-2"])
@@ -1052,7 +1149,7 @@ struct PlaybackViewModelTests {
 
         await viewModel.start()
         await viewModel.selectSubtitleStream(index: nil)
-        await viewModel.handlePlaybackEnded()
+        await waitUntil { viewModel.nextEpisode != nil }
         await viewModel.playNextEpisodeNow()
 
         #expect(viewModel.selectedSubtitleStreamIndex == 4)

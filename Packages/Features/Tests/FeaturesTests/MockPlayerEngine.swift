@@ -23,6 +23,9 @@ final class MockPlayerEngine: PlayerEngine {
     private(set) var resumeSeeks: [Double] = []
     private(set) var audibleSelections: [Int] = []
     private(set) var enrichedMetadataApplications: [(chapterArtwork: [Int: Data], posterData: Data?)] = []
+    /// Every `setUpNextProposal` call, nil included, so a test can assert the
+    /// session layer attached (or cleared) the pre-roll proposal (#186)
+    private(set) var upNextProposals: [UpNextProposal?] = []
 
     var lastLoadedURL: URL? {
         loadRequests.last?.url
@@ -122,6 +125,14 @@ final class MockPlayerEngine: PlayerEngine {
 
     func applyEnrichedMetadata(chapterArtwork: [Int: Data], posterData: Data?) {
         enrichedMetadataApplications.append((chapterArtwork, posterData))
+    }
+
+    var lastUpNextProposal: UpNextProposal? {
+        upNextProposals.last ?? nil
+    }
+
+    func setUpNextProposal(_ proposal: UpNextProposal?) {
+        upNextProposals.append(proposal)
     }
 
     /// Deliver an event to the session layer, synchronously, as the real

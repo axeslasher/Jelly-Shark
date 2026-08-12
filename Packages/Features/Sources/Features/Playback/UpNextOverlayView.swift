@@ -2,10 +2,15 @@ import DesignSystem
 import JellyfinKit
 import SwiftUI
 
-/// Overlay shown when an episode ends and the next one is queued
+/// Overlay shown when an episode ends and the next one is queued.
 ///
 /// Counts down to autoplay; the user can start the next episode
 /// immediately or cancel and end the session.
+///
+/// visionOS only as of #186: tvOS now presents Up Next through AVKit's
+/// native `AVContentProposal`, pre-roll and inside the player's own
+/// focusable hierarchy. `PlaybackContainerView` mounts this overlay under
+/// `#if os(visionOS)`; the visionOS presentation choice remains #182's.
 struct UpNextOverlayView: View {
     @Environment(\.theme) private var theme
 

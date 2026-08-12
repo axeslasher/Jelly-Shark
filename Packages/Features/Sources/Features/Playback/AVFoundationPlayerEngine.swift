@@ -3,6 +3,10 @@ import Foundation
 import JellyfinKit
 import Observation
 import OSLog
+#if os(tvOS)
+    import AVKit
+    import UIKit
+#endif
 
 /// The AVFoundation implementation of `PlayerEngine`: owns the `AVPlayer`,
 /// its KVO and notification observers, media-selection group loading, and
@@ -198,6 +202,20 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     @ObservationIgnored private var mediaSelectionObserver: NSObjectProtocol?
     @ObservationIgnored private var mediaSelectionTask: Task<Void, Never>?
 
+    #if os(tvOS)
+        /// The Up Next proposal waiting to attach, kept so a duration that
+        /// arrives after `setUpNextProposal` was called (common on
+        /// HLS/transcode, where the item's duration resolves only once the
+        /// playlists parse) can still attach it instead of the proposal being
+        /// dropped for the whole session (#186).
+        @ObservationIgnored private var pendingUpNextProposal: UpNextProposal?
+
+        /// Fires once the current item's duration becomes known, to attach a
+        /// proposal that couldn't be built at request time. Invalidated as
+        /// soon as it succeeds, on a new request, and in `removeObservers`.
+        @ObservationIgnored private var upNextDurationObservation: NSKeyValueObservation?
+    #endif
+
     /// The current item's audible/legible media-selection groups, kept
     /// solely so selection positions can be read back for reconciliation.
     @ObservationIgnored private var audibleGroup: AVMediaSelectionGroup?
@@ -311,6 +329,11 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         audibleOptions = []
         legibleGroup = nil
         legibleOptions = []
+        #if os(tvOS)
+            upNextDurationObservation?.invalidate()
+            upNextDurationObservation = nil
+            pendingUpNextProposal = nil
+        #endif
     }
 
     // MARK: - State
@@ -486,6 +509,93 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             }
         #endif
     }
+
+    func setUpNextProposal(_ proposal: UpNextProposal?) {
+        #if os(tvOS)
+            // Any earlier wait-for-duration is superseded by this request.
+            upNextDurationObservation?.invalidate()
+            upNextDurationObservation = nil
+            pendingUpNextProposal = proposal
+
+            guard let playerItem = player?.currentItem else {
+                Self.logger.info("[upnext] setProposal(\(proposal == nil ? "nil" : "value")) with no current item")
+                return
+            }
+
+            guard let proposal else {
+                playerItem.nextContentProposal = nil
+                Self.logger.info("[upnext] proposal cleared")
+                return
+            }
+
+            // Attach now if the item's duration is already known; otherwise
+            // wait for it rather than dropping the proposal for good.
+            switch attachUpNextProposal(proposal, to: playerItem) {
+            case .attached, .unsuitable:
+                break
+            case .durationNotReady:
+                Self.logger.info("[upnext] duration not ready (\(playerItem.duration.seconds, format: .fixed(precision: 1))s); waiting to attach")
+                let gen = generation
+                upNextDurationObservation = playerItem.observe(\.duration, options: [.new]) { [weak self] item, _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.generation == gen, self.player?.currentItem === item,
+                              let pending = self.pendingUpNextProposal else { return }
+                        if self.attachUpNextProposal(pending, to: item) != .durationNotReady {
+                            self.upNextDurationObservation?.invalidate()
+                            self.upNextDurationObservation = nil
+                        }
+                    }
+                }
+            }
+        #endif
+    }
+
+    #if os(tvOS)
+        private enum UpNextAttachOutcome {
+            /// Attached — AVKit will present the card at the transition time.
+            case attached
+            /// Duration is known but shorter than the lead window: correctly
+            /// presents nothing, and there is nothing to wait for.
+            case unsuitable
+            /// Duration is not numeric yet (unloaded, or a live/indefinite
+            /// stream): the caller waits for it to become known.
+            case durationNotReady
+        }
+
+        /// Build and attach the `AVContentProposal` if the item's duration is
+        /// known, against the *concrete* player-item timeline (#186) rather
+        /// than the Jellyfin runtime, so the transition lands at a real time.
+        private func attachUpNextProposal(_ proposal: UpNextProposal, to playerItem: AVPlayerItem) -> UpNextAttachOutcome {
+            let duration = playerItem.duration
+            let endSeconds = duration.seconds
+            guard duration.isNumeric, endSeconds.isFinite else {
+                return .durationNotReady
+            }
+            guard endSeconds > proposal.leadSeconds else {
+                playerItem.nextContentProposal = nil
+                Self.logger.info("[upnext] item too short (\(endSeconds, format: .fixed(precision: 1))s ≤ lead \(proposal.leadSeconds, format: .fixed(precision: 1))s); no proposal")
+                return .unsuitable
+            }
+
+            let transitionSeconds = endSeconds - proposal.leadSeconds
+            let content = UpNextContentProposal(
+                contentTimeForTransition: CMTime(seconds: transitionSeconds, preferredTimescale: 600),
+                title: proposal.title,
+                previewImage: proposal.previewImageData.flatMap(UIImage.init(data:)),
+                episodeCode: proposal.episodeCode,
+            )
+            // AVKit drives the countdown-to-autoplay itself, replacing the
+            // app's hand-rolled `Task` timer. Per `AVContentProposal.h` and
+            // Apple's tvOS sample the interval is measured from the item's
+            // *end* and negative (NAN, the default, disables auto-accept), so a
+            // small negative value auto-accepts a beat before the natural
+            // ending, leaving it briefly on screen.
+            content.automaticAcceptanceInterval = -proposal.autoAcceptSeconds
+            playerItem.nextContentProposal = content
+            Self.logger.info("[upnext] attached \"\(proposal.title, privacy: .public)\": end=\(endSeconds, format: .fixed(precision: 1))s transition=\(transitionSeconds, format: .fixed(precision: 1))s image=\(proposal.previewImageData != nil)")
+            return .attached
+        }
+    #endif
 
     // MARK: - Observers
 
