@@ -50,6 +50,20 @@
             var castViewController: CastInfoViewController?
             var castPeople: [CastMember] = []
 
+            // visionOS-only: tvOS gets the same choice natively via
+            // `configureMenus`'s transport-bar menus. See
+            // `TrackSelectionInfoViewController` for why this tab exists.
+            #if os(visionOS)
+                var trackSelectionViewController: TrackSelectionInfoViewController?
+
+                /// Whether the tab currently belongs in
+                /// `customInfoViewControllers`, tracked separately from the
+                /// view controller instance so a stream/selection update that
+                /// doesn't change *whether* the tab should exist can refresh
+                /// its content in place without touching AVKit's tab array.
+                var trackSelectionPresent = false
+            #endif
+
             /// The favorite item, built once per player view controller and
             /// mutated in place afterwards: a reassignment of
             /// `transportBarCustomMenuItems` re-lays out the bar the heart
@@ -129,7 +143,7 @@
             controller.delegate = context.coordinator
             context.coordinator.onRequestDismiss = onRequestDismiss
             configureMenus(for: controller, coordinator: context.coordinator)
-            configureCastTab(for: controller, coordinator: context.coordinator)
+            configureInfoTabs(for: controller, coordinator: context.coordinator)
             return controller
         }
 
@@ -139,22 +153,81 @@
                 controller.player = player
             }
             configureMenus(for: controller, coordinator: context.coordinator)
-            configureCastTab(for: controller, coordinator: context.coordinator)
+            configureInfoTabs(for: controller, coordinator: context.coordinator)
         }
 
-        private func configureCastTab(for controller: AVPlayerViewController, coordinator: Coordinator) {
+        /// Builds `customInfoViewControllers` from the Cast & Crew tab and,
+        /// on visionOS, the audio/subtitle track picker tab. Reassigning the
+        /// array makes AVKit re-lay out its info tabs, so each sub-update
+        /// reports whether *membership* changed; the array is only touched
+        /// when it did, not on every data refresh.
+        private func configureInfoTabs(for controller: AVPlayerViewController, coordinator: Coordinator) {
+            let castMembershipChanged = updateCastTab(coordinator: coordinator)
+            #if os(visionOS)
+                let trackMembershipChanged = updateTrackSelectionTab(coordinator: coordinator)
+            #else
+                let trackMembershipChanged = false
+            #endif
+
+            guard castMembershipChanged || trackMembershipChanged else { return }
+
+            var tabs: [UIViewController] = []
+            if let cast = coordinator.castViewController {
+                tabs.append(cast)
+            }
+            #if os(visionOS)
+                if let trackSelection = coordinator.trackSelectionViewController {
+                    tabs.append(trackSelection)
+                }
+            #endif
+            controller.customInfoViewControllers = tabs
+        }
+
+        /// - Returns: whether the tab's presence in the array changed.
+        private func updateCastTab(coordinator: Coordinator) -> Bool {
             // The coordinator starts with empty people, matching AVKit's
             // default empty tab array, so the first pass with no cast is a
             // no-op rather than a reassignment
             guard coordinator.castPeople != people else {
-                return
+                return false
             }
             coordinator.castPeople = people
             coordinator.castViewController = people.isEmpty
                 ? nil
                 : CastInfoViewController(people: people, headshotURL: headshotURL)
-            controller.customInfoViewControllers = coordinator.castViewController.map { [$0] } ?? []
+            return true
         }
+
+        #if os(visionOS)
+            /// - Returns: whether the tab's presence in the array changed.
+            private func updateTrackSelectionTab(coordinator: Coordinator) -> Bool {
+                let burnInStreams = subtitleStreams.filter { !$0.isTextSubtitleStream }
+                let shouldShow = audioStreams.count > 1 || !burnInStreams.isEmpty
+                let panel = TrackSelectionPanel(
+                    audioStreams: audioStreams,
+                    burnInSubtitleStreams: burnInStreams,
+                    selectedAudioIndex: selectedAudioIndex,
+                    selectedSubtitleIndex: selectedSubtitleIndex,
+                    onSelectAudio: onSelectAudio,
+                    onSelectSubtitle: onSelectSubtitle,
+                )
+
+                if shouldShow, let existing = coordinator.trackSelectionViewController {
+                    // Membership is unchanged — refresh the content in place
+                    // (fresh closures, current selection) without touching
+                    // AVKit's tab array.
+                    existing.rootView = panel
+                    return false
+                }
+
+                guard shouldShow != coordinator.trackSelectionPresent else { return false }
+                coordinator.trackSelectionPresent = shouldShow
+                coordinator.trackSelectionViewController = shouldShow
+                    ? TrackSelectionInfoViewController(rootView: panel)
+                    : nil
+                return true
+            }
+        #endif
 
         private func configureMenus(for controller: AVPlayerViewController, coordinator: Coordinator) {
             #if os(tvOS)
