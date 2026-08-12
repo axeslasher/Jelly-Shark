@@ -16,6 +16,8 @@ struct RemuxHLSServerTests {
         let index = try await demuxer.loadIndex()
         let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
         let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+        // Mirrors StreamDelivery.prepareRemuxHLS: the init segment reads the
+        // raw first cue span — it consumes only the first audio frame.
         let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
         let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
         let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)

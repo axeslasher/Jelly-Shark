@@ -24,7 +24,7 @@ struct HLSSegmentPlanTests {
     @Test("Segments merge adjacent cue spans up to the target, on keyframe boundaries")
     func segmentsTileCueSpans() async throws {
         let (index, timescale) = try await loadIndex()
-        #expect(index.cues.count >= 2) // otherwise there is nothing to merge
+        try #require(index.cues.count >= 2) // otherwise there is nothing to merge
 
         // A target below the finest Cue spacing degenerates to the old 1:1
         // mapping — proof the merge responds to the target rather than
@@ -55,11 +55,94 @@ struct HLSSegmentPlanTests {
         }
         #expect(plan.segments.last?.clusterEndBound == index.segmentDataEnd)
 
+        // The time chain mirrors the offset chain: each segment's
+        // nextTimeTicks is the next segment's start time. It becomes the last
+        // video sample's duration at every boundary — the exact frameskip
+        // class #99 fixed — so it must be pinned, not just membership-checked.
+        for (a, b) in zip(plan.segments, plan.segments.dropFirst()) {
+            #expect(a.nextTimeTicks == Int64(b.timeTicks))
+        }
+        #expect(plan.segments.last?.nextTimeTicks == nil)
+
         // No interior segment sits below the merge target: the sub-second
         // fragments #99 reported are gone (only the final EXTINF may be short).
         for segment in plan.segments.dropLast() {
             #expect(segment.durationSeconds >= target)
         }
+    }
+
+    @Test("The byte cap closes runs a malformed file's cue times never would")
+    func byteCapBoundsMergeRuns() {
+        // CueTimes that never advance (all defaulted to 0 — malformed but
+        // parseable) satisfy the duration condition forever; only the byte
+        // cap keeps the plan from collapsing the whole source into one
+        // unboundedly large segment.
+        let spacing: UInt64 = 8 * 1024 * 1024
+        let cues = (0 ..< 20).map {
+            MatroskaCuePoint(timeTicks: 0, clusterOffset: UInt64($0) * spacing)
+        }
+        let index = MatroskaIndex(
+            timestampScaleNs: 1_000_000,
+            durationTicks: nil,
+            tracks: [],
+            cues: cues,
+            segmentDataStart: 0,
+            segmentDataEnd: 20 * spacing,
+        )
+        let plan = HLSSegmentPlan(index: index, timescale: 1000)
+        #expect(plan.segments.count > 1)
+        for segment in plan.segments {
+            // A run may overshoot the cap by at most one cue-to-cue span.
+            let span = segment.clusterEndBound - segment.clusterOffset
+            #expect(span <= HLSSegmentPlan.defaultMaxMergedSpanBytes + spacing)
+        }
+    }
+
+    @Test("A corrupt out-of-range cue time mis-sizes a duration, never traps")
+    func corruptCueTimeDoesNotTrap() {
+        // 8 bytes of 0xFF in a CueTime parses as UInt64.max; the plan must
+        // absorb it as a wrong EXTINF hint, not trap converting it to Int64.
+        let cues = [
+            MatroskaCuePoint(timeTicks: 0, clusterOffset: 0),
+            MatroskaCuePoint(timeTicks: .max, clusterOffset: 1024),
+            MatroskaCuePoint(timeTicks: 4000, clusterOffset: 2048),
+        ]
+        let index = MatroskaIndex(
+            timestampScaleNs: 1_000_000,
+            durationTicks: 8000,
+            tracks: [],
+            cues: cues,
+            segmentDataStart: 0,
+            segmentDataEnd: 4096,
+        )
+        let plan = HLSSegmentPlan(index: index, timescale: 1000)
+        #expect(!plan.segments.isEmpty)
+        for segment in plan.segments {
+            #expect(segment.durationSeconds >= 0)
+            #expect(segment.durationSeconds.isFinite)
+        }
+    }
+
+    @Test("The undeclared-duration tail estimates a cue span, not the previous merged run")
+    func tailFallbackEstimatesCueSpan() {
+        // Cues every 2s with no declared Duration: the tail is one 2s cue
+        // span, and its EXTINF hint must not inherit the previous segment's
+        // ~6s merged duration.
+        let cues = (0 ..< 4).map {
+            MatroskaCuePoint(timeTicks: UInt64($0) * 2000, clusterOffset: UInt64($0) * 1024)
+        }
+        let index = MatroskaIndex(
+            timestampScaleNs: 1_000_000,
+            durationTicks: nil,
+            tracks: [],
+            cues: cues,
+            segmentDataStart: 0,
+            segmentDataEnd: 4096,
+        )
+        let plan = HLSSegmentPlan(index: index, timescale: 1000)
+        #expect(plan.segments.count == 2)
+        #expect(plan.segments[0].durationSeconds == 6)
+        #expect(plan.segments[1].durationSeconds == 2)
     }
 
     @Test("Durations sum to the source duration across merged segments")

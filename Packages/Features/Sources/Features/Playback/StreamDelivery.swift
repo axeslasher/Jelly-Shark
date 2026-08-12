@@ -467,13 +467,17 @@ final class RemuxHLSDelivery: StreamDelivery {
         }
         let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
 
-        // Build the plan first: segments now merge several Cues (#99), so the
-        // init segment must read the merged first span, not a single raw Cue.
         let plan = HLSSegmentPlan(index: index, timescale: remuxer.timescale)
-        guard let first = plan.segments.first else {
+        guard !plan.segments.isEmpty else {
             throw MatroskaError.malformed("empty segment plan")
         }
-        let firstSpan = try await demuxer.readClusters(from: first.clusterOffset, to: first.clusterEndBound)
+        // The init segment consumes only the first audio frame (AC-3/E-AC-3
+        // configuration), so read the raw first cue-to-cue span: the merged
+        // first segment (#99) can be several times larger, every byte of it
+        // on the critical path to first frame — and its bytes would be
+        // fetched again for seg0 anyway.
+        let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
+        let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
         let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
 
         let server = RemuxHLSServer(demuxer: demuxer, remuxer: remuxer, plan: plan, initSegment: initSegment)

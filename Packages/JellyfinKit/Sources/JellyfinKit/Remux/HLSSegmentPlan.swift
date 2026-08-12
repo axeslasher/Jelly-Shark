@@ -48,6 +48,17 @@ public struct HLSSegmentPlan: Sendable {
     /// `CLAUDE.md` rather than trusting a bench number.
     public static let defaultTargetSegmentSeconds: Double = 6
 
+    /// Byte ceiling on a merged run: merging stops extending once the run
+    /// already spans this much of the source, whatever its duration (a run
+    /// may overshoot by at most one cue-to-cue span). Segment production
+    /// holds several concurrent copies of a span — demuxed frames, per-track
+    /// fragment data, the muxed segment — so span *bytes*, not seconds, are
+    /// what the memory budget bounds. This is also the backstop for a
+    /// malformed file whose CueTimes never advance: without it, such a file
+    /// merges into one whole-source segment. A single cue-to-cue span larger
+    /// than this still becomes one segment; the source sets that floor.
+    public static let defaultMaxMergedSpanBytes: UInt64 = 32 * 1024 * 1024
+
     /// The relative URIs the playlist references; the server's routes must
     /// answer exactly these.
     public static let playlistPath = "media.m3u8"
@@ -66,10 +77,13 @@ public struct HLSSegmentPlan: Sendable {
     /// and must match what the init segment declares. `targetSegmentSeconds`
     /// is the merge target (see `defaultTargetSegmentSeconds`); a value below
     /// the finest Cue spacing degenerates to one segment per Cue.
+    /// `maxMergedSpanBytes` caps how much source a run may cover (see
+    /// `defaultMaxMergedSpanBytes`).
     public init(
         index: MatroskaIndex,
         timescale: Int,
         targetSegmentSeconds: Double = HLSSegmentPlan.defaultTargetSegmentSeconds,
+        maxMergedSpanBytes: UInt64 = HLSSegmentPlan.defaultMaxMergedSpanBytes,
     ) {
         let cues = index.cues
         let ticksPerSecond = Double(max(timescale, 1))
@@ -77,31 +91,46 @@ public struct HLSSegmentPlan: Sendable {
         var segments: [Segment] = []
 
         var groupStart = 0
+        // Rolling per-cue spacing estimate, for the undeclared-duration tail.
+        var cueSpacingSeconds: Double = 1
         while groupStart < cues.count {
             let start = cues[groupStart]
             // Extend the run to the first Cue at or past the target from the
-            // group's start. Every Cue is a keyframe, so wherever the run
-            // closes it closes on a seekable boundary. Signed/Double math
-            // rather than UInt64 subtraction: Cues are sorted by offset, and
-            // a malformed file's non-monotonic times must not trap here.
+            // group's start, closing early once the run spans the byte cap.
+            // Every Cue is a keyframe, so wherever the run closes it closes
+            // on a seekable boundary. Time deltas in Double rather than
+            // UInt64 subtraction: Cues are sorted by offset, and a malformed
+            // file's non-monotonic times must not trap here — the byte cap
+            // is what keeps such a file's runs bounded.
             var groupEnd = groupStart
             while groupEnd + 1 < cues.count,
-                  Double(cues[groupEnd + 1].timeTicks) - Double(start.timeTicks) < targetTicks
+                  Double(cues[groupEnd + 1].timeTicks) - Double(start.timeTicks) < targetTicks,
+                  cues[groupEnd + 1].clusterOffset - start.clusterOffset < maxMergedSpanBytes
             {
                 groupEnd += 1
             }
             let hasNext = groupEnd + 1 < cues.count
             let endBound = hasNext ? cues[groupEnd + 1].clusterOffset : index.segmentDataEnd
-            let nextTicks: Int64? = hasNext ? Int64(cues[groupEnd + 1].timeTicks) : nil
-            let duration: Double = if let nextTicks {
-                Double(nextTicks - Int64(start.timeTicks)) / ticksPerSecond
+            // Clamping, not a trapping conversion: a corrupt CueTime (8 bytes
+            // of 0xFF parses as UInt64.max) may mis-size a duration but must
+            // never crash the plan.
+            let nextTicks: Int64? = hasNext ? Int64(clamping: cues[groupEnd + 1].timeTicks) : nil
+            let cueCount = groupEnd - groupStart + 1
+            let duration: Double = if hasNext {
+                max(0, Double(cues[groupEnd + 1].timeTicks) - Double(start.timeTicks)) / ticksPerSecond
             } else if let total = index.durationTicks, total > Double(start.timeTicks) {
                 // The final span's duration comes from the declared total.
                 (total - Double(start.timeTicks)) / ticksPerSecond
             } else {
-                // No declared duration: repeat the previous span's, which
-                // only mis-sizes the final EXTINF — a hint, not timing.
-                segments.last?.durationSeconds ?? 1
+                // No declared duration: estimate from the cue spacing seen so
+                // far, scaled to this run's cue count. Repeating the previous
+                // segment's *merged* duration would overshoot a short tail by
+                // up to the whole merge target. Either way it only mis-sizes
+                // the final EXTINF — a hint, not timing.
+                cueSpacingSeconds * Double(cueCount)
+            }
+            if hasNext, duration > 0 {
+                cueSpacingSeconds = duration / Double(cueCount)
             }
             segments.append(Segment(
                 clusterOffset: start.clusterOffset,

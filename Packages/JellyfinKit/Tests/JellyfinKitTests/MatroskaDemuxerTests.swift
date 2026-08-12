@@ -251,6 +251,31 @@ struct MatroskaDemuxerTests {
         }
     }
 
+    @Test("A sized non-Cluster element mid-span is skipped, not a truncation")
+    func interiorVoidSkipped() async throws {
+        /// An in-place edit (mkvpropedit tag rewrite) leaves a Void between
+        /// clusters. A merged multi-cue span (#99) must include the clusters
+        /// behind it — breaking at the Void would serve a segment far shorter
+        /// than its declared EXTINF, with no error anywhere.
+        func cluster(timestamp: UInt64, fill: UInt8) -> Data {
+            var body = Data([0x81]) // track 1
+            body += Data([0x00, 0x00]) // relative time
+            body += Data([0x80]) // flags: keyframe, no lacing
+            body += Data(repeating: fill, count: 16)
+            return EBMLWriter.element(
+                MatroskaID.cluster,
+                EBMLWriter.uintElement(MatroskaID.clusterTimestamp, timestamp)
+                    + EBMLWriter.element(MatroskaID.simpleBlock, body),
+            )
+        }
+        let void = EBMLWriter.element(0xEC, Data(count: 32)) // Void
+        let span = cluster(timestamp: 0, fill: 0x11) + void + cluster(timestamp: 2000, fill: 0x22)
+        let demuxer = MatroskaDemuxer(source: DataByteSource(span))
+        let merged = try await demuxer.readClusters(from: 0, to: UInt64(span.count))
+        #expect(merged.frames.count == 2)
+        #expect(merged.frames.last?.timeTicks == 2000)
+    }
+
     @Test("BlockAdditionMapping surfaces the Dolby Vision configuration")
     func dolbyVisionMapping() async throws {
         let dvcC = DolbyVisionConfiguration(

@@ -2,8 +2,9 @@ import Foundation
 
 // The bridge from demuxed Matroska clusters to fMP4 segments (#176): track
 // selection, sample timing, and the profile-7 Dolby Vision filter. One
-// fragment per cluster — Cues land on cluster boundaries, so the cue index
-// is also the fragment index.
+// fragment per planned segment — a merged run of adjacent Cues (#99, see
+// `HLSSegmentPlan`) — with every fragment boundary on a Cue keyframe, so
+// seeking stays exact.
 //
 // Timing is the one genuinely subtle part. Matroska block timestamps are
 // PRESENTATION times in storage (decode) order; fMP4 needs monotonic DECODE
@@ -152,9 +153,9 @@ public struct MatroskaFMP4Remuxer: Sendable {
 
     // MARK: - Fragments
 
-    /// Remux one cluster into one `moof`+`mdat`. `nextClusterTimeTicks` (the
-    /// following cue's time) bounds the last video sample's duration; pass
-    /// `nil` for the final cluster.
+    /// Remux one planned span into one `moof`+`mdat`. `nextClusterTimeTicks`
+    /// (the next segment's first cue time) bounds the last video sample's
+    /// duration; pass `nil` for the final span.
     public func makeFragment(
         sequence: Int,
         cluster: MatroskaCluster,

@@ -241,12 +241,13 @@ public struct MatroskaDemuxer: Sendable {
 
     // MARK: Clusters
 
-    /// Read and unroll every cluster in `[offset, endBound)` — one cue-to-cue
-    /// span. Spans, not single clusters, because Cues follow video keyframes:
-    /// a long-GOP source has clusters no cue references, and reading only the
-    /// cued one would silently drop their content. `offset` must come from a
-    /// cue point; `endBound` is the next cue's cluster offset or the segment
-    /// end.
+    /// Read and unroll every cluster in `[offset, endBound)` — one planned
+    /// span, possibly covering several Cues (#99). Spans, not single
+    /// clusters, because Cues follow video keyframes: a long-GOP source has
+    /// clusters no cue references, and reading only the cued ones would
+    /// silently drop their content. `offset` must come from a cue point;
+    /// `endBound` is the next planned boundary's cluster offset or the
+    /// segment end.
     public func readClusters(from offset: UInt64, to endBound: UInt64) async throws -> MatroskaCluster {
         var timestampTicks: UInt64?
         var frames: [MatroskaFrame] = []
@@ -257,9 +258,15 @@ public struct MatroskaDemuxer: Sendable {
                 if timestampTicks == nil {
                     throw MatroskaError.malformed("cue offset did not land on a Cluster")
                 }
-                // Non-cluster element after the first cluster (Void, or the
-                // start of the trailing Cues/Tags region): the span is done.
-                break
+                // A sized non-Cluster element (a Void left by an in-place
+                // edit, an interleaved Tags/SeekHead, the trailing Cues
+                // region) can sit between clusters mid-span; skip it —
+                // breaking here would silently truncate the span's media.
+                // Only an unsized one ends the span: it cannot be stepped
+                // over.
+                guard let size = header.size else { break }
+                cursor = header.contentStart + UInt64(size)
+                continue
             }
             // Unknown-size clusters (streamed muxes) are bounded by the span.
             let contentEnd = header.size.map { header.contentStart + UInt64($0) } ?? endBound
