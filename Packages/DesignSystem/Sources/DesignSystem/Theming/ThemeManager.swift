@@ -27,21 +27,35 @@ public final class ThemeManager {
 
     // MARK: - Private
 
-    private let userDefaultsKey = "selectedTheme"
+    private static let userDefaultsKey = "selectedTheme"
+
+    /// When false (preview instances), theme changes never touch UserDefaults.
+    private let persistsSelection: Bool
 
     // MARK: - Initialization
 
-    private init() {
-        // Load saved theme preference or default to standard
-        let savedId = UserDefaults.standard.string(forKey: userDefaultsKey)
-            .flatMap { ThemeIdentifier(rawValue: $0) } ?? .standard
-
-        self.currentThemeId = savedId
-        self.currentTheme = ThemeManager.createTheme(for: savedId)
+    private init(themeId: ThemeIdentifier, persistsSelection: Bool) {
+        self.persistsSelection = persistsSelection
+        self.currentThemeId = themeId
+        self.currentTheme = ThemeManager.createTheme(for: themeId)
 
         // Register the bundled fonts once so `theme.js*` styles resolve to the
         // right typeface from first render.
         DesignSystemFonts.registerAll()
+    }
+
+    private convenience init() {
+        // Load saved theme preference or default to standard
+        let savedId = UserDefaults.standard.string(forKey: ThemeManager.userDefaultsKey)
+            .flatMap { ThemeIdentifier(rawValue: $0) } ?? .standard
+
+        self.init(themeId: savedId, persistsSelection: true)
+    }
+
+    /// A standalone manager pinned to `id` that never writes UserDefaults.
+    /// For `#Preview` bodies and tests; the app always uses `.shared`.
+    public static func preview(_ id: ThemeIdentifier = .standard) -> ThemeManager {
+        ThemeManager(themeId: id, persistsSelection: false)
     }
 
     // MARK: - Public Methods
@@ -79,7 +93,8 @@ public final class ThemeManager {
     }
 
     private func saveThemePreference() {
-        UserDefaults.standard.set(currentThemeId.rawValue, forKey: userDefaultsKey)
+        guard persistsSelection else { return }
+        UserDefaults.standard.set(currentThemeId.rawValue, forKey: ThemeManager.userDefaultsKey)
     }
 }
 
@@ -102,5 +117,18 @@ public extension View {
         self
             .environment(\.theme, manager.currentTheme)
             .environment(manager)
+    }
+
+    /// Preview companion to `withThemeEnvironment`: pins a non-persisting
+    /// preview theme and paints its `background` token behind the content —
+    /// the same ground real screens paint — so component previews render on
+    /// the theme's canvas instead of the simulator default. Like
+    /// `ThemeManager.preview`, deliberately not `#if DEBUG`-gated so
+    /// literal-only previews can stay unwrapped.
+    func previewCanvas(_ id: ThemeIdentifier = .standard) -> some View {
+        let manager = ThemeManager.preview(id)
+        return frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(manager.currentTheme.background.ignoresSafeArea())
+            .withThemeEnvironment(manager)
     }
 }
