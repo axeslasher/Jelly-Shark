@@ -13,6 +13,22 @@ import SwiftUI
 /// that read them (the backdrop bridge and the hero drift wrapper) — never
 /// this body or the shelf subtree.
 struct HomeView: View {
+    /// Whether Home's tab is selected AND its stack is at root — see
+    /// `RootView.isHomeAtRoot`, which derives it from the state that view
+    /// already owns rather than Home inventing a second source of truth. Each
+    /// flip to true is an appearance the view model can gate a refresh on
+    /// (#236): a pop back to root, or a tab switch back. Dismissing the player
+    /// is *not* one of them — it's a cover, so it changes neither piece of
+    /// state; what refreshes Home after playback on a pushed page is the pop
+    /// that follows, and after playback Home presented itself,
+    /// `refreshAfterPlayback` below.
+    ///
+    /// Deliberately has no default. `true` is the value that permits mutating
+    /// Home's content, and a mount site that silently defaulted to it would
+    /// reintroduce exactly what the guard in the task exists to prevent —
+    /// invisibly, since nothing in this repo can test it.
+    let isAtRoot: Bool
+
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
     @Environment(ServerConnectionViewModel.self) private var connection
@@ -48,6 +64,19 @@ struct HomeView: View {
     @State private var snapMetrics = ScrollSnapMetrics(containerHeight: 0, topInset: 0)
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var regionSnapTask: Task<Void, Never>?
+
+    /// How long an appearance at root waits before its gated refresh (#236).
+    /// Must outlast `RootView.popSettle`, and is defined in terms of it so the
+    /// relation survives that constant being retuned: the deferred tab switch
+    /// empties the outgoing stack *first*, so leaving Home from a pushed page
+    /// briefly looks exactly like "Home is back at root". The wait lets the
+    /// real selection land and cancel this task instead of refreshing a page
+    /// on its way off screen — and it puts every refresh that does run after
+    /// the transition has finished, so no lane changes under the focus engine
+    /// while it is still moving. Unconditional: the pop-settle is tvOS-only,
+    /// but "don't mutate content mid-transition" holds on visionOS too, and
+    /// one constant beats a platform branch.
+    private static let appearanceSettle: Duration = RootView.popSettle + .milliseconds(50)
 
     /// Where the shelves' top parks: one fractional hero plus the hero→shelf
     /// gap into the content. `scrollTo(y:)` works in the same inset-adjusted
@@ -89,16 +118,43 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(theme.animation, value: viewModel.isInitialLoading)
         .background(theme.background)
-        .task(id: session.isConnected) {
+        .task(id: HomeTaskKey(
+            isConnected: session.isConnected,
+            libraryIDs: connection.libraries.map(\.id),
+            isAtRoot: isAtRoot,
+        )) {
+            // A push re-keys this task too. Home stays mounted underneath, but
+            // a detail page owns the screen, so nothing below may run: a
+            // reload would reshuffle the shelves and reset the marquee behind
+            // the viewer, mid-transition. Whatever changed is picked up by the
+            // re-key when the pop brings Home back to root.
+            guard isAtRoot else { return }
+
             viewModel.attach(
                 client: session.client,
                 libraries: connection.libraries,
                 cache: session.scopedCache,
                 userState: session.userState,
             )
+            // Both no-op unless something changed, or the last attempt failed
+            // or was cancelled: `attach` re-arms the load on a new client or
+            // library set, and each model re-arms its own on failure. So a
+            // plain return to Home falls through these to the gated refresh
+            // below, while a mid-session library change re-runs the full load
+            // here (#67).
             await viewModel.load()
             genreShelves.attach(client: session.client, libraries: connection.libraries)
             await genreShelves.load()
+
+            // `try?` swallows the cancellation `Task.sleep` throws, so check
+            // for it explicitly — a superseded appearance must not refresh
+            // (see `appearanceSettle`).
+            try? await Task.sleep(for: Self.appearanceSettle)
+            guard !Task.isCancelled else { return }
+            // Ordered after `load()` deliberately: on the first appearance the
+            // load has stamped the window, so this finds the page fresh and
+            // no-ops instead of double-fetching what just arrived.
+            await viewModel.refreshIfStale()
         }
         .onChange(of: reduceMotion, initial: true) { _, isReduced in
             viewModel.setPaused(isReduced, reason: .reduceMotion)
@@ -317,6 +373,21 @@ struct HomeView: View {
     }
 }
 
+/// What re-runs Home's load-and-refresh task. The connection and the library
+/// set drive the load (`HomeViewModel.attach` re-arms it on a real change);
+/// `isAtRoot` turns every return to Home into an appearance the view model can
+/// gate a refresh on (#236).
+///
+/// A task id has to carry every input the task body reacts to, which Swift
+/// can't check. The client, cache, and user-state store the body also reads
+/// are absent on purpose: they all move with the connection, so `isConnected`
+/// stands in for them (as it did when it was the whole id).
+private struct HomeTaskKey: Equatable {
+    var isConnected: Bool
+    var libraryIDs: [String]
+    var isAtRoot: Bool
+}
+
 /// Container geometry for the tvOS region snap (same shape as
 /// MediaDetailView's — private there, so each page keeps its own copy).
 private struct ScrollSnapMetrics: Equatable {
@@ -389,31 +460,31 @@ private struct HeroBackdropBridge: View {
     // welcome empty state rather than shelves.
     #Preview("Standard", traits: .featuresEnvironment) {
         NavigationStack {
-            HomeView()
+            HomeView(isAtRoot: true)
         }
     }
 
     #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
         NavigationStack {
-            HomeView()
+            HomeView(isAtRoot: true)
         }
     }
 
     #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
         NavigationStack {
-            HomeView()
+            HomeView(isAtRoot: true)
         }
     }
 
     #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
         NavigationStack {
-            HomeView()
+            HomeView(isAtRoot: true)
         }
     }
 
     #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
         NavigationStack {
-            HomeView()
+            HomeView(isAtRoot: true)
         }
     }
 #endif

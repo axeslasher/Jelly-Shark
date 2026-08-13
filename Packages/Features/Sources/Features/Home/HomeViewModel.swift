@@ -58,6 +58,18 @@ public final class HomeViewModel {
     private static let heroSourceLimit = 16
     private static let latestPerLibraryLimit = 26
 
+    /// How long a loaded Home stays fresh before an appearance at the root of
+    /// its tab refetches the watch-state lanes (#236). A starting guess, not a
+    /// measured value — kept as one constant so it can be bisected on device,
+    /// which is the only venue that can judge it.
+    nonisolated static let stalenessWindow: TimeInterval = 30
+
+    /// Seam for #86: past this window the discovery shelves recompute their
+    /// affinity ordering, a deeper tier than `stalenessWindow`'s watch-state
+    /// refresh. Named here so #86 has somewhere to land; nothing consumes it
+    /// yet, and this issue deliberately does not build it.
+    nonisolated static let deepRefreshWindow: TimeInterval = 60 * 60
+
     // MARK: - Outputs
 
     /// Raw section content as fetched. The public accessors below resolve
@@ -210,6 +222,25 @@ public final class HomeViewModel {
     private var needsLoad = true
     private var loadGeneration = 0
 
+    /// When `load()` or `refreshUserState()` last went to the network for the
+    /// watch-state lanes; read by `refreshIfStale()`. Stamped at the *start* of
+    /// the work, so an in-flight refresh also keeps a second trigger from
+    /// doubling up. `nil` means "never loaded", which the gate treats as not
+    /// eligible: the load itself is the refresh.
+    ///
+    /// `retryFailedSections()` deliberately doesn't stamp — it is a button the
+    /// viewer pressed, not an automatic refresh, and it must never widen the
+    /// window that governs one.
+    private var lastRefreshedAt: Date?
+
+    /// Set by `attach` when the client changes, cleared by the next `load()`.
+    /// See the reset it forces there.
+    private var clientChangedSinceLoad = false
+
+    /// Reads the current time. Injected so the staleness gate is testable
+    /// without sleeping; production uses the default.
+    private let now: @MainActor () -> Date
+
     private var advanceTask: Task<Void, Never>?
     private var pauseReasons: Set<PauseReason> = []
     private var playTargetTask: Task<Void, Never>?
@@ -217,9 +248,14 @@ public final class HomeViewModel {
     /// doesn't refetch its next-up episode.
     private var playTargets: [String: MediaItem] = [:]
 
-    public init(heroLimit: Int = 10, autoAdvanceInterval: Duration = .seconds(7)) {
+    public init(
+        heroLimit: Int = 10,
+        autoAdvanceInterval: Duration = .seconds(7),
+        now: @escaping @MainActor () -> Date = { Date() },
+    ) {
         self.heroLimit = heroLimit
         self.autoAdvanceInterval = autoAdvanceInterval
+        self.now = now
     }
 
     // MARK: - Loading
@@ -242,6 +278,13 @@ public final class HomeViewModel {
         }
         if clientChanged || librariesChanged {
             needsLoad = true
+        }
+        if clientChanged {
+            // The next load must not reconcile a different account's page in
+            // place: whatever is rendered belongs to the old client, so it
+            // goes back behind the skeleton rather than lingering under the
+            // new user's fan-out.
+            clientChangedSinceLoad = true
         }
     }
 
@@ -275,6 +318,11 @@ public final class HomeViewModel {
             return
         }
 
+        // A load IS a refresh of the watch-state lanes, so it opens a fresh
+        // staleness window — otherwise the appearance that triggered it would
+        // turn around and refetch what just arrived.
+        lastRefreshedAt = now()
+
         // Hydrate the whole page from the last successful load before any
         // network work, so a relaunch reveals content instead of the
         // skeleton. One blob applied in one turn: the all-or-nothing reveal
@@ -300,7 +348,16 @@ public final class HomeViewModel {
                 hydratedHeroIds = rawHeroItems.map(\.id)
             }
         }
-        if hydratedHeroIds == nil {
+        // Only a page with nothing on it — or one belonging to a different
+        // account — goes back to `.loading`. A reload of an already-rendered
+        // Home for the same client (a mid-session library change re-arming
+        // `needsLoad`, #236) reconciles in place instead, so the skeleton
+        // never returns under the viewer and scroll and focus survive.
+        let isRenderingThisClient = !clientChangedSinceLoad
+            && !(rawHeroItems.isEmpty && rawResumeItems.isEmpty
+                && rawNextUpItems.isEmpty && rawLatestShelves.isEmpty)
+        clientChangedSinceLoad = false
+        if hydratedHeroIds == nil, !isRenderingThisClient {
             resumeStatus = .loading
             nextUpStatus = .loading
             latestStatus = .loading
@@ -415,12 +472,39 @@ public final class HomeViewModel {
     /// them (no marquee flicker on dismiss).
     public func refreshUserState() async {
         guard let client else { return }
+        // Stamped up front, so a return to Home right after the player
+        // dismisses doesn't refetch what this call is already fetching.
+        lastRefreshedAt = now()
         loadGeneration += 1
         let generation = loadGeneration
         async let resume: Void = loadResume(client: client, generation: generation)
         async let nextUp: Void = loadNextUp(client: client, generation: generation)
         async let watchDates: Void = loadWatchDates(client: client, generation: generation)
         _ = await (resume, nextUp, watchDates)
+    }
+
+    /// The refresh behind every appearance of Home at the root of its tab
+    /// (#236) — a pop back to root, or a tab switch back. That covers
+    /// finishing something on a pushed detail page, because the pop back to
+    /// Home is itself the appearance. One rule instead of per-event
+    /// bookkeeping: the view signals freely and this decides whether to act,
+    /// so no future mutation site has to remember to tell Home about itself.
+    ///
+    /// Refreshes only the lanes that move during playback (resume, next up,
+    /// and the merged lane's sort keys). Recently Added rarely changes
+    /// between two visits to Home, and reloading it would reset the marquee.
+    /// Silent and in-place — `refreshUserState`'s loaders never set
+    /// `.loading`, so no skeleton, spinner, or empty flash, and nothing here
+    /// touches focus or scroll state. (A lane that is *already* empty and
+    /// whose refresh fails outright still surfaces its error notice; only a
+    /// rendered lane is kept whole over a failure.)
+    public func refreshIfStale() async {
+        guard client != nil, let lastRefreshedAt else { return }
+        let elapsed = now().timeIntervalSince(lastRefreshedAt)
+        guard elapsed >= Self.stalenessWindow else { return }
+        // Seam for #86: `elapsed >= Self.deepRefreshWindow` is where the
+        // discovery shelves' affinity recompute goes. Nothing consumes it yet.
+        await refreshUserState()
     }
 
     // MARK: - User-Data Actions
@@ -465,6 +549,23 @@ public final class HomeViewModel {
         }
     }
 
+    /// Whether this catch is unwinding a cancellation rather than a real fetch
+    /// failure, in which case the caller must leave its section status alone.
+    ///
+    /// Navigation cancels Home's task, and the gated refresh (#236) runs
+    /// inside it — so clicking a card while a refresh is in flight tears the
+    /// fetches down, and a cancelled `URLSession` request arrives in these
+    /// catches as an ordinary network error. Reporting `.failed` there paints
+    /// a "couldn't load" notice on a lane the viewer merely navigated away
+    /// from, and (on the empty-lane branch, which doesn't re-arm) it sticks
+    /// until Retry. Re-arms the load instead, so the next appearance settles
+    /// the section for real.
+    private func absorbsCancellation() -> Bool {
+        guard Task.isCancelled else { return false }
+        needsLoad = true
+        return true
+    }
+
     private func loadResume(client: any JellyfinClientProtocol, generation: Int) async {
         do {
             let items = try await client.getResumeItems(limit: Self.resumeLimit)
@@ -473,6 +574,9 @@ public final class HomeViewModel {
             resumeStatus = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
+            if absorbsCancellation() {
+                return
+            }
             if rawResumeItems.isEmpty {
                 resumeStatus = .failed(error.localizedDescription)
             } else {
@@ -494,6 +598,9 @@ public final class HomeViewModel {
             nextUpStatus = items.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
+            if absorbsCancellation() {
+                return
+            }
             if rawNextUpItems.isEmpty {
                 nextUpStatus = .failed(error.localizedDescription)
             } else {
@@ -564,6 +671,9 @@ public final class HomeViewModel {
             }
         } catch {
             guard generation == loadGeneration else { return }
+            if absorbsCancellation() {
+                return
+            }
             if rawLatestShelves.isEmpty, rawHeroItems.isEmpty {
                 rawLatestShelves = shelves
                 episodePrimaryHeroIds = []

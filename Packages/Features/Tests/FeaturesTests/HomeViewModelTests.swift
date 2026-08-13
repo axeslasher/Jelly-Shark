@@ -832,6 +832,247 @@ struct HomeViewModelTests {
         #expect(viewModel.latestStatus == .loaded)
     }
 
+    // MARK: - Staleness gate (#236)
+
+    /// A fixed "now" the staleness tests move forward by assignment. Sleeping
+    /// out a 30s window is not an option, so `HomeViewModel(now:)` reads this
+    /// instead of the wall clock.
+    @MainActor
+    private final class TestClock {
+        var now: Date
+        init(_ now: Date) {
+            self.now = now
+        }
+    }
+
+    private static let epoch = Date(timeIntervalSince1970: 1_700_000_000)
+
+    /// Advanced from `epoch` by an offset in seconds.
+    private static func time(_ offset: TimeInterval) -> Date {
+        epoch.addingTimeInterval(offset)
+    }
+
+    @Test("The gate does nothing before the first load — the load IS the refresh")
+    func gateNoOpsBeforeFirstLoad() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        let clock = TestClock(Self.epoch)
+        let viewModel = HomeViewModel(now: { clock.now })
+        viewModel.attach(client: client, libraries: [])
+
+        // However long the view has been mounted, an unloaded page has
+        // nothing to refresh — `load()` is what fills it.
+        clock.now = Self.time(HomeViewModel.stalenessWindow * 10)
+        await viewModel.refreshIfStale()
+
+        #expect(viewModel.resumeItems.isEmpty)
+        #expect(viewModel.isInitialLoading)
+    }
+
+    @Test("A return inside the staleness window issues no requests")
+    func gateNoOpsInsideWindow() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        let clock = TestClock(Self.epoch)
+        let viewModel = HomeViewModel(now: { clock.now })
+        await load(viewModel, client: client, libraries: [Self.movies])
+        let latestRequestsBefore = client.latestItemsRequests.count
+
+        // Home is left and re-entered a beat later. The server has moved on,
+        // but the page is still fresh, so nothing is refetched.
+        client.resumeItemsResult = .success([movie("resume-2")])
+        clock.now = Self.time(HomeViewModel.stalenessWindow / 2)
+        await viewModel.refreshIfStale()
+
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+        #expect(client.latestItemsRequests.count == latestRequestsBefore)
+    }
+
+    @Test("A return past the window refreshes the watch-state lanes and nothing else")
+    func gateRefreshesPastWindow() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            default: .success([])
+            }
+        }
+        let clock = TestClock(Self.epoch)
+        let viewModel = HomeViewModel(now: { clock.now })
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        // Playback finished on a pushed detail page: resume moved on the
+        // server, the shelves did not.
+        client.resumeItemsResult = .success([movie("resume-2")])
+        client.latestItemsHandler = { _ in .failure(APIError.networkError("must not refetch")) }
+        let latestRequestsBefore = client.latestItemsRequests.count
+        clock.now = Self.time(HomeViewModel.stalenessWindow)
+        await viewModel.refreshIfStale()
+
+        // Asserted by request count, not by the poisoned handler: a refetch
+        // of a rendered shelf is swallowed by the keep-on-failure branch, so
+        // the throw alone would not fail this test.
+        #expect(client.latestItemsRequests.count == latestRequestsBefore)
+
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-2"])
+        // Tier 1 only: the hero doesn't re-page and Recently Added stands.
+        #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
+        #expect(viewModel.latestShelves.map(\.id) == ["movies"])
+        #expect(viewModel.latestStatus == .loaded)
+        // Silent: nothing here can put the skeleton back.
+        #expect(viewModel.isInitialLoading == false)
+    }
+
+    @Test("Each refresh opens a new window")
+    func gateRestampsAfterRefresh() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        let clock = TestClock(Self.epoch)
+        let viewModel = HomeViewModel(now: { clock.now })
+        await load(viewModel, client: client, libraries: [])
+
+        client.resumeItemsResult = .success([movie("resume-2")])
+        clock.now = Self.time(HomeViewModel.stalenessWindow)
+        await viewModel.refreshIfStale()
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-2"])
+
+        // Repeated in-and-out now measures from that refresh, not the load.
+        client.resumeItemsResult = .success([movie("resume-3")])
+        clock.now = Self.time(HomeViewModel.stalenessWindow * 1.5)
+        await viewModel.refreshIfStale()
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-2"])
+
+        clock.now = Self.time(HomeViewModel.stalenessWindow * 2)
+        await viewModel.refreshIfStale()
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-3"])
+    }
+
+    @Test("A post-playback refresh opens a new window too")
+    func refreshUserStateRestampsWindow() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        let clock = TestClock(Self.epoch)
+        let viewModel = HomeViewModel(now: { clock.now })
+        await load(viewModel, client: client, libraries: [])
+
+        // The player Home itself presented dismisses half a window in — that
+        // path refreshes unconditionally.
+        client.resumeItemsResult = .success([movie("resume-2")])
+        clock.now = Self.time(HomeViewModel.stalenessWindow / 2)
+        await viewModel.refreshUserState()
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-2"])
+
+        // Returning to Home is now inside a window measured from that refresh
+        // — past one measured from the load — so it doesn't fetch again.
+        // Expressed in units of the constant so bisecting it can't turn this
+        // into a false regression report.
+        client.resumeItemsResult = .success([movie("resume-3")])
+        clock.now = Self.time(HomeViewModel.stalenessWindow * 1.4)
+        await viewModel.refreshIfStale()
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-2"])
+    }
+
+    @Test("A finished item leaves Continue Watching on the next return")
+    func gateDropsFinishedItemFromTheLane() async {
+        // The repro #236 was filed for: play something to the end from a
+        // pushed detail page, come back to Home, and it should be gone from
+        // the lane the view actually renders.
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("in-progress", lastPlayed: day(2))])
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            default: .success([])
+            }
+        }
+        let clock = TestClock(Self.epoch)
+        let viewModel = HomeViewModel(now: { clock.now })
+        await load(viewModel, client: client, libraries: [Self.movies])
+        #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["in-progress"])
+
+        // Watched to the end, so the server drops it from resume entirely.
+        client.resumeItemsResult = .success([])
+        clock.now = Self.time(HomeViewModel.stalenessWindow)
+        await viewModel.refreshIfStale()
+
+        #expect(viewModel.mergedContinueWatchingItems.isEmpty)
+        #expect(viewModel.mergedContinueWatchingStatus == .empty)
+        // The rest of the page is untouched, so the viewer keeps a populated
+        // screen (and, on device, somewhere for focus to land).
+        #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
+        #expect(viewModel.latestShelves.map(\.id) == ["movies"])
+        #expect(viewModel.isInitialLoading == false)
+        #expect(viewModel.isEmptyServer == false)
+    }
+
+    @Test("A different client never reconciles in place over the old account's page")
+    func clientChangeDoesNotReconcileInPlace() async {
+        // The in-place reload above must not extend to a client swap: account
+        // B may not render account A's Continue Watching while B's fetches
+        // are still in flight.
+        let clientA = MockJellyfinClient()
+        clientA.resumeItemsResult = .success([movie("a-resume")])
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: clientA, libraries: [])
+        #expect(viewModel.resumeItems.map(\.id) == ["a-resume"])
+
+        let gate = AsyncGate()
+        let clientB = MockJellyfinClient()
+        clientB.resumeItemsResult = .success([movie("b-resume")])
+        clientB.latestItemsDelay = { try? await gate.wait() }
+        viewModel.attach(client: clientB, libraries: [])
+        let reload = Task { await viewModel.load() }
+        await waitUntil { clientB.latestItemsRequests.isEmpty == false }
+
+        // The skeleton covers the swap, so A's page can't be read.
+        #expect(viewModel.isInitialLoading)
+
+        await gate.open()
+        await reload.value
+        #expect(viewModel.resumeItems.map(\.id) == ["b-resume"])
+    }
+
+    @Test("A mid-session library change reloads without returning to the skeleton")
+    func libraryChangeReloadsInPlace() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .success([movie("resume-1")])
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            case "shows": .success([series("latest-2")])
+            default: .success([])
+            }
+        }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+        #expect(viewModel.latestShelves.map(\.id) == ["movies"])
+
+        // A library appears mid-session: `attach` re-arms the full load.
+        let gate = AsyncGate()
+        client.latestItemsDelay = { try? await gate.wait() }
+        let latestRequestsBefore = client.latestItemsRequests.count
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        let reload = Task { await viewModel.load() }
+        await waitUntil { client.latestItemsRequests.count > latestRequestsBefore }
+
+        // Mid-reload the rendered page stands: no skeleton returning under
+        // the viewer, no blanked lanes, so scroll and focus are undisturbed.
+        #expect(viewModel.isInitialLoading == false)
+        #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+        #expect(viewModel.latestShelves.map(\.id) == ["movies"])
+
+        await gate.open()
+        await reload.value
+
+        #expect(viewModel.latestShelves.map(\.id) == ["movies", "shows"])
+        #expect(viewModel.isInitialLoading == false)
+    }
+
     // MARK: - Merged Continue Watching lane
 
     @Test("The merged lane orders a full load by last engagement")

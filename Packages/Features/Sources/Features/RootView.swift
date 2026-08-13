@@ -33,6 +33,14 @@ public struct RootView: View {
         _connectionViewModel = State(initialValue: ServerConnectionViewModel(cache: cache))
     }
 
+    /// How long `tabSelection` waits for a pop to land before committing a
+    /// deferred tab switch. Not `private`, and not inside the `#if` that uses
+    /// it: `HomeView.appearanceSettle` is defined against this so its "wait out
+    /// the transient at-root the pop creates" margin can't rot if this is
+    /// retuned. Nothing in this repo can fail if it does — that coupling is
+    /// only ever visible on device.
+    static let popSettle: Duration = .milliseconds(350)
+
     /// Wraps `selectedTab` to work around a tvOS `sidebarAdaptable` bug: if the
     /// outgoing tab's `NavigationStack` has a pushed view (e.g. a media
     /// detail), the TabView commits the new selection but never removes the
@@ -61,7 +69,7 @@ public struct RootView: View {
                     if let path = tabPaths[outgoing], !path.isEmpty {
                         tabPaths[outgoing] = NavigationPath()
                         pendingSwitch = Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(350))
+                            try? await Task.sleep(for: Self.popSettle)
                             guard !Task.isCancelled else { return }
                             selectedTab = newValue
                         }
@@ -73,6 +81,20 @@ public struct RootView: View {
                 #endif
             },
         )
+    }
+
+    /// Home's tab is selected and its stack is at root. Derived from the state
+    /// this view already owns, so there is a single source of truth for "you're
+    /// back on Home" — `HomeView` turns it into a staleness-gated refresh
+    /// (#236) rather than every mutation site having to remember to signal
+    /// Home.
+    ///
+    /// Not quite "the viewer is looking at Home": it stays true behind a
+    /// full-screen player, and `tabSelection` below makes it briefly true while
+    /// popping the outgoing stack on the way to another tab. `HomeView`'s
+    /// `appearanceSettle` is what covers that second case.
+    private var isHomeAtRoot: Bool {
+        selectedTab == .home && tabPaths[.home, default: NavigationPath()].isEmpty
     }
 
     private func path(for tab: AppTab) -> Binding<NavigationPath> {
@@ -180,7 +202,7 @@ public struct RootView: View {
     private var homeTab: some TabContent<AppTab> {
         Tab("Home", systemImage: "house.fill", value: AppTab.home) {
             navigationRoot(for: .home) {
-                HomeView()
+                HomeView(isAtRoot: isHomeAtRoot)
             }
         }
     }
