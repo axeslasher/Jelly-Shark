@@ -138,6 +138,9 @@ All themes must maintain:
 - Reference the PRD (docs/PRD.md) for product requirements and success criteria
 - Follow the architecture patterns in docs/ARCHITECTURE.md
 - Apply theming principles from docs/DESIGN_SYSTEM.md for all UI components
+- Every new visual component or screen ships with the five-theme `#Preview`
+  tabs on a themed ground (`.previewCanvas` / the Features preview trait) —
+  conventions and named exceptions in docs/DESIGN_SYSTEM.md § Previews
 - Use Jellyfin API patterns documented in docs/JELLYFIN_INTEGRATION.md
 
 ### Avoid Over-Engineering
