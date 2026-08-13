@@ -15,3 +15,44 @@ public struct MetadataLabelStyle: LabelStyle {
         }
     }
 }
+
+private struct MetadataLabelStylePreview: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: SpacingTokens.md) {
+            Label("2h 14m", systemImage: "clock")
+                .labelStyle(MetadataLabelStyle(spacing: SpacingTokens.xs))
+            Label("Tight spacing", systemImage: "ruler")
+                .labelStyle(MetadataLabelStyle(spacing: 2))
+        }
+        .jsStyle(.caption)
+        .foregroundStyle(theme.secondary)
+        .padding(SpacingTokens.xl)
+    }
+}
+
+#Preview("Standard") {
+    MetadataLabelStylePreview()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    MetadataLabelStylePreview()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    MetadataLabelStylePreview()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    MetadataLabelStylePreview()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    MetadataLabelStylePreview()
+        .previewCanvas(.sciFi)
+}

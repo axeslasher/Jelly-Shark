@@ -37,3 +37,24 @@ public extension Color {
         self.init(.sRGBLinear, red: red, green: green, blue: blue, opacity: opacity)
     }
 }
+
+#Preview {
+    // A lightness ramp at fixed chroma and hue; the high-chroma light steps
+    // exceed sRGB and only render faithfully on a wide-gamut display.
+    let manager = ThemeManager.preview()
+    HStack(spacing: SpacingTokens.xxs) {
+        ForEach(Array(stride(from: 0.15, through: 0.95, by: 0.1)), id: \.self) { lightness in
+            VStack(spacing: SpacingTokens.xxs) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(oklch: lightness, 0.17, 250))
+                    .frame(width: 96, height: 72)
+
+                Text(String(format: "%.2f", lightness))
+                    .jsStyle(.small)
+                    .foregroundStyle(manager.currentTheme.secondary)
+            }
+        }
+    }
+    .padding(SpacingTokens.xl)
+    .withThemeEnvironment(manager)
+}

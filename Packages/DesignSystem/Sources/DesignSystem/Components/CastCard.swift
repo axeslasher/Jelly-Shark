@@ -120,3 +120,54 @@ public struct CastCard<Value: Hashable>: View {
         }
     }
 }
+
+#if DEBUG
+    private struct CastCardPreview: View {
+        var body: some View {
+            NavigationStack {
+                HStack(alignment: .top, spacing: SpacingTokens.cardGap) {
+                    CastCard(
+                        url: nil,
+                        name: PreviewData.peopleNames[0],
+                        role: PreviewData.roles[0],
+                        value: "person-1",
+                    )
+                    CastCard(
+                        url: nil,
+                        name: PreviewData.peopleNames[1],
+                        role: PreviewData.roles[1],
+                        value: "person-2",
+                    )
+                    // Role-less and non-navigating: reserved caption line, no push.
+                    CastCard(url: nil, name: PreviewData.peopleNames[2])
+                }
+                .padding(SpacingTokens.screenPadding)
+            }
+        }
+    }
+
+    #Preview("Standard") {
+        CastCardPreview()
+            .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        CastCardPreview()
+            .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        CastCardPreview()
+            .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        CastCardPreview()
+            .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        CastCardPreview()
+            .previewCanvas(.sciFi)
+    }
+#endif

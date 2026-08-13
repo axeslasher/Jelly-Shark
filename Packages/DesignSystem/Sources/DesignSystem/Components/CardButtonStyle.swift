@@ -56,4 +56,54 @@
             }
         }
     }
+
+    /// visionOS-only (the file is compiled out on tvOS). Hover glow and press
+    /// scale need canvas interaction; the static render shows resting states.
+    private struct CardButtonStylePreview: View {
+        @Environment(\.theme) private var theme
+
+        var body: some View {
+            VStack(spacing: SpacingTokens.lg) {
+                Button {} label: {
+                    Text("Paragraph button — owns its hover glow")
+                        .jsStyle(.body)
+                        .foregroundStyle(theme.primary)
+                }
+                .buttonStyle(CardButtonStyle(hoverShapeRadius: theme.cornerRadius))
+
+                Button {} label: {
+                    RoundedRectangle(cornerRadius: theme.cornerRadius)
+                        .fill(theme.surface)
+                        .frame(width: 320, height: 180)
+                }
+                .buttonStyle(CardButtonStyle())
+            }
+            .padding(SpacingTokens.xl)
+        }
+    }
+
+    #Preview("Standard") {
+        CardButtonStylePreview()
+            .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        CardButtonStylePreview()
+            .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        CardButtonStylePreview()
+            .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        CardButtonStylePreview()
+            .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        CardButtonStylePreview()
+            .previewCanvas(.sciFi)
+    }
 #endif

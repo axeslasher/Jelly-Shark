@@ -299,11 +299,39 @@ private struct SeededRNG {
     }
 }
 
-#Preview {
-    HStack(spacing: SpacingTokens.cardGap) {
-        GenreShelfItem(title: "Horror", value: "horror")
-        GenreShelfItem(title: "Science Fiction", value: "scifi")
+private struct GenreShelfItemPreview: View {
+    var body: some View {
+        NavigationStack {
+            HStack(spacing: SpacingTokens.cardGap) {
+                GenreShelfItem(title: "Horror", value: "horror")
+                GenreShelfItem(title: "Science Fiction", value: "scifi")
+            }
+            .padding()
+        }
     }
-    .padding()
-    .withThemeEnvironment()
+}
+
+#Preview("Standard") {
+    GenreShelfItemPreview()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    GenreShelfItemPreview()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    GenreShelfItemPreview()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    GenreShelfItemPreview()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    GenreShelfItemPreview()
+        .previewCanvas(.sciFi)
 }

@@ -1,5 +1,8 @@
 import CoreGraphics
 import Foundation
+#if DEBUG
+    import SwiftUI // The decoded-grid preview below; the decoder itself stays CoreGraphics-only.
+#endif
 
 /// Decoder for the BlurHash compact image placeholder format
 /// (https://blurha.sh) — a short base83 string encoding a handful of DCT
@@ -127,3 +130,48 @@ public enum BlurHash {
         copysign(pow(abs(value), exponent), value)
     }
 }
+
+#if DEBUG
+    // Doubles as the visual index of PreviewData's synthesized artwork; the
+    // last cell shows the nil path for an undecodable hash.
+    #Preview {
+        let manager = ThemeManager.preview()
+        ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 160), spacing: SpacingTokens.sm)],
+                spacing: SpacingTokens.sm,
+            ) {
+                ForEach(
+                    PreviewData.posterHashes + PreviewData.backdropHashes + [PreviewData.invalidHash],
+                    id: \.self,
+                ) { hash in
+                    VStack(spacing: SpacingTokens.xxs) {
+                        Group {
+                            if let image = BlurHash.decode(hash, width: 32, height: 32) {
+                                Image(decorative: image, scale: 1)
+                                    .resizable()
+                            } else {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(manager.currentTheme.surface)
+                                    .overlay(
+                                        Image(systemName: "eye.slash")
+                                            .foregroundStyle(manager.currentTheme.tertiary),
+                                    )
+                            }
+                        }
+                        .frame(width: 160, height: 100)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        Text(hash)
+                            .jsStyle(.small)
+                            .foregroundStyle(manager.currentTheme.secondary)
+                            .lineLimit(1)
+                    }
+                }
+            }
+            .padding(SpacingTokens.screenPadding)
+        }
+        .background(manager.currentTheme.background)
+        .withThemeEnvironment(manager)
+    }
+#endif

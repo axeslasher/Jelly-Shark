@@ -28,3 +28,54 @@ struct ShelfCaption<Content: View>: View {
             .animation(reduceMotion ? nil : theme.animation, value: isFocused)
     }
 }
+
+/// `\.isFocused` only resolves inside a focusable subtree, so the captions sit
+/// in button labels. The static render shows the idle dim; move focus onto a
+/// button to see a caption at full strength.
+private struct ShelfCaptionPreview: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(spacing: SpacingTokens.md) {
+            Button {} label: {
+                ShelfCaption {
+                    Text("Idle captions dim to this")
+                        .jsStyle(.title)
+                        .foregroundStyle(theme.primary)
+                }
+            }
+            Button {} label: {
+                ShelfCaption(isPlaceholder: true) {
+                    Text("Placeholder lines keep layout but stay invisible")
+                        .jsStyle(.title)
+                }
+            }
+        }
+        .padding(SpacingTokens.xl)
+    }
+}
+
+#Preview("Standard") {
+    ShelfCaptionPreview()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    ShelfCaptionPreview()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    ShelfCaptionPreview()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    ShelfCaptionPreview()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    ShelfCaptionPreview()
+        .previewCanvas(.sciFi)
+}

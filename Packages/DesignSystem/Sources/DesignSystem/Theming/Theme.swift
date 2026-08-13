@@ -199,3 +199,37 @@ public extension Theme {
         1
     }
 }
+
+#if DEBUG
+    // A compact index of every theme; the per-theme files render the full
+    // ThemeSpecimen sheet.
+    #Preview("All themes") {
+        let manager = ThemeManager.preview()
+        ScrollView {
+            VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+                ForEach(ThemeIdentifier.allCases, id: \.self) { id in
+                    let theme = manager.theme(for: id)
+                    HStack(spacing: SpacingTokens.md) {
+                        Text(theme.name)
+                            .jsStyle(.title)
+                            .foregroundStyle(theme.primary)
+                            .frame(width: 280, alignment: .leading)
+
+                        ForEach(
+                            Array([theme.surface, theme.surfaceElevated, theme.accent, theme.accentSecondary, theme.error].enumerated()),
+                            id: \.offset,
+                        ) { _, color in
+                            RoundedRectangle(cornerRadius: theme.cornerRadius)
+                                .fill(color)
+                                .frame(width: 72, height: 48)
+                        }
+                    }
+                    .padding(SpacingTokens.md)
+                    .background(theme.background)
+                    .environment(\.theme, theme)
+                }
+            }
+            .padding(SpacingTokens.screenPadding)
+        }
+    }
+#endif

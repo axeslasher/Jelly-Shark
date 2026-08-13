@@ -170,14 +170,40 @@ private struct SkeletonPulseModifier: ViewModifier {
     }
 }
 
-#Preview("Skeleton shelves") {
-    ScrollView {
-        VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
-            SkeletonShelf(cardWidth: 440, shape: .artwork(aspectRatio: 16.0 / 9.0), cardCount: 4)
-            SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
-            SkeletonShelf(cardWidth: 200, shape: .circle)
+private struct SkeletonShelvesPreview: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                SkeletonShelf(cardWidth: 440, shape: .artwork(aspectRatio: 16.0 / 9.0), cardCount: 4)
+                SkeletonShelf(cardWidth: 200, shape: .artwork(aspectRatio: 2.0 / 3.0))
+                SkeletonShelf(cardWidth: 200, shape: .circle)
+            }
+            .skeletonPulse()
         }
-        .skeletonPulse()
     }
-    .withThemeEnvironment()
+}
+
+#Preview("Standard") {
+    SkeletonShelvesPreview()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    SkeletonShelvesPreview()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    SkeletonShelvesPreview()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    SkeletonShelvesPreview()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    SkeletonShelvesPreview()
+        .previewCanvas(.sciFi)
 }

@@ -70,3 +70,9 @@ public struct HorrorTheme: Theme, Sendable {
 
     public init() {}
 }
+
+#if DEBUG
+    #Preview {
+        ThemeSpecimen(theme: HorrorTheme())
+    }
+#endif

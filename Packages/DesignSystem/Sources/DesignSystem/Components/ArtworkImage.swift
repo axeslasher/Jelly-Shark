@@ -147,15 +147,48 @@ public extension View {
     }
 }
 
-#Preview {
-    HStack(spacing: SpacingTokens.lg) {
-        ArtworkImage(url: nil, placeholderIcon: "film.fill")
-            .frame(width: 200, height: 300)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+#if DEBUG
+    private struct ArtworkImagePreview: View {
+        var body: some View {
+            HStack(spacing: SpacingTokens.lg) {
+                ArtworkImage(url: nil, blurHash: PreviewData.posterHashes[0], placeholderIcon: "film.fill")
+                    .frame(width: 200, height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
 
-        ArtworkImage(url: nil)
-            .frame(width: 320, height: 180)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+                ArtworkImage(url: nil, blurHash: PreviewData.backdropHashes[1])
+                    .frame(width: 320, height: 180)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                // No URL and no hash: the icon placeholder.
+                ArtworkImage(url: nil, placeholderIcon: "film.fill")
+                    .frame(width: 200, height: 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
     }
-    .withThemeEnvironment()
-}
+
+    #Preview("Standard") {
+        ArtworkImagePreview()
+            .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        ArtworkImagePreview()
+            .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        ArtworkImagePreview()
+            .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        ArtworkImagePreview()
+            .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        ArtworkImagePreview()
+            .previewCanvas(.sciFi)
+    }
+#endif

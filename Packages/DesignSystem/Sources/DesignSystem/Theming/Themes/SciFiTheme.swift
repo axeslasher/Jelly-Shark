@@ -68,3 +68,9 @@ public struct SciFiTheme: Theme, Sendable {
 
     public init() {}
 }
+
+#if DEBUG
+    #Preview {
+        ThemeSpecimen(theme: SciFiTheme())
+    }
+#endif

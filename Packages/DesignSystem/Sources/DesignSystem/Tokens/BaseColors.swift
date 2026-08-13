@@ -380,3 +380,41 @@ public enum BaseColors {
     public static let rose900 = Color(oklch: 0.41, 0.159, 10.272)
     public static let rose950 = Color(oklch: 0.271, 0.105, 12.094)
 }
+
+#Preview {
+    // A curated slice — the families the shipped themes actually pull from.
+    // The full Tailwind palette lives above; add rows as themes adopt more.
+    let manager = ThemeManager.preview()
+    let theme = manager.currentTheme
+    let families: [(name: String, shades: [Color])] = [
+        ("zinc", [BaseColors.zinc50, BaseColors.zinc100, BaseColors.zinc200, BaseColors.zinc300, BaseColors.zinc400, BaseColors.zinc500, BaseColors.zinc600, BaseColors.zinc700, BaseColors.zinc800, BaseColors.zinc900, BaseColors.zinc950]),
+        ("slate", [BaseColors.slate50, BaseColors.slate100, BaseColors.slate200, BaseColors.slate300, BaseColors.slate400, BaseColors.slate500, BaseColors.slate600, BaseColors.slate700, BaseColors.slate800, BaseColors.slate900, BaseColors.slate950]),
+        ("orange", [BaseColors.orange50, BaseColors.orange100, BaseColors.orange200, BaseColors.orange300, BaseColors.orange400, BaseColors.orange500, BaseColors.orange600, BaseColors.orange700, BaseColors.orange800, BaseColors.orange900, BaseColors.orange950]),
+        ("red", [BaseColors.red50, BaseColors.red100, BaseColors.red200, BaseColors.red300, BaseColors.red400, BaseColors.red500, BaseColors.red600, BaseColors.red700, BaseColors.red800, BaseColors.red900, BaseColors.red950]),
+        ("rose", [BaseColors.rose50, BaseColors.rose100, BaseColors.rose200, BaseColors.rose300, BaseColors.rose400, BaseColors.rose500, BaseColors.rose600, BaseColors.rose700, BaseColors.rose800, BaseColors.rose900, BaseColors.rose950]),
+        ("blue", [BaseColors.blue50, BaseColors.blue100, BaseColors.blue200, BaseColors.blue300, BaseColors.blue400, BaseColors.blue500, BaseColors.blue600, BaseColors.blue700, BaseColors.blue800, BaseColors.blue900, BaseColors.blue950]),
+        ("amber", [BaseColors.amber50, BaseColors.amber100, BaseColors.amber200, BaseColors.amber300, BaseColors.amber400, BaseColors.amber500, BaseColors.amber600, BaseColors.amber700, BaseColors.amber800, BaseColors.amber900, BaseColors.amber950]),
+        ("teal", [BaseColors.teal50, BaseColors.teal100, BaseColors.teal200, BaseColors.teal300, BaseColors.teal400, BaseColors.teal500, BaseColors.teal600, BaseColors.teal700, BaseColors.teal800, BaseColors.teal900, BaseColors.teal950]),
+    ]
+    ScrollView([.horizontal, .vertical]) {
+        VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+            ForEach(families, id: \.name) { family in
+                HStack(spacing: SpacingTokens.xxs) {
+                    Text(family.name)
+                        .jsStyle(.caption)
+                        .foregroundStyle(theme.secondary)
+                        .frame(width: 140, alignment: .leading)
+
+                    ForEach(family.shades.indices, id: \.self) { index in
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(family.shades[index])
+                            .frame(width: 88, height: 56)
+                    }
+                }
+            }
+        }
+        .padding(SpacingTokens.screenPadding)
+    }
+    .background(theme.background)
+    .withThemeEnvironment(manager)
+}

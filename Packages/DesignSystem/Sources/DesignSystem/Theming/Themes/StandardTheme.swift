@@ -76,3 +76,9 @@ public struct StandardTheme: Theme, Sendable {
 
     public init() {}
 }
+
+#if DEBUG
+    #Preview {
+        ThemeSpecimen(theme: StandardTheme())
+    }
+#endif

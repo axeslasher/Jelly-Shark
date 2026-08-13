@@ -68,3 +68,46 @@ public struct ContentShelf<Content: View>: View {
         }
     }
 }
+
+#if DEBUG
+    private struct PreviewShelf: View {
+        var body: some View {
+            ContentShelf("Recently Added", icon: "sparkles") {
+                ForEach(Array(PreviewData.movieTitles.prefix(6).enumerated()), id: \.offset) { index, title in
+                    ArtworkShelfItem(
+                        url: nil,
+                        blurHash: PreviewData.posterHashes[index],
+                        title: title,
+                        subtitle: "2024",
+                        action: {},
+                    )
+                }
+            }
+        }
+    }
+
+    #Preview("Standard") {
+        PreviewShelf()
+            .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        PreviewShelf()
+            .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        PreviewShelf()
+            .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        PreviewShelf()
+            .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        PreviewShelf()
+            .previewCanvas(.sciFi)
+    }
+#endif

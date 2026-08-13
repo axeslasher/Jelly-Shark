@@ -104,3 +104,45 @@ public extension EdgeInsets {
         .uniform(SpacingTokens.screenPadding)
     }
 }
+
+#Preview {
+    let manager = ThemeManager.preview()
+    let theme = manager.currentTheme
+    let tokens: [(name: String, value: CGFloat)] = [
+        ("xxs", SpacingTokens.xxs),
+        ("xs", SpacingTokens.xs),
+        ("sm", SpacingTokens.sm),
+        ("md", SpacingTokens.md),
+        ("lg", SpacingTokens.lg),
+        ("xl", SpacingTokens.xl),
+        ("xxl", SpacingTokens.xxl),
+        ("huge", SpacingTokens.huge),
+        ("cardPadding", SpacingTokens.cardPadding),
+        ("cardGap", SpacingTokens.cardGap),
+        ("screenPadding", SpacingTokens.screenPadding),
+        ("sectionSpacing", SpacingTokens.sectionSpacing),
+        ("headerSpacing", SpacingTokens.headerSpacing),
+        ("focusPadding", SpacingTokens.focusPadding),
+        ("focusInset", SpacingTokens.focusInset),
+    ]
+    ScrollView {
+        VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+            ForEach(tokens, id: \.name) { entry in
+                HStack(spacing: SpacingTokens.md) {
+                    Text("\(entry.name) \(Int(entry.value))pt")
+                        .jsStyle(.caption)
+                        .foregroundStyle(theme.secondary)
+                        .frame(width: 280, alignment: .leading)
+
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(theme.accent)
+                        .frame(width: max(entry.value, 1), height: 12)
+                }
+            }
+        }
+        .padding(SpacingTokens.screenPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .background(theme.background)
+    .withThemeEnvironment(manager)
+}

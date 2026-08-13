@@ -110,3 +110,44 @@ public extension View {
         self.animation(animation, value: UUID())
     }
 }
+
+private struct MotionTokenRow: View {
+    @Environment(\.theme) private var theme
+
+    let name: String
+    let animation: Animation
+
+    @State private var trailing = false
+
+    var body: some View {
+        HStack(spacing: SpacingTokens.md) {
+            Text(name)
+                .jsStyle(.caption)
+                .foregroundStyle(theme.secondary)
+                .frame(width: 300, alignment: .leading)
+
+            Circle()
+                .fill(theme.accent)
+                .frame(width: 20, height: 20)
+                .offset(x: trailing ? 200 : 0)
+                .animation(animation.repeatForever(autoreverses: true), value: trailing)
+        }
+        .onAppear { trailing = true }
+    }
+}
+
+#Preview {
+    VStack(alignment: .leading, spacing: SpacingTokens.md) {
+        MotionTokenRow(name: "fast (0.15s)", animation: MotionTokens.fast)
+        MotionTokenRow(name: "standard (0.3s)", animation: MotionTokens.standard)
+        MotionTokenRow(name: "slow (0.5s)", animation: MotionTokens.slow)
+        MotionTokenRow(name: "spring", animation: MotionTokens.spring)
+        MotionTokenRow(name: "snappySpring", animation: MotionTokens.snappySpring)
+        MotionTokenRow(name: "horrorAnimation", animation: MotionTokens.horrorAnimation)
+        MotionTokenRow(name: "actionAnimation", animation: MotionTokens.actionAnimation)
+        MotionTokenRow(name: "videoStoreAnimation", animation: MotionTokens.videoStoreAnimation)
+        MotionTokenRow(name: "sciFiAnimation", animation: MotionTokens.sciFiAnimation)
+    }
+    .padding(SpacingTokens.screenPadding)
+    .withThemeEnvironment(.preview())
+}
