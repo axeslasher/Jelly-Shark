@@ -2,7 +2,9 @@ import DesignSystem
 import JellyfinKit
 import SwiftUI
 
-/// Cast & Crew shelf. Renders nothing when there's no client or no people.
+/// Cast & Crew shelf. Renders nothing when there are no people. The client is
+/// only needed for headshot URLs, so a clientless session (previews) still
+/// renders the shelf with placeholder artwork.
 struct CastShelfSection: View {
     @Environment(AppSession.self) private var session
 
@@ -26,7 +28,7 @@ struct CastShelfSection: View {
     @State private var hasSteered = false
 
     var body: some View {
-        if let client = session.client, !people.isEmpty {
+        if !people.isEmpty {
             ContentShelf("Cast & Crew", icon: "person.2.fill") {
                 ForEach(people) { member in
                     // People without a real server id can't be fetched, so
@@ -34,14 +36,14 @@ struct CastShelfSection: View {
                     Group {
                         if member.hasServerId {
                             CastCard(
-                                url: client.headshotURL(for: member),
+                                url: session.client?.headshotURL(for: member),
                                 name: member.name,
                                 role: member.role ?? member.kind,
                                 value: member,
                             )
                         } else {
                             CastCard(
-                                url: client.headshotURL(for: member),
+                                url: session.client?.headshotURL(for: member),
                                 name: member.name,
                                 role: member.role ?? member.kind,
                             )
@@ -136,3 +138,41 @@ struct GenreShelfSection: View {
         }
     }
 }
+
+#if DEBUG
+    private struct CastShelfSectionPreview: View {
+        var body: some View {
+            // The stack hosts the cast cards' value-based links; without one
+            // they render disabled.
+            NavigationStack {
+                ScrollView {
+                    CastShelfSection(
+                        people: PreviewData.cast,
+                        isRegionFocused: false,
+                        steersFirstFocus: false,
+                    )
+                }
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        CastShelfSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        CastShelfSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        CastShelfSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        CastShelfSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        CastShelfSectionPreview()
+    }
+#endif
