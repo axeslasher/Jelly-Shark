@@ -123,3 +123,40 @@ struct SeasonEpisodesSection: View {
         shelfPosition.scrollTo(x: max(0, x))
     }
 }
+
+#if DEBUG
+    private struct SeasonEpisodesSectionPreview: View {
+        var body: some View {
+            ScrollView {
+                SeasonEpisodesSection(
+                    title: "Season 1",
+                    episodes: Array(PreviewData.seasonEpisodes.prefix(4)),
+                    currentEpisodeId: PreviewData.seasonEpisodes[1].id,
+                    isRegionFocused: false,
+                    menu: { _ in ShelfMenuHandlers() },
+                    playbackItem: .constant(nil),
+                )
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        SeasonEpisodesSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        SeasonEpisodesSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        SeasonEpisodesSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        SeasonEpisodesSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        SeasonEpisodesSectionPreview()
+    }
+#endif

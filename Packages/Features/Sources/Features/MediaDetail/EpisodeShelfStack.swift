@@ -189,5 +189,5 @@ private struct GhostEpisodeCard: View {
         }
         .padding(SpacingTokens.screenPadding)
     }
-    .withThemeEnvironment()
+    .previewCanvas()
 }

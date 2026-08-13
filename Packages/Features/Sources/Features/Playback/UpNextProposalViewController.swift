@@ -254,16 +254,37 @@
         endPoint: .bottom,
     )
 
-    #Preview("With artwork") {
-        UpNextProposalCard(
-            eyebrow: "S3E7",
-            title: "Midnight Broadcast",
-            previewImage: previewStill(),
-            onPlayNext: {},
-        )
-        .background(previewBackdrop)
-        .ignoresSafeArea()
-        .withThemeEnvironment()
+    private struct UpNextProposalCardPreview: View {
+        var body: some View {
+            UpNextProposalCard(
+                eyebrow: "S3E7",
+                title: "Midnight Broadcast",
+                previewImage: previewStill(),
+                onPlayNext: {},
+            )
+            .background(previewBackdrop)
+            .ignoresSafeArea()
+        }
+    }
+
+    #Preview("Standard") {
+        UpNextProposalCardPreview().withThemeEnvironment(.preview())
+    }
+
+    #Preview("Horror") {
+        UpNextProposalCardPreview().withThemeEnvironment(.preview(.horror))
+    }
+
+    #Preview("Action") {
+        UpNextProposalCardPreview().withThemeEnvironment(.preview(.action))
+    }
+
+    #Preview("Video Store") {
+        UpNextProposalCardPreview().withThemeEnvironment(.preview(.videoStore))
+    }
+
+    #Preview("Sci-Fi") {
+        UpNextProposalCardPreview().withThemeEnvironment(.preview(.sciFi))
     }
 
     // Also the no-eyebrow state: an episode carrying no season/episode
@@ -277,6 +298,6 @@
         )
         .background(previewBackdrop)
         .ignoresSafeArea()
-        .withThemeEnvironment()
+        .withThemeEnvironment(.preview())
     }
 #endif

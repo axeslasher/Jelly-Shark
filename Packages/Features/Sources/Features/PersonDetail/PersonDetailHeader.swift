@@ -158,3 +158,39 @@ struct PersonDetailHeader: View {
         return "Born \(born)\(age)"
     }
 }
+
+#if DEBUG
+    // Client-less: the headshot falls to the person placeholder, the favorite
+    // button is disabled, and the metadata/biography stay empty (they arrive
+    // with the detailed fetch).
+    private struct PersonDetailHeaderPreview: View {
+        var body: some View {
+            PersonDetailHeader(
+                member: PreviewData.cast[0],
+                viewModel: PersonDetailViewModel(),
+                isPresentingBiography: .constant(false),
+            )
+            .padding(SpacingTokens.screenPadding)
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        PersonDetailHeaderPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        PersonDetailHeaderPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        PersonDetailHeaderPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        PersonDetailHeaderPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        PersonDetailHeaderPreview()
+    }
+#endif

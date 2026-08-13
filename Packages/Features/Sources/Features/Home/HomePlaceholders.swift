@@ -103,9 +103,29 @@ struct HomeSkeleton: View {
     }
 }
 
-#Preview("Skeleton") {
+#Preview("Standard") {
     HomeSkeleton()
-        .withThemeEnvironment()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    HomeSkeleton()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    HomeSkeleton()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    HomeSkeleton()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    HomeSkeleton()
+        .previewCanvas(.sciFi)
 }
 
 /// Deliberate hero-shaped empty state: connected-but-empty servers get a

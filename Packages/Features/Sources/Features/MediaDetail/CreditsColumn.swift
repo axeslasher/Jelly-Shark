@@ -25,3 +25,40 @@ struct CreditsColumn: View {
         }
     }
 }
+
+#if DEBUG
+    private struct CreditsColumnPreview: View {
+        var body: some View {
+            VStack(alignment: .leading, spacing: SpacingTokens.xl) {
+                CreditsColumn(
+                    directorNames: [PreviewData.cast[6].name],
+                    castNames: PreviewData.cast.prefix(4).map(\.name),
+                )
+                // Single director relabels the eyebrow; no cast drops that stack.
+                CreditsColumn(directorNames: [PreviewData.cast[6].name], castNames: [])
+            }
+            .frame(width: 520, alignment: .leading)
+            .padding(SpacingTokens.xl)
+        }
+    }
+
+    #Preview("Standard") {
+        CreditsColumnPreview().previewCanvas()
+    }
+
+    #Preview("Horror") {
+        CreditsColumnPreview().previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        CreditsColumnPreview().previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        CreditsColumnPreview().previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        CreditsColumnPreview().previewCanvas(.sciFi)
+    }
+#endif

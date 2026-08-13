@@ -152,16 +152,34 @@ public struct PersonDetailView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        PersonDetailView(
-            member: CastMember(
-                id: "preview-person",
-                name: "Boris Karloff",
-                role: "The Monster",
-                kind: "Actor",
-            ),
-        )
+#if DEBUG
+    #Preview("Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            PersonDetailView(member: PreviewData.cast[0])
+        }
     }
-    .environment(AppSession())
-}
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            PersonDetailView(member: PreviewData.cast[0])
+        }
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            PersonDetailView(member: PreviewData.cast[0])
+        }
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            PersonDetailView(member: PreviewData.cast[0])
+        }
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            PersonDetailView(member: PreviewData.cast[0])
+        }
+    }
+#endif

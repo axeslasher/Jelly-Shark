@@ -299,6 +299,41 @@ struct LibraryFilterBar: View {
     }
 }
 
+private struct LibraryFilterBarPreview: View {
+    var body: some View {
+        LibraryFilterBar(
+            options: LibraryFilterOptions(
+                genres: ["Action", "Comedy", "Horror"],
+                officialRatings: ["PG", "PG-13", "R"],
+                years: [1985, 1994, 2003, 2021],
+            ),
+            query: LibraryQuery(genres: ["Horror"], favoritesOnly: true),
+            onChange: { _ in },
+        )
+        .padding()
+    }
+}
+
+#Preview("Standard") {
+    LibraryFilterBarPreview().previewCanvas()
+}
+
+#Preview("Horror") {
+    LibraryFilterBarPreview().previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    LibraryFilterBarPreview().previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    LibraryFilterBarPreview().previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    LibraryFilterBarPreview().previewCanvas(.sciFi)
+}
+
 #Preview("Loading options") {
     VStack(alignment: .leading, spacing: SpacingTokens.md) {
         LibraryFilterBar(
@@ -318,21 +353,7 @@ struct LibraryFilterBar: View {
         )
     }
     .padding()
-    .withThemeEnvironment()
-}
-
-#Preview {
-    LibraryFilterBar(
-        options: LibraryFilterOptions(
-            genres: ["Action", "Comedy", "Horror"],
-            officialRatings: ["PG", "PG-13", "R"],
-            years: [1985, 1994, 2003, 2021],
-        ),
-        query: LibraryQuery(genres: ["Horror"], favoritesOnly: true),
-        onChange: { _ in },
-    )
-    .padding()
-    .withThemeEnvironment()
+    .previewCanvas()
 }
 
 #Preview("Cross-library") {
@@ -350,5 +371,5 @@ struct LibraryFilterBar: View {
         onChange: { _ in },
     )
     .padding()
-    .withThemeEnvironment()
+    .previewCanvas()
 }

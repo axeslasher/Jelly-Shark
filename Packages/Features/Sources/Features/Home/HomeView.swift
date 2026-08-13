@@ -384,13 +384,36 @@ private struct HeroBackdropBridge: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        HomeView()
+#if DEBUG
+    // With no client the session is disconnected, so this renders the
+    // welcome empty state rather than shelves.
+    #Preview("Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            HomeView()
+        }
     }
-    .withThemeEnvironment()
-    .environment(AppSession())
-    .environment(ServerConnectionViewModel())
-    .environment(HomePreferences())
-    .environment(PlaybackPreferences())
-}
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            HomeView()
+        }
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            HomeView()
+        }
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            HomeView()
+        }
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            HomeView()
+        }
+    }
+#endif

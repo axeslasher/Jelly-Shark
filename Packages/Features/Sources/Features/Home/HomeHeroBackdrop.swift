@@ -88,3 +88,39 @@ struct HomeHeroBackdrop: View {
         )
     }
 }
+
+#if DEBUG
+    private struct HomeHeroBackdropPreview: View {
+        var body: some View {
+            HomeHeroBackdrop(
+                url: nil,
+                blurHash: DesignSystem.PreviewData.backdropHashes[0],
+                itemId: "preview-hero",
+                direction: .forward,
+                generation: 0,
+                scrollOffset: 0,
+                progress: 0,
+            )
+        }
+    }
+
+    #Preview("Standard") {
+        HomeHeroBackdropPreview().withThemeEnvironment(.preview())
+    }
+
+    #Preview("Horror") {
+        HomeHeroBackdropPreview().withThemeEnvironment(.preview(.horror))
+    }
+
+    #Preview("Action") {
+        HomeHeroBackdropPreview().withThemeEnvironment(.preview(.action))
+    }
+
+    #Preview("Video Store") {
+        HomeHeroBackdropPreview().withThemeEnvironment(.preview(.videoStore))
+    }
+
+    #Preview("Sci-Fi") {
+        HomeHeroBackdropPreview().withThemeEnvironment(.preview(.sciFi))
+    }
+#endif

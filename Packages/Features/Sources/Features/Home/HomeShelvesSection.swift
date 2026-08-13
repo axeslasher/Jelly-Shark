@@ -127,3 +127,72 @@ struct HomeShelvesSection: View {
         return count
     }
 }
+
+#if DEBUG
+    private struct HomeShelvesSectionPreview: View {
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    HomeShelvesSection(
+                        mergesContinueWatching: true,
+                        mergedItems: [PreviewData.inProgressMovie, PreviewData.episode, PreviewData.movie],
+                        mergedStatus: .loaded,
+                        resumeItems: [],
+                        nextUpItems: [],
+                        latestShelves: [HomeViewModel.LibraryShelf(
+                            library: Library(id: "preview-lib", name: "Movies", collectionType: .movies),
+                            items: Array(PreviewData.shelf.prefix(6)),
+                        )],
+                        resumeStatus: .loaded,
+                        nextUpStatus: .loaded,
+                        latestStatus: .loaded,
+                        showsResumeHeader: true,
+                        onPlay: { _ in },
+                        menu: { _ in ShelfMenuHandlers() },
+                        onRetry: {},
+                    )
+                }
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        HomeShelvesSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        HomeShelvesSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        HomeShelvesSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        HomeShelvesSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        HomeShelvesSectionPreview()
+    }
+
+    #Preview("Failed sections", traits: .featuresEnvironment) {
+        ScrollView {
+            HomeShelvesSection(
+                mergesContinueWatching: true,
+                mergedItems: [],
+                mergedStatus: .failed("offline"),
+                resumeItems: [],
+                nextUpItems: [],
+                latestShelves: [],
+                resumeStatus: .loaded,
+                nextUpStatus: .loaded,
+                latestStatus: .failed("offline"),
+                showsResumeHeader: true,
+                onPlay: { _ in },
+                menu: { _ in ShelfMenuHandlers() },
+                onRetry: {},
+            )
+        }
+    }
+#endif

@@ -231,10 +231,34 @@ struct SearchView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        SearchView()
+#if DEBUG
+    #Preview("Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            SearchView()
+        }
     }
-    .withThemeEnvironment()
-    .environment(AppSession())
-}
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            SearchView()
+        }
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            SearchView()
+        }
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            SearchView()
+        }
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            SearchView()
+        }
+    }
+#endif
