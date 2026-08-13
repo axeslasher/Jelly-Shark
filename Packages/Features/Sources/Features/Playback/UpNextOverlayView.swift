@@ -79,3 +79,30 @@ struct UpNextOverlayView: View {
         }
     }
 }
+
+#if DEBUG
+    #Preview("Standard") {
+        UpNextOverlayView(nextEpisode: PreviewData.episode, onPlayNow: {}, onCancel: {})
+            .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        UpNextOverlayView(nextEpisode: PreviewData.episode, onPlayNow: {}, onCancel: {})
+            .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        UpNextOverlayView(nextEpisode: PreviewData.episode, onPlayNow: {}, onCancel: {})
+            .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        UpNextOverlayView(nextEpisode: PreviewData.episode, onPlayNow: {}, onCancel: {})
+            .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        UpNextOverlayView(nextEpisode: PreviewData.episode, onPlayNow: {}, onCancel: {})
+            .previewCanvas(.sciFi)
+    }
+#endif

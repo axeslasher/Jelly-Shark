@@ -36,3 +36,23 @@ extension Color {
         )
     }
 }
+
+#Preview {
+    let manager = ThemeManager.preview()
+    HStack(spacing: SpacingTokens.sm) {
+        // Six-digit RGB plus one eight-digit RGBA to show the alpha path.
+        ForEach(["16202E", "C46C2A", "7A1018", "5AB4DC", "C46C2A80"], id: \.self) { hex in
+            VStack(spacing: SpacingTokens.xxs) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(hex: hex))
+                    .frame(width: 140, height: 72)
+
+                Text("#\(hex)")
+                    .jsStyle(.small)
+                    .foregroundStyle(manager.currentTheme.secondary)
+            }
+        }
+    }
+    .padding(SpacingTokens.xl)
+    .withThemeEnvironment(manager)
+}

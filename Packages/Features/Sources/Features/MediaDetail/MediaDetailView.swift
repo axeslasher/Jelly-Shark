@@ -625,41 +625,34 @@ private struct ScrollSnapMetrics: Equatable {
     var topInset: CGFloat
 }
 
-#Preview {
-    NavigationStack {
-        MediaDetailView(
-            item: MediaItem(
-                id: "preview-1",
-                name: "Example Movie",
-                type: .movie,
-                overview: "This is an example movie with a longer description to show how the overview section looks when there's a substantial amount of text to display.",
-                productionYear: 2024,
-                runTimeTicks: 72_000_000_000,
-                communityRating: 8.5,
-                criticRating: 93,
-                officialRating: "PG-13",
-                genres: ["Crime", "Drama", "Thriller"],
-                studios: ["A24"],
-                premiereDate: Date(timeIntervalSince1970: 1_700_000_000),
-                technicalInfo: MediaTechnicalInfo(
-                    resolution: "4K",
-                    videoRange: "Dolby Vision",
-                    audioFormat: "Dolby Atmos",
-                    originalAudioLanguage: "English",
-                    audioLanguages: ["English", "French"],
-                    subtitleLanguages: ["English", "French", "Spanish"],
-                    hasSDHSubtitles: true,
-                    fileName: "Example.Movie.2024.2160p.DV.mkv",
-                    fileSizeBytes: 42_000_000_000,
-                    container: "MKV",
-                    videoCodec: "HEVC",
-                    bitrate: 24_500_000,
-                    frameRate: 23.976,
-                ),
-            ),
-        )
+#if DEBUG
+    #Preview("Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            MediaDetailView(item: PreviewData.movie)
+        }
     }
-    .withThemeEnvironment()
-    .environment(AppSession())
-    .environment(PlaybackPreferences())
-}
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            MediaDetailView(item: PreviewData.movie)
+        }
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            MediaDetailView(item: PreviewData.movie)
+        }
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            MediaDetailView(item: PreviewData.movie)
+        }
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            MediaDetailView(item: PreviewData.movie)
+        }
+    }
+#endif

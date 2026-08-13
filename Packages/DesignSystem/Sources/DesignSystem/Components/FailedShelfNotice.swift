@@ -62,3 +62,43 @@ public struct FailedShelfNotice: View {
         .padding(.horizontal, SpacingTokens.screenPadding)
     }
 }
+
+#Preview("Standard") {
+    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+        FailedShelfNotice(title: "Continue Watching", icon: "play.circle", retry: {})
+        FailedShelfNotice()
+    }
+    .previewCanvas()
+}
+
+#Preview("Horror") {
+    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+        FailedShelfNotice(title: "Continue Watching", icon: "play.circle", retry: {})
+        FailedShelfNotice()
+    }
+    .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+        FailedShelfNotice(title: "Continue Watching", icon: "play.circle", retry: {})
+        FailedShelfNotice()
+    }
+    .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+        FailedShelfNotice(title: "Continue Watching", icon: "play.circle", retry: {})
+        FailedShelfNotice()
+    }
+    .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+        FailedShelfNotice(title: "Continue Watching", icon: "play.circle", retry: {})
+        FailedShelfNotice()
+    }
+    .previewCanvas(.sciFi)
+}

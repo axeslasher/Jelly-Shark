@@ -65,3 +65,9 @@ public struct VideoStoreTheme: Theme, Sendable {
 
     public init() {}
 }
+
+#if DEBUG
+    #Preview {
+        ThemeSpecimen(theme: VideoStoreTheme())
+    }
+#endif

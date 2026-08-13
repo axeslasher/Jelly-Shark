@@ -46,3 +46,40 @@ struct GenreCardView: View {
         }
     }
 }
+
+#if DEBUG
+    /// With no client the sample fetch no-ops and each card renders its seeded
+    /// gradient wash — the same face a cold cache shows.
+    private struct GenreCardViewPreview: View {
+        var body: some View {
+            NavigationStack {
+                HStack(spacing: SpacingTokens.cardGap) {
+                    GenreCardView(library: nil, genre: "Horror")
+                    GenreCardView(library: nil, genre: "Comedy")
+                    GenreCardView(library: nil, genre: "Documentary")
+                }
+                .padding(SpacingTokens.screenPadding)
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        GenreCardViewPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        GenreCardViewPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        GenreCardViewPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        GenreCardViewPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        GenreCardViewPreview()
+    }
+#endif

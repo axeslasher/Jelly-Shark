@@ -32,7 +32,27 @@ public struct ComponentPlaceholder: View {
     }
 }
 
-#Preview {
+#Preview("Standard") {
     ComponentPlaceholder(name: "Media Card")
-        .withThemeEnvironment()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    ComponentPlaceholder(name: "Media Card")
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    ComponentPlaceholder(name: "Media Card")
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    ComponentPlaceholder(name: "Media Card")
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    ComponentPlaceholder(name: "Media Card")
+        .previewCanvas(.sciFi)
 }

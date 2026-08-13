@@ -130,3 +130,43 @@ private struct HangingActionLabel: ViewModifier {
         #endif
     }
 }
+
+/// Static render shows the resting state; the hanging label only appears under
+/// focus (tvOS) or gaze (visionOS), so verify the reveal interactively.
+private struct CircleActionButtonPreview: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: SpacingTokens.xl) {
+            CircleActionButton(systemImage: "checkmark", title: "Mark Watched", tint: theme.primary) {}
+            CircleActionButton(systemImage: "heart.fill", title: "Favorite", tint: theme.accent) {}
+            CircleActionButton(systemImage: "arrow.clockwise", title: "Replay", tint: theme.primary, isEnabled: false) {}
+        }
+        .padding(SpacingTokens.xxl)
+    }
+}
+
+#Preview("Standard") {
+    CircleActionButtonPreview()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    CircleActionButtonPreview()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    CircleActionButtonPreview()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    CircleActionButtonPreview()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    CircleActionButtonPreview()
+        .previewCanvas(.sciFi)
+}

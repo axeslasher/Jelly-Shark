@@ -317,3 +317,61 @@ public enum DesignSystemFonts {
         }
     #endif
 }
+
+#if DEBUG
+    /// Emphasis tiers aren't part of `ThemeSpecimen`'s ramp; this shows how a
+    /// theme maps them, and the previews prove per-theme typefaces resolve.
+    private struct FontSchemeSpecimen: View {
+        let theme: any Theme
+
+        init(theme: any Theme) {
+            self.theme = theme
+            DesignSystemFonts.registerAll()
+        }
+
+        private static let tiers: [(TypeEmphasis, String)] = [
+            (.regular, "regular"),
+            (.subtle, "subtle"),
+            (.emphasized, "emphasized"),
+            (.strong, "strong"),
+        ]
+
+        var body: some View {
+            VStack(alignment: .leading, spacing: SpacingTokens.md) {
+                Text("\(theme.name) body emphasis")
+                    .jsStyle(.headline)
+                    .foregroundStyle(theme.primary)
+
+                ForEach(Self.tiers, id: \.1) { tier in
+                    Text("A signal in the static — \(tier.1)")
+                        .jsStyle(.body, tier.0)
+                        .foregroundStyle(theme.primary)
+                }
+            }
+            .padding(SpacingTokens.screenPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.background)
+            .environment(\.theme, theme)
+        }
+    }
+
+    #Preview("Standard") {
+        FontSchemeSpecimen(theme: StandardTheme())
+    }
+
+    #Preview("Horror") {
+        FontSchemeSpecimen(theme: HorrorTheme())
+    }
+
+    #Preview("Action") {
+        FontSchemeSpecimen(theme: ActionTheme())
+    }
+
+    #Preview("Video Store") {
+        FontSchemeSpecimen(theme: VideoStoreTheme())
+    }
+
+    #Preview("Sci-Fi") {
+        FontSchemeSpecimen(theme: SciFiTheme())
+    }
+#endif

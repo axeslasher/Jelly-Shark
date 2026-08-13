@@ -361,3 +361,77 @@ private extension View {
         }
     }
 }
+
+#if DEBUG
+    /// Static render shows the resting lockup; the focus lift and caption
+    /// choreography need canvas interaction or a device.
+    private struct ArtworkShelfItemPreview: View {
+        var body: some View {
+            NavigationStack {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: SpacingTokens.cardGap) {
+                        ArtworkShelfItem(
+                            url: nil,
+                            blurHash: PreviewData.posterHashes[0],
+                            title: PreviewData.movieTitles[0],
+                            subtitle: "2024",
+                            value: "poster",
+                        )
+                        ArtworkShelfItem(
+                            url: nil,
+                            blurHash: PreviewData.posterHashes[1],
+                            title: PreviewData.longTitle,
+                            subtitle: "1987",
+                            value: "long-title",
+                        )
+                        ArtworkShelfItem(
+                            url: nil,
+                            blurHash: PreviewData.invalidHash,
+                            title: PreviewData.shortTitle,
+                            value: "placeholder-fallback",
+                        )
+                        ArtworkShelfItem(
+                            url: nil,
+                            blurHash: PreviewData.backdropHashes[0],
+                            title: PreviewData.movieTitles[2],
+                            subtitle: "S2E4",
+                            subtitleAboveTitle: true,
+                            aspectRatio: 16.0 / 9.0,
+                            width: 440,
+                            playbackBadge: .inProgress(0.4, remaining: "34m left"),
+                            countBadge: 3,
+                            action: {},
+                        )
+                    }
+                    .padding(SpacingTokens.screenPadding)
+                }
+                .scrollClipDisabled()
+            }
+        }
+    }
+
+    #Preview("Standard") {
+        ArtworkShelfItemPreview()
+            .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        ArtworkShelfItemPreview()
+            .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        ArtworkShelfItemPreview()
+            .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        ArtworkShelfItemPreview()
+            .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        ArtworkShelfItemPreview()
+            .previewCanvas(.sciFi)
+    }
+#endif

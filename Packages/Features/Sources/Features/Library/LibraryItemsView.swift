@@ -225,14 +225,36 @@ private struct LibraryItemGrid: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        LibraryItemsView(
-            initialQuery: LibraryQuery(
-                library: Library(id: "preview-1", name: "Movies", collectionType: .movies),
-            ),
-        )
+#if DEBUG
+    private struct LibraryItemsViewPreview: View {
+        var body: some View {
+            NavigationStack {
+                LibraryItemsView(
+                    initialQuery: LibraryQuery(
+                        library: Library(id: "preview-1", name: "Movies", collectionType: .movies),
+                    ),
+                )
+            }
+        }
     }
-    .withThemeEnvironment()
-    .environment(AppSession())
-}
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        LibraryItemsViewPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        LibraryItemsViewPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        LibraryItemsViewPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        LibraryItemsViewPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        LibraryItemsViewPreview()
+    }
+#endif

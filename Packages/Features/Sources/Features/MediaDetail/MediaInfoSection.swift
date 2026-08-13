@@ -168,3 +168,45 @@ struct MediaInfoSection: View {
         return entries
     }
 }
+
+#if DEBUG
+    #Preview("Standard") {
+        ScrollView {
+            MediaInfoSection(item: PreviewData.movie)
+                .padding(.vertical, SpacingTokens.xl)
+        }
+        .previewCanvas()
+    }
+
+    #Preview("Horror") {
+        ScrollView {
+            MediaInfoSection(item: PreviewData.movie)
+                .padding(.vertical, SpacingTokens.xl)
+        }
+        .previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        ScrollView {
+            MediaInfoSection(item: PreviewData.movie)
+                .padding(.vertical, SpacingTokens.xl)
+        }
+        .previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        ScrollView {
+            MediaInfoSection(item: PreviewData.movie)
+                .padding(.vertical, SpacingTokens.xl)
+        }
+        .previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        ScrollView {
+            MediaInfoSection(item: PreviewData.movie)
+                .padding(.vertical, SpacingTokens.xl)
+        }
+        .previewCanvas(.sciFi)
+    }
+#endif

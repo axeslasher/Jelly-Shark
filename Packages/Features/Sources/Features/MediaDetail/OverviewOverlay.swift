@@ -64,3 +64,35 @@ struct OverviewOverlay: View {
         .ignoresSafeArea()
     }
 }
+
+#if DEBUG
+    private struct OverviewOverlayPreview: View {
+        var body: some View {
+            OverviewOverlay(
+                tagline: PreviewData.movie.tagline,
+                overview: PreviewData.movie.overview,
+                backdropURL: nil,
+            )
+        }
+    }
+
+    #Preview("Standard") {
+        OverviewOverlayPreview().previewCanvas()
+    }
+
+    #Preview("Horror") {
+        OverviewOverlayPreview().previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        OverviewOverlayPreview().previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        OverviewOverlayPreview().previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        OverviewOverlayPreview().previewCanvas(.sciFi)
+    }
+#endif

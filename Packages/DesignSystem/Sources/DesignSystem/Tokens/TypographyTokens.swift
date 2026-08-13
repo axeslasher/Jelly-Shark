@@ -204,3 +204,41 @@ public extension View {
         modifier(JSTextStyle(role: role, emphasis: emphasis))
     }
 }
+
+#Preview {
+    let manager = ThemeManager.preview()
+    let theme = manager.currentTheme
+    let scale: [(name: String, size: CGFloat, weight: Font.Weight)] = [
+        ("display", TypographyTokens.Size.display, TypographyTokens.Weight.display),
+        ("headline", TypographyTokens.Size.headline, TypographyTokens.Weight.headline),
+        ("title", TypographyTokens.Size.title, TypographyTokens.Weight.title),
+        ("overview", TypographyTokens.Size.overview, TypographyTokens.Weight.overview),
+        ("body", TypographyTokens.Size.body, TypographyTokens.Weight.body),
+        ("caption", TypographyTokens.Size.caption, TypographyTokens.Weight.caption),
+        ("small", TypographyTokens.Size.small, TypographyTokens.Weight.small),
+        ("eyebrow", TypographyTokens.Size.eyebrow, TypographyTokens.Weight.eyebrow),
+        ("certificate", TypographyTokens.Size.certificate, TypographyTokens.Weight.certificate),
+    ]
+    ScrollView {
+        VStack(alignment: .leading, spacing: SpacingTokens.sm) {
+            ForEach(scale, id: \.name) { entry in
+                HStack(alignment: .firstTextBaseline, spacing: SpacingTokens.md) {
+                    Text("\(entry.name) \(Int(entry.size))pt")
+                        .jsStyle(.caption)
+                        .foregroundStyle(theme.secondary)
+                        .frame(width: 220, alignment: .leading)
+
+                    // The raw token scale in the system font; the themed
+                    // typefaces are FontScheme's preview.
+                    Text("Static Bloom")
+                        .font(.system(size: entry.size, weight: entry.weight))
+                        .foregroundStyle(theme.primary)
+                }
+            }
+        }
+        .padding(SpacingTokens.screenPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+    .background(theme.background)
+    .withThemeEnvironment(manager)
+}

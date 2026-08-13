@@ -279,11 +279,34 @@ public struct ServerConnectionView: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        ServerConnectionView()
+#if DEBUG
+    #Preview("Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            ServerConnectionView()
+        }
     }
-    .withThemeEnvironment()
-    .environment(AppSession())
-    .environment(ServerConnectionViewModel())
-}
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            ServerConnectionView()
+        }
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            ServerConnectionView()
+        }
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            ServerConnectionView()
+        }
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            ServerConnectionView()
+        }
+    }
+#endif

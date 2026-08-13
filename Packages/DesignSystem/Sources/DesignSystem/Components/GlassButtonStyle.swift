@@ -182,3 +182,50 @@ public extension View {
         }
     }
 #endif
+
+/// Focus platters (the whole point of these styles) only appear under canvas
+/// interaction; the static render shows resting capsules. On tvOS a themed
+/// tint routes to ThemedGlassButtonStyle/ThemedPlainButtonStyle; elsewhere
+/// these fall back to the system styles.
+private struct GlassButtonsPreview: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(spacing: SpacingTokens.lg) {
+            Button("Themed glass") {}
+                .glassButtonStyle(tint: theme.focusFill)
+            Button("System glass") {}
+                .glassButtonStyle()
+            Button("Inert glass") {}
+                .inertGlassButtonStyle()
+            Button("Plain with themed platter") {}
+                .plainFocusButtonStyle(tint: theme.focusFill, cornerRadius: theme.cornerRadiusLarge)
+        }
+        .padding(SpacingTokens.xl)
+    }
+}
+
+#Preview("Standard") {
+    GlassButtonsPreview()
+        .previewCanvas()
+}
+
+#Preview("Horror") {
+    GlassButtonsPreview()
+        .previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    GlassButtonsPreview()
+        .previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    GlassButtonsPreview()
+        .previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    GlassButtonsPreview()
+        .previewCanvas(.sciFi)
+}

@@ -95,3 +95,57 @@ struct MediaMetadataRow: View {
         }
     }
 }
+
+private struct MediaMetadataRowPreview: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: SpacingTokens.xl) {
+            MediaMetadataRow(
+                yearText: "2024",
+                runtime: "2h 0m",
+                seasons: nil,
+                seasonsIcon: "square.stack",
+                communityRating: 8.5,
+                criticRating: 93,
+                certificate: "PG-13",
+                resolution: "4K",
+                videoRange: "Dolby Vision",
+                audioFormat: "Dolby Atmos",
+            )
+
+            // Series shape: span + season count, no technical facts.
+            MediaMetadataRow(
+                yearText: "2019–2023",
+                runtime: nil,
+                seasons: "3 Seasons",
+                seasonsIcon: "square.stack",
+                communityRating: 7.9,
+                criticRating: nil,
+                certificate: "TV-MA",
+                resolution: nil,
+                videoRange: nil,
+                audioFormat: nil,
+            )
+        }
+        .padding(SpacingTokens.xl)
+    }
+}
+
+#Preview("Standard") {
+    MediaMetadataRowPreview().previewCanvas()
+}
+
+#Preview("Horror") {
+    MediaMetadataRowPreview().previewCanvas(.horror)
+}
+
+#Preview("Action") {
+    MediaMetadataRowPreview().previewCanvas(.action)
+}
+
+#Preview("Video Store") {
+    MediaMetadataRowPreview().previewCanvas(.videoStore)
+}
+
+#Preview("Sci-Fi") {
+    MediaMetadataRowPreview().previewCanvas(.sciFi)
+}

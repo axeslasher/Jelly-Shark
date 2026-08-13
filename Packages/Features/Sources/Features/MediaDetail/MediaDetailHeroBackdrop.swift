@@ -90,3 +90,48 @@ struct MediaDetailHeroBackdrop: View {
     /// more offscreen re-renders; fewer = cheaper but visibly steppier.
     private static let blurSteps: CGFloat = 6
 }
+
+#if DEBUG
+    // The image fetch fails instantly (file URL), leaving the blurhash wash —
+    // the same frame a slow real backdrop shows. Top: at rest under the hero.
+    // Bottom: mostly scrolled away (dimmed toward the shelves wash).
+    private struct MediaDetailHeroBackdropPreview: View {
+        var body: some View {
+            VStack(spacing: 0) {
+                MediaDetailHeroBackdrop(
+                    url: URL(filePath: "/preview-backdrop"),
+                    blurHash: DesignSystem.PreviewData.backdropHashes[2],
+                    progress: 0,
+                )
+                .frame(height: 520)
+
+                MediaDetailHeroBackdrop(
+                    url: URL(filePath: "/preview-backdrop"),
+                    blurHash: DesignSystem.PreviewData.backdropHashes[2],
+                    progress: 0.8,
+                )
+                .frame(height: 300)
+            }
+        }
+    }
+
+    #Preview("Standard") {
+        MediaDetailHeroBackdropPreview().withThemeEnvironment(.preview())
+    }
+
+    #Preview("Horror") {
+        MediaDetailHeroBackdropPreview().withThemeEnvironment(.preview(.horror))
+    }
+
+    #Preview("Action") {
+        MediaDetailHeroBackdropPreview().withThemeEnvironment(.preview(.action))
+    }
+
+    #Preview("Video Store") {
+        MediaDetailHeroBackdropPreview().withThemeEnvironment(.preview(.videoStore))
+    }
+
+    #Preview("Sci-Fi") {
+        MediaDetailHeroBackdropPreview().withThemeEnvironment(.preview(.sciFi))
+    }
+#endif

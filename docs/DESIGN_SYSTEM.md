@@ -224,6 +224,47 @@ A `public typealias AppTheme = Theme` is exported from `DesignSystem.swift`. The
 - **Persistence**: User choice saved in **`UserDefaults`** under key `"selectedTheme"` (not SwiftData)
 - **Per-library override**: Future feature (global theme + per-library exceptions)
 
+## Previews
+
+Every visual DesignSystem file ends with a file-bottom `#Preview`; the named
+exceptions are `ArtworkLoader` (network actor), `ThemeManager` (infrastructure —
+theme visuals are covered by the `ThemeSpecimen` previews on each theme file),
+and `DesignSystem.swift` (a typealias). Conventions:
+
+- **Pin the theme** with `.withThemeEnvironment(.preview(.horror))` — never the
+  bare `.withThemeEnvironment()`, which reads `.shared` and renders in whatever
+  theme the simulator last persisted. Preview managers never write the
+  `selectedTheme` default (`PreviewSupportTests` guards this).
+- **Fixtures come from `PreviewData`** (`PreviewSupport/PreviewData.swift`,
+  `#if DEBUG`): fictional titles and people only, artwork synthesized from
+  blurhash strings whose validity is test-enforced. Because `#Preview` bodies
+  type-check in Release even though the registered preview is stripped, **any
+  preview referencing `PreviewData` (or another `#if DEBUG` symbol) must itself
+  be wrapped in `#if DEBUG`**; literal-only previews stay unwrapped.
+- **Features screens** use the preview trait instead of repeating the
+  environment tail: `#Preview(traits: .featuresEnvironment)` or
+  `.featuresEnvironment(theme: .horror)` (see
+  `Features/PreviewSupport/FeaturesPreview.swift`); leaf views in Features pin
+  the theme directly like DesignSystem components do. The trait's session has
+  no client, so screens render their disconnected/empty states and artwork
+  renders from blur hashes.
+- **Theme-sensitive previews ship five theme tabs** — named `#Preview` blocks
+  ("Standard", "Horror", "Action", "Video Store", "Sci-Fi") that appear as tabs
+  in the canvas's preview picker, so themes flip without editing code. The
+  bodies are identical apart from the pinned theme; when a body outgrows a few
+  lines it is extracted into a file-private `<Component>Preview` struct (which
+  reads `@Environment(\.theme)` if it needs theme values) and each tab becomes a
+  one-liner. Component previews pin the theme with `.previewCanvas(.horror)`
+  (`withThemeEnvironment`'s preview companion), which also paints the theme's
+  `background` token behind the content — the same ground real screens paint —
+  so each tab renders on its theme's canvas; the Features trait does this
+  internally. Previews that paint their own full-bleed ground (hero backdrops,
+  the specimen sheets) keep plain `.withThemeEnvironment(.preview(_:))`.
+  Distinct *state* previews ("Failed sections", "No artwork") stay as
+  single Standard-themed tabs after the theme set. Theme-independent previews —
+  the `BlurHash` decoder grid, raw color/spacing/motion token sheets, and the
+  per-theme `ThemeSpecimen` files — deliberately keep a single preview.
+
 ---
 
 ## Component Variants (⏳ not yet implemented — design spec)

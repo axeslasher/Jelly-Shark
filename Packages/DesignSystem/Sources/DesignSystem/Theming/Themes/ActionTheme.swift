@@ -68,3 +68,9 @@ public struct ActionTheme: Theme, Sendable {
 
     public init() {}
 }
+
+#if DEBUG
+    #Preview {
+        ThemeSpecimen(theme: ActionTheme())
+    }
+#endif

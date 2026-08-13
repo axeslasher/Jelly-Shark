@@ -449,3 +449,41 @@ private struct EpisodeLookups {
         firstIndexBySeasonId[seasonId]
     }
 }
+
+#if DEBUG
+    private struct EpisodesSectionPreview: View {
+        var body: some View {
+            ScrollView {
+                EpisodesSection(
+                    seasons: PreviewData.seasons,
+                    episodes: PreviewData.seasonEpisodes,
+                    initialEpisodeId: PreviewData.seasonEpisodes[2].id,
+                    isRegionFocused: false,
+                    showsSeasonAnchors: true,
+                    menu: { _ in ShelfMenuHandlers() },
+                    playbackItem: .constant(nil),
+                )
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        EpisodesSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        EpisodesSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        EpisodesSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        EpisodesSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        EpisodesSectionPreview()
+    }
+#endif

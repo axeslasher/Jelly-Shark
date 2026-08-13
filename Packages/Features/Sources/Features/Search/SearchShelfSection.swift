@@ -41,3 +41,48 @@ struct SearchShelfSection: View {
         }
     }
 }
+
+#if DEBUG
+    private struct SearchShelfSectionPreview: View {
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                        SearchShelfSection(
+                            title: "Movies",
+                            icon: "film",
+                            items: Array(PreviewData.shelf.prefix(5)),
+                            style: .poster,
+                        )
+                        SearchShelfSection(
+                            title: "Episodes",
+                            icon: "tv",
+                            items: Array(PreviewData.seasonEpisodes.prefix(4)),
+                            style: .landscape,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        SearchShelfSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        SearchShelfSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        SearchShelfSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        SearchShelfSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        SearchShelfSectionPreview()
+    }
+#endif

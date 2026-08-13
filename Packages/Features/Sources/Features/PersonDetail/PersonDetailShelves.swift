@@ -45,3 +45,50 @@ struct PersonShelfSection: View {
         }
     }
 }
+
+#if DEBUG
+    private struct PersonShelfSectionPreview: View {
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
+                        PersonShelfSection(
+                            title: "Movies",
+                            icon: "film",
+                            items: Array(PreviewData.shelf.prefix(5)),
+                            style: .poster,
+                            playbackItem: .constant(nil),
+                        )
+                        PersonShelfSection(
+                            title: "Episodes",
+                            icon: "tv",
+                            items: Array(PreviewData.seasonEpisodes.prefix(4)),
+                            style: .episode,
+                            playbackItem: .constant(nil),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        PersonShelfSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        PersonShelfSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        PersonShelfSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        PersonShelfSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        PersonShelfSectionPreview()
+    }
+#endif

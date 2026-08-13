@@ -261,13 +261,37 @@ private struct ThemeRowLabel: View {
     }
 }
 
-#Preview {
-    NavigationStack {
-        SettingsView()
+#if DEBUG
+    // Picking a theme in any of these previews restyles the canvas without
+    // touching the simulator's persisted selection — the preview manager
+    // never saves.
+    #Preview("Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            SettingsView()
+        }
     }
-    .withThemeEnvironment()
-    .environment(AppSession())
-    .environment(ServerConnectionViewModel())
-    .environment(HomePreferences())
-    .environment(PlaybackPreferences())
-}
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            SettingsView()
+        }
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            SettingsView()
+        }
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            SettingsView()
+        }
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            SettingsView()
+        }
+    }
+#endif

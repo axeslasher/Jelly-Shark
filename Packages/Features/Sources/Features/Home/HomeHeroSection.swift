@@ -540,3 +540,44 @@ private struct CircleNavigationLink<Value: Hashable>: View {
         .hangingActionLabel(title, isFocused: isFocused)
     }
 }
+
+#if DEBUG
+    // Client-less: no logos or backdrops resolve, so the lockup falls back to
+    // text titles; the backdrop behind the marquee is HomeHeroBackdrop's,
+    // mounted by HomeView. Paging and the fade choreography need a canvas.
+    private struct HomeHeroSectionPreview: View {
+        var body: some View {
+            HomeHeroSection(
+                items: [PreviewData.movie, PreviewData.series, PreviewData.inProgressMovie],
+                index: 0,
+                pagingDirection: .forward,
+                advanceRequests: 0,
+                playTarget: PreviewData.movie,
+                onPlay: { _ in },
+                onNext: {},
+                onSelect: { _ in },
+            )
+            .frame(height: 720)
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        HomeHeroSectionPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        HomeHeroSectionPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        HomeHeroSectionPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        HomeHeroSectionPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        HomeHeroSectionPreview()
+    }
+#endif

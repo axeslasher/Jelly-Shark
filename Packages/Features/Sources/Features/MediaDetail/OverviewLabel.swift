@@ -54,3 +54,52 @@ struct OverviewLabel: View {
         .animation(theme.animation, value: isFocused)
     }
 }
+
+#if DEBUG
+    /// The lockup lives inside a `.plain` button; on focus the text swaps to
+    /// the on-platter colors, which the static render can't show.
+    private struct OverviewLabelPreview: View {
+        var body: some View {
+            VStack(alignment: .leading, spacing: SpacingTokens.xl) {
+                Button {} label: {
+                    OverviewLabel(
+                        tagline: PreviewData.movie.tagline,
+                        overview: PreviewData.movie.overview,
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {} label: {
+                    OverviewLabel(
+                        eyebrow: "Season 2 · Episode 4",
+                        tagline: nil,
+                        overview: PreviewData.episode.overview,
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 880)
+            .padding(SpacingTokens.xl)
+        }
+    }
+
+    #Preview("Standard") {
+        OverviewLabelPreview().previewCanvas()
+    }
+
+    #Preview("Horror") {
+        OverviewLabelPreview().previewCanvas(.horror)
+    }
+
+    #Preview("Action") {
+        OverviewLabelPreview().previewCanvas(.action)
+    }
+
+    #Preview("Video Store") {
+        OverviewLabelPreview().previewCanvas(.videoStore)
+    }
+
+    #Preview("Sci-Fi") {
+        OverviewLabelPreview().previewCanvas(.sciFi)
+    }
+#endif
