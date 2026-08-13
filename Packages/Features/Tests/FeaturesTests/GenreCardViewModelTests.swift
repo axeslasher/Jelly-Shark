@@ -9,11 +9,22 @@ struct GenreCardViewModelTests {
     private static let library = Library(id: "movies", name: "Films", collectionType: .movies)
     private static let genre = "Horror"
 
-    private func makeStore() -> GenreBackdropStore {
-        let suiteName = "GenreCardViewModelTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return GenreBackdropStore(defaults: defaults)
+    /// A store over a scratch in-memory cache, activated the way `AppSession`
+    /// activates the real one
+    private func makeStore() async -> GenreBackdropStore {
+        let store = GenreBackdropStore()
+        await store.activate(cache: ScopedCache(
+            store: .makeInMemory(),
+            scope: CacheScope(serverURL: URL(string: "https://demo.example.org")!, userID: "user-1"),
+        ))
+        return store
+    }
+
+    /// The handover `GenreCardView` performs in its `.task`
+    private func makeViewModel(store: GenreBackdropStore) -> GenreCardViewModel {
+        let viewModel = GenreCardViewModel()
+        viewModel.attach(store: store)
+        return viewModel
     }
 
     private var key: GenreBackdropKey {
@@ -48,9 +59,9 @@ struct GenreCardViewModelTests {
     func coldLoadRemembers() async throws {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a", "b", "c"]))]
-        let store = makeStore()
+        let store = await makeStore()
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
 
         let selection = try #require(viewModel.selection)
@@ -70,7 +81,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a"]))]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         await load(viewModel, client)
 
         let request = try #require(client.libraryItemsRequests.first)
@@ -86,7 +97,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a"]))]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         await viewModel.load(client: client, library: nil, genre: Self.genre)
 
         let request = try #require(client.libraryItemsRequests.first)
@@ -100,16 +111,16 @@ struct GenreCardViewModelTests {
 
     @Test("An unscoped card remembers its face, so a second visit costs nothing")
     func unscopedWarmLoadCostsNothing() async throws {
-        let store = makeStore()
+        let store = await makeStore()
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a", "b", "c"]))]
 
-        let cold = GenreCardViewModel(store: store)
+        let cold = makeViewModel(store: store)
         await cold.load(client: client, library: nil, genre: Self.genre)
         let firstFace = try #require(cold.selection)
         client.libraryItemsRequests.removeAll()
 
-        let warm = GenreCardViewModel(store: store)
+        let warm = makeViewModel(store: store)
         await warm.load(client: client, library: nil, genre: Self.genre)
 
         #expect(warm.selection == firstFace)
@@ -123,14 +134,14 @@ struct GenreCardViewModelTests {
         // actually opens, so a detail page's "all Horror" tile mustn't wear a
         // face drawn only from Films. The consequence is that the same genre
         // can look different on Home and on a detail page.
-        let store = makeStore()
+        let store = await makeStore()
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["scoped"])), .success(page(["unscoped"]))]
 
-        let scoped = GenreCardViewModel(store: store)
+        let scoped = makeViewModel(store: store)
         await load(scoped, client)
 
-        let unscoped = GenreCardViewModel(store: store)
+        let unscoped = makeViewModel(store: store)
         await unscoped.load(client: client, library: nil, genre: Self.genre)
 
         #expect(try #require(scoped.selection).itemId == "scoped")
@@ -150,7 +161,7 @@ struct GenreCardViewModelTests {
             totalRecordCount: 2,
         ))]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         await load(viewModel, client)
 
         #expect(try #require(viewModel.selection).itemId == "art")
@@ -164,9 +175,9 @@ struct GenreCardViewModelTests {
             startIndex: 0,
             totalRecordCount: 1,
         ))]
-        let store = makeStore()
+        let store = await makeStore()
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
 
         #expect(viewModel.selection == nil)
@@ -187,7 +198,7 @@ struct GenreCardViewModelTests {
             .success(page(["a"])),
         ]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         await load(viewModel, client)
         #expect(viewModel.selection == nil)
 
@@ -201,18 +212,18 @@ struct GenreCardViewModelTests {
     func warmLoadCostsNothing() async throws {
         // The acceptance criterion: returning to the shelf — across navigation
         // or across launches — shows the same backdrop and hits no endpoint.
-        let store = makeStore()
+        let store = await makeStore()
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a", "b", "c"]))]
 
-        let cold = GenreCardViewModel(store: store)
+        let cold = makeViewModel(store: store)
         await load(cold, client)
         let firstFace = try #require(cold.selection)
         client.libraryItemsRequests.removeAll()
 
         // A fresh view model over the same store is the card scrolling back in,
         // Home reappearing, or the app relaunching.
-        let warm = GenreCardViewModel(store: store)
+        let warm = makeViewModel(store: store)
         await load(warm, client)
 
         #expect(warm.selection == firstFace)
@@ -221,7 +232,7 @@ struct GenreCardViewModelTests {
 
     @Test("The remembered choice rebuilds its URL against the current server")
     func urlRebuiltFromSelection() async {
-        let store = makeStore()
+        let store = await makeStore()
         store.setSelection(
             GenreBackdropSelection(
                 itemId: "item-1",
@@ -233,7 +244,7 @@ struct GenreCardViewModelTests {
         )
         let client = MockJellyfinClient()
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
 
         #expect(viewModel.blurHash == "hash")
@@ -245,7 +256,7 @@ struct GenreCardViewModelTests {
 
     @Test("An entry whose image type this build can't map back re-rolls")
     func unknownImageType() async throws {
-        let store = makeStore()
+        let store = await makeStore()
         store.setSelection(
             GenreBackdropSelection(itemId: "item-1", imageTypeRawValue: "Hologram", blurHash: nil, poolCount: nil),
             for: key,
@@ -253,7 +264,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a"]))]
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
 
         #expect(try #require(viewModel.selection).itemId == "a")
@@ -264,7 +275,7 @@ struct GenreCardViewModelTests {
 
     @Test("Cycling fetches a fresh page at a random offset inside the pool")
     func cycleUsesRandomOffset() async throws {
-        let store = makeStore()
+        let store = await makeStore()
         store.setSelection(
             GenreBackdropSelection(
                 itemId: "old",
@@ -277,7 +288,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a", "b"], total: 100))]
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
         #expect(client.libraryItemsRequests.isEmpty)
 
@@ -300,7 +311,7 @@ struct GenreCardViewModelTests {
             .success(page(["a", "b"])),
         ]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         await load(viewModel, client)
         #expect(try #require(viewModel.selection).itemId == "a")
 
@@ -313,7 +324,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["only"]))]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         await load(viewModel, client)
         await cycle(viewModel, client)
 
@@ -331,7 +342,7 @@ struct GenreCardViewModelTests {
             .success(page(["a", "b"])),
         ]
 
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
         let settled = await viewModel.roll(
             client: client,
             library: Self.library,
@@ -360,7 +371,7 @@ struct GenreCardViewModelTests {
 
     @Test("A face that no longer renders is discarded and re-rolled")
     func staleSelectionRepairs() async throws {
-        let store = makeStore()
+        let store = await makeStore()
         store.setSelection(
             GenreBackdropSelection(
                 itemId: "deleted",
@@ -373,7 +384,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a"]))]
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
         #expect(try #require(viewModel.selection).itemId == "deleted")
 
@@ -386,7 +397,7 @@ struct GenreCardViewModelTests {
 
     @Test("Repair happens once, so an unreachable server can't spin the card")
     func repairOnlyOnce() async {
-        let store = makeStore()
+        let store = await makeStore()
         store.setSelection(
             GenreBackdropSelection(
                 itemId: "deleted",
@@ -399,7 +410,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.success(page(["a"]))]
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
         await viewModel.backdropUnavailable(client: client, library: Self.library, genre: Self.genre)
         await viewModel.backdropUnavailable(client: client, library: Self.library, genre: Self.genre)
@@ -410,7 +421,7 @@ struct GenreCardViewModelTests {
     @Test("Nothing to repair when the card never had a face")
     func repairWithoutSelection() async {
         let client = MockJellyfinClient()
-        let viewModel = GenreCardViewModel(store: makeStore())
+        let viewModel = await makeViewModel(store: makeStore())
 
         await viewModel.backdropUnavailable(client: client, library: Self.library, genre: Self.genre)
 
@@ -421,7 +432,7 @@ struct GenreCardViewModelTests {
     func repairKeepsFaceWhenTheRollFails() async {
         // The same nil image reports "server is down" and "item is gone". An
         // offline launch must not re-roll every card on the way back up.
-        let store = makeStore()
+        let store = await makeStore()
         let remembered = GenreBackdropSelection(
             itemId: "item-1",
             imageTypeRawValue: ImageType.backdrop.rawValue,
@@ -432,7 +443,7 @@ struct GenreCardViewModelTests {
         let client = MockJellyfinClient()
         client.libraryItemsPages = [.failure(APIError.networkError("offline"))]
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
         await viewModel.backdropUnavailable(client: client, library: Self.library, genre: Self.genre)
 
@@ -442,7 +453,7 @@ struct GenreCardViewModelTests {
 
     @Test("A genre that has genuinely lost its artwork drops to a mesh-only card")
     func repairFallsBackToMeshOnly() async {
-        let store = makeStore()
+        let store = await makeStore()
         store.setSelection(
             GenreBackdropSelection(
                 itemId: "deleted",
@@ -459,7 +470,7 @@ struct GenreCardViewModelTests {
             totalRecordCount: 1,
         ))]
 
-        let viewModel = GenreCardViewModel(store: store)
+        let viewModel = makeViewModel(store: store)
         await load(viewModel, client)
         await viewModel.backdropUnavailable(client: client, library: Self.library, genre: Self.genre)
 

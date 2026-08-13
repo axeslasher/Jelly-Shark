@@ -42,6 +42,10 @@ struct GenreCardView: View {
             }
         }
         .task {
+            // The store lives on the session, so the handover happens here
+            // rather than at init — `@State` cannot read the environment when
+            // it builds the view model.
+            viewModel.attach(store: session.genreBackdrops)
             await viewModel.load(client: session.client, library: library, genre: genre)
         }
     }

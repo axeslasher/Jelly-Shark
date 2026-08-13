@@ -1,7 +1,8 @@
 /// Which cached payload a snapshot row holds. Each case names exactly one
 /// blob per scope; the payload type behind each key is fixed by its writer
 /// (`CachingJellyfinClient` for the parameter-keyed cases, `HomeViewModel`
-/// for `homeSnapshot`).
+/// for `homeSnapshot`, `Features`' `GenreBackdropStore` for
+/// `genreBackdrops`).
 ///
 /// `storageKey` strings are part of the on-disk format — changing one
 /// requires a `MediaCacheStore.schemaVersion` bump.
@@ -23,6 +24,11 @@ public enum CacheSnapshotKey: Sendable, Hashable {
     /// One item's detail-fetch `MediaItem`
     case mediaDetail(itemID: String)
 
+    /// The genre cards' remembered `(library, genre) → item` backdrop picks,
+    /// as one map per scope. Scoped rather than global (#207) so one
+    /// profile's picks can't render on another's cards.
+    case genreBackdrops
+
     var storageKey: String {
         switch self {
         case .currentUser: "currentUser"
@@ -30,6 +36,7 @@ public enum CacheSnapshotKey: Sendable, Hashable {
         case .homeSnapshot: "home"
         case let .libraryFirstPage(libraryID): "libraryFirstPage\u{1F}\(libraryID ?? "")"
         case let .mediaDetail(itemID): "mediaDetail\u{1F}\(itemID)"
+        case .genreBackdrops: "genreBackdrops"
         }
     }
 
@@ -42,6 +49,7 @@ public enum CacheSnapshotKey: Sendable, Hashable {
         case .homeSnapshot: "home"
         case .libraryFirstPage: "libraryFirstPage"
         case .mediaDetail: Self.mediaDetailKind
+        case .genreBackdrops: "genreBackdrops"
         }
     }
 

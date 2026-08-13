@@ -43,9 +43,16 @@ final class GenreCardViewModel {
     /// flight.
     private var isCycling = false
 
-    private let store: GenreBackdropStore
+    /// Handed over in the card's `.task` rather than at init: the store is
+    /// scoped to the signed-in profile and lives on `AppSession`, which a
+    /// `@State` view model cannot read from the environment when it is built.
+    /// Nil until then, so an unattached card is merely always-cold — it rolls
+    /// a face and forgets it, rather than trapping.
+    private var store: GenreBackdropStore?
 
-    init(store: GenreBackdropStore = .shared) {
+    init() {}
+
+    func attach(store: GenreBackdropStore) {
         self.store = store
     }
 
@@ -78,7 +85,7 @@ final class GenreCardViewModel {
 
         // An entry whose image type this build can't map back is unusable, so
         // it falls through to a cold roll rather than rendering nothing.
-        if let remembered = store.selection(for: Self.key(library: library, genre: genre)),
+        if let remembered = store?.selection(for: Self.key(library: library, genre: genre)),
            remembered.imageType != nil
         {
             selection = remembered
@@ -124,7 +131,7 @@ final class GenreCardViewModel {
         // The roll settled on the same broken face, or on nothing at all — the
         // genre has genuinely lost its artwork, so drop to a mesh-only card.
         selection = nil
-        store.setSelection(nil, for: Self.key(library: library, genre: genre))
+        store?.setSelection(nil, for: Self.key(library: library, genre: genre))
     }
 
     // MARK: - Rolling
@@ -182,7 +189,7 @@ final class GenreCardViewModel {
             poolCount: page.totalRecordCount,
         )
         selection = chosenSelection
-        store.setSelection(chosenSelection, for: Self.key(library: library, genre: genre))
+        store?.setSelection(chosenSelection, for: Self.key(library: library, genre: genre))
         return true
     }
 

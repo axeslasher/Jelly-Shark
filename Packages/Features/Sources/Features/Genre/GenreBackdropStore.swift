@@ -11,7 +11,7 @@ struct GenreBackdropKey: Hashable, Sendable {
     var libraryId: String?
     var genre: String
 
-    /// Flattened form used as the dictionary key in `UserDefaults`. The unit
+    /// Flattened form used as the dictionary key in the cached map. The unit
     /// separator can't occur in a library id or a genre name, so a real genre
     /// like "Action/Adventure" can't be confused with a library boundary.
     var storageKey: String {
@@ -43,25 +43,66 @@ struct GenreBackdropSelection: Codable, Equatable, Sendable {
 /// Remembers which item's backdrop stands in for each genre card, so returning
 /// to a genre shelf costs no request and shows the same face it showed before.
 ///
-/// `UserDefaults`-backed rather than SwiftData (#24): the whole payload is a
-/// map of a few dozen `(library, genre) → item` entries, which doesn't justify
-/// blocking on the caching architecture — and migrating a small string map
-/// into it later is trivial. Injectable for tests like `HomePreferences`, but
-/// reached through `shared` in the app because genre cards are built deep
-/// inside Home's shelves with no owner to hand them an instance.
+/// Backed by the metadata cache (#207, following #24), which is what makes the
+/// picks *per profile*: `UserDefaults` is not scoped, so before this the picks
+/// survived sign-out and would have rendered one account's artwork on another
+/// account's cards once saved profiles (#192) land. Keyed by `(serverURL,
+/// userID)` now, and purged with the rest of the scope on sign-out.
+///
+/// Synchronous readers over an asynchronously hydrated mirror, copying
+/// `UserStateStore`: `selection(for:)` is called from a card's render path, so
+/// it cannot await the store's actor. `activate(cache:)` seeds the mirror,
+/// `deactivate()` drops it, and `AppSession` owns both.
 @MainActor
 final class GenreBackdropStore {
-    static let shared = GenreBackdropStore()
+    /// The key the pre-cache build wrote to. Dead storage now: the picks are
+    /// re-rollable decoration, so #207 dropped them rather than adopting them
+    /// into the cache.
+    private static let legacyDefaultsKey = "genreBackdropSelections"
 
-    private static let storageKey = "genreBackdropSelections"
+    /// Authoritative for reads; the cached blob is the next cold start's seed
+    private var selections: [String: GenreBackdropSelection] = [:]
 
-    private let defaults: UserDefaults
-    private var selections: [String: GenreBackdropSelection]
+    private var cache: ScopedCache?
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        selections = Self.decode(defaults.data(forKey: Self.storageKey))
+    init() {
+        UserDefaults.standard.removeObject(forKey: Self.legacyDefaultsKey)
     }
+
+    // MARK: - Lifecycle
+
+    /// Bind to a profile's cache and seed the mirror from it, so a card that
+    /// mounts after a cold launch wears the face it had last time.
+    func activate(cache: ScopedCache) async {
+        self.cache = cache
+        let stored = await cache.read([String: GenreBackdropSelection].self, key: .genreBackdrops) ?? [:]
+        // A deactivate (sign-out) or a replacement activation may have landed
+        // while the read was on the store's actor. Their state must win over
+        // this stale completion — merging it in would carry one account's
+        // picks across the privacy boundary.
+        guard !Task.isCancelled, self.cache?.scope == cache.scope else { return }
+        // Anything already in memory was rolled before hydration landed, and
+        // is newer than the blob.
+        let raced = !selections.isEmpty
+        selections = stored.merging(selections) { _, memory in memory }
+        // Unlike `UserStateStore`, which persists one item at a time, this
+        // store writes the whole map — so a pick rolled during the hydration
+        // window has already written a blob that omits every stored entry.
+        // Write the merged map back rather than leaving disk short.
+        if raced {
+            persist()
+        }
+    }
+
+    /// Sign-out / profile switch: drop everything. Clearing the mirror is the
+    /// privacy boundary — purging the scope on disk while memory still holds
+    /// the previous account's picks would leak them for the rest of the launch.
+    func deactivate() {
+        cache = nil
+        selections = [:]
+    }
+
+    // MARK: - Reading
 
     func selection(for key: GenreBackdropKey) -> GenreBackdropSelection? {
         selections[key.storageKey]
@@ -71,17 +112,17 @@ final class GenreBackdropStore {
     /// tens of short strings, so there's nothing to gain from a finer write.
     func setSelection(_ selection: GenreBackdropSelection?, for key: GenreBackdropKey) {
         selections[key.storageKey] = selection
-        guard let encoded = try? JSONEncoder().encode(selections) else { return }
-        defaults.set(encoded, forKey: Self.storageKey)
+        persist()
     }
 
-    /// A payload written by a different (future or corrupted) shape reads as
-    /// empty rather than throwing: every card then re-rolls, which is exactly
-    /// the cold-start path.
-    private static func decode(_ data: Data?) -> [String: GenreBackdropSelection] {
-        guard let data,
-              let decoded = try? JSONDecoder().decode([String: GenreBackdropSelection].self, from: data)
-        else { return [:] }
-        return decoded
+    /// Fire-and-forget, like `UserStateStore`: the mirror is authoritative for
+    /// the session, so a write that loses a race is a re-roll next launch, not
+    /// an error a card could act on.
+    private func persist() {
+        guard let cache else { return }
+        let snapshot = selections
+        Task {
+            await cache.write(snapshot, key: .genreBackdrops)
+        }
     }
 }
