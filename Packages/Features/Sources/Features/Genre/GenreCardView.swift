@@ -4,11 +4,12 @@ import SwiftUI
 
 /// A single genre card showing the backdrop that stands in for its genre.
 ///
-/// The choice is remembered across teardown and relaunch by
-/// `GenreCardViewModel`, so a card scrolling back into view — or a whole Home
-/// screen returning from a detail page — costs no request. Long-pressing rolls
-/// a new one. Tapping navigates to the library grid pre-filtered to the genre
-/// via a `GenreFilter` value.
+/// The choice is remembered by `GenreBackdropStore` on the session, for as
+/// long as a profile's cache is active, so a card scrolling back into view — or
+/// a whole Home screen returning from a detail page — costs no request. Without
+/// a cache (previews, a cache-less composition root) the choice dies with the
+/// view. Long-pressing rolls a new one. Tapping navigates to the library grid
+/// pre-filtered to the genre via a `GenreFilter` value.
 ///
 /// A nil `library` is an unscoped card: it samples, remembers, and links out
 /// across every library rather than one. Its remembered face is a separate
@@ -42,6 +43,10 @@ struct GenreCardView: View {
             }
         }
         .task {
+            // The store lives on the session, so the handover happens here
+            // rather than at init — `@State` cannot read the environment when
+            // it builds the view model.
+            viewModel.attach(store: session.genreBackdrops)
             await viewModel.load(client: session.client, library: library, genre: genre)
         }
     }

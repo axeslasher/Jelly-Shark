@@ -24,6 +24,11 @@ public final class AppSession {
     /// activated per connection, cleared with it.
     public let userState = UserStateStore()
 
+    /// The genre cards' remembered backdrops (#207). Owned here so the picks
+    /// live and die with the signed-in profile's cache scope, exactly like
+    /// `userState`. Internal on purpose: only `Features` renders genre cards.
+    let genreBackdrops = GenreBackdropStore()
+
     /// Whether there is an authenticated connection to a server
     public var isConnected: Bool {
         client?.isAuthenticated ?? false
@@ -45,20 +50,32 @@ public final class AppSession {
         activationTask = nil
         if let scopedCache {
             let userState = userState
+            let genreBackdrops = genreBackdrops
+            // One task for both, so a single `cancel()` covers them. Serial
+            // because both reads land on the same cache actor anyway; user
+            // state goes first because watched badges are content, while the
+            // genre picks are decoration.
             activationTask = Task {
                 await userState.activate(cache: scopedCache)
+                // Cancellation is cooperative: without this, a sign-out
+                // landing while the first read is in flight would still go on
+                // to bind the second store to the scope just purged.
+                guard !Task.isCancelled else { return }
+                await genreBackdrops.activate(cache: scopedCache)
             }
         }
     }
 
-    /// Clear the client on disconnect. Also drops all resolved user state —
-    /// the same privacy boundary as the cache scope purge.
+    /// Clear the client on disconnect. Also drops all resolved user state and
+    /// every remembered genre backdrop — the same privacy boundary as the
+    /// cache scope purge.
     public func clearClient() {
         activationTask?.cancel()
         activationTask = nil
         client = nil
         scopedCache = nil
         userState.deactivate()
+        genreBackdrops.deactivate()
     }
 }
 
