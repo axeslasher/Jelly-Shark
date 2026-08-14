@@ -12,7 +12,10 @@ struct GenreCardViewModelTests {
     /// A store over a scratch in-memory cache, activated the way `AppSession`
     /// activates the real one
     private func makeStore() async -> GenreBackdropStore {
-        let store = GenreBackdropStore()
+        let suiteName = "GenreCardViewModelTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let store = GenreBackdropStore(legacyDefaults: defaults)
         await store.activate(cache: ScopedCache(
             store: .makeInMemory(),
             scope: CacheScope(serverURL: URL(string: "https://demo.example.org")!, userID: "user-1"),
@@ -353,6 +356,24 @@ struct GenreCardViewModelTests {
         #expect(settled)
         #expect(client.libraryItemsRequests.map(\.startIndex) == [400, 0])
         #expect(try ["a", "b"].contains(#require(viewModel.selection).itemId))
+    }
+
+    @Test("A card with no store attached still rolls a face, and forgets it")
+    func unattachedStoreIsAlwaysCold() async throws {
+        // Previews build a bare `AppSession`, and the store is optional
+        // because `@State` can't read the environment at init. The card must
+        // degrade to always-cold rather than trap.
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.success(page(["a"])), .success(page(["b"]))]
+
+        let viewModel = GenreCardViewModel()
+        await load(viewModel, client)
+        #expect(try #require(viewModel.selection).itemId == "a")
+
+        // Nothing was remembered, so the repair path re-rolls rather than
+        // reading back a stored face
+        await viewModel.backdropUnavailable(client: client, library: Self.library, genre: Self.genre)
+        #expect(try #require(viewModel.selection).itemId == "b")
     }
 
     @Test("A pool no bigger than one page has no offset to pick")

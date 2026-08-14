@@ -57,6 +57,10 @@ public final class AppSession {
             // genre picks are decoration.
             activationTask = Task {
                 await userState.activate(cache: scopedCache)
+                // Cancellation is cooperative: without this, a sign-out
+                // landing while the first read is in flight would still go on
+                // to bind the second store to the scope just purged.
+                guard !Task.isCancelled else { return }
                 await genreBackdrops.activate(cache: scopedCache)
             }
         }

@@ -154,6 +154,16 @@ struct InstantConnectTests {
         await rig.seedCache()
         let otherScope = CacheScope(serverURL: URL(string: "https://other.example.org")!, userID: "user-9")
         await rig.cache.write([Library(id: "lib-x", name: "Other")], scope: otherScope, key: .libraries)
+        // The genre picks ride the same scope purge rather than a path of
+        // their own (#207) — pinned here so a future key can't quietly opt out
+        let backdrops = ["movies\u{1F}Horror": GenreBackdropSelection(
+            itemId: "item-1",
+            imageTypeRawValue: ImageType.backdrop.rawValue,
+            blurHash: nil,
+            poolCount: 3,
+        )]
+        await rig.cache.write(backdrops, scope: rig.scope, key: .genreBackdrops)
+        await rig.cache.write(backdrops, scope: otherScope, key: .genreBackdrops)
 
         await rig.viewModel.restoreSession()
         await rig.viewModel.awaitValidation()
@@ -163,6 +173,14 @@ struct InstantConnectTests {
         #expect(rig.store.session == nil)
         #expect(await rig.cache.read([Library].self, scope: rig.scope, key: .libraries) == nil)
         #expect(await rig.cache.read([Library].self, scope: otherScope, key: .libraries) != nil)
+        let purged = await rig.cache.read([String: GenreBackdropSelection].self, scope: rig.scope, key: .genreBackdrops)
+        #expect(purged == nil)
+        let survived = await rig.cache.read(
+            [String: GenreBackdropSelection].self,
+            scope: otherScope,
+            key: .genreBackdrops,
+        )
+        #expect(survived != nil)
     }
 }
 

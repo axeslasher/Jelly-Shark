@@ -57,7 +57,9 @@ struct GenreBackdropSelection: Codable, Equatable, Sendable {
 final class GenreBackdropStore {
     /// The key the pre-cache build wrote to. Dead storage now: the picks are
     /// re-rollable decoration, so #207 dropped them rather than adopting them
-    /// into the cache.
+    /// into the cache. Cleared in `init` rather than at launch so no
+    /// composition root has to know about it; harmless to repeat, and this
+    /// whole block is safe to delete once a release has shipped past #207.
     private static let legacyDefaultsKey = "genreBackdropSelections"
 
     /// Authoritative for reads; the cached blob is the next cold start's seed
@@ -65,8 +67,14 @@ final class GenreBackdropStore {
 
     private var cache: ScopedCache?
 
-    init() {
-        UserDefaults.standard.removeObject(forKey: Self.legacyDefaultsKey)
+    /// The last enqueued write, so the next one can queue behind it
+    private var persistTask: Task<Void, Never>?
+
+    /// `legacyDefaults` is injectable only so the cleanup above is testable
+    /// and so tests and previews don't reach into the standard domain — the
+    /// store itself no longer keeps anything in `UserDefaults`.
+    init(legacyDefaults: UserDefaults = .standard) {
+        legacyDefaults.removeObject(forKey: Self.legacyDefaultsKey)
     }
 
     // MARK: - Lifecycle
@@ -74,6 +82,20 @@ final class GenreBackdropStore {
     /// Bind to a profile's cache and seed the mirror from it, so a card that
     /// mounts after a cold launch wears the face it had last time.
     func activate(cache: ScopedCache) async {
+        // Binding before this would hand the store a live handle on a scope
+        // whose sign-out already ran: `AppSession` activates the two stores in
+        // one task, and cancellation is cooperative, so a cancel landing
+        // inside the first `activate` still reaches this one.
+        guard !Task.isCancelled else { return }
+        if let bound = self.cache?.scope, bound != cache.scope {
+            // Re-binding to a different profile with no `deactivate()` between
+            // — the in-launch profile switch #192 introduces. The mirror is
+            // the previous account's, and the merge below is memory-wins, so
+            // keeping it would not merely render one account's picks on
+            // another's cards: the re-persist would write them into the new
+            // profile's row.
+            selections = [:]
+        }
         self.cache = cache
         let stored = await cache.read([String: GenreBackdropSelection].self, key: .genreBackdrops) ?? [:]
         // A deactivate (sign-out) or a replacement activation may have landed
@@ -108,9 +130,18 @@ final class GenreBackdropStore {
         selections[key.storageKey]
     }
 
-    /// Store a choice, or clear it with `nil`. Writes the whole map — it is
-    /// tens of short strings, so there's nothing to gain from a finer write.
+    /// Store a choice, or clear it with `nil`. Writes the whole map — tens of
+    /// short strings, so the write itself is cheap; what it costs is the
+    /// hydration race `activate` compensates for.
+    ///
+    /// An unbound store drops the pick rather than holding it: a card's roll
+    /// is launched as a detached `Task`, so one can resume after sign-out has
+    /// deactivated the store, and a pick kept with no scope to attribute it to
+    /// would be adopted — and persisted — by whichever profile activates next.
+    /// The card keeps rendering its own `selection`; only the memory of it
+    /// dies, which is the cold-start path.
     func setSelection(_ selection: GenreBackdropSelection?, for key: GenreBackdropKey) {
+        guard cache != nil else { return }
         selections[key.storageKey] = selection
         persist()
     }
@@ -118,10 +149,18 @@ final class GenreBackdropStore {
     /// Fire-and-forget, like `UserStateStore`: the mirror is authoritative for
     /// the session, so a write that loses a race is a re-roll next launch, not
     /// an error a card could act on.
+    ///
+    /// Chained rather than free-running, unlike `UserStateStore`'s per-item
+    /// writes: this store writes the whole map, so two unstructured tasks
+    /// completing out of order would let an older snapshot overwrite a newer
+    /// one — reachable whenever a card rolls during the hydration window, when
+    /// `setSelection` and `activate`'s repair are both in flight.
     private func persist() {
         guard let cache else { return }
         let snapshot = selections
-        Task {
+        let previous = persistTask
+        persistTask = Task {
+            await previous?.value
             await cache.write(snapshot, key: .genreBackdrops)
         }
     }

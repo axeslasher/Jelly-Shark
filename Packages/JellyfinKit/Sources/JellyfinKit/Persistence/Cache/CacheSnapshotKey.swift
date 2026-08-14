@@ -1,6 +1,6 @@
 /// Which cached payload a snapshot row holds. Each case names exactly one
 /// blob per scope; the payload type behind each key is fixed by its writer
-/// (`CachingJellyfinClient` for the parameter-keyed cases, `HomeViewModel`
+/// (`CachingJellyfinClient` for every server-response case, `HomeViewModel`
 /// for `homeSnapshot`, `Features`' `GenreBackdropStore` for
 /// `genreBackdrops`).
 ///
