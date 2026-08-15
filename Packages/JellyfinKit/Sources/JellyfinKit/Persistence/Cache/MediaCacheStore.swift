@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftData
 
 // MARK: - Models
@@ -103,6 +104,21 @@ public struct CachedUserStateValue: Sendable, Equatable {
 /// why every failure path here degrades to a cache miss instead of an error:
 /// a cache that can take the app down is worse than no cache.
 ///
+/// Degrading silently is a different thing from degrading gracefully, though,
+/// and this store used to do both. Every failure is now logged to the
+/// `Cache` category — nothing changes for the caller, but a store that has
+/// quietly stopped caching is a `log show --predicate 'category == "Cache"'`
+/// away instead of being invisible until someone notices cold starts got
+/// slower. **Scope keys and item ids never appear in a log line**: they carry
+/// the server URL and the user id, so messages carry the payload `kind`
+/// (a fixed six-value set) and row counts instead.
+///
+/// That rule has a non-obvious second half. Only *bounded* values are marked
+/// `privacy: .public`; a caught error never is, because `\(error)` renders an
+/// `NSError`'s whole `userInfo` and Core Data puts row-bearing keys in there.
+/// `label(_:)` publishes the domain and code, and the error rides along
+/// redacted. Anything added here should follow the same split.
+///
 /// There are deliberately **no SwiftData migrations**. `schemaVersion`
 /// covers the `@Model` shapes, the Codable payload encodings, and the key
 /// formats; any mismatch (or any store the current code cannot open) deletes
@@ -115,6 +131,8 @@ public struct CachedUserStateValue: Sendable, Equatable {
 /// one indexed fetch + decode — the actor hop costs nothing that matters.
 @ModelActor
 public actor MediaCacheStore {
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Cache")
+
     /// Bump when anything about the on-disk format changes: a `@Model`
     /// shape, a cached Codable model, or a key format. The old store is
     /// wiped and refilled from the server — never migrated.
@@ -154,12 +172,22 @@ public actor MediaCacheStore {
     static func makePersistent(directory: URL, defaults: UserDefaults, version: Int) -> MediaCacheStore {
         let storeURL = directory.appending(path: "MediaCache.store")
 
-        if defaults.integer(forKey: versionDefaultsKey) != version {
+        let stored = defaults.integer(forKey: versionDefaultsKey)
+        if stored != version {
+            // `stored == 0` is a first launch, not a wipe — there is nothing
+            // on disk yet, so saying so would be noise on every install.
+            if stored != 0 {
+                logger.notice("[cache] schema version \(stored) → \(version); wiping the store")
+            }
             removeStoreFiles(at: storeURL)
         }
         defaults.set(version, forKey: versionDefaultsKey)
 
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            logger.error("[cache] could not create the store directory: \(label(error), privacy: .public) — \(error)")
+        }
         let configuration = ModelConfiguration(url: storeURL)
 
         if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
@@ -167,12 +195,15 @@ public actor MediaCacheStore {
         }
         // A store the current code cannot open is a corrupt or stale cache:
         // destroy it and retry once with a fresh file
+        logger.error("[cache] the store would not open; deleting it and retrying once")
         removeStoreFiles(at: storeURL)
         if let container = try? ModelContainer(for: schema, configurations: [configuration]) {
+            logger.notice("[cache] store rebuilt empty after the failed open")
             return MediaCacheStore(modelContainer: container)
         }
         // Still failing means the directory itself is unusable; the cache
         // goes inert (in-memory) rather than taking the app down
+        logger.error("[cache] the store is unusable; caching is disabled for this launch")
         return makeInMemory()
     }
 
@@ -180,7 +211,81 @@ public actor MediaCacheStore {
         let manager = FileManager.default
         for suffix in ["", "-wal", "-shm"] {
             let url = URL(filePath: storeURL.path + suffix)
-            try? manager.removeItem(at: url)
+            // A store that was never created has no sidecars to remove, so
+            // only a failure to delete a file that *is* there is a real event
+            guard manager.fileExists(atPath: url.path) else { continue }
+            do {
+                try manager.removeItem(at: url)
+            } catch {
+                let name = suffix.isEmpty ? "store" : suffix
+                logger.error(
+                    "[cache] could not delete the \(name, privacy: .public) file: \(label(error), privacy: .public) — \(error)",
+                )
+            }
+        }
+    }
+
+    // MARK: Failure reporting
+
+    /// An error's domain and code — bounded framework constants, and the only
+    /// part of an error this file publishes.
+    ///
+    /// The error *itself* is never interpolated at `.public` here, which is
+    /// the whole reason this exists. `\(error)` bridges to `NSError` and logs
+    /// it as an object, so the rendered string is `NSError.description` — and
+    /// that includes the entire `userInfo`. Core Data fills `userInfo` with
+    /// row-bearing keys on precisely the failures this store hits: a `#Unique`
+    /// violation (133020/133021) arrives as a `conflictList` naming
+    /// `scopeKey` and `entryKey` verbatim, and both of this store's
+    /// constraints are composed of exactly those fields. Publishing that would
+    /// put the server URL, the user id, and an item id in the unified log,
+    /// where they persist into any sysdiagnose attached to a bug report.
+    ///
+    /// Callers pair this with a bare `\(error)` at default privacy, so the
+    /// full detail is still readable on a development device with a logging
+    /// profile installed and redacted everywhere else.
+    private static func label(_ error: any Error) -> String {
+        let error = error as NSError
+        return "\(error.domain) \(error.code)"
+    }
+
+    /// `modelContext.save()`, reported instead of discarded. Callers still
+    /// carry on: an unsaved write is a future cache miss, which is the whole
+    /// contract of this store — but a store failing every save should not
+    /// take an entire release to notice.
+    ///
+    /// `operation` is a `StaticString` so it cannot be built from a runtime
+    /// value — which is what makes publishing it provably safe. It still needs
+    /// the explicit `privacy: .public`: `OSLogInterpolation` has no
+    /// `StaticString` overload, so it binds to the generic
+    /// `CustomStringConvertible` one, whose default `.auto` privacy redacts
+    /// dynamic strings. Only a literal baked into the format string is public
+    /// without saying so.
+    private func save(after operation: StaticString) {
+        do {
+            try modelContext.save()
+        } catch {
+            Self.logger.error(
+                "[cache] save failed after \(operation, privacy: .public): \(Self.label(error), privacy: .public) — \(error)",
+            )
+        }
+    }
+
+    /// `modelContext.fetch(_:)`, reported instead of discarded. Returns an
+    /// empty array on failure, which every caller already treats as a miss.
+    /// See `save(after:)` for why `operation` is a `StaticString` and still
+    /// carries an explicit privacy annotation.
+    private func fetch<T: PersistentModel>(
+        _ descriptor: FetchDescriptor<T>,
+        during operation: StaticString,
+    ) -> [T] {
+        do {
+            return try modelContext.fetch(descriptor)
+        } catch {
+            Self.logger.error(
+                "[cache] fetch failed during \(operation, privacy: .public): \(Self.label(error), privacy: .public) — \(error)",
+            )
+            return []
         }
     }
 
@@ -196,8 +301,12 @@ public actor MediaCacheStore {
     ) -> T? {
         guard let row = snapshotRow(scope: scope, key: key) else { return nil }
         guard let value = try? JSONDecoder().decode(type, from: row.payload) else {
+            // The version-wipe policy is supposed to make this unreachable —
+            // a payload encoding change requires a `schemaVersion` bump — so
+            // reaching it means a bump was missed. Worth a line.
+            Self.logger.warning("[cache] undecodable \(key.kind, privacy: .public) row; deleting it")
             modelContext.delete(row)
-            try? modelContext.save()
+            save(after: "read")
             return nil
         }
         return value
@@ -207,7 +316,12 @@ public actor MediaCacheStore {
     /// are swallowed: a cache write that cannot land is a future cache miss,
     /// not an error the caller can act on.
     public func write(_ value: some Encodable & Sendable, scope: CacheScope, key: CacheSnapshotKey) {
-        guard let payload = try? JSONEncoder().encode(value) else { return }
+        guard let payload = try? JSONEncoder().encode(value) else {
+            // A domain model that will not encode is a code defect, not a
+            // transient — it fails identically on every launch forever.
+            Self.logger.error("[cache] could not encode a \(key.kind, privacy: .public) payload; not cached")
+            return
+        }
         if let row = snapshotRow(scope: scope, key: key) {
             row.payload = payload
             row.updatedAt = Date()
@@ -220,7 +334,7 @@ public actor MediaCacheStore {
                 updatedAt: Date(),
             ))
         }
-        try? modelContext.save()
+        save(after: "write")
     }
 
     private func snapshotRow(scope: CacheScope, key: CacheSnapshotKey) -> CachedSnapshot? {
@@ -230,7 +344,7 @@ public actor MediaCacheStore {
             predicate: #Predicate { $0.scopeKey == scopeKey && $0.entryKey == entryKey },
         )
         descriptor.fetchLimit = 1
-        return (try? modelContext.fetch(descriptor))?.first
+        return fetch(descriptor, during: "snapshotRow").first
     }
 
     // MARK: User state
@@ -242,7 +356,7 @@ public actor MediaCacheStore {
         let descriptor = FetchDescriptor<CachedUserState>(
             predicate: #Predicate { $0.scopeKey == scopeKey },
         )
-        let rows = (try? modelContext.fetch(descriptor)) ?? []
+        let rows = fetch(descriptor, during: "allUserStates")
         return Dictionary(rows.map { ($0.itemID, $0.value) }, uniquingKeysWith: { _, last in last })
     }
 
@@ -252,7 +366,7 @@ public actor MediaCacheStore {
         let descriptor = FetchDescriptor<CachedUserState>(
             predicate: #Predicate { $0.scopeKey == scopeKey && itemIDs.contains($0.itemID) },
         )
-        let rows = (try? modelContext.fetch(descriptor)) ?? []
+        let rows = fetch(descriptor, during: "userStates")
         return Dictionary(rows.map { ($0.itemID, $0.value) }, uniquingKeysWith: { _, last in last })
     }
 
@@ -272,7 +386,7 @@ public actor MediaCacheStore {
             predicate: #Predicate { $0.scopeKey == scopeKey && ids.contains($0.itemID) },
         )
         var rows = Dictionary(
-            ((try? modelContext.fetch(descriptor)) ?? []).map { ($0.itemID, $0) },
+            fetch(descriptor, during: "ingestServerUserData").map { ($0.itemID, $0) },
             uniquingKeysWith: { _, last in last },
         )
 
@@ -294,7 +408,7 @@ public actor MediaCacheStore {
                 rows[id] = row
             }
         }
-        try? modelContext.save()
+        save(after: "ingestServerUserData")
     }
 
     /// Apply a local, server-acknowledged change (a successful
@@ -311,7 +425,7 @@ public actor MediaCacheStore {
         )
         descriptor.fetchLimit = 1
 
-        if let row = (try? modelContext.fetch(descriptor))?.first {
+        if let row = fetch(descriptor, during: "setUserState").first {
             var value = row.value
             mutate(&value)
             row.value = value
@@ -321,7 +435,7 @@ public actor MediaCacheStore {
             mutate(&value)
             modelContext.insert(CachedUserState(scopeKey: scopeKey, itemID: itemID, value: value, updatedAt: Date()))
         }
-        try? modelContext.save()
+        save(after: "setUserState")
     }
 
     // MARK: Purging
@@ -330,16 +444,44 @@ public actor MediaCacheStore {
     /// boundary, and the eventual "forget profile" (#192).
     public func purge(scope: CacheScope) {
         let scopeKey = scope.storageKey
-        try? modelContext.delete(model: CachedSnapshot.self, where: #Predicate { $0.scopeKey == scopeKey })
-        try? modelContext.delete(model: CachedUserState.self, where: #Predicate { $0.scopeKey == scopeKey })
-        try? modelContext.save()
+        // A purge that silently fails leaves one user's rows readable to the
+        // next sign-in, so this is the one failure here that is a privacy
+        // event rather than a performance one. It still cannot throw at the
+        // caller — sign-out must not be blockable — but it is never silent.
+        //
+        // Each table gets its own attempt on purpose: a failure deleting
+        // snapshots must not skip the user-state rows, which are the more
+        // sensitive half. (Written out rather than folded into a generic
+        // helper because `#Predicate` over a protocol's key path is not
+        // reliably convertible to a SwiftData query.)
+        do {
+            try modelContext.delete(model: CachedSnapshot.self, where: #Predicate { $0.scopeKey == scopeKey })
+        } catch {
+            Self.logger.error("[cache] purge left snapshot rows behind: \(Self.label(error), privacy: .public) — \(error)")
+        }
+        do {
+            try modelContext.delete(model: CachedUserState.self, where: #Predicate { $0.scopeKey == scopeKey })
+        } catch {
+            Self.logger.error("[cache] purge left user-state rows behind: \(Self.label(error), privacy: .public) — \(error)")
+        }
+        save(after: "purge")
     }
 
     /// Forget everything cached for every scope
     public func purgeAll() {
-        try? modelContext.delete(model: CachedSnapshot.self)
-        try? modelContext.delete(model: CachedUserState.self)
-        try? modelContext.save()
+        do {
+            try modelContext.delete(model: CachedSnapshot.self)
+        } catch {
+            Self.logger.error("[cache] purgeAll left snapshot rows behind: \(Self.label(error), privacy: .public) — \(error)")
+        }
+        do {
+            try modelContext.delete(model: CachedUserState.self)
+        } catch {
+            Self.logger.error(
+                "[cache] purgeAll left user-state rows behind: \(Self.label(error), privacy: .public) — \(error)",
+            )
+        }
+        save(after: "purgeAll")
     }
 
     /// Bound the one unbounded blob family: keep the newest `keep` item
@@ -352,10 +494,12 @@ public actor MediaCacheStore {
             predicate: #Predicate { $0.scopeKey == scopeKey && $0.kind == detailKind },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)],
         )
-        guard let rows = try? modelContext.fetch(descriptor), rows.count > keep else { return }
+        let rows = fetch(descriptor, during: "purgeStaleDetails")
+        guard rows.count > keep else { return }
+        Self.logger.info("[cache] pruning \(rows.count - keep) stale mediaDetail rows (keeping \(keep))")
         for row in rows.dropFirst(keep) {
             modelContext.delete(row)
         }
-        try? modelContext.save()
+        save(after: "purgeStaleDetails")
     }
 }
