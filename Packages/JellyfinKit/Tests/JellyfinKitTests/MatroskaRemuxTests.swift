@@ -571,6 +571,50 @@ struct MatroskaFMP4RemuxerTests {
         #expect(durations.prefix(2) == [32, 32])
     }
 
+    /// The final audio run must span to the next span's first audio
+    /// timestamp — not repeat the previous run's per-frame guess, which
+    /// drifts on ms-quantized cadences (+2ms per segment measured on AAC in
+    /// the #99 coverage sweep).
+    @Test("Final audio run is bounded by the next span's first audio timestamp")
+    func audioBoundaryBound() async throws {
+        var builder = fixture()
+        // Audio: two laced frames at t=0 (32 ticks each), one at t=64.
+        builder.clusters[0].blocks.append(
+            .init(track: 4, relativeTime: 64, keyframe: true, framePayloads: [CodecFixtures.eac3Syncframe()]),
+        )
+        // The next span opens with audio at t=90: the final run's frame must
+        // span the true 26-tick gap, not the previous run's 32.
+        builder.clusters[1] = MatroskaFixtureBuilder.Cluster(timestamp: 90, blocks: [
+            .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
+                CodecFixtures.hevcAccessUnit([(type: 20, size: 300), (type: 63, size: 20), (type: 62, size: 30)]),
+            ]),
+            .init(track: 4, relativeTime: 0, keyframe: true, framePayloads: [CodecFixtures.eac3Syncframe()]),
+        ])
+        let demuxer = MatroskaDemuxer(source: DataByteSource(builder.build()))
+        let index = try await demuxer.loadIndex()
+        let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
+        let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+
+        let span = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.cues[1].clusterOffset)
+        let head = try await demuxer.readFirstCluster(at: index.cues[1].clusterOffset, endBound: index.segmentDataEnd)
+        let fragment = try remuxer.makeFragment(sequence: 1, cluster: span, nextSpanHead: head)
+
+        let trafs = MP4Box.findAll("moof/traf", in: fragment)
+        let audioTraf = try #require(trafs.first { traf in
+            let tfhd = traf.children.first { $0.type == "tfhd" }
+            let trackID = tfhd?.payload.dropFirst(4).prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+            return trackID == 4
+        })
+        let trun = try #require(audioTraf.children.first { $0.type == "trun" })
+        var durations: [Int] = []
+        var cursor = trun.payload.dropFirst(12)
+        for _ in 0 ..< 3 {
+            durations.append(cursor.prefix(4).reduce(0) { ($0 << 8) | Int($1) })
+            cursor = cursor.dropFirst(8)
+        }
+        #expect(durations == [32, 32, 26])
+    }
+
     @Test("A source with only unsupported video is refused")
     func unsupportedVideoRefused() async throws {
         var builder = fixture()

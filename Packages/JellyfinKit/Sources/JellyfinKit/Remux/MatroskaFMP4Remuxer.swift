@@ -173,7 +173,7 @@ public struct MatroskaFMP4Remuxer: Sendable {
             fragments.append(video)
         }
         if let audioTrack = tracks.audio,
-           let audio = audioFragment(track: audioTrack, cluster: cluster)
+           let audio = audioFragment(track: audioTrack, cluster: cluster, nextSpanHead: nextSpanHead)
         {
             fragments.append(audio)
         }
@@ -277,9 +277,18 @@ public struct MatroskaFMP4Remuxer: Sendable {
         )
     }
 
-    private func audioFragment(track: MatroskaTrack, cluster: MatroskaCluster) -> FMP4Muxer.TrackFragment? {
+    private func audioFragment(track: MatroskaTrack, cluster: MatroskaCluster, nextSpanHead: MatroskaCluster?) -> FMP4Muxer.TrackFragment? {
         let frames = cluster.frames.filter { $0.trackNumber == track.number }
         guard !frames.isEmpty else { return nil }
+
+        // The final run's true extent: the next span's first audio timestamp.
+        // Guessing it from the previous run's per-frame duration drifts on
+        // ms-quantized cadences (AAC's 21.333ms frames measured +2ms per
+        // segment on the #99 coverage sweep), and audio needs no keyframe
+        // re-partition — its timestamps are monotonic — so the boundary
+        // bound alone makes consecutive audio timelines tile.
+        let nextAudioStartTicks = nextSpanHead?.frames
+            .first { $0.trackNumber == track.number }?.timeTicks
 
         // Laced frames share their block's timestamp; spread each equal-time
         // run evenly across the gap to the next distinct timestamp.
@@ -303,6 +312,13 @@ public struct MatroskaFMP4Remuxer: Sendable {
                 if perFrame > 0 {
                     lastPerFrame = perFrame
                 }
+            } else if let next = nextAudioStartTicks, next > times[runStart] {
+                let delta = Int(next - times[runStart])
+                let perFrame = delta / count
+                for i in runStart ..< runEnd {
+                    durations[i] = perFrame
+                }
+                durations[runEnd - 1] += delta - perFrame * count
             } else {
                 let perFrame = lastPerFrame > 0 ? lastPerFrame : 1
                 for i in runStart ..< runEnd {
