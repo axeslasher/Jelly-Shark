@@ -4,7 +4,7 @@
 
 Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (0.6.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
 
-> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + streaming (direct play with HLS remux/transcode fallback), and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. SwiftData caching is not yet adopted — only session tokens (Keychain) and artwork (`URLCache`) are persisted.
+> **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + streaming (direct play with HLS remux/transcode fallback), and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. **SwiftData caching is implemented** (#24, 2026-07-30): a per-user-per-server metadata and user-state cache behind `CachingJellyfinClient`, alongside session tokens (Keychain) and artwork (`URLCache`). See Caching Strategy below.
 
 ---
 
@@ -307,30 +307,53 @@ Describe the playable media sources returned by `PlaybackInfo`, including audio/
 
 ## Caching Strategy
 
-### Current (implemented)
+### Storage tiers (all implemented)
 - **Keychain**: `SavedSession` (server URL, user ID, access token) + a stable device ID
+- **SwiftData** (`Persistence/Cache/`): metadata snapshots + user state, added 2026-07-30 for #24
 - **URLCache**: artwork images, via `URLCache.shared` configured at app launch (16MB memory / 256MB disk)
-- **UserDefaults**: selected theme identifier
-- Everything else (libraries, items, metadata) is fetched live on each view's `.task` — there is no persistent metadata cache yet.
+- **UserDefaults**: selected theme identifier, plus the cache's schema-version marker
 
-### Planned (SwiftData)
-SwiftData is the intended persistence layer for caching but has **not been adopted yet**. Once added, the plan is to cache:
-- **Server configuration**: URL, version, capabilities
-- **User profiles**: Basic info, preferences (NOT tokens)
-- **Media metadata**: Items, images, cast/crew
-- **User state**: Playback position, favorites, played status
-- **Library structure**: Collections, folders, recently added
+### What the SwiftData cache holds
 
-### Cache Invalidation _(planned, once SwiftData is added)_
-- **On app launch**: Check server for updates to recently modified items
-- **After playback**: Sync playback state immediately
-- **Background refresh**: Periodic metadata updates when app is active
-- **Manual refresh**: User-initiated pull-to-refresh
+Display acceleration only. Every cached render is followed by a network refresh — the server stays authoritative, and the cache exists so a cold start paints something real instead of skeletons.
 
-### What NOT to Cache
+`CachingJellyfinClient` is the sole writer, a write-through decorator over any `JellyfinClientProtocol`. It persists exactly this list:
+
+| Key | Written on |
+|-----|-----------|
+| `.currentUser` | `authenticate` / `fetchCurrentUser` |
+| `.libraries` | `getLibraries` |
+| `.homeSnapshot` | Home's composed shelves |
+| `.mediaDetail(itemID:)` | `getMediaItem` |
+| `.libraryFirstPage(libraryID:)` | `getLibraryItems`, **page 0 of the default query only** (name ascending, unfiltered) |
+| `.genreBackdrops` | genre shelf backdrop picks |
+| user-state rows | after a server-acknowledged `markPlayed` / `markFavorite` and friends |
+
+Filtered queries, re-sorted queries, and follow-up pages are deliberately never cached — they multiply the key space without helping a cold start.
+
+Cache writes are awaited before the client returns, so a caller that re-fetches immediately reads its own write. The cost is a few milliseconds against a network call that just completed.
+
+### Scoping (a privacy boundary)
+
+Every row is keyed by a `CacheScope` — one Jellyfin user on one server. The server URL is normalized first (scheme and host lowercased, default `:443`/`:80` dropped, trailing slashes stripped), so `https://Media.Home/` and `https://media.home:443` land in one scope instead of two. The two halves are joined with U+001F, which cannot appear in either, so scopes cannot collide.
+
+An unauthenticated client has no scope and therefore never writes.
+
+### Invalidation
+- **Schema version mismatch**: `MediaCacheStore.schemaVersion` covers `@Model` shapes, payload encodings, *and* key formats. Any mismatch deletes the store files and starts empty. There are **no SwiftData migrations** — the server rebuilds everything for free.
+- **Unopenable store**: destroyed and retried once; if the directory itself is unusable the store falls back to in-memory and the cache goes inert.
+- **Undecodable row**: deleted on read so it cannot fail twice.
+- **Sign-out / forget profile**: `purge(scope:)` — the privacy boundary.
+- **Unbounded growth**: `purgeStaleDetails(scope:keepingNewest:)` keeps the newest 500 `.mediaDetail` rows. Every other key family is a fixed, small set.
+- **Everything else**: refresh-on-read. There is no TTL, no background refresh, and no pull-to-refresh.
+
+### Failure posture
+Reads, writes, saves, and store-file deletion all swallow errors — a cache failure becomes a cache miss, never a user-visible error. **Known gap**: none of it is logged, so a persistently broken store disables caching indefinitely with no signal.
+
+### What is NOT cached
 - Authentication tokens (Keychain only)
 - Video streams (always streamed, never stored)
-- Transcoding decisions (server-side)
+- Playback URLs and transcoding decisions (server-side; `CachingJellyfinClient` passes these straight through)
 
 ---
 
@@ -551,12 +574,19 @@ JellyfinKit/Sources/JellyfinKit/
 │   └── PlaybackAdapters.swift
 ├── Persistence/
 │   ├── KeychainStore.swift
-│   └── SessionStore.swift            (SessionStoring protocol + SavedSession)
+│   ├── SessionStore.swift            (SessionStoring protocol + SavedSession)
+│   └── Cache/
+│       ├── MediaCacheStore.swift     (@ModelActor + the two @Model types)
+│       ├── CacheScope.swift          (normalized server + user id = one scope)
+│       ├── CacheSnapshotKey.swift    (which payload a row holds)
+│       ├── CachedHomeSnapshot.swift  (the Home cold-start blob)
+│       ├── ScopedCache.swift         (scope-bound facade over the store)
+│       └── UserStateStore.swift      (live played/favorite/resume overlay)
 ├── Networking/
 │   └── APIError.swift
 └── JellyfinKit.swift
 ```
-There is no `Cache/` module yet (no SwiftData/metadata cache).
+`Client/CachingJellyfinClient.swift` is the write-through decorator that feeds the cache; it is the only writer.
 
 ### Error Handling (implemented)
 - `APIError` enum covers invalidURL, httpError, unauthorized, forbidden, notFound, serverError, networkError, decodingError, unsupportedServerVersion, notAuthenticated, generic
@@ -566,7 +596,7 @@ There is no `Cache/` module yet (no SwiftData/metadata cache).
 ### Request Patterns
 - Async/await for all API calls
 - Pagination params supported (`Limit`/`StartIndex`); `LibraryItemsView` pages a library in fixed-size batches and loads more on infinite scroll, tracking `MediaItemPage.totalRecordCount` to know when to stop
-- Image loading via SwiftUI `AsyncImage` (`ArtworkImage`), cached by `URLCache`
+- Image loading via `ArtworkImage` → `ArtworkLoader`, not `AsyncImage`: encoded bytes ride the shared `URLCache` through the loader's own connection-bounded session (#109), decoded bitmaps live in two cost-bounded `NSCache` tiers split by size class (#105), and decodes downsample through ImageIO to the slot's pixel size
 - Search input is debounced (~300ms) with in-flight cancellation in `SearchViewModel`
 - _(planned)_ Retry logic for transient failures, predictive prefetching
 
