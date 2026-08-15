@@ -295,6 +295,35 @@ public struct MatroskaDemuxer: Sendable {
         return MatroskaCluster(timestampTicks: timestampTicks, frames: frames)
     }
 
+    /// Read exactly the first Cluster at `offset`, whole — unlike
+    /// `readClusters`, which clips the final cluster at `endBound`. The
+    /// remuxer reads the NEXT span's opening cluster this way to claim the
+    /// frames stored there that decode before that span's cued keyframe (the
+    /// straddling GOP's tail — see `MatroskaFMP4Remuxer.videoFragment`, #99).
+    /// `endBound` only bounds an unknown-size (streamed) cluster.
+    public func readFirstCluster(at offset: UInt64, endBound: UInt64) async throws -> MatroskaCluster {
+        var cursor = offset
+        while cursor < endBound {
+            let header = try await elementHeader(at: cursor)
+            guard header.id == MatroskaID.cluster else {
+                guard let size = header.size else { break }
+                cursor = header.contentStart + UInt64(size)
+                continue
+            }
+            let contentEnd = header.size.map { header.contentStart + UInt64($0) } ?? endBound
+            guard header.contentStart <= contentEnd else {
+                throw MatroskaError.malformed("cluster header at \(cursor) overruns its size")
+            }
+            let byteCount = Int(contentEnd - header.contentStart)
+            guard byteCount <= Self.maxElementSize else {
+                throw MatroskaError.malformed("cluster size \(byteCount) out of range")
+            }
+            let data = try await source.read(at: header.contentStart, count: byteCount)
+            return try Self.parseCluster(data)
+        }
+        throw MatroskaError.malformed("no cluster at \(offset)")
+    }
+
     // MARK: - Element fetching
 
     private func elementHeader(at offset: UInt64) async throws -> (id: UInt32, contentStart: UInt64, size: Int?) {

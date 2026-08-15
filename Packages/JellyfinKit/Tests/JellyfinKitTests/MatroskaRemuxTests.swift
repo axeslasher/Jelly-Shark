@@ -436,7 +436,7 @@ struct MatroskaFMP4RemuxerTests {
     func enhancementLayerFiltered() async throws {
         let (demuxer, remuxer, index) = try await makeRemuxer()
         let cluster = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.cues[1].clusterOffset)
-        let fragment = try remuxer.makeFragment(sequence: 1, cluster: cluster, nextClusterTimeTicks: 4000)
+        let fragment = try remuxer.makeFragment(sequence: 1, cluster: cluster, nextSpanHead: nil)
 
         let trun = try #require(MP4Box.find("moof/traf/trun", in: fragment))
         // Sample 1: IRAP(300) + RPU(30) with 4-byte prefixes and 2-byte NAL
@@ -449,7 +449,7 @@ struct MatroskaFMP4RemuxerTests {
     func decodeTimeSynthesis() async throws {
         let (demuxer, remuxer, index) = try await makeRemuxer()
         let cluster = try await demuxer.readClusters(from: index.cues[1].clusterOffset, to: index.segmentDataEnd)
-        let fragment = try remuxer.makeFragment(sequence: 2, cluster: cluster, nextClusterTimeTicks: nil)
+        let fragment = try remuxer.makeFragment(sequence: 2, cluster: cluster, nextSpanHead: nil)
 
         let tfdt = try #require(MP4Box.find("moof/traf/tfdt", in: fragment))
         let baseTime = tfdt.payload.dropFirst(4).reduce(0) { ($0 << 8) | Int($1) }
@@ -469,6 +469,73 @@ struct MatroskaFMP4RemuxerTests {
         #expect(samples.map(\.offset) == [0, 80, -40, -40])
     }
 
+    /// The #99 regression: a GOP that straddles the span boundary stores its
+    /// final frames in the NEXT span's opening cluster, before that span's
+    /// cued keyframe. Fragments must re-partition at keyframes — the earlier
+    /// span claims those tail frames, the later span drops them — and the
+    /// last sample keeps its honest one-frame duration instead of stretching
+    /// to the next cue. Together the two fragments' decode timelines tile
+    /// exactly; without the re-partition, `tfdt` stepped backwards one
+    /// reorder-depth at segment boundaries, which played as the periodic
+    /// skip with zero dropped frames.
+    @Test("Straddling GOP tails re-partition at keyframes and the timelines tile")
+    func straddlingGOPRepartition() async throws {
+        var builder = fixture()
+        // The previous GOP's tail Bs (3920, 3960) are stored at the head of
+        // the second cluster, before its cued keyframe at 4000.
+        builder.clusters[1] = MatroskaFixtureBuilder.Cluster(timestamp: 4000, blocks: [
+            .init(track: 1, relativeTime: -80, keyframe: false, framePayloads: [
+                CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 63, size: 10), (type: 62, size: 30)]),
+            ]),
+            .init(track: 1, relativeTime: -40, keyframe: false, framePayloads: [
+                CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 63, size: 10), (type: 62, size: 30)]),
+            ]),
+            .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
+                CodecFixtures.hevcAccessUnit([(type: 20, size: 300), (type: 63, size: 20), (type: 62, size: 30)]),
+            ]),
+            .init(track: 1, relativeTime: 40, keyframe: false, framePayloads: [
+                CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 63, size: 10), (type: 62, size: 30)]),
+            ]),
+        ])
+        let demuxer = MatroskaDemuxer(source: DataByteSource(builder.build()))
+        let index = try await demuxer.loadIndex()
+        let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
+        let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+
+        func timing(of fragment: Data, sampleCount: Int) throws -> (base: Int, durations: [Int]) {
+            let tfdt = try #require(MP4Box.find("moof/traf/tfdt", in: fragment))
+            let base = tfdt.payload.dropFirst(4).reduce(0) { ($0 << 8) | Int($1) }
+            let trun = try #require(MP4Box.find("moof/traf/trun", in: fragment))
+            var durations: [Int] = []
+            var cursor = trun.payload.dropFirst(12)
+            for _ in 0 ..< sampleCount {
+                durations.append(cursor.prefix(4).reduce(0) { ($0 << 8) | Int($1) })
+                cursor = cursor.dropFirst(16)
+            }
+            return (base, durations)
+        }
+
+        // Fragment 1 claims the tail Bs from the second cluster's head.
+        let span1 = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.cues[1].clusterOffset)
+        let head2 = try await demuxer.readFirstCluster(at: index.cues[1].clusterOffset, endBound: index.segmentDataEnd)
+        let fragment1 = try remuxer.makeFragment(sequence: 1, cluster: span1, nextSpanHead: head2)
+        // Own frames present at 0 and 40, claimed tails at 3920 and 3960;
+        // the last sample is one honest frame (40), NOT stretched to 4000.
+        let timing1 = try timing(of: fragment1, sampleCount: 4)
+        #expect(timing1.base == 0)
+        #expect(timing1.durations == [40, 3880, 40, 40])
+
+        // Fragment 2 drops its pre-keyframe head and starts at the keyframe.
+        let span2 = try await demuxer.readClusters(from: index.cues[1].clusterOffset, to: index.segmentDataEnd)
+        let fragment2 = try remuxer.makeFragment(sequence: 2, cluster: span2, nextSpanHead: nil)
+        let timing2 = try timing(of: fragment2, sampleCount: 2)
+        #expect(timing2.base == 4000)
+        #expect(timing2.durations == [40, 40])
+
+        // The tiling invariant #99 hangs on: one continuous decode clock.
+        #expect(timing1.base + timing1.durations.reduce(0, +) == timing2.base)
+    }
+
     @Test("Laced audio spreads durations to the next distinct timestamp")
     func audioLaceDurations() async throws {
         var builder = fixture()
@@ -482,7 +549,7 @@ struct MatroskaFMP4RemuxerTests {
         let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
 
         let cluster = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.cues[1].clusterOffset)
-        let fragment = try remuxer.makeFragment(sequence: 1, cluster: cluster, nextClusterTimeTicks: 4000)
+        let fragment = try remuxer.makeFragment(sequence: 1, cluster: cluster, nextSpanHead: nil)
 
         let trafs = MP4Box.findAll("moof/traf", in: fragment)
         let audioTraf = try #require(trafs.first { traf in
@@ -527,9 +594,8 @@ struct MatroskaFMP4RemuxerTests {
 
         for (i, cue) in index.cues.enumerated() {
             let endBound = i + 1 < index.cues.count ? index.cues[i + 1].clusterOffset : index.segmentDataEnd
-            let next = i + 1 < index.cues.count ? Int64(index.cues[i + 1].timeTicks) : nil
             let cluster = try await demuxer.readClusters(from: cue.clusterOffset, to: endBound)
-            let fragment = try remuxer.makeFragment(sequence: i + 1, cluster: cluster, nextClusterTimeTicks: next)
+            let fragment = try remuxer.makeFragment(sequence: i + 1, cluster: cluster, nextSpanHead: nil)
             #expect(MP4Box.parse(fragment).map(\.type) == ["moof", "mdat"])
         }
     }

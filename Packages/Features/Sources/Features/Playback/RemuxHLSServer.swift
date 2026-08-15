@@ -187,11 +187,14 @@ final class RemuxHLSServer: @unchecked Sendable {
                 let segment = plan.segments[index]
                 let started = ContinuousClock.now
                 let span = try await demuxer.readClusters(from: segment.clusterOffset, to: segment.clusterEndBound)
-                let fragment = try remuxer.makeFragment(
-                    sequence: index + 1,
-                    cluster: span,
-                    nextClusterTimeTicks: segment.nextTimeTicks,
-                )
+                // The next span's opening cluster carries any straddling
+                // GOP's tail frames; the remuxer re-partitions at keyframes
+                // so fragment timelines tile (#99).
+                let nextSegment = index + 1 < plan.segments.count ? plan.segments[index + 1] : nil
+                let nextSpanHead = try await nextSegment.map {
+                    try await demuxer.readFirstCluster(at: $0.clusterOffset, endBound: $0.clusterEndBound)
+                }
+                let fragment = try remuxer.makeFragment(sequence: index + 1, cluster: span, nextSpanHead: nextSpanHead)
                 Self.logger.info("[remux-hls] segment \(index) produced: \(fragment.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
                 return Self.styp + fragment
             }
