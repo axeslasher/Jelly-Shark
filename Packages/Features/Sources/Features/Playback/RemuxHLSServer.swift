@@ -190,9 +190,10 @@ final class RemuxHLSServer: @unchecked Sendable {
                 // The next span's opening cluster carries any straddling
                 // GOP's tail frames; the remuxer re-partitions at keyframes
                 // so fragment timelines tile (#99).
-                let nextSegment = index + 1 < plan.segments.count ? plan.segments[index + 1] : nil
-                let nextSpanHead = try await nextSegment.map {
-                    try await demuxer.readFirstCluster(at: $0.clusterOffset, endBound: $0.clusterEndBound)
+                var nextSpanHead: MatroskaCluster?
+                if index + 1 < plan.segments.count {
+                    let next = plan.segments[index + 1]
+                    nextSpanHead = try await demuxer.readFirstCluster(at: next.clusterOffset, endBound: next.clusterEndBound)
                 }
                 let fragment = try remuxer.makeFragment(sequence: index + 1, cluster: span, nextSpanHead: nextSpanHead)
                 Self.logger.info("[remux-hls] segment \(index) produced: \(fragment.count) bytes in \(ContinuousClock.now - started, privacy: .public)")

@@ -200,9 +200,19 @@ public struct MatroskaFMP4Remuxer: Sendable {
         } else {
             own
         }
+        // Where the NEXT fragment's timeline will start: the minimum
+        // presentation time of the head's frames from its first keyframe on
+        // (with open-GOP leading pictures that minimum sits BELOW the
+        // keyframe — which is why the next keyframe's own timestamp is not
+        // the bound). Bounds the last sample so the tile stays exact even on
+        // variable frame durations, where a fallback guess would drift.
+        var nextFragmentStartTicks: Int64?
         if let nextSpanHead {
             let head = nextSpanHead.frames.filter { $0.trackNumber == tracks.video.number }
             frames.append(contentsOf: head.prefix { !$0.isKeyframe })
+            if let keyIndex = head.firstIndex(where: \.isKeyframe) {
+                nextFragmentStartTicks = head[keyIndex...].map(\.timeTicks).min()
+            }
         }
         guard !frames.isEmpty else { return nil }
 
@@ -222,15 +232,14 @@ public struct MatroskaFMP4Remuxer: Sendable {
 
         // Decode times: the fragment's presentation times, sorted ascending.
         //
-        // The LAST sample gets its honest one-frame duration — never a
-        // stretch to the next segment's cue time. The stretch is the other
-        // half of #99's broken decode clock: with the keyframe re-partition
-        // above, the next fragment's timeline starts at the slot after this
-        // one's last presented frame, so on contiguous video the clock is
-        // continuous by construction (`tfdt` + Σdurations lands exactly on
-        // the next fragment's `tfdt`, ±1ms of Matroska rounding). Stretching
-        // to the cue instead claimed the boundary window twice, stepping
-        // `tfdt` backwards ~2 frames at every boundary — measured
+        // The LAST sample runs to the next fragment's actual start
+        // (`nextFragmentStartTicks`) — one honest frame on constant-rate
+        // video, the true gap on variable — and NEVER to the next segment's
+        // cue time. The cue-time stretch was the other half of #99's broken
+        // decode clock: with the keyframe re-partition above, the next
+        // fragment's timeline starts below its cue whenever leading pictures
+        // exist, so stretching to the cue claimed the boundary window twice,
+        // stepping `tfdt` backwards ~2 frames at every boundary — measured
         // −83/−126/−167ms on this plan's own segments — which AVFoundation
         // renders as the periodic skip, with zero dropped frames.
         let presentationTimes = frames.map(\.timeTicks)
@@ -242,6 +251,8 @@ public struct MatroskaFMP4Remuxer: Sendable {
         for (i, frame) in frames.enumerated() {
             let duration: Int = if i + 1 < decodeTimes.count {
                 Int(decodeTimes[i + 1] - decodeTimes[i])
+            } else if let next = nextFragmentStartTicks, next > decodeTimes[i] {
+                Int(next - decodeTimes[i])
             } else {
                 fallbackDuration
             }

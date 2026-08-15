@@ -481,13 +481,15 @@ struct MatroskaFMP4RemuxerTests {
     @Test("Straddling GOP tails re-partition at keyframes and the timelines tile")
     func straddlingGOPRepartition() async throws {
         var builder = fixture()
-        // The previous GOP's tail Bs (3920, 3960) are stored at the head of
-        // the second cluster, before its cued keyframe at 4000.
+        // The previous GOP's tail Bs (3900, 3950 — a 50ms cadence, so the
+        // boundary bound is distinguishable from the 40ms fallback) are
+        // stored at the head of the second cluster, before its cued
+        // keyframe at 4000.
         builder.clusters[1] = MatroskaFixtureBuilder.Cluster(timestamp: 4000, blocks: [
-            .init(track: 1, relativeTime: -80, keyframe: false, framePayloads: [
+            .init(track: 1, relativeTime: -100, keyframe: false, framePayloads: [
                 CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 63, size: 10), (type: 62, size: 30)]),
             ]),
-            .init(track: 1, relativeTime: -40, keyframe: false, framePayloads: [
+            .init(track: 1, relativeTime: -50, keyframe: false, framePayloads: [
                 CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 63, size: 10), (type: 62, size: 30)]),
             ]),
             .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
@@ -519,11 +521,13 @@ struct MatroskaFMP4RemuxerTests {
         let span1 = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.cues[1].clusterOffset)
         let head2 = try await demuxer.readFirstCluster(at: index.cues[1].clusterOffset, endBound: index.segmentDataEnd)
         let fragment1 = try remuxer.makeFragment(sequence: 1, cluster: span1, nextSpanHead: head2)
-        // Own frames present at 0 and 40, claimed tails at 3920 and 3960;
-        // the last sample is one honest frame (40), NOT stretched to 4000.
+        // Own frames present at 0 and 40, claimed tails at 3900 and 3950;
+        // the last sample runs to the next fragment's start (4000 - 3950 =
+        // 50, the true variable gap), not the 40ms fallback, and nothing
+        // stretches past the boundary.
         let timing1 = try timing(of: fragment1, sampleCount: 4)
         #expect(timing1.base == 0)
-        #expect(timing1.durations == [40, 3880, 40, 40])
+        #expect(timing1.durations == [40, 3860, 50, 50])
 
         // Fragment 2 drops its pre-keyframe head and starts at the keyframe.
         let span2 = try await demuxer.readClusters(from: index.cues[1].clusterOffset, to: index.segmentDataEnd)
