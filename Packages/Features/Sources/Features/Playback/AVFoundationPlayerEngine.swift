@@ -201,6 +201,13 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     @ObservationIgnored private var failedToEndObserver: NSObjectProtocol?
     @ObservationIgnored private var mediaSelectionObserver: NSObjectProtocol?
     @ObservationIgnored private var mediaSelectionTask: Task<Void, Never>?
+    @ObservationIgnored private var accessLogObserver: NSObjectProtocol?
+
+    /// Dropped-frame total already logged for the current item, so the access
+    /// log observer emits a line only when the count climbs. Silence in the
+    /// log therefore means "no drops", and each line carries the delta and
+    /// the playback position it appeared at. See `observeAccessLog`.
+    @ObservationIgnored private var loggedDroppedFrames = 0
 
     #if os(tvOS)
         /// The Up Next proposal waiting to attach, kept so a duration that
@@ -271,6 +278,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         observeTimeControlStatus(of: player, generation: generation)
         observeEnd(of: playerItem, generation: generation)
         observeMediaSelection(of: playerItem, generation: generation)
+        observeAccessLog(of: playerItem, generation: generation)
         loadMediaSelectionOptions(for: playerItem, loadsLegible: loadsLegibleOptions, generation: generation)
     }
 
@@ -323,6 +331,10 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             NotificationCenter.default.removeObserver(mediaSelectionObserver)
         }
         mediaSelectionObserver = nil
+        if let accessLogObserver {
+            NotificationCenter.default.removeObserver(accessLogObserver)
+        }
+        accessLogObserver = nil
         mediaSelectionTask?.cancel()
         mediaSelectionTask = nil
         audibleGroup = nil
@@ -676,6 +688,38 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             Task { @MainActor [weak self] in
                 guard let self, self.generation == generation else { return }
                 self.onEvent?(.playedToEnd)
+            }
+        }
+    }
+
+    /// Log dropped video frames from the item's access log, permanently and
+    /// at debug level (decision on #99): playback investigations recur, and
+    /// the counter should already be in the log the next time one starts.
+    ///
+    /// Summed across events for the same reason `deliveryProgress()` sums
+    /// bytes: the log accumulates an event per delivery segment, each with
+    /// its own counter. Events report `-1` when the count is unknown, so
+    /// those are excluded rather than summed. A line is emitted only when
+    /// the total climbs, stamped with the playback position — the number
+    /// #99's instrumentation correlates against segment boundaries.
+    private func observeAccessLog(of playerItem: AVPlayerItem, generation: Int) {
+        loggedDroppedFrames = 0
+        accessLogObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.newAccessLogEntryNotification,
+            object: playerItem,
+            queue: .main,
+        ) { [weak self] note in
+            guard let item = note.object as? AVPlayerItem else { return }
+            let dropped = item.accessLog()?.events
+                .filter { $0.numberOfDroppedVideoFrames >= 0 }
+                .reduce(0) { $0 + $1.numberOfDroppedVideoFrames } ?? 0
+            let positionSeconds = item.currentTime().seconds
+            Task { @MainActor [weak self] in
+                guard let self, self.generation == generation else { return }
+                guard dropped > self.loggedDroppedFrames else { return }
+                let delta = dropped - self.loggedDroppedFrames
+                self.loggedDroppedFrames = dropped
+                Self.logger.debug("[frames] dropped +\(delta) at \(positionSeconds, format: .fixed(precision: 1))s (session total \(dropped))")
             }
         }
     }
