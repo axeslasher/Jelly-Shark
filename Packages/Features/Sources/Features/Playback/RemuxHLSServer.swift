@@ -55,7 +55,8 @@ final class RemuxHLSServer: @unchecked Sendable {
 
     /// Segments already produced, newest last. Playback fetches forward,
     /// so a shallow cache absorbs stall-retry re-requests; bounded because
-    /// entries are span-sized.
+    /// the plan caps how many source bytes a merged span may cover
+    /// (`HLSSegmentPlan.defaultMaxMergedSpanBytes`).
     private var segmentCache: [(index: Int, data: Data)] = []
     private static let segmentCacheLimit = 2
 
