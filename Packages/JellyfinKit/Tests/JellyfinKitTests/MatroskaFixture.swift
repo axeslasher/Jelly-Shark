@@ -115,6 +115,9 @@ struct MatroskaFixtureBuilder {
     struct Cluster {
         var timestamp: UInt64
         var blocks: [Block]
+        /// Which track this cluster's cue is written against (default: the
+        /// first track). Non-video values exercise the cue-track filter.
+        var cueTrack: Int?
     }
 
     var timestampScale: UInt64 = 1_000_000
@@ -267,7 +270,7 @@ struct MatroskaFixtureBuilder {
                 EBMLWriter.uintElement(MatroskaID.cueTime, cluster.timestamp)
                     + EBMLWriter.element(
                         MatroskaID.cueTrackPositions,
-                        EBMLWriter.uintElement(MatroskaID.cueTrack, UInt64(tracks.first?.number ?? 1))
+                        EBMLWriter.uintElement(MatroskaID.cueTrack, UInt64(cluster.cueTrack ?? tracks.first?.number ?? 1))
                             + EBMLWriter.uintElement(MatroskaID.cueClusterPosition, offset),
                     ),
             )

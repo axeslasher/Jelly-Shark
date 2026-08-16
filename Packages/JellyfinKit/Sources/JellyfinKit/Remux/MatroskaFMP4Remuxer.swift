@@ -11,8 +11,10 @@ import Foundation
 // times plus per-sample composition offsets. Decode times are synthesized by
 // sorting the fragment's presentation times ascending — valid because a
 // frame cannot be presented before it is decoded, so the i-th decoded frame's
-// presentation time is never below the i-th smallest — and the offsets are
-// signalled via version-1 (signed) `trun`.
+// presentation time is never below the i-th smallest — with every sample
+// keeping its honest duration so consecutive fragments tile one continuous
+// decode clock (see `videoFragment`, #99). The offsets are signalled via
+// version-1 (signed) `trun`.
 
 public struct MatroskaFMP4Remuxer: Sendable {
     public struct SelectedTracks: Sendable, Equatable {
@@ -153,28 +155,65 @@ public struct MatroskaFMP4Remuxer: Sendable {
 
     // MARK: - Fragments
 
-    /// Remux one planned span into one `moof`+`mdat`. `nextClusterTimeTicks`
-    /// (the next segment's first cue time) bounds the last video sample's
-    /// duration; pass `nil` for the final span.
+    /// Remux one planned span into one `moof`+`mdat`.
+    ///
+    /// `nextSpanHead` is the NEXT span's opening cluster
+    /// (`MatroskaDemuxer.readFirstCluster`), `nil` for the final span. Video
+    /// frames are re-partitioned at keyframes across that boundary — see
+    /// `videoFragment` — so consecutive fragments tile one continuous decode
+    /// clock (#99). Every sample carries its honest duration; nothing
+    /// stretches to the next cue.
     public func makeFragment(
         sequence: Int,
         cluster: MatroskaCluster,
-        nextClusterTimeTicks: Int64?,
+        nextSpanHead: MatroskaCluster?,
     ) throws -> Data {
         var fragments: [FMP4Muxer.TrackFragment] = []
-        if let video = try videoFragment(cluster: cluster, nextClusterTimeTicks: nextClusterTimeTicks) {
+        if let video = try videoFragment(cluster: cluster, nextSpanHead: nextSpanHead) {
             fragments.append(video)
         }
         if let audioTrack = tracks.audio,
-           let audio = audioFragment(track: audioTrack, cluster: cluster)
+           let audio = audioFragment(track: audioTrack, cluster: cluster, nextSpanHead: nextSpanHead)
         {
             fragments.append(audio)
         }
         return FMP4Muxer.mediaSegment(sequence: sequence, fragments: fragments)
     }
 
-    private func videoFragment(cluster: MatroskaCluster, nextClusterTimeTicks: Int64?) throws -> FMP4Muxer.TrackFragment? {
-        let frames = cluster.frames.filter { $0.trackNumber == tracks.video.number }
+    private func videoFragment(cluster: MatroskaCluster, nextSpanHead: MatroskaCluster?) throws -> FMP4Muxer.TrackFragment? {
+        // Re-partition video frames at keyframes, in decode (storage) order:
+        // drop this span's frames BEFORE its first keyframe, and claim the
+        // next span's frames before ITS first keyframe. A GOP that straddles
+        // the span boundary stores its final P/B frames in the next span's
+        // opening cluster — those frames decode before that span's cued
+        // keyframe and present interleaved with this span's tail, so leaving
+        // them where the cluster packing put them makes the two spans'
+        // presentation windows overlap ~2–3 frames, and no per-span decode
+        // timeline can tile. Partitioned at keyframes, each window is
+        // decode-contiguous and the windows tile exactly. The rule is local
+        // to each span, so out-of-order (seek) generation stays consistent;
+        // the frames a fragment drops are exactly the ones a decoder joining
+        // at its keyframe could not decode anyway.
+        let own = cluster.frames.filter { $0.trackNumber == tracks.video.number }
+        var frames = if let keyIndex = own.firstIndex(where: \.isKeyframe) {
+            Array(own[keyIndex...])
+        } else {
+            own
+        }
+        // Where the NEXT fragment's timeline will start: the minimum
+        // presentation time of the head's frames from its first keyframe on
+        // (with open-GOP leading pictures that minimum sits BELOW the
+        // keyframe — which is why the next keyframe's own timestamp is not
+        // the bound). Bounds the last sample so the tile stays exact even on
+        // variable frame durations, where a fallback guess would drift.
+        var nextFragmentStartTicks: Int64?
+        if let nextSpanHead {
+            let head = nextSpanHead.frames.filter { $0.trackNumber == tracks.video.number }
+            frames.append(contentsOf: head.prefix { !$0.isKeyframe })
+            if let keyIndex = head.firstIndex(where: \.isKeyframe) {
+                nextFragmentStartTicks = head[keyIndex...].map(\.timeTicks).min()
+            }
+        }
         guard !frames.isEmpty else { return nil }
 
         var payloads: [Data] = []
@@ -192,6 +231,17 @@ public struct MatroskaFMP4Remuxer: Sendable {
         }
 
         // Decode times: the fragment's presentation times, sorted ascending.
+        //
+        // The LAST sample runs to the next fragment's actual start
+        // (`nextFragmentStartTicks`) — one honest frame on constant-rate
+        // video, the true gap on variable — and NEVER to the next segment's
+        // cue time. The cue-time stretch was the other half of #99's broken
+        // decode clock: with the keyframe re-partition above, the next
+        // fragment's timeline starts below its cue whenever leading pictures
+        // exist, so stretching to the cue claimed the boundary window twice,
+        // stepping `tfdt` backwards ~2 frames at every boundary — measured
+        // −83/−126/−167ms on this plan's own segments — which AVFoundation
+        // renders as the periodic skip, with zero dropped frames.
         let presentationTimes = frames.map(\.timeTicks)
         let decodeTimes = presentationTimes.sorted()
         let fallbackDuration = videoContext.defaultDurationTicks
@@ -201,7 +251,7 @@ public struct MatroskaFMP4Remuxer: Sendable {
         for (i, frame) in frames.enumerated() {
             let duration: Int = if i + 1 < decodeTimes.count {
                 Int(decodeTimes[i + 1] - decodeTimes[i])
-            } else if let next = nextClusterTimeTicks, next > decodeTimes[i] {
+            } else if let next = nextFragmentStartTicks, next > decodeTimes[i] {
                 Int(next - decodeTimes[i])
             } else {
                 fallbackDuration
@@ -227,9 +277,18 @@ public struct MatroskaFMP4Remuxer: Sendable {
         )
     }
 
-    private func audioFragment(track: MatroskaTrack, cluster: MatroskaCluster) -> FMP4Muxer.TrackFragment? {
+    private func audioFragment(track: MatroskaTrack, cluster: MatroskaCluster, nextSpanHead: MatroskaCluster?) -> FMP4Muxer.TrackFragment? {
         let frames = cluster.frames.filter { $0.trackNumber == track.number }
         guard !frames.isEmpty else { return nil }
+
+        // The final run's true extent: the next span's first audio timestamp.
+        // Guessing it from the previous run's per-frame duration drifts on
+        // ms-quantized cadences (AAC's 21.333ms frames measured +2ms per
+        // segment on the #99 coverage sweep), and audio needs no keyframe
+        // re-partition — its timestamps are monotonic — so the boundary
+        // bound alone makes consecutive audio timelines tile.
+        let nextAudioStartTicks = nextSpanHead?.frames
+            .first { $0.trackNumber == track.number }?.timeTicks
 
         // Laced frames share their block's timestamp; spread each equal-time
         // run evenly across the gap to the next distinct timestamp.
@@ -253,6 +312,13 @@ public struct MatroskaFMP4Remuxer: Sendable {
                 if perFrame > 0 {
                     lastPerFrame = perFrame
                 }
+            } else if let next = nextAudioStartTicks, next > times[runStart] {
+                let delta = Int(next - times[runStart])
+                let perFrame = delta / count
+                for i in runStart ..< runEnd {
+                    durations[i] = perFrame
+                }
+                durations[runEnd - 1] += delta - perFrame * count
             } else {
                 let perFrame = lastPerFrame > 0 ? lastPerFrame : 1
                 for i in runStart ..< runEnd {

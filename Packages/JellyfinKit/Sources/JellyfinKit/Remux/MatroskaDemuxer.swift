@@ -226,7 +226,8 @@ public struct MatroskaDemuxer: Sendable {
         guard let tracks, !tracks.isEmpty else { throw MatroskaError.malformed("no Tracks element") }
         guard let cuesData else { throw MatroskaError.unseekable }
 
-        let cues = Self.parseCues(cuesData.data, segmentDataStart: segmentDataStart)
+        let videoTracks = Set(tracks.filter { $0.type == .video }.map(\.number))
+        let cues = Self.parseCues(cuesData.data, segmentDataStart: segmentDataStart, videoTracks: videoTracks)
         guard !cues.isEmpty else { throw MatroskaError.unseekable }
 
         return MatroskaIndex(
@@ -293,6 +294,35 @@ public struct MatroskaDemuxer: Sendable {
             throw MatroskaError.malformed("empty cluster span at \(offset)")
         }
         return MatroskaCluster(timestampTicks: timestampTicks, frames: frames)
+    }
+
+    /// Read exactly the first Cluster at `offset`, whole — unlike
+    /// `readClusters`, which clips the final cluster at `endBound`. The
+    /// remuxer reads the NEXT span's opening cluster this way to claim the
+    /// frames stored there that decode before that span's cued keyframe (the
+    /// straddling GOP's tail — see `MatroskaFMP4Remuxer.videoFragment`, #99).
+    /// `endBound` only bounds an unknown-size (streamed) cluster.
+    public func readFirstCluster(at offset: UInt64, endBound: UInt64) async throws -> MatroskaCluster {
+        var cursor = offset
+        while cursor < endBound {
+            let header = try await elementHeader(at: cursor)
+            guard header.id == MatroskaID.cluster else {
+                guard let size = header.size else { break }
+                cursor = header.contentStart + UInt64(size)
+                continue
+            }
+            let contentEnd = header.size.map { header.contentStart + UInt64($0) } ?? endBound
+            guard header.contentStart <= contentEnd else {
+                throw MatroskaError.malformed("cluster header at \(cursor) overruns its size")
+            }
+            let byteCount = Int(contentEnd - header.contentStart)
+            guard byteCount <= Self.maxElementSize else {
+                throw MatroskaError.malformed("cluster size \(byteCount) out of range")
+            }
+            let data = try await source.read(at: header.contentStart, count: byteCount)
+            return try Self.parseCluster(data)
+        }
+        throw MatroskaError.malformed("no cluster at \(offset)")
     }
 
     // MARK: - Element fetching
@@ -463,10 +493,18 @@ public struct MatroskaDemuxer: Sendable {
         return t
     }
 
-    private static func parseCues(_ data: Data, segmentDataStart: UInt64) -> [MatroskaCuePoint] {
+    private static func parseCues(_ data: Data, segmentDataStart: UInt64, videoTracks: Set<Int>) -> [MatroskaCuePoint] {
         // One cue per cluster: sources index many tracks against the same
         // cluster (the spike's 37-track file carried 78k cue points), and the
         // remux plans fragments per cluster, not per track.
+        //
+        // Only VIDEO tracks' cues become plan boundaries. A subtitle or audio
+        // cue can point at a cluster whose first video frame is not a
+        // keyframe; a span boundary there would make the keyframe
+        // re-partition in `MatroskaFMP4Remuxer.videoFragment` silently drop
+        // the video frames between the boundary and the next real video
+        // keyframe. A positionless CueTrack (malformed file) is kept, since
+        // refusing it could empty the index and lose seekability outright.
         var byOffset: [UInt64: UInt64] = [:] // clusterOffset -> earliest time
         var c = EBMLCursor(data: data, base: 0)
         while c.remaining > 0 {
@@ -485,12 +523,20 @@ public struct MatroskaDemuxer: Sendable {
                     if sid == MatroskaID.cueTrackPositions {
                         var inner = EBMLCursor(data: data, base: 0, pos: sub.pos)
                         let innerEnd = sub.pos + ss
+                        var position: UInt64?
+                        var track: Int?
                         while inner.pos < innerEnd {
                             guard let iid = inner.readID(), let isOpt = inner.readSize(), let isz = isOpt else { break }
                             if iid == MatroskaID.cueClusterPosition, let d = inner.peek(isz) {
-                                clusterPosition = EBMLCursor.uint(d)
+                                position = EBMLCursor.uint(d)
+                            }
+                            if iid == MatroskaID.cueTrack, let d = inner.peek(isz) {
+                                track = Int(EBMLCursor.uint(d))
                             }
                             inner.skip(isz)
+                        }
+                        if let position, track.map(videoTracks.contains) ?? true {
+                            clusterPosition = position
                         }
                     }
                     sub.skip(ss)
