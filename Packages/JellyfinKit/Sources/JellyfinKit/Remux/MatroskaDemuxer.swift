@@ -226,8 +226,15 @@ public struct MatroskaDemuxer: Sendable {
         guard let tracks, !tracks.isEmpty else { throw MatroskaError.malformed("no Tracks element") }
         guard let cuesData else { throw MatroskaError.unseekable }
 
-        let videoTracks = Set(tracks.filter { $0.type == .video }.map(\.number))
-        let cues = Self.parseCues(cuesData.data, segmentDataStart: segmentDataStart, videoTracks: videoTracks)
+        // Boundaries come only from the track the remux will carry
+        // (`selectVideoTrack`); an alternate video track's keyframes need
+        // not align with the selected one's. When no track is remuxable the
+        // filter falls back to every video track — the index is still built,
+        // and delivery refuses the source at `selectTracks` instead.
+        let selectedVideo = MatroskaFMP4Remuxer.selectVideoTrack(from: tracks)
+        let cueTracks = selectedVideo.map { Set([$0.number]) }
+            ?? Set(tracks.filter { $0.type == .video }.map(\.number))
+        let cues = Self.parseCues(cuesData.data, segmentDataStart: segmentDataStart, videoTracks: cueTracks)
         guard !cues.isEmpty else { throw MatroskaError.unseekable }
 
         return MatroskaIndex(
@@ -498,13 +505,15 @@ public struct MatroskaDemuxer: Sendable {
         // cluster (the spike's 37-track file carried 78k cue points), and the
         // remux plans fragments per cluster, not per track.
         //
-        // Only VIDEO tracks' cues become plan boundaries. A subtitle or audio
-        // cue can point at a cluster whose first video frame is not a
-        // keyframe; a span boundary there would make the keyframe
-        // re-partition in `MatroskaFMP4Remuxer.videoFragment` silently drop
-        // the video frames between the boundary and the next real video
-        // keyframe. A positionless CueTrack (malformed file) is kept, since
-        // refusing it could empty the index and lose seekability outright.
+        // Only the SELECTED video track's cues become plan boundaries (the
+        // caller passes that track; see `loadIndex`). Any other track's cue
+        // — subtitle, audio, or an alternate video track — can point at a
+        // cluster where the selected track is mid-GOP; a span boundary there
+        // would make the keyframe re-partition in
+        // `MatroskaFMP4Remuxer.videoFragment` silently drop the selected
+        // track's frames up to its next keyframe. A positionless CueTrack
+        // (malformed file) is kept, since refusing it could empty the index
+        // and lose seekability outright.
         var byOffset: [UInt64: UInt64] = [:] // clusterOffset -> earliest time
         var c = EBMLCursor(data: data, base: 0)
         while c.remaining > 0 {
