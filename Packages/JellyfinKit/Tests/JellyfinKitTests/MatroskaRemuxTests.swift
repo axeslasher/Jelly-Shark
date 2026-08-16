@@ -615,6 +615,57 @@ struct MatroskaFMP4RemuxerTests {
         #expect(durations == [32, 32, 26])
     }
 
+    /// A cue written for a subtitle/audio track can point at a cluster whose
+    /// first video frame is NOT a keyframe. If it became a span boundary, the
+    /// keyframe re-partition would silently drop the video frames between
+    /// that boundary and the next real keyframe. Non-video cues must not
+    /// produce plan boundaries — and with them filtered, every frame
+    /// survives the remux.
+    @Test("Non-video cues are not span boundaries and no frames are lost")
+    func nonVideoCueFiltered() async throws {
+        var builder = fixture()
+        // A middle cluster whose cue is for the PGS track (2) and whose
+        // first video frame is a non-key continuation of cluster 0's GOP.
+        builder.clusters = [
+            MatroskaFixtureBuilder.Cluster(timestamp: 0, blocks: [
+                .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 20, size: 300), (type: 62, size: 30)]),
+                ]),
+            ]),
+            MatroskaFixtureBuilder.Cluster(timestamp: 40, blocks: [
+                .init(track: 1, relativeTime: 0, keyframe: false, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 62, size: 30)]),
+                ]),
+            ], cueTrack: 2),
+            MatroskaFixtureBuilder.Cluster(timestamp: 80, blocks: [
+                .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 20, size: 300), (type: 62, size: 30)]),
+                ]),
+            ]),
+        ]
+        let demuxer = MatroskaDemuxer(source: DataByteSource(builder.build()))
+        let index = try await demuxer.loadIndex()
+        // The subtitle cue is not a boundary: two spans, not three.
+        #expect(index.cues.map(\.timeTicks) == [0, 80])
+
+        let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
+        let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+        var delivered = 0
+        for (i, cue) in index.cues.enumerated() {
+            let endBound = i + 1 < index.cues.count ? index.cues[i + 1].clusterOffset : index.segmentDataEnd
+            let span = try await demuxer.readClusters(from: cue.clusterOffset, to: endBound)
+            var head: MatroskaCluster?
+            if i + 1 < index.cues.count {
+                head = try await demuxer.readFirstCluster(at: index.cues[i + 1].clusterOffset, endBound: index.segmentDataEnd)
+            }
+            let fragment = try remuxer.makeFragment(sequence: i + 1, cluster: span, nextSpanHead: head)
+            let trun = try #require(MP4Box.find("moof/traf/trun", in: fragment))
+            delivered += trun.payload.dropFirst(4).prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+        }
+        // All three video frames survive: the non-key frame rides in span 1.
+        #expect(delivered == 3)
+    }
+
     @Test("A source with only unsupported video is refused")
     func unsupportedVideoRefused() async throws {
         var builder = fixture()

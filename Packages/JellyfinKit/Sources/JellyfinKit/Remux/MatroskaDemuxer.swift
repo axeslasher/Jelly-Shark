@@ -226,7 +226,8 @@ public struct MatroskaDemuxer: Sendable {
         guard let tracks, !tracks.isEmpty else { throw MatroskaError.malformed("no Tracks element") }
         guard let cuesData else { throw MatroskaError.unseekable }
 
-        let cues = Self.parseCues(cuesData.data, segmentDataStart: segmentDataStart)
+        let videoTracks = Set(tracks.filter { $0.type == .video }.map(\.number))
+        let cues = Self.parseCues(cuesData.data, segmentDataStart: segmentDataStart, videoTracks: videoTracks)
         guard !cues.isEmpty else { throw MatroskaError.unseekable }
 
         return MatroskaIndex(
@@ -492,10 +493,18 @@ public struct MatroskaDemuxer: Sendable {
         return t
     }
 
-    private static func parseCues(_ data: Data, segmentDataStart: UInt64) -> [MatroskaCuePoint] {
+    private static func parseCues(_ data: Data, segmentDataStart: UInt64, videoTracks: Set<Int>) -> [MatroskaCuePoint] {
         // One cue per cluster: sources index many tracks against the same
         // cluster (the spike's 37-track file carried 78k cue points), and the
         // remux plans fragments per cluster, not per track.
+        //
+        // Only VIDEO tracks' cues become plan boundaries. A subtitle or audio
+        // cue can point at a cluster whose first video frame is not a
+        // keyframe; a span boundary there would make the keyframe
+        // re-partition in `MatroskaFMP4Remuxer.videoFragment` silently drop
+        // the video frames between the boundary and the next real video
+        // keyframe. A positionless CueTrack (malformed file) is kept, since
+        // refusing it could empty the index and lose seekability outright.
         var byOffset: [UInt64: UInt64] = [:] // clusterOffset -> earliest time
         var c = EBMLCursor(data: data, base: 0)
         while c.remaining > 0 {
@@ -514,12 +523,20 @@ public struct MatroskaDemuxer: Sendable {
                     if sid == MatroskaID.cueTrackPositions {
                         var inner = EBMLCursor(data: data, base: 0, pos: sub.pos)
                         let innerEnd = sub.pos + ss
+                        var position: UInt64?
+                        var track: Int?
                         while inner.pos < innerEnd {
                             guard let iid = inner.readID(), let isOpt = inner.readSize(), let isz = isOpt else { break }
                             if iid == MatroskaID.cueClusterPosition, let d = inner.peek(isz) {
-                                clusterPosition = EBMLCursor.uint(d)
+                                position = EBMLCursor.uint(d)
+                            }
+                            if iid == MatroskaID.cueTrack, let d = inner.peek(isz) {
+                                track = Int(EBMLCursor.uint(d))
                             }
                             inner.skip(isz)
+                        }
+                        if let position, track.map(videoTracks.contains) ?? true {
+                            clusterPosition = position
                         }
                     }
                     sub.skip(ss)
