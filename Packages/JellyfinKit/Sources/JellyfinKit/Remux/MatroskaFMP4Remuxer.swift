@@ -71,8 +71,18 @@ public struct MatroskaFMP4Remuxer: Sendable {
     /// audio tracks are all unsupported (TrueHD/DTS-only) yields
     /// `audio == nil`; whether to proceed video-only or refuse is the
     /// caller's delivery-policy decision.
+    /// The one video track a remux would carry: the first with a supported
+    /// codec. Shared with `MatroskaDemuxer.loadIndex`, which must restrict
+    /// cue boundaries to exactly this track — a keyframe cue for an
+    /// *alternate* video track can land where this track is mid-GOP, and a
+    /// span boundary there makes the keyframe re-partition drop this track's
+    /// frames (same failure class as non-video cues).
+    public static func selectVideoTrack(from tracks: [MatroskaTrack]) -> MatroskaTrack? {
+        tracks.first { $0.type == .video && supportedVideoCodecIDs.contains($0.codecID) }
+    }
+
     public static func selectTracks(from index: MatroskaIndex) -> SelectedTracks? {
-        let video = index.tracks.first { $0.type == .video && supportedVideoCodecIDs.contains($0.codecID) }
+        let video = selectVideoTrack(from: index.tracks)
         guard let video else { return nil }
         let audioCandidates = index.tracks.filter { $0.type == .audio && supportedAudioCodecIDs.contains($0.codecID) }
         let audio = audioCandidates.first { $0.isDefault } ?? audioCandidates.first

@@ -666,6 +666,50 @@ struct MatroskaFMP4RemuxerTests {
         #expect(delivered == 3)
     }
 
+    /// Same failure class as the non-video-cue test, via an ALTERNATE video
+    /// track: its keyframes need not align with the selected track's, so its
+    /// cues must not plant boundaries either.
+    @Test("An alternate video track's cues are not span boundaries")
+    func alternateVideoCueFiltered() async throws {
+        var builder = fixture()
+        builder.tracks.append(MatroskaFixtureBuilder.Track(
+            number: 9,
+            type: 1,
+            codecID: "V_MPEGH/ISO/HEVC",
+            codecPrivate: CodecFixtures.hvcC,
+            width: 1920,
+            height: 1080,
+        ))
+        builder.clusters = [
+            MatroskaFixtureBuilder.Cluster(timestamp: 0, blocks: [
+                .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 20, size: 300), (type: 62, size: 30)]),
+                ]),
+            ]),
+            // Cued for the alternate video track (9); the selected track's
+            // frame here is a non-key continuation.
+            MatroskaFixtureBuilder.Cluster(timestamp: 40, blocks: [
+                .init(track: 9, relativeTime: 0, keyframe: true, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 20, size: 60)]),
+                ]),
+                .init(track: 1, relativeTime: 0, keyframe: false, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 1, size: 100), (type: 62, size: 30)]),
+                ]),
+            ], cueTrack: 9),
+            MatroskaFixtureBuilder.Cluster(timestamp: 80, blocks: [
+                .init(track: 1, relativeTime: 0, keyframe: true, framePayloads: [
+                    CodecFixtures.hevcAccessUnit([(type: 20, size: 300), (type: 62, size: 30)]),
+                ]),
+            ]),
+        ]
+        let demuxer = MatroskaDemuxer(source: DataByteSource(builder.build()))
+        let index = try await demuxer.loadIndex()
+        #expect(index.cues.map(\.timeTicks) == [0, 80])
+        // Selection still picks track 1 (first supported video track).
+        let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
+        #expect(tracks.video.number == 1)
+    }
+
     @Test("A source with only unsupported video is refused")
     func unsupportedVideoRefused() async throws {
         var builder = fixture()
