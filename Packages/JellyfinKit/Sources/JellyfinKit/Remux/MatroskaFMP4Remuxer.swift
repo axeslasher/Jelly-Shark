@@ -21,7 +21,13 @@ public struct MatroskaFMP4Remuxer: Sendable {
         public let video: MatroskaTrack
         public let audio: MatroskaTrack?
 
-        public init(video: MatroskaTrack, audio: MatroskaTrack?) {
+        /// Internal on purpose: the video pick is not free. `loadIndex`
+        /// filters cue boundaries for `selectVideoTrack`'s track, so a
+        /// remuxer built around any OTHER video track would plan against an
+        /// index whose cues describe the wrong track (or none). Obtain one
+        /// from `selectTracks`; the remuxer's initializer enforces the
+        /// invariant besides.
+        init(video: MatroskaTrack, audio: MatroskaTrack?) {
             self.video = video
             self.audio = audio
         }
@@ -35,6 +41,10 @@ public struct MatroskaFMP4Remuxer: Sendable {
         case missingCodecPrivate
         /// Video sample whose NAL length prefixes do not parse.
         case malformedVideoSample
+        /// The selection's video track is not the one the index's cue
+        /// boundaries were filtered for (`selectVideoTrack`); planning
+        /// against it would drop frames or refuse seekable files.
+        case unindexedVideoTrack(Int)
     }
 
     static let supportedVideoCodecIDs: Set<String> = ["V_MPEGH/ISO/HEVC", "V_MPEG4/ISO/AVC"]
@@ -90,6 +100,12 @@ public struct MatroskaFMP4Remuxer: Sendable {
     }
 
     public init(index: MatroskaIndex, tracks: SelectedTracks) throws {
+        // The index's cue boundaries were filtered for `selectVideoTrack`'s
+        // pick (see `MatroskaDemuxer.loadIndex`); remuxing any other video
+        // track against them would drop frames at every mismatched boundary.
+        guard tracks.video.number == Self.selectVideoTrack(from: index.tracks)?.number else {
+            throw RemuxError.unindexedVideoTrack(tracks.video.number)
+        }
         self.index = index
         self.tracks = tracks
         timescale = Int(1_000_000_000 / max(index.timestampScaleNs, 1))

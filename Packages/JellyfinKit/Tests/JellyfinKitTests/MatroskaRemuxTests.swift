@@ -708,6 +708,17 @@ struct MatroskaFMP4RemuxerTests {
         // Selection still picks track 1 (first supported video track).
         let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index))
         #expect(tracks.video.number == 1)
+
+        // And a remuxer for the ALTERNATE video track is refused outright:
+        // the index's cues weren't filtered for it, so planning against it
+        // would drop frames — the invariant the initializer enforces.
+        let alternate = try #require(index.tracks.first { $0.number == 9 })
+        #expect(throws: MatroskaFMP4Remuxer.RemuxError.unindexedVideoTrack(9)) {
+            try MatroskaFMP4Remuxer(
+                index: index,
+                tracks: MatroskaFMP4Remuxer.SelectedTracks(video: alternate, audio: nil),
+            )
+        }
     }
 
     @Test("A source with only unsupported video is refused")
