@@ -154,7 +154,7 @@ final class RemuxHLSServer: @unchecked Sendable {
             // demux/remux error is the file's structure and will fail
             // identically on every retry, so it demotes the delivery; a
             // network error can heal, so the retries are left to run.
-            Self.logger.warning("[remux-hls] segment \(index) failed: \(error, privacy: .public)")
+            Self.logger.warning("[remux-hls] segment \(index) failed: \(PlaybackLog.error(error), privacy: .public)")
             if error is MatroskaError || error is MatroskaFMP4Remuxer.RemuxError {
                 reportUnrecoverableFailure()
             }

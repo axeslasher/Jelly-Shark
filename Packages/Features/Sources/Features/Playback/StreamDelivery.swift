@@ -328,7 +328,7 @@ final class RemuxHLSDelivery: StreamDelivery {
             guard !Task.isCancelled else {
                 return DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
             }
-            Self.logger.warning("[remux-hls] unavailable (\(error, privacy: .public)); trying the master-less copy variant")
+            Self.logger.warning("[remux-hls] unavailable (\(PlaybackLog.error(error), privacy: .public)); trying the master-less copy variant")
             return await descendLadder()
         }
     }
@@ -407,7 +407,7 @@ final class RemuxHLSDelivery: StreamDelivery {
                 assumeInterposer: false,
             )
         } catch {
-            Self.logger.warning("[copy-variant] re-resolve failed: \(error, privacy: .public)")
+            Self.logger.warning("[copy-variant] re-resolve failed: \(PlaybackLog.error(error), privacy: .public)")
             return nil
         }
         guard resolved.playMethod != .directPlay else { return nil }

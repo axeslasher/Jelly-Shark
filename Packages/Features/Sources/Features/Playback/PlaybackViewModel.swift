@@ -473,7 +473,7 @@ public final class PlaybackViewModel {
             )
             Self.logger.info("[report] stopped ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
         } catch {
-            Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+            Self.logger.error("[report] stopped FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(PlaybackLog.error(error), privacy: .public)")
         }
 
         // Belt to the stopped report's suspenders: release the transcode
@@ -626,7 +626,7 @@ public final class PlaybackViewModel {
             userState.confirm(token)
         } catch {
             userState.revert(token)
-            Self.logger.error("[favorite] \(target ? "mark" : "unmark", privacy: .public) FAILED \"\(self.item.name, privacy: .public)\": \(error, privacy: .public)")
+            Self.logger.error("[favorite] \(target ? "mark" : "unmark", privacy: .public) FAILED \"\(self.item.name, privacy: .public)\": \(PlaybackLog.error(error), privacy: .public)")
         }
     }
 
@@ -675,7 +675,7 @@ public final class PlaybackViewModel {
                     // means no Up Next this episode — but log it so a silently
                     // absent prompt is distinguishable from "genuinely the last
                     // episode" when reading device logs (#186).
-                    Self.logger.warning("[upnext] next-episode prefetch failed for \"\(item.name, privacy: .public)\": \(error, privacy: .public)")
+                    Self.logger.warning("[upnext] next-episode prefetch failed for \"\(item.name, privacy: .public)\": \(PlaybackLog.error(error), privacy: .public)")
                     return
                 }
                 guard let next else {
@@ -887,7 +887,7 @@ public final class PlaybackViewModel {
             )
             Self.logger.info("[report] start ok \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks) method=\(String(describing: self.playMethod), privacy: .public)")
         } catch {
-            Self.logger.error("[report] start FAILED \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks): \(error, privacy: .public)")
+            Self.logger.error("[report] start FAILED \"\(self.item.name, privacy: .public)\" pos=\(resumeTicks): \(PlaybackLog.error(error), privacy: .public)")
         }
 
         // The build that supersedes this one disarms and re-arms both of
@@ -1300,19 +1300,8 @@ public final class PlaybackViewModel {
         directPlay=\(source.supportsDirectPlay) directStream=\(source.supportsDirectStream) \
         audio=\(self.selectedAudioStreamIndex.map(String.init) ?? "default", privacy: .public) \
         subtitle=\(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)) \
-        url=\(Self.sanitizedForLog(resolution.url), privacy: .public)
+        url=\(PlaybackLog.url(resolution.url), privacy: .public)
         """)
-    }
-
-    /// The stream URL with the access token blanked, safe for console logs
-    private static func sanitizedForLog(_ url: URL) -> String {
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-            return "<unparseable>"
-        }
-        components.queryItems = components.queryItems?.map { item in
-            item.name == "api_key" ? URLQueryItem(name: "api_key", value: "REDACTED") : item
-        }
-        return components.url?.absoluteString ?? "<unparseable>"
     }
 
     private func startProgressReporting() {
@@ -1636,7 +1625,7 @@ public final class PlaybackViewModel {
             // interesting when actively diagnosing
             Self.logger.debug("[report] progress ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
         } catch {
-            Self.logger.error("[report] progress FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(error, privacy: .public)")
+            Self.logger.error("[report] progress FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(PlaybackLog.error(error), privacy: .public)")
         }
     }
 

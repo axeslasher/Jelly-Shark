@@ -46,7 +46,7 @@ final class LoopbackHTTPListener: @unchecked Sendable {
             parameters.requiredInterfaceType = .loopback
             listener = try NWListener(using: parameters)
         } catch {
-            Self.logger.warning("\(self.logPrefix, privacy: .public) failed to create listener: \(error, privacy: .public)")
+            Self.logger.warning("\(self.logPrefix, privacy: .public) failed to create listener: \(PlaybackLog.error(error), privacy: .public)")
             return nil
         }
 
