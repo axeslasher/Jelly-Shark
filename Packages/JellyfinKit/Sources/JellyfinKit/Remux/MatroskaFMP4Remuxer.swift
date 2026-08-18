@@ -83,12 +83,6 @@ public struct MatroskaFMP4Remuxer: Sendable {
 
     // MARK: - Setup
 
-    /// Pick the tracks a remux would carry: the first supported video track,
-    /// and the first supported audio track (preferring ones flagged default).
-    /// Returns `nil` when no supported video track exists. A source whose
-    /// audio tracks are all unsupported (TrueHD/DTS-only) yields
-    /// `audio == nil`; whether to proceed video-only or refuse is the
-    /// caller's delivery-policy decision.
     /// The one video track a remux would carry: the first with a supported
     /// codec. Shared with `MatroskaDemuxer.loadIndex`, which must restrict
     /// cue boundaries to exactly this track — a keyframe cue for an
@@ -99,11 +93,35 @@ public struct MatroskaFMP4Remuxer: Sendable {
         tracks.first { $0.type == .video && supportedVideoCodecIDs.contains($0.codecID) }
     }
 
+    /// The audio track the DEFAULT pick carries: the first supported one,
+    /// preferring tracks flagged default. `nil` when every audio track is
+    /// unsupported (the TrueHD/DTS-only case) or there is no audio at all;
+    /// whether to then proceed video-only, transcode server-side, or refuse
+    /// is the caller's delivery-policy decision (`RemuxAudioSelection`).
+    public static func selectAudioTrack(from tracks: [MatroskaTrack]) -> MatroskaTrack? {
+        let candidates = tracks.filter { $0.type == .audio && supportedAudioCodecIDs.contains($0.codecID) }
+        return candidates.first { $0.isDefault } ?? candidates.first
+    }
+
+    /// Pick the tracks a remux would carry: the first supported video track,
+    /// and the default audio pick above. Returns `nil` when no supported
+    /// video track exists.
     public static func selectTracks(from index: MatroskaIndex) -> SelectedTracks? {
-        let video = selectVideoTrack(from: index.tracks)
-        guard let video else { return nil }
-        let audioCandidates = index.tracks.filter { $0.type == .audio && supportedAudioCodecIDs.contains($0.codecID) }
-        let audio = audioCandidates.first { $0.isDefault } ?? audioCandidates.first
+        guard let video = selectVideoTrack(from: index.tracks) else { return nil }
+        return SelectedTracks(video: video, audio: selectAudioTrack(from: index.tracks))
+    }
+
+    /// The same video pick carrying a NAMED audio track instead of the
+    /// default one — how a session honours a non-default audio selection
+    /// without leaving rung 1 (#252). Returns `nil` when the video track is
+    /// unsupported, or when `number` is not an audio track the remux can
+    /// carry; a caller handed `nil` must not substitute another track, since
+    /// that is the checkmark lie the selection exists to avoid.
+    public static func selectTracks(from index: MatroskaIndex, carryingAudioTrackNumber number: Int) -> SelectedTracks? {
+        guard let video = selectVideoTrack(from: index.tracks) else { return nil }
+        guard let audio = index.tracks.first(where: {
+            $0.number == number && $0.type == .audio && supportedAudioCodecIDs.contains($0.codecID)
+        }) else { return nil }
         return SelectedTracks(video: video, audio: audio)
     }
 
