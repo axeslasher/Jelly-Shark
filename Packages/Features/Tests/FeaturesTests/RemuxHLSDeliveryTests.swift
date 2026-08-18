@@ -51,7 +51,12 @@ struct RemuxHLSDeliveryTests {
         #expect(!RemuxHLSDelivery.isEligible(context: context(videoCodec: "vc1"), displaySupportsHDR: false))
     }
 
-    @Test("Rung 1 declines sessions it could only serve dishonestly")
+    /// Audio no longer decides this. Rung 1 plays whatever track the session
+    /// committed to — carried when the mapping corroborates it, otherwise
+    /// server-transcoded on the external-audio path (#249/#252) — so the only
+    /// thing left that pins a session below rung 1 is a remux that already
+    /// failed mid-file on this item.
+    @Test("Rung 1 declines only a session that already failed mid-file")
     func rung1Decline() {
         let streams = [
             MediaStreamInfo(index: 1, type: .audio, codec: "eac3"),
@@ -63,12 +68,12 @@ struct RemuxHLSDeliveryTests {
         )) == nil)
         // No committed index: the remuxer's pick is the session's claim.
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context()) == nil)
-        // A non-default selection would play the default anyway — descend
-        // to the copy variant, which honors it.
+        // A non-default selection no longer descends to the copy variant and
+        // its frameskip (#99): rung 1 honors it (`RemuxAudioSelection`).
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
             audioStreamIndex: 2, defaultAudioStreamIndex: 1, audioStreams: streams,
-        )) != nil)
-        // A default the remux cannot carry no longer declines: rung 1
+        )) == nil)
+        // A default the remux cannot carry does not decline either: rung 1
         // serves that session with the external-audio path (#249), playing
         // the SAME default track via a server-side audio-only transcode.
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(

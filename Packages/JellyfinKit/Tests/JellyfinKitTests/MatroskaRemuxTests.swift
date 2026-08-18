@@ -414,6 +414,86 @@ struct MatroskaFMP4RemuxerTests {
         #expect(remuxer.tracks.audio?.codecID == "A_EAC3")
     }
 
+    /// Honouring a non-default audio selection (#252) means naming the track
+    /// to carry. A number that is not a carriable audio track must REFUSE
+    /// rather than fall back to the default pick: substituting a track is
+    /// exactly the checkmark lie the selection exists to avoid.
+    @Test("A named audio track is carried, or refused — never substituted")
+    func namedAudioTrackSelection() async throws {
+        let demuxer = MatroskaDemuxer(source: DataByteSource(fixture().build()))
+        let index = try await demuxer.loadIndex()
+
+        #expect(MatroskaFMP4Remuxer.selectTracks(from: index, carryingAudioTrackNumber: 1) == nil) // the video track
+        #expect(MatroskaFMP4Remuxer.selectTracks(from: index, carryingAudioTrackNumber: 2) == nil) // the subtitle track
+        #expect(MatroskaFMP4Remuxer.selectTracks(from: index, carryingAudioTrackNumber: 3) == nil) // TrueHD, uncarriable
+        #expect(MatroskaFMP4Remuxer.selectTracks(from: index, carryingAudioTrackNumber: 9) == nil) // no such track
+
+        let named = try #require(MatroskaFMP4Remuxer.selectTracks(from: index, carryingAudioTrackNumber: 4))
+        #expect(named.video.number == 1)
+        #expect(named.audio?.number == 4)
+    }
+
+    @Test("End to end: the named track is the one the init segment and fragment carry")
+    func namedAudioTrackRemux() async throws {
+        var builder = fixture()
+        // A second carriable audio track, NOT the file's default pick: AC-3
+        // where the default is E-AC-3, so the sample entry alone says which
+        // one was carried.
+        builder.tracks.append(MatroskaFixtureBuilder.Track(
+            number: 5,
+            type: 2,
+            codecID: "A_AC3",
+            isDefault: false,
+            channels: 6,
+            samplingFrequency: 48000,
+        ))
+        // Frames in the first cluster, where the init segment reads the
+        // syncframe its dac3 is synthesized from.
+        builder.clusters[0].blocks.append(
+            .init(track: 5, relativeTime: 0, keyframe: true, framePayloads: [CodecFixtures.ac3Syncframe]),
+        )
+        builder.clusters[0].blocks.append(
+            .init(track: 5, relativeTime: 40, keyframe: true, framePayloads: [CodecFixtures.ac3Syncframe]),
+        )
+        let demuxer = MatroskaDemuxer(source: DataByteSource(builder.build()))
+        let index = try await demuxer.loadIndex()
+        // The default pick is still the E-AC-3 track, so this asserts a
+        // genuine override rather than the same answer by another route.
+        #expect(MatroskaFMP4Remuxer.selectAudioTrack(from: index.tracks)?.number == 4)
+        let tracks = try #require(MatroskaFMP4Remuxer.selectTracks(from: index, carryingAudioTrackNumber: 5))
+        let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
+        #expect(remuxer.trackIDs == [1, 5])
+
+        let span = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: index.cues[1].clusterOffset)
+        let initSegment = try remuxer.makeInitializationSegment(firstCluster: span)
+        let trexIDs = MP4Box.findAll("moov/mvex/trex", in: initSegment).map {
+            $0.payload.dropFirst(4).prefix(4).reduce(0) { ($0 << 8) | Int($1) }
+        }
+        #expect(trexIDs == [1, 5])
+        let audioTrak = try #require(MP4Box.findAll("moov/trak", in: initSegment).last)
+        let stsd = try #require(MP4Box.find("mdia/minf/stbl/stsd", in: audioTrak.payload))
+        let entry = try #require(MP4Box.parse(stsd.payload.dropFirst(8)).first)
+        #expect(entry.type == "ac-3") // not "ec-3": the default track was not carried
+
+        let fragment = try remuxer.makeFragment(sequence: 1, cluster: span, nextSpanHead: nil)
+        let trafIDs = MP4Box.findAll("moof/traf", in: fragment).map { traf in
+            traf.children.first { $0.type == "tfhd" }?.payload.dropFirst(4).prefix(4)
+                .reduce(0) { ($0 << 8) | Int($1) } ?? 0
+        }
+        #expect(trafIDs == [1, 5]) // the E-AC-3 track contributes nothing
+        let audioTraf = try #require(MP4Box.findAll("moof/traf", in: fragment).last)
+        let trun = try #require(audioTraf.children.first { $0.type == "trun" })
+        #expect(trun.payload.dropFirst(4).prefix(4).reduce(0) { ($0 << 8) | Int($1) } == 2)
+        // Audio trun entries are duration + size, 8 bytes each.
+        var sizes: [Int] = []
+        var cursor = trun.payload.dropFirst(12)
+        for _ in 0 ..< 2 {
+            sizes.append(cursor.dropFirst(4).prefix(4).reduce(0) { ($0 << 8) | Int($1) })
+            cursor = cursor.dropFirst(8)
+        }
+        #expect(sizes == [CodecFixtures.ac3Syncframe.count, CodecFixtures.ac3Syncframe.count])
+    }
+
     /// The init segment for a profile-7 source must carry NO Dolby Vision
     /// box. It previously declared 8.1, which is what produced chroma
     /// corruption on every profile-7 source on the SDR-panel rig
