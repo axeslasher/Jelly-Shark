@@ -31,6 +31,14 @@ public struct MatroskaFMP4Remuxer: Sendable {
             self.video = video
             self.audio = audio
         }
+
+        /// The same selection carrying no Matroska audio — the
+        /// external-audio path (#249), where the session's audio comes from
+        /// a server-side transcode instead of the source file. Keeps the
+        /// video pick, so the index invariant holds.
+        public func droppingAudio() -> SelectedTracks {
+            SelectedTracks(video: video, audio: nil)
+        }
     }
 
     public enum RemuxError: Error, Equatable {
@@ -179,6 +187,33 @@ public struct MatroskaFMP4Remuxer: Sendable {
         )
     }
 
+    /// Build the init segment for an external-audio session (#249): the
+    /// selection's video track plus a server-transcoded audio track that is
+    /// not in the Matroska file at all. The audio runs on its own
+    /// sample-rate timescale so every frame is exactly `samplesPerFrame`
+    /// integer ticks — the intrinsic-duration re-timing the spike tests.
+    /// Only valid on a selection built with `droppingAudio()`.
+    public func makeExternalAudioInitializationSegment(
+        audio: FMP4Muxer.AudioTrack,
+        audioTimescale: Int,
+    ) throws -> Data {
+        guard tracks.audio == nil else {
+            throw RemuxError.unsupportedAudioCodec(tracks.audio?.codecID ?? "")
+        }
+        let video = FMP4Muxer.VideoTrack(
+            trackID: tracks.video.number,
+            codec: videoContext.codec,
+            width: tracks.video.pixelWidth ?? 0,
+            height: tracks.video.pixelHeight ?? 0,
+        )
+        return FMP4Muxer.initializationSegment(
+            video: video,
+            audio: audio,
+            timescale: timescale,
+            audioTimescale: audioTimescale,
+        )
+    }
+
     // MARK: - Fragments
 
     /// Remux one planned span into one `moof`+`mdat`.
@@ -189,10 +224,14 @@ public struct MatroskaFMP4Remuxer: Sendable {
     /// `videoFragment` — so consecutive fragments tile one continuous decode
     /// clock (#99). Every sample carries its honest duration; nothing
     /// stretches to the next cue.
+    /// `externalAudioFragment` carries the span's server-transcoded audio on
+    /// an external-audio session (#249); it is appended after the video
+    /// track. Selections that carry their own Matroska audio pass nil.
     public func makeFragment(
         sequence: Int,
         cluster: MatroskaCluster,
         nextSpanHead: MatroskaCluster?,
+        externalAudioFragment: FMP4Muxer.TrackFragment? = nil,
     ) throws -> Data {
         var fragments: [FMP4Muxer.TrackFragment] = []
         if let video = try videoFragment(cluster: cluster, nextSpanHead: nextSpanHead) {
@@ -202,6 +241,9 @@ public struct MatroskaFMP4Remuxer: Sendable {
            let audio = audioFragment(track: audioTrack, cluster: cluster, nextSpanHead: nextSpanHead)
         {
             fragments.append(audio)
+        }
+        if let externalAudioFragment {
+            fragments.append(externalAudioFragment)
         }
         return FMP4Muxer.mediaSegment(sequence: sequence, fragments: fragments)
     }

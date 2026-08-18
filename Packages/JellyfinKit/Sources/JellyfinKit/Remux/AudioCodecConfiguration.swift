@@ -39,6 +39,13 @@ public struct AudioSampleEntryConfiguration: Sendable, Equatable {
         }
     }
 
+    /// Build an AAC configuration from a bare AudioSpecificConfig — the
+    /// external-audio path (#249), where the ASC is synthesized from an ADTS
+    /// header rather than read out of Matroska CodecPrivate.
+    public static func aac(audioSpecificConfig: Data) -> AudioSampleEntryConfiguration {
+        AudioSampleEntryConfiguration(entryType: "mp4a", configurationBox: esds(audioSpecificConfig: audioSpecificConfig))
+    }
+
     // MARK: - AAC
 
     /// Wrap the AudioSpecificConfig (Matroska CodecPrivate for A_AAC) in the

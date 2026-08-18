@@ -23,10 +23,20 @@ import OSLog
 final class RemuxHLSServer: @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
+    /// Server-transcoded audio muxed alongside the remuxed video (#249),
+    /// for sources whose default track the remux can neither carry nor
+    /// AVFoundation decode (DTS/TrueHD). Nil on sessions whose audio rides
+    /// the Matroska file itself.
+    struct ExternalAudio {
+        let session: TranscodedAudioSession
+        let trackID: Int
+    }
+
     private let demuxer: MatroskaDemuxer
     private let remuxer: MatroskaFMP4Remuxer
     private let plan: HLSSegmentPlan
     private let initSegment: Data
+    private let externalAudio: ExternalAudio?
     private let playlist: Data
 
     private let http = LoopbackHTTPListener(
@@ -75,11 +85,18 @@ final class RemuxHLSServer: @unchecked Sendable {
         0x6D, 0x73, 0x64, 0x68, 0x6D, 0x73, 0x69, 0x78, // compatible 'msdh' 'msix'
     ])
 
-    init(demuxer: MatroskaDemuxer, remuxer: MatroskaFMP4Remuxer, plan: HLSSegmentPlan, initSegment: Data) {
+    init(
+        demuxer: MatroskaDemuxer,
+        remuxer: MatroskaFMP4Remuxer,
+        plan: HLSSegmentPlan,
+        initSegment: Data,
+        externalAudio: ExternalAudio? = nil,
+    ) {
         self.demuxer = demuxer
         self.remuxer = remuxer
         self.plan = plan
         self.initSegment = initSegment
+        self.externalAudio = externalAudio
         playlist = Data(plan.mediaPlaylist().utf8)
         http.route = { [weak self] target, connection in
             self?.route(target, on: connection)
@@ -155,7 +172,11 @@ final class RemuxHLSServer: @unchecked Sendable {
             // identically on every retry, so it demotes the delivery; a
             // network error can heal, so the retries are left to run.
             Self.logger.warning("[remux-hls] segment \(index) failed: \(PlaybackLog.error(error), privacy: .public)")
-            if error is MatroskaError || error is MatroskaFMP4Remuxer.RemuxError {
+            // TransportStreamAudioError counts as deterministic: the server
+            // caches finished segments, so a malformed one re-fetches
+            // byte-identical. Network failures on the audio fetch stay
+            // retryable like every other transport error.
+            if error is MatroskaError || error is MatroskaFMP4Remuxer.RemuxError || error is TransportStreamAudioError {
                 reportUnrecoverableFailure()
             }
             http.send(status: "500 Internal Server Error", on: connection)
@@ -183,7 +204,7 @@ final class RemuxHLSServer: @unchecked Sendable {
             if let inFlight = segmentTasks[index] {
                 return (inFlight, false)
             }
-            let task = Task { [demuxer, remuxer, plan] in
+            let task = Task { [demuxer, remuxer, plan, externalAudio] in
                 let segment = plan.segments[index]
                 let started = ContinuousClock.now
                 let span = try await demuxer.readClusters(from: segment.clusterOffset, to: segment.clusterEndBound)
@@ -195,7 +216,24 @@ final class RemuxHLSServer: @unchecked Sendable {
                     let next = plan.segments[index + 1]
                     nextSpanHead = try await demuxer.readFirstCluster(at: next.clusterOffset, endBound: next.clusterEndBound)
                 }
-                let fragment = try remuxer.makeFragment(sequence: index + 1, cluster: span, nextSpanHead: nextSpanHead)
+                // The span's server-transcoded audio, on external-audio
+                // sessions (#249). The window is cue-to-cue in plan ticks;
+                // the session clamps an open final span to the transcode's
+                // own end.
+                var audioFragment: FMP4Muxer.TrackFragment?
+                if let externalAudio {
+                    audioFragment = try await externalAudio.session.fragment(
+                        windowStartMS: Int64(clamping: segment.timeTicks),
+                        windowEndMS: segment.nextTimeTicks,
+                        trackID: externalAudio.trackID,
+                    )
+                }
+                let fragment = try remuxer.makeFragment(
+                    sequence: index + 1,
+                    cluster: span,
+                    nextSpanHead: nextSpanHead,
+                    externalAudioFragment: audioFragment,
+                )
                 Self.logger.info("[remux-hls] segment \(index) produced: \(fragment.count) bytes in \(ContinuousClock.now - started, privacy: .public)")
                 return Self.styp + fragment
             }
