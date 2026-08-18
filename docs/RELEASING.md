@@ -32,15 +32,33 @@ Every MINOR release carries a name alongside its number. Patch releases are unna
 ### The rules
 
 1. **The pair must have actually collaborated.** This is what makes the scheme work: each name is a verifiable fact rather than a pick, so there is nothing to bikeshed. It also disambiguates surname collisions on its own — `Raimi Campbell` is Bruce, `Craven Campbell` is Neve.
-2. **Order within a major is ascending by first collaboration year**, ties broken by billing. Fixed up front, so there is no per-release decision.
+2. **Order is fixed up front, so there is no per-release decision.** For `1.x` and beyond that means ascending by first collaboration year, ties broken by billing. `0.x` is ordered by *era* instead — see the boxes below.
 3. **Names are decoration, not a cap.** Ensemble sizes vary wildly by director. If a major outlives its name pool, the extra minors are simply unnamed. Do not stretch to a bad name, and do not let the pool dictate when to bump MAJOR.
 4. **Don't match the director to the content of the release.** A major version's lifespan is unpredictable, so fix the order in advance and let meaning accrete retroactively.
 
 ### The pools
 
-**`0.x` — classic horror stars, by genre debut.** Used: Chaney (1923), Lugosi (Feb 1931), Karloff (Nov 1931), Rains (1933), Lanchester (1935), Price (1940), Cushing (1957), Lee (1957), Gough (1958), Steele (1960), Pitt (1970).
+**`0.x` — classic horror stars, boxed by era.** A performer's box is fixed by the era they *debuted* in, which keeps the assignment a fact rather than a judgement — several of these worked across eras, and Price in particular reads as a 60s AIP figure despite debuting in Universal's 40s cycle. Debut decides it.
 
-**Next: not yet picked.** Pick it before cutting `v0.12.0` — rule 2 fixes the order in advance, so this should not be decided under release pressure.
+| Box | Used | Available |
+|---|---|---|
+| Silent (1923–28) | Chaney | — *closed* |
+| Universal Gothic (1931–36) | Lugosi, Karloff, Rains, Lanchester | Clive, Frye, Atwill, Hobson, Holden |
+| Universal 40s (1940–48) | Price | Chaney Jr., Ankers, Carradine |
+| Hammer Gothic (1957–66) | Cushing, Lee, Gough, Steele | Ripper, Court, Shelley, Keir, Matthews |
+| Hammer permissive (1968–74) | Pitt | Bates, Carlson, Munro, Beswick, O'Mara |
+
+**Releases walk the boxes, reversing direction at each end** — one name per box, and the box a lap turns in takes two. `v0.1.0`–`v0.11.0` were the first ascent, opening on the silent box and ending on Pitt. The silent box closed behind it: Chaney Sr. was its only member.
+
+**Lap 2 descends**, and is queued through `v0.16.0`:
+
+`v0.12.0` Bates (Hammer permissive) → `v0.13.0` Ripper (Hammer Gothic) → `v0.14.0` Chaney Jr. (Universal 40s) → `v0.15.0` Clive (Universal Gothic) → `v0.16.0` Frye (Universal Gothic, the turn)
+
+Lap 3 climbs again from Universal 40s. Extend the queue between releases, never during one.
+
+Boxing is what replaced strict chronology, which the first ascent exhausted — every strong performer still standing debuted *earlier* than Pitt (1970), so no forward-only rule could reach them. Boxes also mean a name discovered later drops into place without renumbering anything, and the old "ties broken by billing" clause is gone; it existed solely to separate Cushing and Lee, who share 1957.
+
+**Lon Chaney Jr. is written `Chaney Jr.`** — `v0.1.0` spent the bare surname on his father, and `0.x` has no director pairing to disambiguate the way rule 1 does for `1.x`.
 
 **`1.x` — Carpenter.** 1.0 Curtis (*Halloween*, 1978) → 1.1 Pleasence (*Halloween*, 1978) → 1.2 Barbeau (*The Fog*, 1980) → 1.3 Russell (*Escape from New York*, 1981) → 1.4 Piper (*They Live*, 1988).
 
