@@ -193,7 +193,7 @@ final class PlaybackLocalServer: @unchecked Sendable {
             // keep playback alive, but subtitles ride through this server
             // now, and a silent bounce to the origin would restore the 10s
             // timestamp offset — fail loudly instead.
-            Self.logger.warning("[server] master fetch failed: \(error, privacy: .public)")
+            Self.logger.warning("[server] master fetch failed: \(PlaybackLog.error(error), privacy: .public)")
             http.send(status: "502 Bad Gateway", on: connection)
             return
         }
@@ -269,7 +269,7 @@ final class PlaybackLocalServer: @unchecked Sendable {
         } catch {
             // Failing loudly drops cues on screen; a silent fallback to
             // the origin playlist would render them 10 seconds late
-            Self.logger.warning("[server] subtitle playlist \(index) failed: \(error, privacy: .public)")
+            Self.logger.warning("[server] subtitle playlist \(index) failed: \(PlaybackLog.error(error), privacy: .public)")
             http.send(status: "502 Bad Gateway", on: connection)
         }
     }
@@ -312,7 +312,7 @@ final class PlaybackLocalServer: @unchecked Sendable {
             http.send(body: segment, contentType: "video/mp4", on: connection)
         } catch {
             // Costs one preview frame; playback is unaffected
-            Self.logger.debug("[server] segment \(thumbnailIndex) failed: \(error, privacy: .public)")
+            Self.logger.debug("[server] segment \(thumbnailIndex) failed: \(PlaybackLog.error(error), privacy: .public)")
             http.send(status: "404 Not Found", on: connection)
         }
     }

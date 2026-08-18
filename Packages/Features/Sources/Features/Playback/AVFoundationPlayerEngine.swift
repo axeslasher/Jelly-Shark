@@ -452,7 +452,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
                 )
             }
         } catch {
-            Self.logger.warning("[audio] audible group load failed: \(error, privacy: .public)")
+            Self.logger.warning("[audio] audible group load failed: \(PlaybackLog.error(error), privacy: .public)")
         }
     }
 
@@ -486,7 +486,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             // rendition can ever be selected and every diagnostic
             // downstream is unreachable, so record the cause at a
             // persisted level
-            Self.logger.warning("[subtitle] legible group load failed: \(error, privacy: .public)")
+            Self.logger.warning("[subtitle] legible group load failed: \(PlaybackLog.error(error), privacy: .public)")
         }
     }
 
