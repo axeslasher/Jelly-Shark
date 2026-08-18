@@ -310,10 +310,7 @@ final class RemuxHLSDelivery: StreamDelivery {
               let source = context.mediaSource,
               let container = source.container?.lowercased(),
               container.split(separator: ",").contains(where: { $0 == "mkv" || $0 == "matroska" }),
-              // #226 spike probe (temporary — delete with the spike): the
-              // force flag lets an SDR source take the remux rung so the
-              // probe can serve a master over non-HDR content.
-              source.videoStream?.videoRange != nil || RemuxHLSServer.probeForceEligible,
+              source.videoStream?.videoRange != nil,
               let codec = source.videoCodec?.lowercased(),
               codec == "hevc" || codec == "h264"
         else { return false }
@@ -463,17 +460,10 @@ final class RemuxHLSDelivery: StreamDelivery {
         // Option (a) from #176: a source whose audio is all TrueHD/DTS has
         // no carriable track; declining to the server path is the only
         // honest move (a silent film would play smoothly and wrongly).
-        guard var tracks = MatroskaFMP4Remuxer.selectTracks(from: index), tracks.audio != nil else {
+        guard let tracks = MatroskaFMP4Remuxer.selectTracks(from: index), tracks.audio != nil else {
             throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec(
                 index.tracks.first { $0.type == .audio }?.codecID ?? "none",
             )
-        }
-        // #226 spike probe (temporary — delete with the spike): bisect the
-        // audio track out of the session, past the silent-film guard above,
-        // to distinguish the content gate from FLAC carriage.
-        if RemuxHLSServer.probeVideoOnly {
-            Self.logger.warning("[remux-hls] #226 probe: video-only session, audio track dropped")
-            tracks = tracks.withoutAudio()
         }
         let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
 

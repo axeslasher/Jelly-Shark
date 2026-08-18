@@ -658,34 +658,11 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     private func observeItemStatus(of playerItem: AVPlayerItem, generation: Int) {
         itemStatusObservation = playerItem.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
-            Self.logProbeFailureForensics(of: item)
             let reason = item.error?.localizedDescription
             Task { @MainActor [weak self] in
                 guard let self, self.generation == generation else { return }
                 self.onEvent?(.deliveryFailed(reason: reason, cause: "player item status failed"))
             }
-        }
-    }
-
-    /// #226 spike probe forensics (temporary scaffolding — delete with the
-    /// spike). Only when a probe master is being served: the event flattens
-    /// the failure to `localizedDescription`, but the verdict a probe round
-    /// needs is the NSError domain/code chain (where the -11868 vs -12927
-    /// class distinction lives) plus the HLS error log, which states the
-    /// refusal in words. Domains, codes, and comments only — never the
-    /// userInfo wholesale, which has leaked credentials through this
-    /// category before (2026-08-15).
-    private nonisolated static func logProbeFailureForensics(of item: AVPlayerItem) {
-        guard RemuxHLSServer.probeMasterShape != nil else { return }
-        var chain: [String] = []
-        var next = item.error.map { $0 as NSError }
-        while let error = next {
-            chain.append("\(error.domain) \(error.code)")
-            next = error.userInfo[NSUnderlyingErrorKey] as? NSError
-        }
-        logger.error("[engine] #226 probe item failed: \(chain.joined(separator: " <- "), privacy: .public)")
-        for event in item.errorLog()?.events ?? [] {
-            logger.error("[engine] #226 probe errorLog: \(event.errorDomain, privacy: .public) \(event.errorStatusCode) \(event.errorComment ?? "-", privacy: .public) uri=\(event.uri ?? "-", privacy: .public)")
         }
     }
 
