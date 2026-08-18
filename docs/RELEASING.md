@@ -38,21 +38,31 @@ Every MINOR release carries a name alongside its number. Patch releases are unna
 
 ### The pools
 
-**`0.x` — classic horror stars, boxed by era.** A performer's box is fixed by the era they *debuted* in, which keeps the assignment a fact rather than a judgement — several of these worked across eras, and Price in particular reads as a 60s AIP figure despite debuting in Universal's 40s cycle. Debut decides it.
+**`0.x` — classic horror stars, boxed by era.** A performer's box is fixed by the era of their **first credited genre role**, which keeps the assignment a fact rather than a judgement — several of these worked across eras, and Price in particular reads as a 60s AIP figure despite debuting in Universal's 40s cycle. Debut decides it.
+
+*Credited* is load-bearing. Carradine's first horror appearance is an uncredited walk-on as a hunter in *Bride of Frankenstein* (1935), which would file him beside Karloff; his first credited genre role is a decade later. Boxes are eras, not studios — the names below are the dominant studio of each period, not a membership test.
 
 | Box | Used | Available |
 |---|---|---|
 | Silent (1923–28) | Chaney | — *closed* |
 | Universal Gothic (1931–36) | Lugosi, Karloff, Rains, Lanchester | Clive, Frye, Atwill, Hobson, Holden |
 | Universal 40s (1940–48) | Price | Chaney Jr., Ankers, Carradine |
-| Hammer Gothic (1957–66) | Cushing, Lee, Gough, Steele | Ripper, Court, Shelley, Keir, Matthews |
+| Hammer, first wave (1955–66) | Cushing, Lee, Gough, Steele | Ripper, Shelley, Keir, Matthews |
 | Hammer permissive (1968–74) | Pitt | Bates, Carlson, Munro, Beswick, O'Mara |
 
 **Releases walk the boxes, reversing direction at each end** — one name per box, and the box a lap turns in takes two. `v0.1.0`–`v0.11.0` were the first ascent, opening on the silent box and ending on Pitt. The silent box closed behind it: Chaney Sr. was its only member.
 
 **Lap 2 descends**, and is queued through `v0.16.0`:
 
-`v0.12.0` Bates (Hammer permissive) → `v0.13.0` Ripper (Hammer Gothic) → `v0.14.0` Chaney Jr. (Universal 40s) → `v0.15.0` Clive (Universal Gothic) → `v0.16.0` Frye (Universal Gothic, the turn)
+| Version | Name | Box | Debut |
+|---|---|---|---|
+| `v0.12.0` | Bates (Ralph) | Hammer permissive | *Taste the Blood of Dracula*, 1970 |
+| `v0.13.0` | Ripper (Michael) | Hammer, first wave | *X the Unknown*, 1956 |
+| `v0.14.0` | Chaney Jr. (Lon) | Universal 40s | *Man Made Monster*, 1941 |
+| `v0.15.0` | Clive (Colin) | Universal Gothic | *Frankenstein*, 1931 |
+| `v0.16.0` | Frye (Dwight) | Universal Gothic, the turn | *Dracula*, 1931 |
+
+Each of those five was checked against a source before being queued.
 
 Lap 3 climbs again from Universal 40s. Extend the queue between releases, never during one.
 
