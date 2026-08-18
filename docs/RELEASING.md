@@ -10,10 +10,10 @@ That follows semver §4 — *"Major version zero (0.y.z) is for initial developm
 
 Within `0.x`:
 
-- **MINOR** (`0.11.0`) — anything user-visible: a feature, a redesign, a platform, a subsystem replaced.
-- **PATCH** (`0.11.1`) — fixes to a release that has already been tagged.
+- **MINOR** (`0.12.0`) — anything user-visible: a feature, a redesign, a platform, a subsystem replaced.
+- **PATCH** (`0.12.1`) — fixes to a release that has already been tagged.
 
-The ten `0.x` releases were reconstructed from real merge chronology rather than estimated, and tagged retroactively. `git tag -n1` is the authoritative record:
+The first ten `0.x` releases were reconstructed from real merge chronology rather than estimated, and tagged retroactively; `v0.11.0` onward are tagged as they ship. `git tag -n1` is the authoritative record:
 
 ```
 $ git tag -n1
@@ -38,9 +38,9 @@ Every MINOR release carries a name alongside its number. Patch releases are unna
 
 ### The pools
 
-**`0.x` — classic horror stars, by genre debut.** Used: Chaney (1923), Lugosi (Feb 1931), Karloff (Nov 1931), Rains (1933), Lanchester (1935), Price (1940), Cushing (1957), Lee (1957), Gough (1958), Steele (1960).
+**`0.x` — classic horror stars, by genre debut.** Used: Chaney (1923), Lugosi (Feb 1931), Karloff (Nov 1931), Rains (1933), Lanchester (1935), Price (1940), Cushing (1957), Lee (1957), Gough (1958), Steele (1960), Pitt (1970).
 
-**Next: `v0.11.0` — Pitt** (1970).
+**Next: not yet picked.** Pick it before cutting `v0.12.0` — rule 2 fixes the order in advance, so this should not be decided under release pressure.
 
 **`1.x` — Carpenter.** 1.0 Curtis (*Halloween*, 1978) → 1.1 Pleasence (*Halloween*, 1978) → 1.2 Barbeau (*The Fog*, 1980) → 1.3 Russell (*Escape from New York*, 1981) → 1.4 Piper (*They Live*, 1988).
 
@@ -74,21 +74,21 @@ The two **test** targets sit at `MARKETING_VERSION = 1.0`, which is Xcode's temp
 1. **Branch** off current `main`.
 2. **Bump `MARKETING_VERSION`** in `project.pbxproj` — both app-target configurations.
 3. **Verify** with `make format`, then `make test` (the pre-merge tier; see the Makefile).
-4. **Commit and push.** Commits are signed — see Open decisions for the tag-signing question.
+4. **Commit and push.** Commits are signed; tags are not — see Tag signing and protection.
 5. **Open the PR and merge it** once CI is green.
 6. **Pull `main`, then tag the merge commit** — not the branch tip.
-7. **Create the GitHub Release** from that tag, titled `v0.11.0 — Pitt`.
+7. **Create the GitHub Release** from that tag, titled `v0.12.0 — <name>`.
 
 Steps 6 and 7 in full:
 
 ```bash
 git checkout main && git pull
-git tag -a v0.11.0 -m "v0.11.0 — Pitt" -m "<what shipped, one paragraph>"
-git push origin v0.11.0
-gh release create v0.11.0 --title "v0.11.0 — Pitt" --notes "<same summary>"
+git tag -a v0.12.0 -m "v0.12.0 — <name>" -m "<what shipped, one paragraph>"
+git push origin v0.12.0
+gh release create v0.12.0 --title "v0.12.0 — <name>" --notes "<same summary>"
 ```
 
-**Step 6 is the order-dependent one.** Tagging before the merge points the tag at a commit that is not on `main`, and a squash or rebase leaves the tag dangling on an orphaned object. Tag after merging, on the commit that actually landed. Fixing a pushed tag means deleting the remote ref, retagging, and force-pushing — and anyone who fetched in between keeps the stale one.
+**Step 6 is the order-dependent one.** Tagging before the merge points the tag at a commit that is not on `main`, and a squash or rebase leaves the tag dangling on an orphaned object. Tag after merging, on the commit that actually landed. A pushed tag cannot be corrected in place: the ruleset below blocks deletion and force-push, so fixing one means disabling that ruleset first. Get the target right before pushing.
 
 ## Build numbers
 
@@ -114,13 +114,27 @@ git describe --tags --match 'v*'
 
 `git describe` resolves against the nearest reachable tag *of any name*. The three SPM packages live in this repo as path dependencies and have no versions today — but if `DesignSystem` is ever published ([#210](https://github.com/axeslasher/Jelly-Shark/issues/210)) it needs its own tag line, conventionally scoped (`DesignSystem-1.2.0`), and those tags land on *these* commits. An unscoped `git describe` would then report a package version wherever the app version is shown or stamped: the About screen, a release build, a CI artifact name. It fails silently and produces a plausible-looking number.
 
+## Tag signing and protection
+
+**Tags are not signed.** Commits are (`commit.gpgsign = true`, `gpg.format = ssh`, via 1Password's `op-ssh-sign`), so the *content* of a release is already attested. A tag signature would attest something else — "this commit is v0.11.0" — and nothing in this project verifies that claim: no consumer resolves the repo by tag, and the signature users actually depend on is Apple's on the shipped binary. `op-ssh-sign` also only works from a machine with 1Password, so signing tags would commit the project to tagging by hand forever, or to provisioning a second key into Actions if archive-and-upload is ever automated.
+
+**A ruleset protects the tag namespace instead** — [Release tags](https://github.com/axeslasher/Jelly-Shark/rules/20971397), `enforcement: active`, no bypass actors:
+
+| | |
+|---|---|
+| Covers | `refs/tags/v*`, `refs/tags/JellyfinKit-*`, `refs/tags/DesignSystem-*`, `refs/tags/Features-*` |
+| Blocks | `deletion`, `non_fast_forward` |
+
+That addresses the threat a signature would only have made *detectable* — a stolen write token re-pointing a release tag at an older commit — by refusing the push outright. Both rules were verified against the live remote when the ruleset was created: `git push origin :refs/tags/v0.11.0` and a force-move both came back `GH013`.
+
+The trade is that a mistyped tag is unfixable until the ruleset is disabled. That is deliberate. The package namespaces are covered ahead of any package actually being published ([#210](https://github.com/axeslasher/Jelly-Shark/issues/210)) so publishing one never needs a second ruleset.
+
 ## Open decisions
 
-- **Tag signing.** Every commit in this repo is signed (`commit.gpgsign = true`, `gpg.format = ssh`, via 1Password's `op-ssh-sign`), but `tag.gpgsign` is unset and all ten existing tags are annotated-only. Either sign tags going forward and accept that the backfilled ten are unsigned, or leave tags unsigned for consistency with them. Not yet decided.
 - **Archive and upload: manual or automated?** There is no release workflow today — `.github/workflows/` has only `swiftformat.yml` and `tests.yml`. The build-number expression above is the same either way.
 - **A `CHANGELOG.md`.** None exists. The tag annotations and GitHub Release bodies currently carry that content.
 
 ## Note: what can and cannot be backfilled
 
 - **Git tags are fully retroactive.** A tag can point at any historical commit, and an annotated tag's date can be set with `GIT_COMMITTER_DATE`, so `git log --decorate` and `git describe` read naturally.
-- **GitHub Releases are not.** The create and update endpoints accept `tag_name`, `target_commitish`, `name`, `body`, `draft`, `prerelease`, `make_latest` and friends — and no date field. A backfilled Release reads "released now" regardless of where its tag points. That is why the ten historic versions are tags without Releases.
+- **GitHub Releases are not.** The create and update endpoints accept `tag_name`, `target_commitish`, `name`, `body`, `draft`, `prerelease`, `make_latest` and friends — and no date field. A backfilled Release reads "released now" regardless of where its tag points. That is why the ten historic versions are tags without Releases. `v0.11.0` is the first with one.
