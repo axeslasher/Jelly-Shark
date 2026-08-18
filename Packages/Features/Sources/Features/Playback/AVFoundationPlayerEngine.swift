@@ -203,13 +203,13 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     @ObservationIgnored private var failedToEndObserver: NSObjectProtocol?
     @ObservationIgnored private var mediaSelectionObserver: NSObjectProtocol?
     @ObservationIgnored private var mediaSelectionTask: Task<Void, Never>?
-    /// Dropped-frame sampling for the current session — see
-    /// `observeDroppedFrames` for why this is periodic and off-main rather
+    /// Playback-health sampling for the current session — see
+    /// `observePlaybackHealth` for why this is periodic and off-main rather
     /// than notification-driven. The token must be removed from the same
     /// player it was added to; the engine only ever has one player, so the
     /// stored `player` is that player.
-    @ObservationIgnored private var droppedFrameSampler: DroppedFrameSampler?
-    @ObservationIgnored private var droppedFramesTimeObserver: Any?
+    @ObservationIgnored private var healthSampler: PlaybackHealthSampler?
+    @ObservationIgnored private var healthTimeObserver: Any?
 
     #if os(tvOS)
         /// The Up Next proposal waiting to attach, kept so a duration that
@@ -280,7 +280,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         observeTimeControlStatus(of: player, generation: generation)
         observeEnd(of: playerItem, generation: generation)
         observeMediaSelection(of: playerItem, generation: generation)
-        observeDroppedFrames(of: player)
+        observePlaybackHealth(of: player)
         loadMediaSelectionOptions(for: playerItem, loadsLegible: loadsLegibleOptions, generation: generation)
     }
 
@@ -333,16 +333,17 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             NotificationCenter.default.removeObserver(mediaSelectionObserver)
         }
         mediaSelectionObserver = nil
-        if let droppedFramesTimeObserver {
-            player?.removeTimeObserver(droppedFramesTimeObserver)
+        if let healthTimeObserver {
+            player?.removeTimeObserver(healthTimeObserver)
         }
-        droppedFramesTimeObserver = nil
+        healthTimeObserver = nil
         // Playback of this item is over (teardown, rebuild, or a new load):
         // one last read catches drops after the final periodic tick.
-        if let sampler = droppedFrameSampler, let item = player?.currentItem {
+        healthSampler?.stopTimelineWatch()
+        if let sampler = healthSampler, let item = player?.currentItem {
             sampler.flush(item)
         }
-        droppedFrameSampler = nil
+        healthSampler = nil
         mediaSelectionTask?.cancel()
         mediaSelectionTask = nil
         audibleGroup = nil
@@ -701,13 +702,21 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     }
 
     /// How often the sampler reads the access log during playback. Fine
-    /// enough to place a drop burst against ~6s segment boundaries (#99),
-    /// cheap enough to be permanent: one off-main log snapshot per tick.
-    private static let droppedFrameSampleInterval: Double = 2
+    /// enough to place a burst against ~6s segment boundaries (#99), cheap
+    /// enough to be permanent: one off-main log snapshot per tick.
+    private static let healthSampleInterval: Double = 2
 
-    /// Log dropped video frames from the item's access log, permanently and
-    /// at debug level (decision on #99): playback investigations recur, and
-    /// the counter should already be in the log the next time one starts.
+    /// Log the access log's playback-health counters, permanently and at
+    /// debug level (decision on #99): playback investigations recur, and the
+    /// counters should already be in the log the next time one starts.
+    ///
+    /// Three counters, because they separate the two ways a session can look
+    /// broken to a viewer. Dropped frames mean the decoder could not keep up.
+    /// Stalls and overdue downloads mean the bytes did not arrive in time.
+    /// A hitch with all three flat is neither — it is a presentation-timing
+    /// defect, which is what #99 has been narrowing (the server's segments
+    /// measured structurally clean: no drift, no GOP overlap, every fragment
+    /// keyframe-led).
     ///
     /// Driven by a periodic time observer, not
     /// `newAccessLogEntryNotification`: that notification fires only when an
@@ -720,12 +729,12 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     ///
     /// The observer deliberately delivers on the sampler's own queue:
     /// `accessLog()` can block while log collection is in progress, so it
-    /// must stay off the main thread — see `DroppedFrameSampler`.
-    private func observeDroppedFrames(of player: AVPlayer) {
-        let sampler = DroppedFrameSampler()
-        droppedFrameSampler = sampler
-        droppedFramesTimeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: Self.droppedFrameSampleInterval, preferredTimescale: 600),
+    /// must stay off the main thread — see `PlaybackHealthSampler`.
+    private func observePlaybackHealth(of player: AVPlayer) {
+        let sampler = PlaybackHealthSampler()
+        healthSampler = sampler
+        healthTimeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: Self.healthSampleInterval, preferredTimescale: 600),
             queue: sampler.queue,
         ) { [weak player] time in
             // Weak: AVPlayer retains this block, so a strong capture is a
@@ -733,10 +742,11 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             guard let item = player?.currentItem else { return }
             sampler.sampleOnQueue(item, atSeconds: time.seconds)
         }
+        sampler.startTimelineWatch(of: player)
     }
 
-    /// Dropped-frame count state, confined to its own serial queue rather
-    /// than the main actor, for two reasons:
+    /// Playback-health counter state, confined to its own serial queue
+    /// rather than the main actor, for two reasons:
     /// - `accessLog()` may block while log collection is in progress, so
     ///   reading it on the main thread could itself stall rendering — the
     ///   instrument must not cause what it measures.
@@ -746,26 +756,122 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     ///
     /// Totals are summed across access-log events for the same reason
     /// `deliveryProgress()` sums bytes — the log accumulates one event per
-    /// delivery period, each with its own counter. Events report `-1` when
-    /// the count is unknown and are excluded rather than summed. A line is
-    /// emitted only when the total climbs, so silence means "no drops", and
-    /// each line carries the delta, the playback position, and the session
-    /// total — the numbers #99's instrumentation correlates against segment
-    /// boundaries.
-    private final class DroppedFrameSampler: @unchecked Sendable {
-        let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.dropped-frames", qos: .utility)
-        private var logged = 0
+    /// delivery period, each with its own counters. Each line carries the
+    /// delta, the playback position, and the session total, which is what
+    /// #99 correlates against segment boundaries.
+    private final class PlaybackHealthSampler: @unchecked Sendable {
+        let queue = DispatchQueue(label: "com.justinlascelle.jellyshark.playback-health", qos: .utility)
+        private var loggedDroppedFrames = 0
+        private var loggedStalls = 0
+        private var loggedOverdue = 0
+        private var timelineTimer: DispatchSourceTimer?
+        private var timelineBaseline: (media: Double, wall: Double)?
+
+        /// Fine enough that a two-frame skip (~83 ms at 23.976 fps) stands
+        /// clear of timer jitter, coarse enough to cost nothing: one
+        /// `currentTime()` read per tick.
+        private static let timelineInterval: DispatchTimeInterval = .milliseconds(250)
+        /// Below this, the difference is timer jitter rather than a skip.
+        private static let driftThreshold: Double = 0.040
+        /// Above this, the playhead moved because of a seek, not a skip.
+        private static let seekThreshold: Double = 1.0
 
         /// Must run on `queue`; the periodic time observer delivers there.
         func sampleOnQueue(_ item: AVPlayerItem, atSeconds seconds: Double) {
             dispatchPrecondition(condition: .onQueue(queue))
-            let dropped = item.accessLog()?.events
-                .filter { $0.numberOfDroppedVideoFrames >= 0 }
-                .reduce(0) { $0 + $1.numberOfDroppedVideoFrames } ?? 0
-            guard dropped > logged else { return }
-            let delta = dropped - logged
-            logged = dropped
-            AVFoundationPlayerEngine.logger.debug("[frames] dropped +\(delta) at \(seconds, format: .fixed(precision: 1))s (session total \(dropped))")
+            let events = item.accessLog()?.events ?? []
+            report(
+                "[frames] dropped",
+                total: Self.total(events) { $0.numberOfDroppedVideoFrames },
+                against: &loggedDroppedFrames,
+                atSeconds: seconds,
+            )
+            report(
+                "[delivery] stalled",
+                total: Self.total(events) { $0.numberOfStalls },
+                against: &loggedStalls,
+                atSeconds: seconds,
+            )
+            report(
+                "[delivery] download overdue",
+                total: Self.total(events) { $0.downloadOverdue },
+                against: &loggedOverdue,
+                atSeconds: seconds,
+            )
+        }
+
+        /// Summed across events, excluding the `-1` an event reports for a
+        /// counter it does not know.
+        private static func total(
+            _ events: [AVPlayerItemAccessLogEvent],
+            _ counter: (AVPlayerItemAccessLogEvent) -> Int,
+        ) -> Int {
+            events.map(counter).filter { $0 >= 0 }.reduce(0, +)
+        }
+
+        /// Emits only when a total climbs, so silence means "none of these
+        /// happened" rather than "not sampled".
+        private func report(_ label: String, total: Int, against logged: inout Int, atSeconds seconds: Double) {
+            guard total > logged else { return }
+            let delta = total - logged
+            logged = total
+            AVFoundationPlayerEngine.logger.debug("\(label, privacy: .public) +\(delta) at \(seconds, format: .fixed(precision: 1))s (session total \(total))")
+        }
+
+        /// Report the playhead advancing by more or less than wall clock.
+        ///
+        /// The counters above cannot see a presentation-timing skip: nothing
+        /// is dropped and nothing stalls, the picture simply jumps. What a
+        /// skip *is*, measurably, is the playhead moving further in media
+        /// time than the wall clock moved — so sample both and log the
+        /// difference. This is the instrument #99 needs to place a hitch on
+        /// the timeline exactly, instead of against a stopwatch.
+        ///
+        /// A wall-clock timer, not the periodic time observer: that observer
+        /// fires on *media* time, so its media delta is 2 s by construction
+        /// and a skip would be invisible in it.
+        ///
+        /// Only sampled at `rate == 1`. Pausing, seeking, and rebuffering all
+        /// move the two clocks apart legitimately, so the baseline resets
+        /// whenever the rate is anything else, and a media delta beyond
+        /// `seekThreshold` is read as a seek rather than a skip.
+        func startTimelineWatch(of player: AVPlayer) {
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + Self.timelineInterval, repeating: Self.timelineInterval)
+            timer.setEventHandler { [weak player] in
+                guard let player, let item = player.currentItem else { return }
+                self.sampleTimelineOnQueue(item, rate: player.rate)
+            }
+            timelineTimer = timer
+            timer.resume()
+        }
+
+        func stopTimelineWatch() {
+            timelineTimer?.cancel()
+            timelineTimer = nil
+        }
+
+        private func sampleTimelineOnQueue(_ item: AVPlayerItem, rate: Float) {
+            dispatchPrecondition(condition: .onQueue(queue))
+            let wall = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+            let media = item.currentTime().seconds
+            guard rate == 1, media.isFinite else {
+                timelineBaseline = nil
+                return
+            }
+            defer { timelineBaseline = (media: media, wall: wall) }
+            guard let baseline = timelineBaseline else { return }
+            let mediaDelta = media - baseline.media
+            let wallDelta = wall - baseline.wall
+            guard mediaDelta > 0, mediaDelta < Self.seekThreshold else { return }
+            let drift = mediaDelta - wallDelta
+            guard abs(drift) > Self.driftThreshold else { return }
+            AVFoundationPlayerEngine.logger.debug("""
+            [timeline] playhead jumped \(drift * 1000, format: .fixed(precision: 0))ms \
+            at \(media, format: .fixed(precision: 3))s \
+            (media +\(mediaDelta * 1000, format: .fixed(precision: 0))ms, \
+            wall +\(wallDelta * 1000, format: .fixed(precision: 0))ms)
+            """)
         }
 
         /// One last read after the item's playback ends, catching drops
