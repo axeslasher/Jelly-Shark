@@ -10,10 +10,10 @@ That follows semver §4 — *"Major version zero (0.y.z) is for initial developm
 
 Within `0.x`:
 
-- **MINOR** (`0.11.0`) — anything user-visible: a feature, a redesign, a platform, a subsystem replaced.
-- **PATCH** (`0.11.1`) — fixes to a release that has already been tagged.
+- **MINOR** (`0.12.0`) — anything user-visible: a feature, a redesign, a platform, a subsystem replaced.
+- **PATCH** (`0.12.1`) — fixes to a release that has already been tagged.
 
-The ten `0.x` releases were reconstructed from real merge chronology rather than estimated, and tagged retroactively. `git tag -n1` is the authoritative record:
+The first ten `0.x` releases were reconstructed from real merge chronology rather than estimated, and tagged retroactively; `v0.11.0` onward are tagged as they ship. `git tag -n1` is the authoritative record:
 
 ```
 $ git tag -n1
@@ -32,15 +32,55 @@ Every MINOR release carries a name alongside its number. Patch releases are unna
 ### The rules
 
 1. **The pair must have actually collaborated.** This is what makes the scheme work: each name is a verifiable fact rather than a pick, so there is nothing to bikeshed. It also disambiguates surname collisions on its own — `Raimi Campbell` is Bruce, `Craven Campbell` is Neve.
-2. **Order within a major is ascending by first collaboration year**, ties broken by billing. Fixed up front, so there is no per-release decision.
+2. **Order is fixed up front, so there is no per-release decision.** For `1.x` and beyond that means ascending by first collaboration year, ties broken by billing. `0.x` is ordered by *era* instead — see the boxes below.
 3. **Names are decoration, not a cap.** Ensemble sizes vary wildly by director. If a major outlives its name pool, the extra minors are simply unnamed. Do not stretch to a bad name, and do not let the pool dictate when to bump MAJOR.
 4. **Don't match the director to the content of the release.** A major version's lifespan is unpredictable, so fix the order in advance and let meaning accrete retroactively.
 
 ### The pools
 
-**`0.x` — classic horror stars, by genre debut.** Used: Chaney (1923), Lugosi (Feb 1931), Karloff (Nov 1931), Rains (1933), Lanchester (1935), Price (1940), Cushing (1957), Lee (1957), Gough (1958), Steele (1960).
+**`0.x` — classic horror performers, boxed by era.** A performer's box is fixed by their **first credited genre role** — the production it appears in picks the box, and the box's period orders it.
 
-**Next: `v0.11.0` — Pitt** (1970).
+*Credited* is load-bearing. Carradine's first horror appearance is an uncredited walk-on as a hunter in *Bride of Frankenstein* (1935), which would file him beside Karloff a decade off the work anyone knows him for. *The production picks the box* is load-bearing too, because boxes overlap in time: Steele debuts in 1960, inside both Hammer's first wave and the AIP cycle, and *Black Sunday* is neither — it is Bava, and it is Italian.
+
+| # | Box | Span | Used | Available |
+|---|---|---|---|---|
+| 1 | Silent & Expressionist | 1920–29 | Chaney | Veidt, Schreck, Wegener, Krauss |
+| 2 | Universal Gothic | 1931–39 | Lugosi, Karloff, Rains, Lanchester | Clive, Frye, Atwill, Rathbone, Hobson, Holden |
+| 3 | Universal 40s | 1940–48 | Price | Chaney Jr., Ankers, Carradine |
+| 4 | Val Lewton / RKO | 1942–46 | — | Simon, Conway, Russell |
+| 5 | Atomic age | 1949–56 | — | Court, Adams, Browning, Tobey |
+| 6 | Hammer, first wave | 1955–66 | Cushing, Lee, Gough | Ripper, Shelley, Keir, Matthews |
+| 7 | AIP Poe cycle | 1960–65 | — | Damon, Miller, Paget |
+| 8 | Italian gothic | 1960–66 | Steele | Lavi |
+| 9 | Hammer permissive | 1968–74 | Pitt | Bates, Carlson, Munro, Beswick, O'Mara |
+| 10 | American independent | 1968–74 | — | Jones, O'Dea, Burns, Hansen |
+
+**Boxes are movements, not disjoint time slices.** Several run concurrently — Lewton and Universal were making opposite kinds of horror in the same years, and that contemporaneity is the point of separating them. The `#` column is the walk order: start year ascending, with the two ties (7/8 at 1960, 9/10 at 1968) fixed here once so there is no tiebreak rule to apply later.
+
+**Releases walk the boxes, reversing direction at each end.** Within a lap the box number moves monotonically. Boxes may be skipped, and one box may take consecutive releases — including at a turn, where it takes two by construction.
+
+Both laps satisfy that as written:
+
+- **Ascent, `v0.1.0`–`v0.11.0`:** 1, 2, 2, 2, 2, 3, 6, 6, 6, 8, 9
+- **Descent, `v0.12.0`–`v0.16.0`:** 9, 6, 3, 2, 2
+
+Lap 3 climbs again from box 2. Extend the queue between releases, never during one.
+
+**Lap 2 is queued through `v0.16.0`:**
+
+| Version | Name | Box | Debut |
+|---|---|---|---|
+| `v0.12.0` | Bates (Ralph) | 9 — Hammer permissive | *Taste the Blood of Dracula*, 1970 |
+| `v0.13.0` | Ripper (Michael) | 6 — Hammer, first wave | *X the Unknown*, 1956 |
+| `v0.14.0` | Chaney Jr. (Lon) | 3 — Universal 40s | *Man Made Monster*, 1941 |
+| `v0.15.0` | Clive (Colin) | 2 — Universal Gothic | *Frankenstein*, 1931 |
+| `v0.16.0` | Frye (Dwight) | 2 — Universal Gothic, the turn | *Dracula*, 1931 |
+
+**Verify a name when you queue it, not when you shelf it.** Every name in the Used and queued columns has been checked against a source; the Available column has not, beyond the four that were checked because they moved a box boundary — Rathbone (1939, which is why box 2 runs to 1939 rather than 1936), Court (1952, which no box held before box 5 existed), Carradine (credited 1940s, not the 1935 walk-on) and Ripper (1956, which is why box 6 opens at 1955). Boxing turned the pool from a queue into a bench, and a bench entry is a candidate, not a commitment.
+
+Two known snags on the bench, recorded so they are not rediscovered: **Carlson collides** — Richard (box 5) and Veronica (box 9) cannot both take the bare surname, and only Veronica is listed above. **Boxes 7 and 8 are thin**, because debut assignment works against them: Price, Rathbone, Lorre and Steele all did their defining AIP and Italian work long after debuting elsewhere, so those boxes hold only performers who genuinely started there.
+
+**Lon Chaney Jr. is written `Chaney Jr.`** — `v0.1.0` spent the bare surname on his father, and `0.x` has no director pairing to disambiguate the way rule 1 does for `1.x`.
 
 **`1.x` — Carpenter.** 1.0 Curtis (*Halloween*, 1978) → 1.1 Pleasence (*Halloween*, 1978) → 1.2 Barbeau (*The Fog*, 1980) → 1.3 Russell (*Escape from New York*, 1981) → 1.4 Piper (*They Live*, 1988).
 
@@ -74,21 +114,21 @@ The two **test** targets sit at `MARKETING_VERSION = 1.0`, which is Xcode's temp
 1. **Branch** off current `main`.
 2. **Bump `MARKETING_VERSION`** in `project.pbxproj` — both app-target configurations.
 3. **Verify** with `make format`, then `make test` (the pre-merge tier; see the Makefile).
-4. **Commit and push.** Commits are signed — see Open decisions for the tag-signing question.
+4. **Commit and push.** Commits are signed; tags are not — see Tag signing and protection.
 5. **Open the PR and merge it** once CI is green.
 6. **Pull `main`, then tag the merge commit** — not the branch tip.
-7. **Create the GitHub Release** from that tag, titled `v0.11.0 — Pitt`.
+7. **Create the GitHub Release** from that tag, titled `v0.12.0 — <name>`.
 
 Steps 6 and 7 in full:
 
 ```bash
 git checkout main && git pull
-git tag -a v0.11.0 -m "v0.11.0 — Pitt" -m "<what shipped, one paragraph>"
-git push origin v0.11.0
-gh release create v0.11.0 --title "v0.11.0 — Pitt" --notes "<same summary>"
+git tag -a v0.12.0 -m "v0.12.0 — <name>" -m "<what shipped, one paragraph>"
+git push origin v0.12.0
+gh release create v0.12.0 --title "v0.12.0 — <name>" --notes "<same summary>"
 ```
 
-**Step 6 is the order-dependent one.** Tagging before the merge points the tag at a commit that is not on `main`, and a squash or rebase leaves the tag dangling on an orphaned object. Tag after merging, on the commit that actually landed. Fixing a pushed tag means deleting the remote ref, retagging, and force-pushing — and anyone who fetched in between keeps the stale one.
+**Step 6 is the order-dependent one.** Tagging before the merge points the tag at a commit that is not on `main`, and a squash or rebase leaves the tag dangling on an orphaned object. Tag after merging, on the commit that actually landed. A pushed tag cannot be corrected in place: the ruleset below blocks deletion and force-push, so fixing one means disabling that ruleset first. Get the target right before pushing.
 
 ## Build numbers
 
@@ -114,13 +154,27 @@ git describe --tags --match 'v*'
 
 `git describe` resolves against the nearest reachable tag *of any name*. The three SPM packages live in this repo as path dependencies and have no versions today — but if `DesignSystem` is ever published ([#210](https://github.com/axeslasher/Jelly-Shark/issues/210)) it needs its own tag line, conventionally scoped (`DesignSystem-1.2.0`), and those tags land on *these* commits. An unscoped `git describe` would then report a package version wherever the app version is shown or stamped: the About screen, a release build, a CI artifact name. It fails silently and produces a plausible-looking number.
 
+## Tag signing and protection
+
+**Tags are not signed.** Commits are (`commit.gpgsign = true`, `gpg.format = ssh`, via 1Password's `op-ssh-sign`), so the *content* of a release is already attested. A tag signature would attest something else — "this commit is v0.11.0" — and nothing in this project verifies that claim: no consumer resolves the repo by tag, and the signature users actually depend on is Apple's on the shipped binary. `op-ssh-sign` also only works from a machine with 1Password, so signing tags would commit the project to tagging by hand forever, or to provisioning a second key into Actions if archive-and-upload is ever automated.
+
+**A ruleset protects the tag namespace instead** — [Release tags](https://github.com/axeslasher/Jelly-Shark/rules/20971397), `enforcement: active`, no bypass actors:
+
+| | |
+|---|---|
+| Covers | `refs/tags/v*`, `refs/tags/JellyfinKit-*`, `refs/tags/DesignSystem-*`, `refs/tags/Features-*` |
+| Blocks | `deletion`, `non_fast_forward` |
+
+That addresses the threat a signature would only have made *detectable* — a stolen write token re-pointing a release tag at an older commit — by refusing the push outright. Both rules were verified against the live remote when the ruleset was created: `git push origin :refs/tags/v0.11.0` and a force-move both came back `GH013`.
+
+The trade is that a mistyped tag is unfixable until the ruleset is disabled. That is deliberate. The package namespaces are covered ahead of any package actually being published ([#210](https://github.com/axeslasher/Jelly-Shark/issues/210)) so publishing one never needs a second ruleset.
+
 ## Open decisions
 
-- **Tag signing.** Every commit in this repo is signed (`commit.gpgsign = true`, `gpg.format = ssh`, via 1Password's `op-ssh-sign`), but `tag.gpgsign` is unset and all ten existing tags are annotated-only. Either sign tags going forward and accept that the backfilled ten are unsigned, or leave tags unsigned for consistency with them. Not yet decided.
 - **Archive and upload: manual or automated?** There is no release workflow today — `.github/workflows/` has only `swiftformat.yml` and `tests.yml`. The build-number expression above is the same either way.
 - **A `CHANGELOG.md`.** None exists. The tag annotations and GitHub Release bodies currently carry that content.
 
 ## Note: what can and cannot be backfilled
 
 - **Git tags are fully retroactive.** A tag can point at any historical commit, and an annotated tag's date can be set with `GIT_COMMITTER_DATE`, so `git log --decorate` and `git describe` read naturally.
-- **GitHub Releases are not.** The create and update endpoints accept `tag_name`, `target_commitish`, `name`, `body`, `draft`, `prerelease`, `make_latest` and friends — and no date field. A backfilled Release reads "released now" regardless of where its tag points. That is why the ten historic versions are tags without Releases.
+- **GitHub Releases are not.** The create and update endpoints accept `tag_name`, `target_commitish`, `name`, `body`, `draft`, `prerelease`, `make_latest` and friends — and no date field. A backfilled Release reads "released now" regardless of where its tag points. That is why the ten historic versions are tags without Releases. `v0.11.0` is the first with one.
