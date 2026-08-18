@@ -151,7 +151,46 @@ Two consequences:
 1. **The gate keys on declared 4K attributes, not `VIDEO-RANGE=PQ`.** A 1080p PQ master plays on the SDR panel. On tvOS 26.6 the refusal surfaces as `AVFoundationErrorDomain -11868` with underlying `CoreMediaErrorDomain -17223` (not the `-12927` recorded from #146 — same gate, different surface error).
 2. **A media playlist with no master never reaches variant selection** — nothing is declared, so nothing can be ruled ineligible — and the display pipeline tone-maps genuine 4K PQ segments on-device. This is the delivery mode #172 now implements (`RemuxHLSDelivery` → `RemuxHLSServer`, serving `HLSSegmentPlan`'s playlist over the in-app Matroska remux).
 
-⚠️ Not verified in that probe: frame advancement (headless snippets have no display surface; playhead stayed at 0.00) and audio (the probe content had none).
+> ⚠️ **Amended 2026-08-17.** Both consequences carry a caveat the #226 spike exposed: this probe ran **headless** (`RunCodeSnippet`, no display route), and the display-eligibility half of the gate does not run without a display. In-app on the SDR panel, a `RESOLUTION=1920x1080` + `VIDEO-RANGE=PQ` master is refused (`-11868`/`-17223`) — the same master shape that plays headless. And an *undeclaring* master over HDR content is refused after content inspection. See the next section for the complete picture.
+
+⚠️ Also not verified in this 08-02 headless probe: frame advancement (headless snippets have no display surface; playhead stayed at 0.00) and audio (its probe content had none). The 08-11 acceptance round below closed both gaps for the master-less delivery.
+
+### The gate also verifies fetched content — an undeclaring master does not escape it
+
+✅ Measured 2026-08-17, in-app on the SDR-panel Apple TV (#226 spike, ~14 probe rounds): masters served by `RemuxHLSServer` over live remux sessions, selected by launch argument, with the served master text, the request pattern, and the item's error chain logged per run. Sources: the 4K DV-8.1/FLAC rung-1 title, then a controlled synthetic set — 1080p PQ, 4K PQ, 1080p SDR, and 1080p HLG MKVs from one recipe (HEVC Main 10, FLAC stereo, ~4 s cues; HDR10 with no DV on the PQ pair, `arib-std-b67` on the HLG fixture, each transfer function verified with stream-level ffprobe before import) — so DV, FLAC, resolution, and transfer function varied one at a time.
+
+| Master declares | Content | Fetch pattern | Verdict |
+|---|---|---|---|
+| `BANDWIDTH` only | 4K PQ (DV title and DV-free synthetic) | master + variant playlist + **init** | ❌ `-12927` |
+| + `CODECS` (with `fLaC`, without, tier-masked; also a video-only session) | 4K PQ (both), 1080p PQ | same | ❌ `-12927` |
+| + muxed audio group (`EXT-X-MEDIA`, `LANGUAGE="en"`, no URI) | 1080p PQ | same | ❌ `-12927` |
+| Complete + truthful (complete-attributes control): `CODECS` incl. `fLaC` + `RESOLUTION` + `VIDEO-RANGE=PQ` + `FRAME-RATE` + audio group | 1080p PQ, 4K PQ | master + variant playlist, **never init** | ❌ `-11868` ← `-17223`, instant |
+| Same, deliberately false `RESOLUTION=1920x1080` (aperture experiment) | 4K PQ | same | ❌ same |
+| Same, `fLaC` deliberately omitted from `CODECS` (incomplete-codecs experiment) | 1080p PQ, 4K PQ | same | ❌ same |
+| Complete master, `VIDEO-RANGE` **omitted** (attribute-fill-in cell) | 1080p PQ | master + variant playlist + **init** | ❌ `-12927` |
+| Complete master, deliberately false `VIDEO-RANGE=SDR` | 1080p PQ | same | ❌ `-12927` |
+| Same minimal shape as the 1080p-PQ `-12927` row, `fLaC` declared | **1080p SDR** | full playback | ✅ plays, audio audible, playhead advances |
+| Minimal (`BANDWIDTH` + `CODECS` incl. `fLaC`) | **1080p HLG** | full playback | ✅ plays with audio, segments streaming |
+| Complete + truthful incl. `VIDEO-RANGE=HLG` + audio group | **1080p HLG** | full playback | ✅ plays with audio, segments streaming |
+
+("Complete" throughout means every attribute under test; a spec-conforming master would additionally carry `AVERAGE-BANDWIDTH` and multiple video bitrates — untested, and immaterial to the gate result given the same construction passes for SDR and HLG.)
+
+**The model, confirmed by the SDR and HLG controls: of the ranges tested (SDR, HLG, PQ), variant eligibility on this SDR display refuses only PQ — via two detection paths, and the content check is authoritative.**
+
+1. **Declared:** `VIDEO-RANGE=PQ` (or 4K attributes) in the master → instant refusal, `-11868`/`-17223`, before the init segment is ever requested. Truthful 1080p `RESOLUTION` does not save it — the 08-02 headless result that a 1080p-PQ master plays was an artifact of having no display route.
+2. **Discovered:** any other declaration — attributes absent, `VIDEO-RANGE` omitted from an otherwise complete master, or even a false `VIDEO-RANGE=SDR` — → the variant playlist **and init segment** are fetched and the variant is then refused with `-12927`. The failure occurs only after the init fetch and tracks with PQ rather than SDR/HLG content — strongly indicating content-derived eligibility, though AVFoundation reports no mechanism directly. Declaration can only fast-fail the decision, never evade it. Resolution is irrelevant (1080p PQ fails identically to 4K); so are `CODECS` content, HEVC tier, FLAC carriage, Dolby Vision boxes, and master completeness — each bisected across the rounds above.
+
+**HLG passes both paths** — minimal and fully-declared `VIDEO-RANGE=HLG` masters both reach full playback. That fits a legible rule: eligibility asks whether the display route can render the transfer function as-is. HLG is SDR-backward-compatible by design; PQ needs tone-mapping, which variant selection refuses to promise — even though master-less playback demonstrably tone-maps the same PQ content fine. (HLG rows verified to sustained segment streaming with audible audio on the 3-minute synthetic; no long-form soak. ⚠️ **Visual correctness of HLG on the SDR panel was not checked** — gate traversal is proven, but HLG's SDR compatibility can still render dim or off; an eyeball check is owed before HLG renditions are called usable.)
+
+Master-less playback plays the same PQ content because variant eligibility never runs — there is no variant to rule out — not because the content is hidden. The SDR/HLG passes double as the structural control: the served shape (media playlist, `EXT-X-MAP` init, on-demand fMP4 spans, `fLaC` declared over muxed FLAC, audio rendition group) is **valid HLS under a master** — the PQ refusals were never about our authoring.
+
+Codes are surfaces, not layer markers: `-11868`/`-17223` appeared for in-app declared refusals *and* headless declared-4K; `-12927` is the in-app discovered refusal and #146's original capture. Diagnose by fetch pattern (init requested or not), never by code.
+
+Consequences:
+
+1. **No master shape can front a PQ remux session on an SDR display** — declared, undeclared, lying, complete, or minimal. PQ/DV sources are the dominant remux population, so #226 (native audio renditions) lands on outcome 2 there; #99's server-AAC-rendition remedy is equally unreachable; #176 Part B's master aperture is closed for PQ at every resolution.
+2. **HLG sources are the exception: masters — and therefore `EXT-X-MEDIA` renditions — traverse the gate for them**, declared or discovered. A niche population for film content, but #226's mechanism is technically reachable there if ever wanted — pending the visual-correctness check above.
+3. The gap deliberately left unmeasured: masters over remux sessions on **HDR displays** — the remux delivery is inert there by design, so nothing rides on it.
 
 ✅ **Acceptance round run 2026-08-11**, in-app on the SDR-panel Apple TV, closing both gaps. DV profile 8.1 + E-AC-3 4K MKV sustained **0.994× and 0.984× realtime** with ~80s of buffer, against the 0.88× tone-map starvation this delivery exists to replace; colors confirmed correct by eye. Server side ran **zero ffmpeg jobs** for those sessions — not a cheap transcode, none at all — while the same window's copy-variant and interposer sessions each logged `-codec:v:0 copy`. Segment production ran 0.04–0.34s against ~6s of content, with three outliers to 1.35/2.07/2.17s, all absorbed by the buffer. Memory topped out at **120 MB** during 4K remux playback (span-sized buffers are the working set; note the ARCHITECTURE target of <100 MB excludes media cache). Profile-7 sources needed the signalling fix above before they passed.
 

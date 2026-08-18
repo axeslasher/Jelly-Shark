@@ -31,6 +31,14 @@ public struct MatroskaFMP4Remuxer: Sendable {
             self.video = video
             self.audio = audio
         }
+
+        /// The same selection with audio dropped. The video pick is
+        /// unchanged, so the `loadIndex` cue-boundary invariant holds.
+        /// Whether to proceed video-only is the caller's delivery-policy
+        /// decision (see `selectTracks`).
+        public func withoutAudio() -> SelectedTracks {
+            SelectedTracks(video: video, audio: nil)
+        }
     }
 
     public enum RemuxError: Error, Equatable {

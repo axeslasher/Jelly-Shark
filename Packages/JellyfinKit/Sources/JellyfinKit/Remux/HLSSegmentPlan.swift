@@ -23,6 +23,19 @@ import Foundation
 /// declared, so nothing can be ruled ineligible, and genuine 4K PQ segments
 /// reached `readyToPlay` and buffered on the SDR-panel device.
 ///
+/// The #226 spike (2026-08-17) measured the converse: of the ranges tested
+/// (SDR, HLG, PQ), variant eligibility on an SDR display refused only PQ.
+/// Declared PQ/4K
+/// attributes fail instantly; every other master shape (minimal, complete,
+/// VIDEO-RANGE omitted, even falsely declared SDR) fails `-12927` after
+/// the init segment is fetched — the content check is authoritative and
+/// cannot be evaded by declaration. The identical served shape PLAYS under
+/// a master when the content is SDR or HLG (HLG is SDR-backward-compatible
+/// by design), so the refusals were never about this playlist's authoring.
+/// Master-less is therefore the only shape for PQ/DV-on-SDR sessions — the
+/// dominant remux population — while HLG sessions could take masters. See
+/// docs/PLAYBACK_MATRIX.md § HDR variant selection for the full run table.
+///
 /// The playlist mirrors ffmpeg's `-f hls -hls_segment_type fmp4` VOD output
 /// line for line — that exact shape is what the device round verified.
 public struct HLSSegmentPlan: Sendable {
