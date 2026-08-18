@@ -24,8 +24,9 @@ final class RemuxHLSServer: @unchecked Sendable {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
     /// Server-transcoded audio muxed alongside the remuxed video (#249),
-    /// for sources whose default track the remux can neither carry nor
-    /// AVFoundation decode (DTS/TrueHD). Nil on sessions whose audio rides
+    /// for sessions whose committed audio stream the remux can neither
+    /// carry nor AVFoundation decode (DTS/TrueHD), or whose stream-index
+    /// mapping is inconclusive (#252). Nil on sessions whose audio rides
     /// the Matroska file itself.
     struct ExternalAudio {
         let session: TranscodedAudioSession

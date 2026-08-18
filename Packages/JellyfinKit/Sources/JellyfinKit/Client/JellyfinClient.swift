@@ -234,8 +234,9 @@ public protocol JellyfinClientProtocol: Sendable {
     /// Build the audio-only HLS endpoints for an external-audio remux
     /// session (#249): the server transcodes just the named audio stream to
     /// AAC in segment-addressable form, which the remux delivery muxes into
-    /// its own fragments when the source's default track (DTS/TrueHD) can
-    /// be neither carried nor decoded on-device.
+    /// its own fragments when the session's committed audio stream —
+    /// default or selected (#252) — can be neither carried nor decoded
+    /// on-device.
     /// - Throws: `APIError.notAuthenticated` if there is no access token
     func audioHLSStream(parameters: StreamParameters, audioStreamIndex: Int?) throws -> AudioHLSStream
 

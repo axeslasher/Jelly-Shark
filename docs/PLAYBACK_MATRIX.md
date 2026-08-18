@@ -198,7 +198,7 @@ Consequences:
 
 ### The server's own copy variant also plays master-less
 
-✅ Measured 2026-08-02, same rig, against a real library source: 4K Dolby Vision **profile 7** (`DOVIWithEL`) MKV with DTS-HD MA audio — a source the in-app remux declines (`A_DTS` is not carriable). A PlaybackInfo negotiation permitting hevc copy produced a Jellyfin master in the #146 shape: the copy variant (`VIDEO-RANGE=PQ`, `hvc1.2.4.L153.B0`, `AllowVideoStreamCopy=true`) beside two injected SDR re-encode variants. Loading that variant's `main.m3u8` **directly, no master** on the SDR-panel Apple TV:
+✅ Measured 2026-08-02, same rig, against a real library source: 4K Dolby Vision **profile 7** (`DOVIWithEL`) MKV with DTS-HD MA audio — a source the in-app remux declined at the time (`A_DTS` is not carriable). Since #251/#252 that population stays on rung 1 with server-transcoded audio, so rung 2 no longer serves it; this measurement stands as the record of the rung itself. A PlaybackInfo negotiation permitting hevc copy produced a Jellyfin master in the #146 shape: the copy variant (`VIDEO-RANGE=PQ`, `hvc1.2.4.L153.B0`, `AllowVideoStreamCopy=true`) beside two injected SDR re-encode variants. Loading that variant's `main.m3u8` **directly, no master** on the SDR-panel Apple TV:
 
 - `readyToPlay` in **4s**; playhead tracked wall clock at **rate 1.0 for 48s+**, buffer grew to **102s ahead**, never `isPlaybackBufferEmpty`.
 - Server side ran as `FFmpeg.DirectStream`: `-codec:v:0 copy -codec:a:0 ac3` at **9.89× realtime** (the tone-map re-encode of the same class of source runs 0.88× and starves).
@@ -269,6 +269,24 @@ Run B is the control that matters, and it is also the verification of the fix: *
 Raising the ceiling cannot let an undecodable track through: `AudioCodec=aac,ac3,eac3` already bounds what may be copied, so TrueHD and DTS still re-encode regardless of headroom. The cost is that a genuine re-encode is now permitted a higher bitrate than it needs.
 
 Two more precise fixes were considered and not taken, since they need the selected audio stream at URL-build time: omitting `AudioBitrate` entirely when the source codec is already client-playable, or deriving the ceiling from that stream's actual bitrate. Worth revisiting if the re-encode bitrate ever matters.
+
+### ✅ Rung 1 honors any committed audio selection
+
+Two mechanisms, landed in sequence. #249/#251 gave the in-app remux an **external-audio leg**: `/Audio/{id}/main.m3u8` transcodes just the named stream to AAC (640 kbps ceiling) in segment-addressable form, and `RemuxHLSServer` muxes those samples into its own fragments — so a DTS/TrueHD default no longer forces the whole session onto rung 2 and the #99 frameskip. #252 then pointed both legs at the **committed selection** instead of the default: a carriable selection (`A_AAC`/`A_AC3`/`A_EAC3`/`A_FLAC`) is stream-copied bit-exact out of the file, anything else takes the external-audio leg with the selected index. Carriage requires the Jellyfin-stream-index → Matroska-track-number mapping to verify positionally (count, track-number uniqueness, whole-sequence codec corroboration, positive codec agreement, ICU-canonicalized language agreement); any inconclusive answer falls back to the server transcode of that same index, which the server resolves itself and cannot get wrong.
+
+✅ Measured 2026-08-18 on the SDR-panel Apple TV (tvOS 26.6), 30 rung-1 sessions across the round (`[remux-hls] session up:` names the decision and both indices):
+
+- **Source B, all eight audio streams committed in turn**: AC-3 carried at stream positions 2 and 5–8, FLAC carried at position 4, TrueHD (stream 1) and DTS (stream 3) taken as `server transcode of stream K` with K the *selected* index, not the default — `(selection=3 default=2)` observed directly. Whole-sequence corroboration exercised to position 8.
+- A dual-language dual-E-AC-3 DV source carried correctly in both directions across non-English language tags (ISO 639-2 file side vs 639-1 server side, both through `Locale.canonicalLanguageIdentifier`).
+- External-audio sessions came up as 48 kHz 6-ch AAC; **zero `[copy-variant]` lines, zero declines, no frameskip, correct 5.1 through the receiver** across every source.
+- Vision Pro, same day: audio switches on HDR sources stayed on the interposer, no `[remux-hls]` line — the delivery remains inert on HDR displays.
+
+Two findings from the same round, tracked as **#259**:
+
+1. ✅ **Jellyfin echoes the previous selection back as the next session's default** (one session behind, observed across the eight-rebuild sweep: `default=` trailed `selection=` by exactly one). Any non-default choice therefore becomes `selection == default` on the item's next play.
+2. ✅ **The default branch's `FlagDefault` carry lies under that echo**: `selection == default` takes the frozen pre-#252 branch, which carries the file's `FlagDefault` track rather than the mapped default stream. Observed live three times (`default audio: carrying file track 2 but stream 2 maps to track 3`) — the committed English stream showed in the picker while the file-default French track played. Every explicit switch took the #252 mapped path and was correct.
+
+⚠️ From the #249 spike, server-side shape notes for the external-audio leg: the audio transcode runs with `-copyts` and lands ~+10 s offset relative to zero-based video timestamps (compensated in the muxer), and priming differs by entry point — a seek-started transcode runs honest from the requested time, a from-zero run clamps. Re-verify against the server log (`/System/Logs/Log?name=`) if sync drifts.
 
 ---
 
@@ -387,6 +405,7 @@ The progressive stream additionally has **no `moov` at the head** (top-level box
 | Does `startTimeTicks` content actually start at the requested offset? | #172 |
 | Could the server's native trickplay rendition replace the synthesized one? | #59 / #171 |
 | Does the fMP4 fragment-boundary theory explain the #99 frameskip? | #99 |
+| Default audio branch: replace the `FlagDefault` carry with the mapped default stream | #259 |
 
 ---
 
