@@ -38,35 +38,47 @@ Every MINOR release carries a name alongside its number. Patch releases are unna
 
 ### The pools
 
-**`0.x` — classic horror stars, boxed by era.** A performer's box is fixed by the era of their **first credited genre role**, which keeps the assignment a fact rather than a judgement — several of these worked across eras, and Price in particular reads as a 60s AIP figure despite debuting in Universal's 40s cycle. Debut decides it.
+**`0.x` — classic horror performers, boxed by era.** A performer's box is fixed by their **first credited genre role** — the production it appears in picks the box, and the box's period orders it.
 
-*Credited* is load-bearing. Carradine's first horror appearance is an uncredited walk-on as a hunter in *Bride of Frankenstein* (1935), which would file him beside Karloff; his first credited genre role is a decade later. Boxes are eras, not studios — the names below are the dominant studio of each period, not a membership test.
+*Credited* is load-bearing. Carradine's first horror appearance is an uncredited walk-on as a hunter in *Bride of Frankenstein* (1935), which would file him beside Karloff a decade off the work anyone knows him for. *The production picks the box* is load-bearing too, because boxes overlap in time: Steele debuts in 1960, inside both Hammer's first wave and the AIP cycle, and *Black Sunday* is neither — it is Bava, and it is Italian.
 
-| Box | Used | Available |
-|---|---|---|
-| Silent (1923–28) | Chaney | — *closed* |
-| Universal Gothic (1931–36) | Lugosi, Karloff, Rains, Lanchester | Clive, Frye, Atwill, Hobson, Holden |
-| Universal 40s (1940–48) | Price | Chaney Jr., Ankers, Carradine |
-| Hammer, first wave (1955–66) | Cushing, Lee, Gough, Steele | Ripper, Shelley, Keir, Matthews |
-| Hammer permissive (1968–74) | Pitt | Bates, Carlson, Munro, Beswick, O'Mara |
+| # | Box | Span | Used | Available |
+|---|---|---|---|---|
+| 1 | Silent & Expressionist | 1920–29 | Chaney | Veidt, Schreck, Wegener, Krauss |
+| 2 | Universal Gothic | 1931–39 | Lugosi, Karloff, Rains, Lanchester | Clive, Frye, Atwill, Rathbone, Hobson, Holden |
+| 3 | Universal 40s | 1940–48 | Price | Chaney Jr., Ankers, Carradine |
+| 4 | Val Lewton / RKO | 1942–46 | — | Simon, Conway, Russell |
+| 5 | Atomic age | 1949–56 | — | Court, Adams, Browning, Tobey |
+| 6 | Hammer, first wave | 1955–66 | Cushing, Lee, Gough | Ripper, Shelley, Keir, Matthews |
+| 7 | AIP Poe cycle | 1960–65 | — | Damon, Miller, Paget |
+| 8 | Italian gothic | 1960–66 | Steele | Lavi |
+| 9 | Hammer permissive | 1968–74 | Pitt | Bates, Carlson, Munro, Beswick, O'Mara |
+| 10 | American independent | 1968–74 | — | Jones, O'Dea, Burns, Hansen |
 
-**Releases walk the boxes, reversing direction at each end** — one name per box, and the box a lap turns in takes two. `v0.1.0`–`v0.11.0` were the first ascent, opening on the silent box and ending on Pitt. The silent box closed behind it: Chaney Sr. was its only member.
+**Boxes are movements, not disjoint time slices.** Several run concurrently — Lewton and Universal were making opposite kinds of horror in the same years, and that contemporaneity is the point of separating them. The `#` column is the walk order: start year ascending, with the two ties (7/8 at 1960, 9/10 at 1968) fixed here once so there is no tiebreak rule to apply later.
 
-**Lap 2 descends**, and is queued through `v0.16.0`:
+**Releases walk the boxes, reversing direction at each end.** Within a lap the box number moves monotonically. Boxes may be skipped, and one box may take consecutive releases — including at a turn, where it takes two by construction.
+
+Both laps satisfy that as written:
+
+- **Ascent, `v0.1.0`–`v0.11.0`:** 1, 2, 2, 2, 2, 3, 6, 6, 6, 8, 9
+- **Descent, `v0.12.0`–`v0.16.0`:** 9, 6, 3, 2, 2
+
+Lap 3 climbs again from box 2. Extend the queue between releases, never during one.
+
+**Lap 2 is queued through `v0.16.0`:**
 
 | Version | Name | Box | Debut |
 |---|---|---|---|
-| `v0.12.0` | Bates (Ralph) | Hammer permissive | *Taste the Blood of Dracula*, 1970 |
-| `v0.13.0` | Ripper (Michael) | Hammer, first wave | *X the Unknown*, 1956 |
-| `v0.14.0` | Chaney Jr. (Lon) | Universal 40s | *Man Made Monster*, 1941 |
-| `v0.15.0` | Clive (Colin) | Universal Gothic | *Frankenstein*, 1931 |
-| `v0.16.0` | Frye (Dwight) | Universal Gothic, the turn | *Dracula*, 1931 |
+| `v0.12.0` | Bates (Ralph) | 9 — Hammer permissive | *Taste the Blood of Dracula*, 1970 |
+| `v0.13.0` | Ripper (Michael) | 6 — Hammer, first wave | *X the Unknown*, 1956 |
+| `v0.14.0` | Chaney Jr. (Lon) | 3 — Universal 40s | *Man Made Monster*, 1941 |
+| `v0.15.0` | Clive (Colin) | 2 — Universal Gothic | *Frankenstein*, 1931 |
+| `v0.16.0` | Frye (Dwight) | 2 — Universal Gothic, the turn | *Dracula*, 1931 |
 
-Each of those five was checked against a source before being queued.
+**Verify a name when you queue it, not when you shelf it.** Every name in the Used and queued columns has been checked against a source; the Available column has not, beyond the four that were checked because they moved a box boundary — Rathbone (1939, which is why box 2 runs to 1939 rather than 1936), Court (1952, which no box held before box 5 existed), Carradine (credited 1940s, not the 1935 walk-on) and Ripper (1956, which is why box 6 opens at 1955). Boxing turned the pool from a queue into a bench, and a bench entry is a candidate, not a commitment.
 
-Lap 3 climbs again from Universal 40s. Extend the queue between releases, never during one.
-
-Boxing is what replaced strict chronology, which the first ascent exhausted — every strong performer still standing debuted *earlier* than Pitt (1970), so no forward-only rule could reach them. Boxes also mean a name discovered later drops into place without renumbering anything, and the old "ties broken by billing" clause is gone; it existed solely to separate Cushing and Lee, who share 1957.
+Two known snags on the bench, recorded so they are not rediscovered: **Carlson collides** — Richard (box 5) and Veronica (box 9) cannot both take the bare surname, and only Veronica is listed above. **Boxes 7 and 8 are thin**, because debut assignment works against them: Price, Rathbone, Lorre and Steele all did their defining AIP and Italian work long after debuting elsewhere, so those boxes hold only performers who genuinely started there.
 
 **Lon Chaney Jr. is written `Chaney Jr.`** — `v0.1.0` spent the bare surname on his father, and `0.x` has no director pairing to disambiguate the way rule 1 does for `1.x`.
 
