@@ -328,4 +328,88 @@ enum StreamURLBuilder {
         components.queryItems = queryItems
         return components.url
     }
+
+    /// Build the audio-only HLS endpoints for an external-audio remux
+    /// session (#249): `/Audio/{itemId}/main.m3u8` plus its
+    /// `hls1/main/{index}` segment route. Probed 2026-08-17 against
+    /// Jellyfin 10.11.11: the endpoint accepts movie items, serves 3-second
+    /// MPEG-TS segments, and a segment-index jump restarts ffmpeg with
+    /// `-ss` exactly at that segment's boundary — which is what makes the
+    /// audio fetchable at the offsets the remux plan needs.
+    ///
+    /// The segment route requires the same query set as the playlist (the
+    /// transcode job is keyed on it) plus `runtimeTicks` and
+    /// `actualSegmentLengthTicks`, which tell the server where a fresh run
+    /// must seek.
+    static func audioHLSStream(
+        serverURL: URL,
+        accessToken: String,
+        deviceId: String,
+        parameters: StreamParameters,
+        audioStreamIndex: Int?,
+        audioBitrate: Int,
+    ) -> AudioHLSStream? {
+        let base = serverURL
+            .appendingPathComponent("Audio")
+            .appendingPathComponent(parameters.itemId)
+
+        var queryItems: [URLQueryItem] = [
+            URLQueryItem(name: "audioCodec", value: "aac"),
+            URLQueryItem(name: "audioBitRate", value: String(audioBitrate)),
+            URLQueryItem(name: "segmentContainer", value: "aac"),
+            URLQueryItem(name: "api_key", value: accessToken),
+            URLQueryItem(name: "DeviceId", value: deviceId),
+        ]
+        if let audioStreamIndex {
+            queryItems.append(URLQueryItem(name: "AudioStreamIndex", value: String(audioStreamIndex)))
+        }
+        if let mediaSourceId = parameters.mediaSourceId {
+            queryItems.append(URLQueryItem(name: "MediaSourceId", value: mediaSourceId))
+        }
+        if let playSessionId = parameters.playSessionId {
+            queryItems.append(URLQueryItem(name: "PlaySessionId", value: playSessionId))
+        }
+
+        guard var playlistComponents = URLComponents(
+            url: base.appendingPathComponent("main.m3u8"),
+            resolvingAgainstBaseURL: false,
+        ) else { return nil }
+        playlistComponents.queryItems = queryItems
+        guard let playlistURL = playlistComponents.url else { return nil }
+
+        return AudioHLSStream(
+            playlistURL: playlistURL,
+            segmentBase: base.appendingPathComponent("hls1").appendingPathComponent("main"),
+            queryItems: queryItems,
+        )
+    }
+}
+
+/// The two audio-only HLS routes an external-audio session needs, sharing
+/// one query set so every segment lands on the same transcode job.
+public struct AudioHLSStream: Sendable, Equatable {
+    public let playlistURL: URL
+    let segmentBase: URL
+    let queryItems: [URLQueryItem]
+
+    public init(playlistURL: URL, segmentBase: URL, queryItems: [URLQueryItem]) {
+        self.playlistURL = playlistURL
+        self.segmentBase = segmentBase
+        self.queryItems = queryItems
+    }
+
+    /// The URL of one media segment. `runtimeTicks` is the segment's start
+    /// and `segmentLengthTicks` its planned length, both in server ticks
+    /// (100 ns); the segment extension mirrors `segmentContainer`.
+    public func segmentURL(index: Int, runtimeTicks: Int64, segmentLengthTicks: Int64) -> URL? {
+        guard var components = URLComponents(
+            url: segmentBase.appendingPathComponent("\(index).aac"),
+            resolvingAgainstBaseURL: false,
+        ) else { return nil }
+        components.queryItems = queryItems + [
+            URLQueryItem(name: "runtimeTicks", value: String(runtimeTicks)),
+            URLQueryItem(name: "actualSegmentLengthTicks", value: String(segmentLengthTicks)),
+        ]
+        return components.url
+    }
 }

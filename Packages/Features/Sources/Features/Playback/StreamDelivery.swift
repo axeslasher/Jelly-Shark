@@ -275,10 +275,12 @@ final class InterposedHLSDelivery: StreamDelivery {
 ///
 /// Known gaps, accepted for modes 1 and 2: no subtitle renditions and no
 /// trickplay (#176 step 3 territory; both live in the master this delivery
-/// exists to avoid). Mode 1 only ever plays the remuxer's default audio
-/// pick, so a session committed to any other track — or whose default the
-/// remux cannot carry — skips straight to mode 2, which honors the
-/// selection (`rung1DeclineReason`).
+/// exists to avoid). Mode 1 only ever plays the source's DEFAULT audio
+/// track — carried from the file when the codec allows, muxed in from a
+/// server-side audio-only transcode when it is DTS/TrueHD (#249,
+/// `TranscodedAudioSession`) — so a session committed to any other track
+/// skips straight to mode 2, which honors the selection
+/// (`rung1DeclineReason`).
 @MainActor
 final class RemuxHLSDelivery: StreamDelivery {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
@@ -336,21 +338,19 @@ final class RemuxHLSDelivery: StreamDelivery {
     /// Audio codecs (Jellyfin stream-info spelling) the remux can carry —
     /// `MatroskaFMP4Remuxer.supportedAudioCodecIDs` seen from the server's
     /// metadata instead of the Matroska track header.
-    private static let remuxCarriableAudioCodecs: Set<String> = ["aac", "ac3", "eac3", "flac"]
+    static let remuxCarriableAudioCodecs: Set<String> = ["aac", "ac3", "eac3", "flac"]
 
     /// Why rung 1 must not even be attempted for this session, or nil to
     /// attempt it.
     ///
-    /// The audio clauses close a dead control: rung 1 plays the remuxer's
-    /// own pick — the source's default carriable track — and ignores the
-    /// session's committed audio index. An audio selection used to rebuild
-    /// straight back into rung 1, which re-picked the same default: a
-    /// spinner, the same track playing, and the menu's checkmark on a track
-    /// that never played. Descending to the copy variant instead honors the
-    /// selection server-side (the video stays stream-copied). The same
-    /// honesty argument covers a default track the remux cannot carry:
-    /// substituting a different track while the session reports the default
-    /// is the identical lie, so that session starts on rung 2 too.
+    /// The audio clause closes a dead control: rung 1 plays the source's
+    /// default track — carried from the file, or server-transcoded when the
+    /// file's default is DTS/TrueHD (#249) — and ignores the session's
+    /// committed audio index. An audio selection used to rebuild straight
+    /// back into rung 1, which re-picked the same default: a spinner, the
+    /// same track playing, and the menu's checkmark on a track that never
+    /// played. Descending to the copy variant instead honors the selection
+    /// server-side (the video stays stream-copied).
     static func rung1DeclineReason(context: DeliveryContext) -> String? {
         if context.avoidInAppRemux {
             return "a remux session already failed mid-file"
@@ -358,12 +358,6 @@ final class RemuxHLSDelivery: StreamDelivery {
         guard let source = context.mediaSource else { return nil }
         if let requested = context.audioStreamIndex, requested != source.defaultAudioStreamIndex {
             return "session audio stream \(requested) is not the default"
-        }
-        if let defaultIndex = source.defaultAudioStreamIndex,
-           let codec = source.audioStreams.first(where: { $0.index == defaultIndex })?.codec?.lowercased(),
-           !remuxCarriableAudioCodecs.contains(codec)
-        {
-            return "default audio codec \(codec) is not carriable"
         }
         return nil
     }
@@ -457,13 +451,29 @@ final class RemuxHLSDelivery: StreamDelivery {
         let byteSource = try await RangedHTTPByteSource.probe(url: staticURL)
         let demuxer = MatroskaDemuxer(source: byteSource)
         let index = try await demuxer.loadIndex()
-        // Option (a) from #176: a source whose audio is all TrueHD/DTS has
-        // no carriable track; declining to the server path is the only
-        // honest move (a silent film would play smoothly and wrongly).
-        guard let tracks = MatroskaFMP4Remuxer.selectTracks(from: index), tracks.audio != nil else {
-            throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec(
-                index.tracks.first { $0.type == .audio }?.codecID ?? "none",
+        guard var tracks = MatroskaFMP4Remuxer.selectTracks(from: index) else {
+            throw MatroskaFMP4Remuxer.RemuxError.unsupportedVideoCodec(
+                index.tracks.first { $0.type == .video }?.codecID ?? "none",
             )
+        }
+        // The default track is what rung 1 plays. When the file's default
+        // is one the remux can neither carry nor AVFoundation decode
+        // (DTS/TrueHD), the session takes the external-audio path (#249):
+        // video remuxed from the file, the default track server-transcoded
+        // to AAC and muxed in — substituting a different carriable track
+        // would be the checkmark lie `rung1DeclineReason` explains, and
+        // declining outright parks the session on the copy variant's
+        // frameskip (#99). A source with no audio at all still declines:
+        // there is nothing to transcode.
+        guard source.defaultAudioStreamIndex != nil || tracks.audio != nil else {
+            throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec("none")
+        }
+        let defaultCodec = source.audioStreams
+            .first { $0.index == source.defaultAudioStreamIndex }?.codec?.lowercased()
+        let needsServerAudio = tracks.audio == nil
+            || !Self.remuxCarriableAudioCodecs.contains(defaultCodec ?? "")
+        if needsServerAudio {
+            tracks = tracks.droppingAudio()
         }
         let remuxer = try MatroskaFMP4Remuxer(index: index, tracks: tracks)
 
@@ -471,16 +481,54 @@ final class RemuxHLSDelivery: StreamDelivery {
         guard !plan.segments.isEmpty else {
             throw MatroskaError.malformed("empty segment plan")
         }
-        // The init segment consumes only the first audio frame (AC-3/E-AC-3
-        // configuration), so read the raw first cue-to-cue span: the merged
-        // first segment (#99) can be several times larger, every byte of it
-        // on the critical path to first frame — and its bytes would be
-        // fetched again for seg0 anyway.
-        let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
-        let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
-        let initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
 
-        let server = RemuxHLSServer(demuxer: demuxer, remuxer: remuxer, plan: plan, initSegment: initSegment)
+        var externalAudio: RemuxHLSServer.ExternalAudio?
+        let initSegment: Data
+        if needsServerAudio {
+            // Stand the audio transcode up first: its first segment carries
+            // the stream parameters the init segment declares, and a session
+            // whose audio endpoint fails should descend the ladder before
+            // anything is served.
+            let audioSession = try TranscodedAudioSession(stream: client.audioHLSStream(
+                parameters: StreamParameters(
+                    itemId: context.itemId,
+                    mediaSourceId: source.id,
+                    playSessionId: context.playSessionId,
+                ),
+                audioStreamIndex: source.defaultAudioStreamIndex,
+            ))
+            let info = try await audioSession.start()
+            // Any unused fMP4 track ID works; past the file's own numbers
+            // keeps the mapping legible in diagnostics.
+            let trackID = (index.tracks.map(\.number).max() ?? 0) + 1
+            externalAudio = RemuxHLSServer.ExternalAudio(session: audioSession, trackID: trackID)
+            initSegment = try remuxer.makeExternalAudioInitializationSegment(
+                audio: FMP4Muxer.AudioTrack(
+                    trackID: trackID,
+                    configuration: .aac(audioSpecificConfig: info.audioSpecificConfig),
+                    channelCount: info.channelCount,
+                    sampleRate: info.sampleRate,
+                ),
+                audioTimescale: info.sampleRate,
+            )
+        } else {
+            // The init segment consumes only the first audio frame
+            // (AC-3/E-AC-3 configuration), so read the raw first cue-to-cue
+            // span: the merged first segment (#99) can be several times
+            // larger, every byte of it on the critical path to first frame —
+            // and its bytes would be fetched again for seg0 anyway.
+            let firstEnd = index.cues.count > 1 ? index.cues[1].clusterOffset : index.segmentDataEnd
+            let firstSpan = try await demuxer.readClusters(from: index.cues[0].clusterOffset, to: firstEnd)
+            initSegment = try remuxer.makeInitializationSegment(firstCluster: firstSpan)
+        }
+
+        let server = RemuxHLSServer(
+            demuxer: demuxer,
+            remuxer: remuxer,
+            plan: plan,
+            initSegment: initSegment,
+            externalAudio: externalAudio,
+        )
         // A deterministic mid-file production failure (the file, not the
         // network) can never heal on retry — surface it so the session
         // rebuilds on the next rung instead of 500ing the same segment
@@ -494,7 +542,7 @@ final class RemuxHLSDelivery: StreamDelivery {
             throw MatroskaError.malformed("loopback listener unavailable")
         }
         self.server = server
-        Self.logger.info("[remux-hls] session up: \(plan.segments.count) segments, video track \(tracks.video.number), audio \(tracks.audio?.codecID ?? "none", privacy: .public)")
+        Self.logger.info("[remux-hls] session up: \(plan.segments.count) segments, video track \(tracks.video.number), audio \(tracks.audio?.codecID ?? (externalAudio != nil ? "server transcode of \(defaultCodec ?? "?")" : "none"), privacy: .public)")
         // directStream is the honest method: streams are copied, container
         // owned by the app, no server encode anywhere in the session.
         return DeliveredStream(url: url, playMethod: .directStream)

@@ -68,12 +68,14 @@ struct RemuxHLSDeliveryTests {
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
             audioStreamIndex: 2, defaultAudioStreamIndex: 1, audioStreams: streams,
         )) != nil)
-        // A default the remux cannot carry would be silently substituted.
+        // A default the remux cannot carry no longer declines: rung 1
+        // serves that session with the external-audio path (#249), playing
+        // the SAME default track via a server-side audio-only transcode.
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
             audioStreamIndex: 1,
             defaultAudioStreamIndex: 1,
             audioStreams: [MediaStreamInfo(index: 1, type: .audio, codec: "dts")],
-        )) != nil)
+        )) == nil)
         // A prior mid-file failure pins the session below rung 1.
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(avoidInAppRemux: true)) != nil)
     }

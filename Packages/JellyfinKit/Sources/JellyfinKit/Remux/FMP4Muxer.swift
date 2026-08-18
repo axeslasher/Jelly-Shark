@@ -85,10 +85,17 @@ public enum FMP4Muxer {
 
     /// `ftyp` + `moov` for the given tracks. `timescale` is ticks per second
     /// (from the Matroska timestamp scale, typically 1000).
+    ///
+    /// `audioTimescale` gives the audio track its own `mdhd` clock — the
+    /// external-audio path (#249) runs audio at the codec sample rate so
+    /// every AAC frame is exactly 1024 integer ticks; nil keeps the shared
+    /// timescale. Fragment timing is already per-track, so only the init
+    /// segment needs to know.
     public static func initializationSegment(
         video: VideoTrack?,
         audio: AudioTrack?,
         timescale: Int,
+        audioTimescale: Int? = nil,
     ) -> Data {
         // The moov declares NO duration anywhere — not mvhd/tkhd/mdhd (a
         // moov-level duration is read as pre-fragment content and the
@@ -105,7 +112,7 @@ public enum FMP4Muxer {
             maxTrackID = max(maxTrackID, video.trackID)
         }
         if let audio {
-            traks += audioTrak(audio, timescale: timescale, durationTicks: 0)
+            traks += audioTrak(audio, timescale: audioTimescale ?? timescale, durationTicks: 0)
             trexes += trex(trackID: audio.trackID)
             maxTrackID = max(maxTrackID, audio.trackID)
         }

@@ -231,6 +231,14 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Throws: `APIError.notAuthenticated` if there is no access token
     func staticStreamURL(for source: MediaSource, parameters: StreamParameters) throws -> URL
 
+    /// Build the audio-only HLS endpoints for an external-audio remux
+    /// session (#249): the server transcodes just the named audio stream to
+    /// AAC in segment-addressable form, which the remux delivery muxes into
+    /// its own fragments when the source's default track (DTS/TrueHD) can
+    /// be neither carried nor decoded on-device.
+    /// - Throws: `APIError.notAuthenticated` if there is no access token
+    func audioHLSStream(parameters: StreamParameters, audioStreamIndex: Int?) throws -> AudioHLSStream
+
     /// Report that playback has started
     func reportPlaybackStart(
         itemId: String,
@@ -1123,6 +1131,25 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             throw APIError.invalidURL
         }
         return url
+    }
+
+    public func audioHLSStream(parameters: StreamParameters, audioStreamIndex: Int?) throws -> AudioHLSStream {
+        guard let accessToken = _accessToken else {
+            throw APIError.notAuthenticated
+        }
+        // 640 kbps: the ceiling Jellyfin's own web client requests for 5.1
+        // AAC re-encodes; the server clamps below it as channel count allows.
+        guard let stream = StreamURLBuilder.audioHLSStream(
+            serverURL: serverURL,
+            accessToken: accessToken,
+            deviceId: configuration.deviceID,
+            parameters: parameters,
+            audioStreamIndex: audioStreamIndex,
+            audioBitrate: 640_000,
+        ) else {
+            throw APIError.invalidURL
+        }
+        return stream
     }
 
     /// Ask the server to stop the transcode backing a play session. A
