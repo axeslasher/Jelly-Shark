@@ -30,9 +30,17 @@ public final class AppSession {
     let genreBackdrops = GenreBackdropStore()
 
     /// Whether there is an authenticated connection to a server
-    public var isConnected: Bool {
-        client?.isAuthenticated ?? false
-    }
+    ///
+    /// Stored, not computed through `client.isAuthenticated`: `JellyfinClient`
+    /// is a plain class, so nothing it does is visible to Observation. The
+    /// instant-connect path publishes a client whose token has not been
+    /// validated yet (`isAuthenticated` is false until `fetchCurrentUser()`
+    /// returns), so the flip to true happened inside that non-observable
+    /// object and no reader was ever invalidated — every
+    /// `.task(id: session.isConnected)` in the app missed the transition and
+    /// its screen sat on the skeleton. Kept in step by `setClient`,
+    /// `clearClient`, and `refreshConnectionState`.
+    public private(set) var isConnected = false
 
     public init() {}
 
@@ -46,6 +54,7 @@ public final class AppSession {
     public func setClient(_ client: any JellyfinClientProtocol, scopedCache: ScopedCache? = nil) {
         self.client = client
         self.scopedCache = scopedCache
+        isConnected = client.isAuthenticated
         activationTask?.cancel()
         activationTask = nil
         if let scopedCache {
@@ -66,6 +75,14 @@ public final class AppSession {
         }
     }
 
+    /// Re-read the client's authentication state after something outside this
+    /// object changed it — specifically the background token validation on the
+    /// instant-connect path, which authenticates a client that was already
+    /// published. Without this call that transition is invisible to readers.
+    public func refreshConnectionState() {
+        isConnected = client?.isAuthenticated ?? false
+    }
+
     /// Clear the client on disconnect. Also drops all resolved user state and
     /// every remembered genre backdrop — the same privacy boundary as the
     /// cache scope purge.
@@ -74,6 +91,7 @@ public final class AppSession {
         activationTask = nil
         client = nil
         scopedCache = nil
+        isConnected = false
         userState.deactivate()
         genreBackdrops.deactivate()
     }
