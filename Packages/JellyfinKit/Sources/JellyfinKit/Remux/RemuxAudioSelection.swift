@@ -93,8 +93,11 @@ public enum RemuxAudioSelection {
         matroskaTracks: [MatroskaTrack],
     ) -> RemuxAudioDecision {
         // No declared default: no index to map, and none to name in a
-        // transcode request either, so let the server pick its own — as long
-        // as the file holds audio this rung could play at all.
+        // transcode request either, so let the server pick its own. The
+        // carriable-track test below is inherited from #249 rather than
+        // implied by this branch — a `serverTranscoded(nil)` never touches the
+        // file's codecs — and is preserved because declining is what rung 1
+        // has always done for a file holding no track it could carry.
         guard let defaultStreamIndex else {
             guard matroskaTracks.contains(where: {
                 $0.type == .audio && MatroskaFMP4Remuxer.supportedAudioCodecIDs.contains($0.codecID)
@@ -113,7 +116,7 @@ public enum RemuxAudioSelection {
         guard audioStreams.contains(where: { $0.type == .audio && !$0.isExternal }) else {
             return RemuxAudioDecision(
                 source: .serverTranscoded(streamIndex: defaultStreamIndex),
-                reason: "server transcode of the default stream \(defaultStreamIndex) (the file has no embedded audio)",
+                reason: "server transcode of the default stream \(defaultStreamIndex) (the server lists no embedded audio)",
             )
         }
         return committedDecision(
@@ -150,8 +153,19 @@ public enum RemuxAudioSelection {
             matroskaTracks: matroskaTracks,
         ) {
         case let .matched(trackNumber):
-            let track = matroskaTracks.first { $0.number == trackNumber }
-            let codecID = track?.codecID ?? ""
+            // Filtered to audio deliberately: `mapTrackNumber` only ever names
+            // a track from this array's AUDIO subset, and its uniqueness guard
+            // checks that subset alone. An unnumbered video `TrackEntry` reads
+            // as track 0 too, so an unfiltered lookup could answer with it and
+            // report a structural defect in the file's track table as an audio
+            // codec decision.
+            guard let track = matroskaTracks.first(where: { $0.number == trackNumber && $0.type == .audio }) else {
+                return RemuxAudioDecision(
+                    source: .serverTranscoded(streamIndex: streamIndex),
+                    reason: "server transcode of stream \(streamIndex) (mapped track \(trackNumber) is not an audio track in the file)",
+                )
+            }
+            let codecID = track.codecID
             guard MatroskaFMP4Remuxer.supportedAudioCodecIDs.contains(codecID) else {
                 return RemuxAudioDecision(
                     source: .serverTranscoded(streamIndex: streamIndex),

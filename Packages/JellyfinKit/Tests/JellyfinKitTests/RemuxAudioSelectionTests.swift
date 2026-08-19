@@ -29,10 +29,20 @@ struct RemuxAudioSelectionTests {
         MatroskaTrack(number: number, type: .audio, codecID: codecID, isDefault: isDefault, language: language)
     }
 
+    /// Real sources hand the mapping the whole `TrackEntry` list, video
+    /// included; only the server's side arrives pre-filtered to audio.
+    private func videoTrack(_ number: Int) -> MatroskaTrack {
+        MatroskaTrack(number: number, type: .video, codecID: "V_MPEGH/ISO/HEVC")
+    }
+
     // MARK: - The default index
 
-    @Test("A carriable default carries the track its stream index maps to")
-    func defaultCarries() {
+    /// A smoke test, deliberately: with one stream and one track the mapped
+    /// track and the file's own pick are the same track, so this pins the
+    /// happy path without discriminating #259. `defaultCarriesTheMappedTrack`
+    /// below is the one that does.
+    @Test("A single carriable audio track is carried")
+    func singleCarriableTrackIsCarried() {
         let decision = RemuxAudioSelection.decide(
             selectedStreamIndex: nil,
             defaultStreamIndex: 1,
@@ -75,12 +85,18 @@ struct RemuxAudioSelectionTests {
             selectedStreamIndex: nil, defaultStreamIndex: 2, audioStreams: streams, matroskaTracks: tracks,
         )
         #expect(decision.source == .carried(trackNumber: 3))
+        // The exact marker `docs/PLAYBACK_MATRIX.md` sends the device round
+        // looking for. Its shape changed here — the old default path emitted
+        // no "for stream N" suffix — so pin the text the doc quotes.
+        #expect(decision.reason == "carried from the file, track 3 (A_EAC3) for stream 2")
         // And identically under the echo, which is how the session reached
-        // the default path on the device in the first place.
+        // the default path on the device in the first place. Asserted
+        // absolutely rather than against `decision`: a relative check is blind
+        // to anything that moves both sides together.
         let echoed = RemuxAudioSelection.decide(
             selectedStreamIndex: 2, defaultStreamIndex: 2, audioStreams: streams, matroskaTracks: tracks,
         )
-        #expect(echoed == decision)
+        #expect(echoed.source == .carried(trackNumber: 3))
     }
 
     /// Also from the #257 round: a source flagging two audio tracks default.
@@ -163,6 +179,7 @@ struct RemuxAudioSelectionTests {
             matroskaTracks: [],
         )
         #expect(sidecarOnlyDefault.source == .serverTranscoded(streamIndex: 1))
+        #expect(sidecarOnlyDefault.reason.contains("the server lists no embedded audio"))
 
         // No declared default and nothing carriable in the file: no index to
         // name and no track to carry, so the rung declines.
@@ -173,6 +190,7 @@ struct RemuxAudioSelectionTests {
             matroskaTracks: [track(1, "A_DTS")],
         )
         #expect(noDefaultNothingCarriable.source == nil)
+        #expect(noDefaultNothingCarriable.reason == "no audio in the source")
 
         // No declared default and no audio streams listed, but the file holds
         // a carriable track: ask the server for its own default.
@@ -183,6 +201,72 @@ struct RemuxAudioSelectionTests {
             matroskaTracks: [track(1, "A_EAC3")],
         )
         #expect(noDefaultServerListsNothing.source == .serverTranscoded(streamIndex: nil))
+        #expect(noDefaultServerListsNothing.reason.contains("server default"))
+
+        // A declared default with no audio anywhere. Unchanged from #249, and
+        // pinned because it is the fourth shape of this class: the server
+        // transcodes an index the file cannot supply, which a refactor
+        // collapsing the two identical no-embedded-audio guards would flip.
+        let declaredDefaultNoAudio = RemuxAudioSelection.decide(
+            selectedStreamIndex: nil, defaultStreamIndex: 1, audioStreams: [], matroskaTracks: [],
+        )
+        #expect(declaredDefaultNoAudio.source == .serverTranscoded(streamIndex: 1))
+    }
+
+    /// The one shape besides the inconclusive mapping that #259 moves, and it
+    /// moves within rung 1: the server lists no embedded audio, its default
+    /// index names a sidecar whose codec is carriable, and the file holds a
+    /// carriable track. The old branch read the SIDECAR's codec, found it
+    /// carriable, and carried an arbitrary embedded track under the sidecar's
+    /// checkmark — the exact lie #259 exists to kill. The honest answer names
+    /// the index the server resolves itself.
+    @Test("An external default beside carriable file audio transcodes, never carries")
+    func externalDefaultBesideCarriableFileAudio() {
+        let decision = RemuxAudioSelection.decide(
+            selectedStreamIndex: nil,
+            defaultStreamIndex: 1,
+            audioStreams: [stream(1, "ac3", isExternal: true)],
+            matroskaTracks: [track(1, "A_EAC3")],
+        )
+        #expect(decision.source == .serverTranscoded(streamIndex: 1))
+    }
+
+    /// The routing guard in `decide` earns its keep only here. A sidecar-only
+    /// source takes a different outcome depending on whether the server has
+    /// echoed the selection back as the default yet: declining before the
+    /// echo, staying on this rung after. Pinned as current behaviour rather
+    /// than endorsed — the asymmetry is tracked separately.
+    @Test("A sidecar-only source keeps each path's outcome under the server echo")
+    func sidecarOnlyUnderTheEcho() {
+        let streams = [stream(1, "ac3", isExternal: true)]
+        let committed = RemuxAudioSelection.decide(
+            selectedStreamIndex: 1, defaultStreamIndex: nil, audioStreams: streams, matroskaTracks: [],
+        )
+        #expect(committed.source == nil)
+        #expect(committed.reason == "the source has no embedded audio")
+
+        let echoed = RemuxAudioSelection.decide(
+            selectedStreamIndex: 1, defaultStreamIndex: 1, audioStreams: streams, matroskaTracks: [],
+        )
+        #expect(echoed.source == .serverTranscoded(streamIndex: 1))
+        #expect(echoed.reason.contains("the server lists no embedded audio"))
+    }
+
+    /// A real file's `TrackEntry` list carries the video track too, while the
+    /// server's `audioStreams` is audio-only, so the positional
+    /// correspondence is between AUDIO positions — a video track occupies
+    /// none. Without a fixture holding one, `mapTrackNumber`'s `.audio`
+    /// filter could be deleted with every test still green while every real
+    /// session quietly lost bit-exact passthrough to a count mismatch.
+    @Test("A video TrackEntry occupies no audio position")
+    func videoTrackDoesNotShiftTheMapping() {
+        let decision = RemuxAudioSelection.decide(
+            selectedStreamIndex: nil,
+            defaultStreamIndex: 2,
+            audioStreams: [stream(1, "eac3"), stream(2, "ac3")],
+            matroskaTracks: [videoTrack(1), track(2, "A_EAC3"), track(3, "A_AC3")],
+        )
+        #expect(decision.source == .carried(trackNumber: 3))
     }
 
     /// The source has embedded audio the rung could play, but the server

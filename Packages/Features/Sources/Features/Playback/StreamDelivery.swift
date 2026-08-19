@@ -457,7 +457,12 @@ final class RemuxHLSDelivery: StreamDelivery {
             matroskaTracks: index.tracks,
         )
         guard let audioSource = decision.source else {
-            throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec("none")
+            // Carry the diagnosis: this throw is what sends the session down
+            // to the copy variant and its frameskip (#99), and the line it
+            // produces is the only account a device log gets of that descent.
+            // "no audio in the source" and "the source has no embedded audio"
+            // want opposite investigations.
+            throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec(decision.reason)
         }
         let transcodedAudioStreamIndex: Int?
         let needsServerAudio: Bool
