@@ -93,11 +93,16 @@ public struct MatroskaFMP4Remuxer: Sendable {
         tracks.first { $0.type == .video && supportedVideoCodecIDs.contains($0.codecID) }
     }
 
-    /// The audio track the DEFAULT pick carries: the first supported one,
-    /// preferring tracks flagged default. `nil` when every audio track is
-    /// unsupported (the TrueHD/DTS-only case) or there is no audio at all;
-    /// whether to then proceed video-only, transcode server-side, or refuse
-    /// is the caller's delivery-policy decision (`RemuxAudioSelection`).
+    /// The remuxer's own audio pick: the first supported track, preferring
+    /// ones flagged default. `nil` when every audio track is unsupported
+    /// (the TrueHD/DTS-only case) or there is no audio at all.
+    ///
+    /// Since #259 no delivery policy keys on this pick, and `FlagDefault`
+    /// decides nothing about which track a session plays: `RemuxAudioSelection`
+    /// resolves that from the committed stream index — the selection, or the
+    /// server's `DefaultAudioStreamIndex` — and `RemuxHLSDelivery` replaces or
+    /// drops this audio before any remux runs. What is left here is the
+    /// default shape of a `SelectedTracks`.
     public static func selectAudioTrack(from tracks: [MatroskaTrack]) -> MatroskaTrack? {
         let candidates = tracks.filter { $0.type == .audio && supportedAudioCodecIDs.contains($0.codecID) }
         return candidates.first { $0.isDefault } ?? candidates.first

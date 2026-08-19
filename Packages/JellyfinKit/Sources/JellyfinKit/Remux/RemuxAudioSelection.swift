@@ -10,6 +10,15 @@ import Foundation
 // what remains is deciding, per session, whether the committed track can be
 // carried from the file (the quality bar) or must be transcoded.
 //
+// One stream index decides that, for every session: the committed selection,
+// or `DefaultAudioStreamIndex` when the session committed to nothing. The
+// server's default is the only authority on what "default" means here — it
+// folds in the user's persisted choice, and was observed echoing the previous
+// session's selection back one play later. The file's own `FlagDefault` is a
+// property of the FILE, not of the session; the two disagree on real sources,
+// and rung 1 used to carry the file's pick under the server's checkmark
+// (#259).
+//
 // Carrying requires naming a Matroska track number, and Jellyfin names audio
 // by ffprobe stream INDEX. The bridge is positional: ffmpeg creates streams in
 // `TrackEntry` order and `MatroskaDemuxer.parseTracks` appends in file order,
@@ -37,13 +46,6 @@ public struct RemuxAudioDecision: Equatable, Sendable {
     public let source: RemuxAudioSource?
     /// One line for the delivery log, naming what was chosen and why.
     public let reason: String
-    /// Set when the DEFAULT path carries a track and the index mapping
-    /// confidently names a different Matroska track for the default stream
-    /// index. Instrumentation only — it never changes the decision,
-    /// because the default path's behaviour is deliberately frozen. A device
-    /// log carrying this is evidence the positional correspondence is wrong
-    /// somewhere real.
-    public let defaultPickMismatch: Int?
 }
 
 public enum RemuxAudioSelection {
@@ -68,103 +70,116 @@ public enum RemuxAudioSelection {
                 matroskaTracks: matroskaTracks,
             )
         }
-        return nonDefaultDecision(
-            selectedStreamIndex: selectedStreamIndex,
+        return committedDecision(
+            streamIndex: selectedStreamIndex,
             audioStreams: audioStreams,
             matroskaTracks: matroskaTracks,
         )
     }
 
-    // MARK: - The default path (behaviour frozen)
+    // MARK: - The default path
 
-    /// Exactly what rung 1 did before #252: carry the remuxer's own default
-    /// pick when the server says the default track's codec is carriable,
-    /// otherwise transcode the default index server-side, otherwise decline.
-    /// The mapping runs here too, but only to log a disagreement.
+    /// The session committed to nothing, so `DefaultAudioStreamIndex`
+    /// stands. That is a Jellyfin stream index like any other and resolves
+    /// through the same mapping as a selection (#259) — NOT through the
+    /// file's `FlagDefault`, which named a different track on real sources
+    /// and so put the menu's checkmark on audio that never played.
+    ///
+    /// Only the two shapes naming no mappable index are decided here, and
+    /// both keep the outcome rung 1 has always given them.
     private static func defaultDecision(
         defaultStreamIndex: Int?,
         audioStreams: [MediaStreamInfo],
         matroskaTracks: [MatroskaTrack],
     ) -> RemuxAudioDecision {
-        let pick = MatroskaFMP4Remuxer.selectAudioTrack(from: matroskaTracks)
-        let defaultCodec = audioStreams.first { $0.index == defaultStreamIndex }?.codec?.lowercased()
-
-        if let pick, carriableJellyfinCodecs.contains(defaultCodec ?? "") {
-            // Only meaningful when the default path actually CARRIES: the
-            // pick deliberately skips an uncarriable default (#251), and that
-            // is not a disagreement about which track the default is.
-            var mismatch: Int?
-            if let defaultStreamIndex,
-               case let .matched(mapped) = mapTrackNumber(
-                   forStreamIndex: defaultStreamIndex,
-                   audioStreams: audioStreams,
-                   matroskaTracks: matroskaTracks,
-               ), mapped != pick.number
-            {
-                mismatch = mapped
+        // No declared default: no index to map, and none to name in a
+        // transcode request either, so let the server pick its own. The
+        // carriable-track test below is inherited from #249 rather than
+        // implied by this branch — a `serverTranscoded(nil)` never touches the
+        // file's codecs — and is preserved because declining is what rung 1
+        // has always done for a file holding no track it could carry.
+        guard let defaultStreamIndex else {
+            guard matroskaTracks.contains(where: {
+                $0.type == .audio && MatroskaFMP4Remuxer.supportedAudioCodecIDs.contains($0.codecID)
+            }) else {
+                return RemuxAudioDecision(source: nil, reason: "no audio in the source")
             }
             return RemuxAudioDecision(
-                source: .carried(trackNumber: pick.number),
-                reason: "carried from the file, track \(pick.number) (\(pick.codecID))",
-                defaultPickMismatch: mismatch,
+                source: .serverTranscoded(streamIndex: nil),
+                reason: "server transcode of the default stream (server default)",
             )
         }
-        // The file's default is one the remux can neither carry nor
-        // AVFoundation decode (DTS/TrueHD): take the external-audio path
-        // (#249) rather than substitute a different track.
-        if defaultStreamIndex != nil || pick != nil {
+        // The server names a default the file has no embedded audio for — a
+        // sidecar-only source. Nothing to map, but the server transcodes that
+        // index perfectly well, and descending instead would cost the session
+        // the #99 frameskip for no gain.
+        guard audioStreams.contains(where: { $0.type == .audio && !$0.isExternal }) else {
             return RemuxAudioDecision(
                 source: .serverTranscoded(streamIndex: defaultStreamIndex),
-                reason: "server transcode of the default stream \(describe(defaultStreamIndex)) (\(defaultCodec ?? "unknown codec"))",
-                defaultPickMismatch: nil,
+                reason: "server transcode of the default stream \(defaultStreamIndex) (the server lists no embedded audio)",
             )
         }
-        return RemuxAudioDecision(source: nil, reason: "no audio in the source", defaultPickMismatch: nil)
+        return committedDecision(
+            streamIndex: defaultStreamIndex,
+            audioStreams: audioStreams,
+            matroskaTracks: matroskaTracks,
+        )
     }
 
-    // MARK: - The non-default path (#252)
+    // MARK: - The committed index (#252, #259)
 
-    /// A committed track that is not the default. Carry it when the mapping
-    /// is conclusive AND its codec is carriable; otherwise stay on rung 1
-    /// with a server-side transcode of that index. Never descend for an
-    /// audio selection.
-    private static func nonDefaultDecision(
-        selectedStreamIndex: Int,
+    /// One committed stream index — the session's selection, or the server's
+    /// default when it selected nothing. Carry it when the mapping is
+    /// conclusive AND its codec is carriable; otherwise stay on rung 1 with
+    /// a server-side transcode of that index. Never descend for an audio
+    /// selection.
+    private static func committedDecision(
+        streamIndex: Int,
         audioStreams: [MediaStreamInfo],
         matroskaTracks: [MatroskaTrack],
     ) -> RemuxAudioDecision {
         // With no embedded audio there is nothing to carry, and a transcode
         // of a stream the file does not contain would stand up a session
         // doomed to fail on its first segment. Decline instead, exactly as
-        // this case did before #252.
+        // this case did before #252. Only a committed SELECTION reaches this
+        // guard: the default path answers that shape above, where the server
+        // named the index itself and can transcode it.
         guard audioStreams.contains(where: { $0.type == .audio && !$0.isExternal }) else {
-            return RemuxAudioDecision(source: nil, reason: "the source has no embedded audio", defaultPickMismatch: nil)
+            return RemuxAudioDecision(source: nil, reason: "the source has no embedded audio")
         }
         switch mapTrackNumber(
-            forStreamIndex: selectedStreamIndex,
+            forStreamIndex: streamIndex,
             audioStreams: audioStreams,
             matroskaTracks: matroskaTracks,
         ) {
         case let .matched(trackNumber):
-            let track = matroskaTracks.first { $0.number == trackNumber }
-            let codecID = track?.codecID ?? ""
+            // Filtered to audio deliberately: `mapTrackNumber` only ever names
+            // a track from this array's AUDIO subset, and its uniqueness guard
+            // checks that subset alone. An unnumbered video `TrackEntry` reads
+            // as track 0 too, so an unfiltered lookup could answer with it and
+            // report a structural defect in the file's track table as an audio
+            // codec decision.
+            guard let track = matroskaTracks.first(where: { $0.number == trackNumber && $0.type == .audio }) else {
+                return RemuxAudioDecision(
+                    source: .serverTranscoded(streamIndex: streamIndex),
+                    reason: "server transcode of stream \(streamIndex) (mapped track \(trackNumber) is not an audio track in the file)",
+                )
+            }
+            let codecID = track.codecID
             guard MatroskaFMP4Remuxer.supportedAudioCodecIDs.contains(codecID) else {
                 return RemuxAudioDecision(
-                    source: .serverTranscoded(streamIndex: selectedStreamIndex),
-                    reason: "server transcode of stream \(selectedStreamIndex) (file track \(trackNumber) is \(codecID), not carriable)",
-                    defaultPickMismatch: nil,
+                    source: .serverTranscoded(streamIndex: streamIndex),
+                    reason: "server transcode of stream \(streamIndex) (file track \(trackNumber) is \(codecID), not carriable)",
                 )
             }
             return RemuxAudioDecision(
                 source: .carried(trackNumber: trackNumber),
-                reason: "carried from the file, track \(trackNumber) (\(codecID)) for stream \(selectedStreamIndex)",
-                defaultPickMismatch: nil,
+                reason: "carried from the file, track \(trackNumber) (\(codecID)) for stream \(streamIndex)",
             )
         case let .ambiguous(why):
             return RemuxAudioDecision(
-                source: .serverTranscoded(streamIndex: selectedStreamIndex),
-                reason: "server transcode of stream \(selectedStreamIndex) (\(why))",
-                defaultPickMismatch: nil,
+                source: .serverTranscoded(streamIndex: streamIndex),
+                reason: "server transcode of stream \(streamIndex) (\(why))",
             )
         }
     }
@@ -237,13 +252,6 @@ public enum RemuxAudioSelection {
     }
 
     // MARK: - Codec correspondence
-
-    /// Jellyfin stream-info codec spellings the remux can carry —
-    /// `MatroskaFMP4Remuxer.supportedAudioCodecIDs` seen from the server's
-    /// metadata instead of the Matroska track header. The default path keys
-    /// on these (the rule it has always used); the non-default path keys on
-    /// the CodecID it is about to carry.
-    static let carriableJellyfinCodecs: Set<String> = ["aac", "ac3", "eac3", "flac"]
 
     /// Jellyfin codec name -> the Matroska CodecID prefix it must appear as.
     /// Prefixes, because Matroska qualifies most of them (`A_AAC/MPEG4/LC`,
@@ -322,10 +330,6 @@ public enum RemuxAudioSelection {
     /// direction.
     private static func languagesAgree(_ lhs: String, _ rhs: String) -> Bool {
         lhs == rhs
-    }
-
-    private static func describe(_ index: Int?) -> String {
-        index.map(String.init) ?? "(server default)"
     }
 
     private static func pluralized(_ count: Int, _ noun: String) -> String {
