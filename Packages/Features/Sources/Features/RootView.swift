@@ -129,14 +129,14 @@ public struct RootView: View {
         .environment(connectionViewModel)
         .environment(homePreferences)
         .environment(playbackPreferences)
-        .environment(\.openSettings) {
+        .environment(\.openSettings, OpenSettingsAction {
             tabSelection.wrappedValue = .settings
-        }
-        .environment(\.pushMediaDetail) { item in
+        })
+        .environment(\.pushMediaDetail, PushMediaDetailAction { item in
             var path = tabPaths[selectedTab, default: NavigationPath()]
             path.append(item)
             tabPaths[selectedTab] = path
-        }
+        })
         .task {
             // Attach here (not just in Settings) so a restored client is
             // published app-wide even if the user never opens Settings
@@ -292,20 +292,54 @@ public struct RootView: View {
     }
 }
 
-// MARK: - Open Settings Action
+// MARK: - Root Navigation Actions
+
+/// Switches the root TabView to the Settings tab. Views that need to
+/// point a stranded user at Settings (e.g. Home's empty states, where
+/// nothing else on screen is focusable and the collapsed sidebar can't
+/// take focus — #69) call this instead of reaching into tab state.
+struct OpenSettingsAction: Equatable {
+    fileprivate let handler: () -> Void
+
+    func callAsFunction() {
+        handler()
+    }
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
+
+/// Pushes a media item's detail page onto the current tab's stack.
+/// Provided by `RootView` (owner of the per-tab paths) for actions that
+/// can't be a `NavigationLink` — e.g. "View Details" in a shelf card's
+/// long-press menu, where selecting the card itself plays instead.
+struct PushMediaDetailAction: Equatable {
+    fileprivate let handler: (MediaItem) -> Void
+
+    func callAsFunction(_ item: MediaItem) {
+        handler(item)
+    }
+
+    static func == (_: Self, _: Self) -> Bool {
+        true
+    }
+}
 
 extension EnvironmentValues {
-    /// Switches the root TabView to the Settings tab. Views that need to
-    /// point a stranded user at Settings (e.g. Home's empty states, where
-    /// nothing else on screen is focusable and the collapsed sidebar can't
-    /// take focus — #69) call this instead of reaching into tab state.
-    @Entry var openSettings: (() -> Void)? = nil
+    /// Wrapped in an `Equatable` action rather than stored as a bare closure:
+    /// `@Entry` compares the old and new value to decide whether readers need
+    /// re-evaluating, and a closure isn't comparable, so every root update
+    /// would invalidate every reader. Both actions read `RootView`'s live
+    /// `@State` when called, so an instance from a later body pass behaves
+    /// identically to the one it replaces — all instances are interchangeable
+    /// and `==` is unconditionally true. The `Optional` still distinguishes
+    /// "provided" from "not provided", which `HomePlaceholders` relies on to
+    /// decide whether to offer the button at all.
+    @Entry var openSettings: OpenSettingsAction? = nil
 
-    /// Pushes a media item's detail page onto the current tab's stack.
-    /// Provided by `RootView` (owner of the per-tab paths) for actions that
-    /// can't be a `NavigationLink` — e.g. "View Details" in a shelf card's
-    /// long-press menu, where selecting the card itself plays instead.
-    @Entry var pushMediaDetail: ((MediaItem) -> Void)? = nil
+    /// See `openSettings` for why this is an action type and not a closure.
+    @Entry var pushMediaDetail: PushMediaDetailAction? = nil
 }
 
 // MARK: - Tab
