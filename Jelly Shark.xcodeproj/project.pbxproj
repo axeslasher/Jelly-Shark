@@ -10,8 +10,6 @@
 		6DB89EC92F107CC300F6C56D /* JellyfinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6DBADAD22F0E500000000002 /* JellyfinKit */; };
 		6DB89ECA2F107CC300F6C56D /* DesignSystem in Frameworks */ = {isa = PBXBuildFile; productRef = 6DBADAD32F0E500000000003 /* DesignSystem */; };
 		6DB89ECB2F107CC300F6C56D /* Features in Frameworks */ = {isa = PBXBuildFile; productRef = 6DBADAD42F0E500000000004 /* Features */; };
-		6DBADAC12F0E33EA00380536 /* CLAUDE.md in Resources */ = {isa = PBXBuildFile; fileRef = 6DBADABF2F0E33E200380536 /* CLAUDE.md */; };
-		6DBADAD02F0E45BA00380536 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 6DBADACF2F0E45BA00380536 /* README.md */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,11 +61,6 @@
 			path = docs;
 			sourceTree = "<group>";
 		};
-		6DBADABE2F0E33D200380536 /* .claude */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = .claude;
-			sourceTree = "<group>";
-		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -103,7 +96,6 @@
 			children = (
 				6DBADACF2F0E45BA00380536 /* README.md */,
 				6DBADABF2F0E33E200380536 /* CLAUDE.md */,
-				6DBADABE2F0E33D200380536 /* .claude */,
 				6DBADABA2F0E33A000380536 /* docs */,
 				6DBADAD12F0E500000000001 /* Packages */,
 				6DBADA902F0E2C2D00380536 /* Jelly Shark */,
@@ -150,8 +142,6 @@
 			);
 			fileSystemSynchronizedGroups = (
 				6DBADA902F0E2C2D00380536 /* Jelly Shark */,
-				6DBADABA2F0E33A000380536 /* docs */,
-				6DBADABE2F0E33D200380536 /* .claude */,
 			);
 			name = "Jelly Shark";
 			packageProductDependencies = (
@@ -263,8 +253,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				6DBADAC12F0E33EA00380536 /* CLAUDE.md in Resources */,
-				6DBADAD02F0E45BA00380536 /* README.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
