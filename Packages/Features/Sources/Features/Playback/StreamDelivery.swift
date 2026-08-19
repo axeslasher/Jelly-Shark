@@ -276,7 +276,8 @@ final class InterposedHLSDelivery: StreamDelivery {
 /// Known gaps, accepted for modes 1 and 2: no subtitle renditions and no
 /// trickplay (#176 step 3 territory; both live in the master this delivery
 /// exists to avoid). Mode 1 plays whatever audio track the session
-/// committed to (#252): carried from the file when the codec allows and the
+/// committed to (#252) — including the server's default when it committed to
+/// nothing (#259): carried from the file when the codec allows and the
 /// stream-index mapping corroborates which Matroska track it is, muxed in
 /// from a server-side audio-only transcode of that same index otherwise
 /// (#249, `TranscodedAudioSession`). An audio selection never sends a
@@ -455,15 +456,6 @@ final class RemuxHLSDelivery: StreamDelivery {
             audioStreams: source.audioStreams,
             matroskaTracks: index.tracks,
         )
-        if let mismatch = decision.defaultPickMismatch {
-            // The stream-index mapping the non-default path carries on
-            // disagrees with the default pick this session is about to use.
-            // One of the two is wrong about this file; the default path's
-            // behaviour is frozen, so this only reports.
-            Self.logger.warning(
-                "[remux-hls] default audio: carrying file track \(tracks.audio?.number ?? -1) but stream \(source.defaultAudioStreamIndex ?? -1) maps to track \(mismatch)",
-            )
-        }
         guard let audioSource = decision.source else {
             throw MatroskaFMP4Remuxer.RemuxError.unsupportedAudioCodec("none")
         }
@@ -555,7 +547,9 @@ final class RemuxHLSDelivery: StreamDelivery {
         self.server = server
         // Both indices, deliberately: a server that echoes the requested
         // index back as DefaultAudioStreamIndex makes every selection look
-        // like the default, and only the pair shows it.
+        // like the default, and only the pair shows it. Since #259 that echo
+        // is cosmetic — both indices resolve through the same mapping — but
+        // reading it is still how the echo itself stays visible.
         Self.logger.info(
             "[remux-hls] session up: \(plan.segments.count) segments, video track \(tracks.video.number), audio \(decision.reason, privacy: .public) (selection=\(self.context.audioStreamIndex ?? -1) default=\(source.defaultAudioStreamIndex ?? -1))",
         )
