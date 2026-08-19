@@ -75,9 +75,6 @@ public final class AppSession {
         }
     }
 
-    /// Clear the client on disconnect. Also drops all resolved user state and
-    /// every remembered genre backdrop — the same privacy boundary as the
-    /// cache scope purge.
     /// Re-read the client's authentication state after something outside this
     /// object changed it — specifically the background token validation on the
     /// instant-connect path, which authenticates a client that was already
@@ -86,6 +83,9 @@ public final class AppSession {
         isConnected = client?.isAuthenticated ?? false
     }
 
+    /// Clear the client on disconnect. Also drops all resolved user state and
+    /// every remembered genre backdrop — the same privacy boundary as the
+    /// cache scope purge.
     public func clearClient() {
         activationTask?.cancel()
         activationTask = nil
