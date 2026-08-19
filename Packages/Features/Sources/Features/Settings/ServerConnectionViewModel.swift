@@ -225,6 +225,10 @@ public final class ServerConnectionViewModel {
                 username = user.name
                 libraries = fresh
                 isValidating = false
+                // The client authenticated itself inside `fetchCurrentUser`,
+                // where Observation can't see it — tell the session so the
+                // screens gated on `isConnected` actually start loading.
+                session?.refreshConnectionState()
                 await cache.purgeStaleDetails(scope: scope)
             } catch APIError.unauthorized {
                 guard let self, !Task.isCancelled, state == .connected else { return }
