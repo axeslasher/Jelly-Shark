@@ -12,8 +12,15 @@ import UniformTypeIdentifiers
 /// trickplay data is what the seek previews already rely on. Chapters with
 /// neither source stay title-only.
 enum ChapterArtworkLoader {
-    /// Jellyfin image responses carry no Cache-Control headers, so cached
-    /// data must be preferred explicitly (same policy as trickplay tiles)
+    /// Jellyfin sends `Cache-Control: public` on image responses, but no
+    /// `max-age`, `Expires`, or `ETag` — so freshness falls to a heuristic off
+    /// `Last-Modified`, which is the mtime of the server's *resized variant*,
+    /// written the first time that size is asked for. A variant the server has
+    /// just generated therefore arrives with `Last-Modified == Date` and
+    /// near-zero freshness, and every read revalidates. Preferring cached data
+    /// explicitly skips that round trip; chapter images don't change under a
+    /// stable item, so ignoring staleness costs nothing here.
+    /// (Same policy as trickplay tiles. Measured 2026-07-25 — see #117.)
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.urlCache = .shared
