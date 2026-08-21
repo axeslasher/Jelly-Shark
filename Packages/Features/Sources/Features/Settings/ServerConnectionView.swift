@@ -236,9 +236,17 @@ public struct ServerConnectionView: View {
                     HStack {
                         Spacer()
                         Text("Disconnect")
+                            // Explicit colors so the label ignores the
+                            // destructive role's red text, which is illegible
+                            // on the themed background at rest. The system
+                            // focus platter respects explicit label styles,
+                            // so the pill reads the same focused.
                             .jsStyle(.body)
+                            .foregroundStyle(theme.primary)
                         Spacer()
                     }
+                    .padding(.vertical, SpacingTokens.xs)
+                    .background(theme.error, in: RoundedRectangle(cornerRadius: theme.cornerRadius))
                 }
             }
         }
