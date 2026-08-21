@@ -79,23 +79,18 @@ public struct SettingsView: View {
                     )
                 }
                 .tint(theme.accent)
-
-                settingsRow(
-                    icon: "play.circle.fill",
-                    title: "Playback",
-                    subtitle: "Quality, subtitles, audio",
-                )
             } header: {
                 sectionHeader("Playback")
             }
 
-            // About Section
+            // About Section — informational only, deliberately unfocusable: no
+            // icon or row platter, so it reads as a footer rather than a
+            // selectable row (#157). A real About page is #29's call.
             Section {
-                settingsRow(
-                    icon: "info.circle.fill",
-                    title: "About",
-                    subtitle: "Version 0.0.1",
-                )
+                Text(versionText)
+                    .jsStyle(.caption)
+                    .foregroundStyle(theme.secondary)
+                    .listRowBackground(Color.clear)
             } header: {
                 sectionHeader("About")
             }
@@ -115,6 +110,19 @@ public struct SettingsView: View {
                 themeSelectionView
             }
         }
+    }
+
+    /// Read from the bundle so the displayed version can't drift from
+    /// `MARKETING_VERSION` (#157). Local builds carry the default build number
+    /// `1` (CI overrides it per release, see docs/RELEASING.md), which says
+    /// nothing, so it's omitted.
+    private var versionText: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
+        guard let build = info?["CFBundleVersion"] as? String, build != "1" else {
+            return "Version \(version)"
+        }
+        return "Version \(version) (\(build))"
     }
 
     private var serverSubtitle: String {
