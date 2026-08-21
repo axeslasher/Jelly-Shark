@@ -248,6 +248,9 @@ public struct ServerConnectionView: View {
                     .padding(.vertical, SpacingTokens.xs)
                     .background(theme.error, in: RoundedRectangle(cornerRadius: theme.cornerRadius))
                 }
+                #if os(tvOS)
+                .buttonStyle(DestructiveFillButtonStyle())
+                #endif
             }
         }
         .background(theme.background)
@@ -286,6 +289,32 @@ public struct ServerConnectionView: View {
         }
     }
 }
+
+#if os(tvOS)
+    /// The Disconnect pill presents focus itself: under the system list style
+    /// its error fill sat lifted on the white focus platter — a pill on a
+    /// platter. A custom style means no system platter, so focus is a ring
+    /// plus the theme's focus scale. The ring is `primary`, not `focusRing` —
+    /// Horror's and Action's rings are red-family and vanish on the error
+    /// fill, while `primary` is what already reads on it (the label).
+    private struct DestructiveFillButtonStyle: ButtonStyle {
+        @Environment(\.theme) private var theme
+        @Environment(\.isFocused) private var isFocused
+
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .overlay {
+                    RoundedRectangle(cornerRadius: theme.cornerRadius)
+                        .strokeBorder(theme.primary, lineWidth: 4)
+                        .opacity(isFocused ? 1 : 0)
+                }
+                .scaleEffect(isFocused ? theme.focusScale : 1)
+                .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
+                .animation(theme.animation, value: isFocused)
+                .animation(MotionTokens.fast, value: configuration.isPressed)
+        }
+    }
+#endif
 
 #if DEBUG
     #Preview("Standard", traits: .featuresEnvironment) {
