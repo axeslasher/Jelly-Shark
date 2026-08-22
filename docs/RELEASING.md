@@ -146,6 +146,16 @@ CURRENT_PROJECT_VERSION = ${{ github.run_number }}.${{ github.run_attempt }}
 
 **One hazard:** `run_number` is scoped to a *workflow file* and restarts at 1 if that file is renamed or recreated. Build numbers only need to increase within a given marketing version, so either never rename the release workflow, or bump `MARKETING_VERSION` in the same change that recreates it.
 
+## Declarations App Store Connect and App Review will ask for
+
+Both are answered in the app's partial `Info.plist` (`Jelly Shark/Info.plist`), which Xcode merges with the generated one. Nothing here needs re-answering per build — but Review asks about the second one in prose, so the justification is recorded here rather than only in the ticket that added it ([#273](https://github.com/axeslasher/Jelly-Shark/issues/273)).
+
+**Export compliance** — `ITSAppUsesNonExemptEncryption = false`. The app ships no encryption of its own; all TLS is the OS's. Without the key declared, every upload sits in a "Missing Compliance" hold until it is answered by hand in App Store Connect.
+
+**Arbitrary loads** — `NSAppTransportSecurity` → `NSAllowsArbitraryLoads = true`. If Review asks why ATS is disabled, the answer is:
+
+> The app connects only to a Jellyfin media server that the user configures themselves, typically on their own private network. Self-hosted servers are commonly reached over plain HTTP — behind a TLS-less reverse proxy, at a DDNS name, or on a tailnet hostname — and the app has no way to know or constrain that address at build time, so no per-domain exception can be enumerated. `NSAllowsLocalNetworking` does not cover a qualified hostname, which is the shape that fails.
+
 ## The `v*` tag namespace is reserved
 
 Anything that reads a version out of git must match explicitly:
