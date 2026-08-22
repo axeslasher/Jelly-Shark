@@ -3,8 +3,10 @@
 <plist version="1.0">
 <dict>
 	<!-- Merged into the generated Info.plist (GENERATE_INFOPLIST_FILE stays YES).
-	     Only keys that cannot be expressed as an INFOPLIST_KEY_ build setting
-	     belong here; everything scalar lives in project.pbxproj. -->
+	     NSAppTransportSecurity has to live here — it is a dict, and an
+	     INFOPLIST_KEY_ build setting can only carry a scalar. The compliance key
+	     below could go either way; it is here because the two are one decision
+	     and reviewing them apart is worse than the inconsistency. -->
 
 	<!-- The server is user-supplied, so there is no domain list to enumerate and
 	     no way to require TLS: Jellyfin behind a TLS-less reverse proxy, a DDNS
