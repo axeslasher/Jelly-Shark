@@ -1,0 +1,132 @@
+name: Release
+
+# Archives both platforms from a release tag and uploads them to App Store
+# Connect (TestFlight). This is what runs after step 6 of
+# docs/RELEASING.md § Cutting a release — push the tag, this does the rest.
+#
+# NEVER RENAME THIS FILE. `github.run_number` is scoped to the workflow file
+# and restarts at 1 if the file is renamed or recreated; build numbers must
+# keep increasing within a marketing version. If a rename is ever unavoidable,
+# bump MARKETING_VERSION in the same change (docs/RELEASING.md § Build numbers).
+#
+# Required configuration (Settings → Secrets and variables → Actions), all
+# from an App Store Connect API key with the App Manager role:
+#   secrets.ASC_API_KEY_ID      the key's ID
+#   secrets.ASC_API_ISSUER_ID   the issuer ID
+#   secrets.ASC_API_KEY_P8      the full contents of the .p8 private key file
+#   vars.APPLE_TEAM_ID          the developer team ID
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# Never cancel an in-flight upload; a second tag queues behind it.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # 41.1 < 42.1 < 42.2 < 43.1 — unique per attempt and monotonic, and a
+  # re-run of a failed upload gets a fresh number instead of reproducing the
+  # duplicate App Store Connect rejects. The attempt half is load-bearing:
+  # run_number does not change on re-run, only run_attempt does.
+  BUILD_NUMBER: ${{ github.run_number }}.${{ github.run_attempt }}
+
+jobs:
+  # The tag and MARKETING_VERSION are two records of the same fact and nothing
+  # else enforces that they agree (docs/RELEASING.md § What must move
+  # together). Refuse the upload rather than ship a build whose version no
+  # tag corresponds to.
+  verify-version:
+    name: Tag matches MARKETING_VERSION
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          versions=$(grep -o 'MARKETING_VERSION = [^;]*' "Jelly Shark.xcodeproj/project.pbxproj" | awk '{print $3}' | sort -u)
+          echo "tag: $tag"
+          echo "MARKETING_VERSION values (app 1, test targets at template 1.0):"
+          echo "$versions"
+          if ! echo "$versions" | grep -qx "$tag"; then
+            echo "::error::tag v$tag has no matching MARKETING_VERSION — bump project.pbxproj first, then tag (docs/RELEASING.md)"
+            exit 1
+          fi
+
+  upload:
+    name: Archive + upload (${{ matrix.platform }})
+    needs: verify-version
+    runs-on: macos-26
+    timeout-minutes: 60
+    strategy:
+      # One platform failing shouldn't strand the other's finished upload;
+      # builds for the two platforms are independent in App Store Connect.
+      fail-fast: false
+      matrix:
+        platform: [tvOS, visionOS]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Xcode version
+        run: xcodebuild -version
+
+      # xcodebuild's cloud signing (-allowProvisioningUpdates) authenticates
+      # with the App Store Connect API key directly; no certificates or
+      # profiles are stored in the repo or in secrets beyond the key itself.
+      - name: Write App Store Connect API key
+        run: |
+          printf '%s' "$ASC_API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+
+      - name: Archive
+        run: |
+          xcodebuild archive \
+            -scheme "Jelly Shark" \
+            -destination "generic/platform=${{ matrix.platform }}" \
+            -archivePath "$RUNNER_TEMP/JellyShark-${{ matrix.platform }}.xcarchive" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "${{ secrets.ASC_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_API_ISSUER_ID }}"
+
+      # manageAppVersionAndBuildNumber must stay false: letting Xcode
+      # "helpfully" rewrite the build number on upload would defeat the
+      # run_number.run_attempt scheme the re-upload acceptance depends on.
+      - name: Write export options
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store-connect</string>
+            <key>destination</key>
+            <string>upload</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+            <key>teamID</key>
+            <string>${{ vars.APPLE_TEAM_ID }}</string>
+            <key>manageAppVersionAndBuildNumber</key>
+            <false/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Upload to App Store Connect
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/JellyShark-${{ matrix.platform }}.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "${{ secrets.ASC_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.ASC_API_ISSUER_ID }}"

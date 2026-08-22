@@ -130,6 +130,8 @@ gh release create v0.12.0 --title "v0.12.0 — <name>" --notes "<same summary>"
 
 **Step 6 is the order-dependent one.** Tagging before the merge points the tag at a commit that is not on `main`, and a squash or rebase leaves the tag dangling on an orphaned object. Tag after merging, on the commit that actually landed. A pushed tag cannot be corrected in place: the ruleset below blocks deletion and force-push, so fixing one means disabling that ruleset first. Get the target right before pushing.
 
+**Pushing the tag also triggers the upload.** `.github/workflows/release.yml` archives both platforms from the tagged commit and uploads them to App Store Connect (TestFlight), after checking that the tag matches `MARKETING_VERSION` — a mismatched tag fails the run instead of shipping a mislabeled build. It signs via xcodebuild cloud signing with an App Store Connect API key; the required secrets and variables are listed at the top of the workflow file. Never rename that file — the build-number hazard below is scoped to it.
+
 ## Build numbers
 
 `CURRENT_PROJECT_VERSION` stays at `1` in `project.pbxproj` — that is the local-developer default, and nothing about local builds should change. The release invocation overrides it on the command line, which `xcodebuild` accepts directly:
@@ -171,7 +173,6 @@ The trade is that a mistyped tag is unfixable until the ruleset is disabled. Tha
 
 ## Open decisions
 
-- **Archive and upload: manual or automated?** There is no release workflow today — `.github/workflows/` has only `swiftformat.yml` and `tests.yml`. The build-number expression above is the same either way.
 - **A `CHANGELOG.md`.** None exists. The tag annotations and GitHub Release bodies currently carry that content.
 
 ## Note: what can and cannot be backfilled
