@@ -468,10 +468,12 @@ struct JellyfinKitTests {
             #expect(musicLibrary.systemImageName == "music.note")
         }
 
-        @Test("Only books and folders libraries are unbrowsable")
+        @Test("Library types the app has no destination for are unbrowsable")
         func browsableCollectionTypes() {
             // Qualified: the SDK exports a `CollectionType` of its own
-            let unbrowsable: [JellyfinKit.CollectionType] = [.books, .folders]
+            let unbrowsable: [JellyfinKit.CollectionType] = [
+                .books, .folders, .music, .musicvideos, .livetv, .photos,
+            ]
 
             for type in unbrowsable {
                 let library = Library(id: type.rawValue, name: type.rawValue, collectionType: type)
@@ -481,8 +483,8 @@ struct JellyfinKitTests {
             // Everything else stays, including a mixed library that reports no
             // collection type at all
             let browsable: [JellyfinKit.CollectionType?] = [
-                .movies, .tvshows, .music, .musicvideos, .homevideos,
-                .boxsets, .photos, .livetv, .playlists, .unknown, nil,
+                .movies, .tvshows, .homevideos,
+                .boxsets, .playlists, .unknown, nil,
             ]
 
             for type in browsable {

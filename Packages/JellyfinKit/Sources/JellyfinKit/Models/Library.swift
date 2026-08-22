@@ -72,17 +72,20 @@ public extension CollectionType {
 public extension Library {
     /// Whether the app offers this library as a destination of its own.
     ///
-    /// Jelly Shark is a video client: a Books library has no reader behind it,
-    /// and a Folders library is the raw filesystem view of content already
-    /// listed under its real type. Both are dropped at the source rather than
-    /// shown as a tab (or a Library filter pill) that leads somewhere useless.
+    /// Jelly Shark is a video client: a Books library has no reader behind
+    /// it, Music and Music Videos have no audio player, Photos has no
+    /// viewer, Live TV is deferred to its own milestone (un-hiding it is
+    /// part of that milestone's work), and a Folders library is the raw
+    /// filesystem view of content already listed under its real type. All
+    /// are dropped at the source rather than shown as a tab (or a Library
+    /// filter pill) that leads somewhere useless.
     ///
     /// Keeping the list short also matters on visionOS, where the ornament
     /// silently drops tabs past its limit — an unbrowsable library there costs
     /// a slot that Settings needs.
     var isBrowsable: Bool {
         switch collectionType {
-        case .books, .folders:
+        case .books, .folders, .music, .musicvideos, .livetv, .photos:
             false
         default:
             true
