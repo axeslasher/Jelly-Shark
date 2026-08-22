@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged into the generated Info.plist (GENERATE_INFOPLIST_FILE stays YES).
+	     Only keys that cannot be expressed as an INFOPLIST_KEY_ build setting
+	     belong here; everything scalar lives in project.pbxproj. -->
+
+	<!-- The server is user-supplied, so there is no domain list to enumerate and
+	     no way to require TLS: Jellyfin behind a TLS-less reverse proxy, a DDNS
+	     name, or a tailnet hostname is a normal deployment. ATS exempts IP
+	     literals and .local names on its own, which is why this only surfaced on
+	     qualified hostnames (issue #273). NSAllowsLocalNetworking would not
+	     cover an FQDN. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
+
+	<!-- The app uses only the OS's own TLS and ships no encryption of its own,
+	     which is the standard exemption. Declaring it here means uploads skip
+	     the per-build export-compliance hold in App Store Connect. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+</dict>
+</plist>

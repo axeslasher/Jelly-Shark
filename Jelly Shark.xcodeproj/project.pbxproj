@@ -40,9 +40,22 @@
 		6DBADACF2F0E45BA00380536 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		6DB89EF02F1080000F6C56D0 /* Exceptions for "Jelly Shark" folder in "Jelly Shark" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 6DBADA8D2F0E2C2D00380536 /* Jelly Shark */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		6DBADA902F0E2C2D00380536 /* Jelly Shark */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				6DB89EF02F1080000F6C56D0 /* Exceptions for "Jelly Shark" folder in "Jelly Shark" target */,
+			);
 			path = "Jelly Shark";
 			sourceTree = "<group>";
 		};
@@ -446,6 +459,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Jelly Shark/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Jelly Shark";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -495,6 +509,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Jelly Shark/Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Jelly Shark";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.entertainment";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
