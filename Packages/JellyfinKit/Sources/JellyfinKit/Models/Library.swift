@@ -17,21 +17,16 @@ public struct Library: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Tag for the primary image
     public let primaryImageTag: String?
 
-    /// Number of items in the library
-    public let childCount: Int?
-
     public init(
         id: String,
         name: String,
         collectionType: CollectionType? = nil,
         primaryImageTag: String? = nil,
-        childCount: Int? = nil,
     ) {
         self.id = id
         self.name = name
         self.collectionType = collectionType
         self.primaryImageTag = primaryImageTag
-        self.childCount = childCount
     }
 }
 

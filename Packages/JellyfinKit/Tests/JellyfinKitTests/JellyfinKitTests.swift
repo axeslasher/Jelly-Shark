@@ -447,13 +447,11 @@ struct JellyfinKitTests {
                 id: "lib-1",
                 name: "Movies",
                 collectionType: .movies,
-                childCount: 150,
             )
 
             #expect(library.id == "lib-1")
             #expect(library.name == "Movies")
             #expect(library.collectionType == .movies)
-            #expect(library.childCount == 150)
         }
 
         @Test("Library system image names")

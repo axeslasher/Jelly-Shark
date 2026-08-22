@@ -42,6 +42,17 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Array of libraries
     func getLibraries() async throws -> [Library]
 
+    /// Count the items directly inside a library — its natural top-level
+    /// number (movies for a movie library, series for a TV one).
+    ///
+    /// This exists because the `ChildCount` the Views endpoint reports is
+    /// noise on Jellyfin 10.11 (a different small number on every fetch), so
+    /// library sizes come from a real `/Items` query: `limit=0` returns no
+    /// items, just `TotalRecordCount`.
+    /// - Parameter libraryId: The library ID
+    /// - Returns: The count, or nil when the server does not report one
+    func getLibraryItemCount(libraryId: String) async throws -> Int?
+
     /// Fetch one page of items from a library
     /// - Parameters:
     ///   - libraryId: The request's `parentId` — a library ID, or nil to
@@ -603,6 +614,30 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             return response.value.items?.compactMap { Library(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getLibraryItemCount(libraryId: String) async throws -> Int? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.parentID = libraryId
+            parameters.limit = 0
+            parameters.isRecursive = false
+            parameters.enableImages = false
+            parameters.enableUserData = false
+            parameters.enableTotalRecordCount = true
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.totalRecordCount
         } catch let error as APIError {
             throw error
         } catch {

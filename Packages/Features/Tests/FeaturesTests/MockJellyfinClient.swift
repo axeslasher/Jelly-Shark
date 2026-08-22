@@ -41,6 +41,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var nextEpisodeResult: MediaItem?
     var fetchCurrentUserResult: Result<User, Error> = .success(User(id: "user-1", name: "demo"))
     var librariesResult: Result<[Library], Error> = .success([])
+    /// Per-library counts served to `getLibraryItemCount`; a missing id
+    /// reports no count
+    var libraryCountResults: [String: Result<Int?, Error>] = [:]
+    var libraryCountRequests: [String] = []
     /// Search calls in arrival order. Each search now fans out one query per
     /// item type, so the types are recorded alongside the term.
     var searchQueries: [(query: String, itemTypes: [MediaType])] = []
@@ -103,6 +107,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     func getLibraries() async throws -> [Library] {
         await librariesDelay?()
         return try librariesResult.get()
+    }
+
+    func getLibraryItemCount(libraryId: String) async throws -> Int? {
+        let result = lock.withLock {
+            libraryCountRequests.append(libraryId)
+            return libraryCountResults[libraryId] ?? .success(nil)
+        }
+        return try result.get()
     }
 
     func getLibraryItems(
