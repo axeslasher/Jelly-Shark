@@ -416,7 +416,6 @@ extension Library {
             name: dto.name ?? "Unknown",
             collectionType: CollectionType(from: dto.collectionType),
             primaryImageTag: dto.imageTags?["Primary"],
-            childCount: dto.childCount,
         )
     }
 }

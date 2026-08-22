@@ -13,7 +13,7 @@ private func makeItem(id: String, userData: UserData? = nil) -> MediaItem {
 }
 
 private let sampleLibraries = [
-    Library(id: "lib-1", name: "Films", collectionType: .movies, childCount: 42),
+    Library(id: "lib-1", name: "Films", collectionType: .movies),
     Library(id: "lib-2", name: "Shows", collectionType: .tvshows),
 ]
 

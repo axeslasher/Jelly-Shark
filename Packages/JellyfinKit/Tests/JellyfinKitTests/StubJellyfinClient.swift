@@ -67,6 +67,10 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         librariesResult
     }
 
+    func getLibraryItemCount(libraryId _: String) async throws -> Int? {
+        nil
+    }
+
     func getLibraryItems(
         libraryId _: String?,
         itemTypes _: [MediaType]?,

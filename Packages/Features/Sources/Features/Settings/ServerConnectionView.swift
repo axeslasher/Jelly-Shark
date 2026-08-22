@@ -212,7 +212,7 @@ public struct ServerConnectionView: View {
                                     .jsStyle(.body)
                                     .foregroundStyle(theme.primary)
 
-                                if let count = library.childCount {
+                                if let count = viewModel.libraryCounts[library.id] {
                                     Text("\(count) items")
                                         .jsStyle(.caption)
                                         .foregroundStyle(theme.secondary)

@@ -53,6 +53,13 @@ public final class ServerConnectionViewModel {
     /// Libraries fetched from the server
     public private(set) var libraries: [Library] = []
 
+    /// Item counts per library ID for the Server page, fetched after the
+    /// libraries publish — one `TotalRecordCount` query each, because the
+    /// `ChildCount` the Views endpoint reports is noise on Jellyfin 10.11.
+    /// A library with no entry (fetch failed, or still in flight) shows no
+    /// count line rather than a wrong one.
+    public private(set) var libraryCounts: [String: Int] = [:]
+
     // MARK: - Private
 
     /// The Jellyfin client instance
@@ -64,6 +71,9 @@ public final class ServerConnectionViewModel {
 
     /// The in-flight background validation of an instantly-restored session
     private var validationTask: Task<Void, Never>?
+
+    /// The in-flight per-library count fetch
+    private var countsTask: Task<Void, Never>?
 
     /// Shared session to publish the client into after connecting
     private weak var session: AppSession?
@@ -176,6 +186,7 @@ public final class ServerConnectionViewModel {
                 }
                 state = .connected
                 session?.setClient(restoredClient, scopedCache: ScopedCache(store: cache, scope: scope))
+                refreshLibraryCounts(client: restoredClient)
                 validateInBackground(client: restoredClient, cache: cache, scope: scope)
                 return
             }
@@ -224,6 +235,7 @@ public final class ServerConnectionViewModel {
                 connectedUser = user
                 username = user.name
                 libraries = fresh
+                refreshLibraryCounts(client: client)
                 isValidating = false
                 // The client authenticated itself inside `fetchCurrentUser`,
                 // where Observation can't see it — tell the session so the
@@ -239,6 +251,7 @@ public final class ServerConnectionViewModel {
                 self.client = nil
                 connectedUser = nil
                 libraries = []
+                libraryCounts = [:]
                 isValidating = false
                 session?.clearClient()
             } catch {
@@ -252,6 +265,8 @@ public final class ServerConnectionViewModel {
     public func disconnect() async {
         validationTask?.cancel()
         validationTask = nil
+        countsTask?.cancel()
+        countsTask = nil
         isValidating = false
 
         // Resolve whose cache to purge before the identities are torn down.
@@ -283,6 +298,7 @@ public final class ServerConnectionViewModel {
         client = nil
         connectedUser = nil
         libraries = []
+        libraryCounts = [:]
         state = .disconnected
         errorMessage = nil
         session?.clearClient()
@@ -344,6 +360,39 @@ public final class ServerConnectionViewModel {
         await validationTask?.value
     }
 
+    /// Awaits completion of the in-flight library count fetch, if any.
+    ///
+    /// Intended for tests to observe results deterministically without sleeping.
+    func awaitLibraryCounts() async {
+        await countsTask?.value
+    }
+
+    /// Fetch each library's real size in parallel and publish the merged
+    /// result, replacing the dictionary whole so counts from a previous
+    /// library list never linger. A library whose fetch fails gets no entry.
+    private func refreshLibraryCounts(client: any JellyfinClientProtocol) {
+        countsTask?.cancel()
+        let libraries = libraries
+        countsTask = Task { [weak self] in
+            let counts = await withTaskGroup(of: (String, Int?).self) { group in
+                for library in libraries {
+                    group.addTask {
+                        await (library.id, try? client.getLibraryItemCount(libraryId: library.id))
+                    }
+                }
+                var merged: [String: Int] = [:]
+                for await (id, count) in group {
+                    if let count {
+                        merged[id] = count
+                    }
+                }
+                return merged
+            }
+            guard let self, !Task.isCancelled, state == .connected else { return }
+            libraryCounts = counts
+        }
+    }
+
     /// Wrap a freshly-built client so its responses feed the cache and the
     /// user-state overlay; without a cache the client passes through
     /// untouched. A restored session passes its scope so writes work during
@@ -372,6 +421,7 @@ public final class ServerConnectionViewModel {
             ScopedCache(store: $0, scope: CacheScope(serverURL: client.serverURL, userID: user.id))
         }
         session?.setClient(client, scopedCache: scopedCache)
+        refreshLibraryCounts(client: client)
     }
 
     /// Save the session to the Keychain so it can be restored on next launch

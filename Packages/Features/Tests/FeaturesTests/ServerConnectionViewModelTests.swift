@@ -91,6 +91,34 @@ struct ServerConnectionViewModelTests {
         #expect(recorder.configurations[0].deviceID == store.deviceID())
     }
 
+    @Test("Library counts come from per-library count fetches; a failed fetch leaves no entry")
+    func libraryCountsFetchedAfterConnect() async {
+        let store = InMemorySessionStore()
+        store.session = makeSavedSession()
+        let client = MockJellyfinClient()
+        client.librariesResult = .success([
+            Library(id: "lib-1", name: "Movies", collectionType: .movies),
+            Library(id: "lib-2", name: "Shows", collectionType: .tvshows),
+        ])
+        client.libraryCountResults = [
+            "lib-1": .success(606),
+            "lib-2": .failure(APIError.serverError(statusCode: 500)),
+        ]
+
+        let viewModel = makeViewModel(store: store, client: client, recorder: FactoryRecorder())
+        viewModel.attach(session: AppSession())
+
+        await viewModel.restoreSession()
+        await viewModel.awaitLibraryCounts()
+
+        #expect(viewModel.libraryCounts == ["lib-1": 606])
+        #expect(client.libraryCountRequests.sorted() == ["lib-1", "lib-2"])
+
+        await viewModel.disconnect()
+
+        #expect(viewModel.libraryCounts.isEmpty)
+    }
+
     @Test("restoreSession with no saved session is a no-op")
     func restoreWithoutSavedSession() async {
         let store = InMemorySessionStore()

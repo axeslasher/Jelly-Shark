@@ -125,6 +125,10 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         return libraries
     }
 
+    public func getLibraryItemCount(libraryId: String) async throws -> Int? {
+        try await inner.getLibraryItemCount(libraryId: libraryId)
+    }
+
     public func getLibraryItems(
         libraryId: String?,
         itemTypes: [MediaType]?,
