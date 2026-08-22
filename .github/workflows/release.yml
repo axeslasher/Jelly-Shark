@@ -4,6 +4,10 @@ name: Release
 # Connect (TestFlight). This is what runs after step 6 of
 # docs/RELEASING.md § Cutting a release — push the tag, this does the rest.
 #
+# The manual trigger exists for uploading an already-pushed tag (e.g. one
+# that predates this workflow): the Release tags ruleset forbids deleting
+# and re-pushing a v* tag, so re-firing the push event is not an option.
+#
 # NEVER RENAME THIS FILE. `github.run_number` is scoped to the workflow file
 # and restarts at 1 if the file is renamed or recreated; build numbers must
 # keep increasing within a marketing version. If a rename is ever unavoidable,
@@ -19,6 +23,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* tag to archive and upload (e.g. v0.11.0)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -46,10 +56,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Compare
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
         run: |
-          tag="${GITHUB_REF_NAME#v}"
+          case "$RELEASE_TAG" in
+            v*) ;;
+            *) echo "::error::'$RELEASE_TAG' is not a v* release tag"; exit 1 ;;
+          esac
+          tag="${RELEASE_TAG#v}"
           versions=$(grep -o 'MARKETING_VERSION = [^;]*' "Jelly Shark.xcodeproj/project.pbxproj" | awk '{print $3}' | sort -u)
           echo "tag: $tag"
           echo "MARKETING_VERSION values (app 1, test targets at template 1.0):"
@@ -72,6 +90,8 @@ jobs:
         platform: [tvOS, visionOS]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Xcode version
         run: xcodebuild -version
