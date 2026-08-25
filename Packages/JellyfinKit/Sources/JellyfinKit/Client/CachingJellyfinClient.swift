@@ -232,6 +232,10 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         try await ingesting(inner.getLatestItems(libraryId: libraryId, limit: limit))
     }
 
+    public func getMediaItems(ids: [String]) async throws -> [MediaItem] {
+        try await ingesting(inner.getMediaItems(ids: ids))
+    }
+
     // MARK: - Playback (never cached)
 
     public func getPlaybackInfo(

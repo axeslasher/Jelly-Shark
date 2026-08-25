@@ -295,6 +295,64 @@ struct HomeViewModelTests {
         #expect(viewModel.isEmptyServer == false)
     }
 
+    // MARK: - Hero media-sources second pass
+
+    @Test("Curated heroes get sources from the ids batch, keeping /Latest's grouped shape")
+    func heroSourcesSecondPass() async {
+        let client = MockJellyfinClient()
+        // A grouped-series entry as /Latest returns it: childCount is the
+        // group's size (the "N New Episodes" label), not the season count.
+        let grouped = MediaItem(
+            id: "s1", name: "s1", type: .series,
+            childCount: 80, imageTags: ImageTags(backdrop: "tag"),
+        )
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([grouped, movie("m1")]) : .success([])
+        }
+        client.mediaItemsHandler = { _ in .success([
+            // The plainly-fetched series: real season count, sources — only
+            // the sources may survive the merge.
+            MediaItem(id: "s1", name: "s1", type: .series, childCount: 4,
+                      mediaSources: [MediaSource(id: "s1-src")]),
+            MediaItem(id: "m1", name: "m1", type: .movie,
+                      mediaSources: [MediaSource(id: "m1-src-1"), MediaSource(id: "m1-src-2")]),
+        ]) }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(client.mediaItemsRequests == [["s1", "m1"]])
+        #expect(viewModel.heroItems.map { $0.mediaSources?.count } == [1, 2])
+        #expect(viewModel.heroItems.first?.childCount == 80)
+    }
+
+    @Test("A failed sources batch leaves the heroes sourceless, not the section failed")
+    func heroSourcesSecondPassFailure() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([movie("m1"), movie("m2")]) : .success([])
+        }
+        client.mediaItemsHandler = { _ in .failure(APIError.networkError("offline")) }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(viewModel.latestStatus == .loaded)
+        #expect(viewModel.heroItems.map(\.id) == ["m1", "m2"])
+        #expect(viewModel.heroItems.allSatisfy { $0.mediaSources == nil })
+    }
+
+    @Test("An empty hero set skips the sources batch")
+    func heroSourcesSecondPassSkippedWhenEmpty() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { _ in .success([]) }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(client.mediaItemsRequests.isEmpty)
+    }
+
     @Test("An empty server settles every section at .empty")
     func emptyServer() async {
         let viewModel = HomeViewModel()

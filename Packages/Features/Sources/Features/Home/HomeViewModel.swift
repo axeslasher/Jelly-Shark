@@ -55,7 +55,12 @@ public final class HomeViewModel {
     /// bottom of the merged lane — acceptable, it's stale by definition.
     private static let recentlyPlayedLimit = 60
     /// Global latest fetch feeding hero curation only (the shelves are per-library).
-    private static let heroSourceLimit = 16
+    /// The server applies this limit to the raw episode window BEFORE grouping
+    /// (#279, verified against 10.11.11): a bulk add of one series' episodes
+    /// ≥ the limit collapses the response to a single grouped entry — and the
+    /// hero to one inert slide. 120 rides out an 80-episode drop with room to
+    /// spare; curation still caps the marquee at `heroLimit`.
+    private static let heroSourceLimit = 120
     private static let latestPerLibraryLimit = 26
 
     // MARK: - Outputs
@@ -543,6 +548,7 @@ public final class HomeViewModel {
             // An episode whose still failed the width check needs the series
             // backdrop behind it; with neither it can't carry the hero.
             curated.removeAll { $0.type == .episode && !primaryIds.contains($0.id) && !Self.hasSeriesBackdrop($0) }
+            curated = await Self.resolvingHeroMediaSources(in: curated, client: client)
 
             guard generation == loadGeneration else { return }
             rawLatestShelves = shelves
@@ -771,6 +777,33 @@ public final class HomeViewModel {
     /// Whether the episode inherits a series backdrop it can fall back to.
     private nonisolated static func hasSeriesBackdrop(_ item: MediaItem) -> Bool {
         item.parentArtwork?.backdropItemId != nil && item.parentArtwork?.backdropImageTag != nil
+    }
+
+    /// Fill the curated heroes' `mediaSources` in one ids= batch. The bulk
+    /// `/Latest` fetch omits the field (its window is `heroSourceLimit` items,
+    /// #279), so the version picker's sources (#147) come from this pass.
+    /// Only the source list merges in — a wholesale item swap would trade
+    /// `/Latest`'s grouped-series entries (`childCount` = new-episode count,
+    /// the "N New Episodes" label) for the plainly-fetched series. A failed
+    /// fetch degrades the picker to sourceless heroes, never the section.
+    private nonisolated static func resolvingHeroMediaSources(
+        in curated: [MediaItem],
+        client: any JellyfinClientProtocol,
+    ) async -> [MediaItem] {
+        guard !curated.isEmpty,
+              let fetched = try? await client.getMediaItems(ids: curated.map(\.id))
+        else { return curated }
+
+        let sourcesById = Dictionary(
+            fetched.map { ($0.id, $0.mediaSources) },
+            uniquingKeysWith: { first, _ in first },
+        )
+        return curated.map { item in
+            guard let sources = sourcesById[item.id], sources != nil else { return item }
+            var enriched = item
+            enriched.mediaSources = sources
+            return enriched
+        }
     }
 
     /// The ids of curated episodes whose own primary still is wide enough
