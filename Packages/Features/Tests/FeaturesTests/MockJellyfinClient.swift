@@ -288,6 +288,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
+    /// id batches requested by media-sources second passes, in arrival order
+    var mediaItemsRequests: [[String]] = []
+    /// nil handler serves [] — items keep whatever sources they came with
+    var mediaItemsHandler: (([String]) -> Result<[MediaItem], Error>)?
+
+    func getMediaItems(ids: [String]) async throws -> [MediaItem] {
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            mediaItemsRequests.append(ids)
+            return mediaItemsHandler?(ids) ?? .success([])
+        }
+        return try result.get()
+    }
+
     /// Capability declarations received by playback calls, in arrival order
     var receivedCapabilities: [PlaybackCapabilities] = []
 

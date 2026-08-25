@@ -95,8 +95,11 @@ public struct MediaItem: Identifiable, Sendable, Equatable, Hashable, Codable {
     /// Every playable version of this item, in server order (populated on
     /// fetches whose `fields` include MediaSources — detail pages and the
     /// Home hero's sources). Nil means the fetch didn't ask, NOT that the
-    /// item is single-version.
-    public let mediaSources: [MediaSource]?
+    /// item is single-version. Mutable so a per-ids second pass can fill it
+    /// on items from bulk endpoints that omit the field (#279) without
+    /// discarding the rest of the item — `/Latest`'s grouped-series entries
+    /// carry state a refetch would lose (`childCount` = the group's size).
+    public var mediaSources: [MediaSource]?
 
     public init(
         id: String,

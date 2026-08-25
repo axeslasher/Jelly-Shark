@@ -188,6 +188,10 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         fatalError("unstubbed getLatestItems")
     }
 
+    func getMediaItems(ids _: [String]) async throws -> [MediaItem] {
+        fatalError("unstubbed getMediaItems")
+    }
+
     func getPlaybackInfo(
         itemId _: String,
         mediaSourceId _: String?,

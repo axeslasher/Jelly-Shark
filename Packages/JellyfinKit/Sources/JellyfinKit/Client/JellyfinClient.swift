@@ -189,6 +189,15 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Array of recently added media items
     func getLatestItems(libraryId: String?, limit: Int?) async throws -> [MediaItem]
 
+    /// Fetch full items — MediaSources included — by id, in one batch
+    /// request. The dependable way to get sources for a known small set:
+    /// bulk list fields are unreliable for MediaSources (#220), and the
+    /// hero's over-fetched `/Latest` window deliberately omits them (#279).
+    /// - Parameter ids: Item ids to fetch; order of the result is the
+    ///   server's, not the request's
+    /// - Returns: The items the server still knows among `ids`
+    func getMediaItems(ids: [String]) async throws -> [MediaItem]
+
     // MARK: - Playback
 
     /// Fetch playback information for an item (media sources and play session)
@@ -1034,15 +1043,46 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.userID = userId
             parameters.parentID = libraryId
             parameters.limit = limit
-            // `.mediaSources` so the Home hero (curated from /Latest) can
-            // offer its version picker without a per-item fetch (#147)
-            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
+            // No `.mediaSources` here: the hero over-fetches this endpoint
+            // (the server applies `limit` before grouping, #279), and a
+            // 100+-item window of full source/stream lists is real payload
+            // on every cold Home load. The hero fills sources for just its
+            // curated few via `getMediaItems(ids:)` instead (#147's picker
+            // still gets them).
+            parameters.fields = [.overview, .genres, .dateCreated]
 
             let response = try await sdkClient.send(
                 Paths.getLatestMedia(parameters: parameters),
             )
 
             return response.value.compactMap { MediaItem(from: $0) }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getMediaItems(ids: [String]) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+        guard !ids.isEmpty else {
+            return []
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.ids = ids
+            // Same fields as the list fetches whose items these enrich,
+            // plus the MediaSources the ids-filtered endpoint serves
+            // dependably (#220).
+            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
         } catch let error as APIError {
             throw error
         } catch {
