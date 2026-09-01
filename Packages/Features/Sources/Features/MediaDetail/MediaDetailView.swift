@@ -39,6 +39,7 @@ enum HeroPlayLabel {
 public struct MediaDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
+    @Environment(PlaybackPreferences.self) private var playbackPreferences
     @Environment(\.pushMediaDetail) private var pushMediaDetail
 
     /// Owns every server-side fetch and its status; this view keeps only
@@ -404,6 +405,7 @@ public struct MediaDetailView: View {
                         item: target.item,
                         userState: session.userState,
                         mediaSourceId: target.mediaSourceId,
+                        streamingBitrateCap: playbackPreferences.streamingQuality.bitsPerSecond,
                     )
                 }
             }

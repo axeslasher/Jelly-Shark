@@ -76,6 +76,37 @@ enum StreamURLBuilder {
     /// `aac,ac3,eac3`, so TrueHD and DTS still re-encode regardless of headroom.
     static let audioBitrate = 1_536_000
 
+    /// Floor on the audio ceiling, so a small budget still names a rate an
+    /// encoder would actually produce.
+    static let minimumAudioBitrate = 128_000
+
+    /// Split a total streaming budget into the video and audio ceilings the
+    /// stream URL carries. The two together never exceed the budget.
+    ///
+    /// The audio ceiling above is what a full-fat budget affords, but it
+    /// cannot be reserved unconditionally once the budget is a user-set cap
+    /// (#168): against a 2 Mbps cap a fixed 1.5 Mbps reservation is most of
+    /// the money, and the old `max(total - audio, audio)` split emitted
+    /// 1.5 Mbps of video *plus* 1.5 Mbps of audio — a 3 Mbps request against
+    /// the 2 Mbps ceiling the viewer asked for, which is precisely the
+    /// over-ask this issue exists to stop.
+    ///
+    /// So the reservation is a quarter of the budget, capped at the full
+    /// ceiling. That quarter clears 1.5 Mbps at ~6.1 Mbps and above, so every
+    /// budget from the 8 Mbps tier up reserves the unchanged `audioBitrate`
+    /// and keeps #222's Atmos passthrough intact. Below it the server
+    /// re-encodes multichannel audio to AAC, which is the right trade when
+    /// the link cannot carry both.
+    ///
+    /// The old video floor is deliberately gone: it existed only because the
+    /// audio reservation was fixed, and it is what put the sum over budget.
+    /// A quarter-share leaves video three quarters of any budget above the
+    /// audio floor, and the lowest shipped tier is 2 Mbps.
+    static func bitrateSplit(forTotal total: Int) -> (video: Int, audio: Int) {
+        let audio = min(audioBitrate, max(total / 4, minimumAudioBitrate))
+        return (video: max(total - audio, 0), audio: audio)
+    }
+
     /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
     ///
     /// The master playlist (not `main.m3u8`, which is the video-only media
@@ -115,7 +146,11 @@ enum StreamURLBuilder {
     ///     An undeclared client is assumed SDR-only and the server
     ///     tone-maps every HDR source via a below-realtime software
     ///     re-encode (#146).
-    ///   - maxStreamingBitrate: Total streaming budget in bits per second
+    ///   - maxStreamingBitrate: Total streaming budget in bits per second,
+    ///     split into the video and audio ceilings by `bitrateSplit`. Comes
+    ///     from the same `PlaybackCapabilities` the PlaybackInfo request
+    ///     declared, so the negotiated ceiling and the built URL agree —
+    ///     including when a user-set cap (#168) narrowed it.
     ///   - eTag: Optional media source tag for cache validation
     /// - Returns: The stream URL, or nil if construction fails
     static func hlsURL(
@@ -172,6 +207,8 @@ enum StreamURLBuilder {
             return nil
         }
 
+        let budget = bitrateSplit(forTotal: maxStreamingBitrate)
+
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "api_key", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
@@ -182,8 +219,8 @@ enum StreamURLBuilder {
             URLQueryItem(name: "BreakOnNonKeyFrames", value: "true"),
             URLQueryItem(name: "TranscodingProtocol", value: "hls"),
             URLQueryItem(name: "SubtitleMethod", value: subtitleMethod.rawValue),
-            URLQueryItem(name: "VideoBitrate", value: String(max(maxStreamingBitrate - audioBitrate, audioBitrate))),
-            URLQueryItem(name: "AudioBitrate", value: String(audioBitrate)),
+            URLQueryItem(name: "VideoBitrate", value: String(budget.video)),
+            URLQueryItem(name: "AudioBitrate", value: String(budget.audio)),
         ]
 
         // Only the passthrough path carries an HEVC copy the range

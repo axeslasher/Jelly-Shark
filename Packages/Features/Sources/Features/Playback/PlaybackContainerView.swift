@@ -27,15 +27,19 @@ public struct PlaybackContainerView: View {
     /// rather than trusting the recovery, because Close is the only exit.
     @FocusState private var isRetryFocused: Bool
 
-    /// - Parameter mediaSourceId: the version the launch surface chose
-    ///   (#147); nil plays the server default
+    /// - Parameters:
+    ///   - mediaSourceId: the version the launch surface chose (#147); nil
+    ///     plays the server default
+    ///   - streamingBitrateCap: the viewer's streaming ceiling in bits per
+    ///     second (#168); nil leaves the engine's declared ceiling
     public init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
         userState: UserStateStore? = nil,
         mediaSourceId: String? = nil,
+        streamingBitrateCap: Int? = nil,
     ) {
-        let engine = AVFoundationPlayerEngine()
+        let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)
         _viewModel = State(initialValue: PlaybackViewModel(
             client: client,

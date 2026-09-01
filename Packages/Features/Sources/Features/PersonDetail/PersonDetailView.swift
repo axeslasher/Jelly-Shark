@@ -13,6 +13,7 @@ import SwiftUI
 public struct PersonDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
+    @Environment(PlaybackPreferences.self) private var playbackPreferences
 
     let member: CastMember
 
@@ -101,6 +102,7 @@ public struct PersonDetailView: View {
                     item: target.item,
                     userState: session.userState,
                     mediaSourceId: target.mediaSourceId,
+                    streamingBitrateCap: playbackPreferences.streamingQuality.bitsPerSecond,
                 )
             }
         }

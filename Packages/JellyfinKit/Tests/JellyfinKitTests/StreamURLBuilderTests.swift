@@ -15,6 +15,7 @@ private extension StreamURLBuilder {
         subtitleMethod: SubtitleDeliveryMethod = .hls,
         assumeInterposer: Bool = true,
         sourceVideoCodec: String? = nil,
+        maxStreamingBitrate: Int = PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate,
         eTag: String? = nil,
     ) -> URL? {
         hlsURL(
@@ -26,7 +27,7 @@ private extension StreamURLBuilder {
             assumeInterposer: assumeInterposer,
             sourceVideoCodec: sourceVideoCodec,
             hevcRangeTypes: PlaybackCapabilities.jellySharkAVFoundationFixture.hevcRangeTypesParameter,
-            maxStreamingBitrate: PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate,
+            maxStreamingBitrate: maxStreamingBitrate,
             eTag: eTag,
         )
     }
@@ -147,14 +148,81 @@ struct StreamURLBuilderTests {
         #expect(StreamURLBuilder.audioBitrate >= dolbyDigitalAC3)
     }
 
-    @Test("The video budget stays positive once audio is reserved")
+    @Test("Video keeps the overwhelming majority of every budget")
     func videoBudgetSurvivesAudioReservation() {
-        // The split is max(total - audio, audio), so raising the audio ceiling
-        // eats into video. Guard that the shipped budget still leaves video the
-        // overwhelming majority.
-        let total = PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate
-        let video = max(total - StreamURLBuilder.audioBitrate, StreamURLBuilder.audioBitrate)
-        #expect(video > total / 2)
+        // Raising the audio ceiling eats into video. Guard that at every
+        // ceiling the app can ask for — the declared one and each user-set
+        // tier (#168) — video still gets the bulk of it.
+        for total in Self.tierCeilings {
+            let split = StreamURLBuilder.bitrateSplit(forTotal: total)
+            #expect(split.video > total / 2)
+        }
+    }
+
+    /// Every ceiling the app can send: the engine's declared one (the
+    /// `.maximum` tier) and each capped tier.
+    private static let tierCeilings = StreamingQualityTier.allCases.map {
+        $0.bitsPerSecond ?? PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate
+    }
+
+    @Test(
+        "Each shipped tier emits a fixed video/audio pair",
+        arguments: [
+            // Maximum is the default, and this pair is what the app has
+            // always sent: 120 Mbps less the 1.5 Mbps audio ceiling #222
+            // raised. (#168 quotes 119_808_000 — that observation predates
+            // #222, when the reservation was still 192 kbps.) Pinning it is
+            // what proves the quality cap left the default install alone.
+            (StreamingQualityTier.maximum, 118_464_000, 1_536_000),
+            // Down to the 8 Mbps tier a quarter of the budget still clears
+            // the full audio ceiling, so lossy multichannel keeps passing
+            // through untouched (#222).
+            (StreamingQualityTier.mbps40, 38_464_000, 1_536_000),
+            (StreamingQualityTier.mbps20, 18_464_000, 1_536_000),
+            (StreamingQualityTier.mbps8, 6_464_000, 1_536_000),
+            // Below it the quarter-share bites and the server re-encodes
+            // audio to AAC — the right trade when the link cannot carry both.
+            (StreamingQualityTier.mbps4, 3_000_000, 1_000_000),
+            (StreamingQualityTier.mbps2, 1_500_000, 500_000),
+        ],
+    )
+    func tierEmitsItsBudget(tier: StreamingQualityTier, video: Int, audio: Int) throws {
+        let ceiling = tier.bitsPerSecond ?? PlaybackCapabilities.jellySharkAVFoundationFixture.maxStreamingBitrate
+        let url = try #require(StreamURLBuilder.hlsURL(
+            serverURL: URL(string: "https://example.com")!,
+            accessToken: "token",
+            deviceId: "device",
+            parameters: StreamParameters(itemId: "item-1"),
+            maxStreamingBitrate: ceiling,
+        ))
+
+        let query = queryItems(of: url)
+        #expect(query["VideoBitrate"] == String(video))
+        #expect(query["AudioBitrate"] == String(audio))
+    }
+
+    @Test("What the URL asks for always fits inside the chosen ceiling")
+    func emittedBudgetNeverExceedsTheCeiling() throws {
+        // The whole point of the setting (#168). The old split reserved a
+        // fixed 1.5 Mbps for audio and floored video at the same figure, so
+        // a 2 Mbps ceiling emitted a 3 Mbps request — over the cap the
+        // viewer had just asked for.
+        for ceiling in Self.tierCeilings {
+            let url = try #require(StreamURLBuilder.hlsURL(
+                serverURL: URL(string: "https://example.com")!,
+                accessToken: "token",
+                deviceId: "device",
+                parameters: StreamParameters(itemId: "item-1"),
+                maxStreamingBitrate: ceiling,
+            ))
+
+            let query = queryItems(of: url)
+            let video = try #require(Int(query["VideoBitrate"] ?? ""))
+            let audio = try #require(Int(query["AudioBitrate"] ?? ""))
+            #expect(video + audio <= ceiling)
+            #expect(video > 0)
+            #expect(audio >= StreamURLBuilder.minimumAudioBitrate)
+        }
     }
 
     @Test("HDR range support is declared only on the HEVC passthrough path")

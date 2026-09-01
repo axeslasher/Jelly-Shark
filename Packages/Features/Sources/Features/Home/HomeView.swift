@@ -17,6 +17,7 @@ struct HomeView: View {
     @Environment(AppSession.self) private var session
     @Environment(ServerConnectionViewModel.self) private var connection
     @Environment(HomePreferences.self) private var homePreferences
+    @Environment(PlaybackPreferences.self) private var playbackPreferences
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pushMediaDetail) private var pushMediaDetail
 
@@ -116,6 +117,7 @@ struct HomeView: View {
                     item: target.item,
                     userState: session.userState,
                     mediaSourceId: target.mediaSourceId,
+                    streamingBitrateCap: playbackPreferences.streamingQuality.bitsPerSecond,
                 )
             }
         }
