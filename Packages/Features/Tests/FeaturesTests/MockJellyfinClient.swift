@@ -65,6 +65,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     ]
     /// Optional gate awaited before serving a library page, for in-flight tests
     var libraryItemsDelay: (() async -> Void)?
+    /// Per-library pages, keyed by the requested scope (nil is the unscoped
+    /// request) rather than by request order — for suites where several
+    /// callers each fetch their own library and an order-indexed stub would
+    /// only assert that they asked in the order the test happened to write
+    /// (the visionOS library cards, #138: one view model per card). Falls back
+    /// to `libraryItemsPages` when nil.
+    ///
+    /// `@Sendable` on purpose: this is called from a nonisolated async method,
+    /// so a stub that reached back into a `@MainActor` suite would trap at
+    /// runtime and take the whole test host down. The annotation turns that
+    /// into a compile error at the call site that wrote it.
+    var libraryItemsHandler: (@Sendable (String?) -> Result<MediaItemPage, Error>)?
     var filterOptionsResult: Result<LibraryFilterOptions, Error> = .success(.empty)
     /// Per-library filter options (the genre builds fan out per library);
     /// falls back to `filterOptionsResult` when nil
@@ -126,6 +138,9 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     ) async throws -> MediaItemPage {
         let result: Result<MediaItemPage, Error> = lock.withLock {
             libraryItemsRequests.append((libraryId, itemTypes, query, limit, startIndex))
+            if let libraryItemsHandler {
+                return libraryItemsHandler(libraryId)
+            }
             let index = min(libraryItemsRequests.count - 1, libraryItemsPages.count - 1)
             return libraryItemsPages[index]
         }
