@@ -446,8 +446,17 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         audioStreamIndex: Int?,
         subtitleStreamIndex: Int?,
     ) async throws {
+        // Recorded as an attempt before the throw, so a test can count
+        // heartbeats whether or not they land
         progressReports.append((itemId, positionTicks, isPaused, playMethod, audioStreamIndex, subtitleStreamIndex))
+        if let progressReportError {
+            throw progressReportError
+        }
     }
+
+    /// When set, every progress report throws it (after being recorded) —
+    /// the dead-server shape the outage monitor reads (#188)
+    var progressReportError: Error?
 
     func reportPlaybackStopped(
         itemId: String,

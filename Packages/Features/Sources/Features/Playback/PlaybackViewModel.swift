@@ -55,6 +55,15 @@ public final class PlaybackViewModel {
     /// Currently selected subtitle stream index (nil = off)
     public private(set) var selectedSubtitleStreamIndex: Int?
 
+    /// Why the playing session is cut off from the server, while it is
+    /// (#188). Orthogonal to `state` on purpose: an outage changes nothing
+    /// about what is mounted or playing — AVKit keeps retrying underneath
+    /// and both measured outages healed on their own — so it is a condition
+    /// the player view presents over the frozen frame, never a state the
+    /// session moves into. Nil while healthy, and cleared with the reporting
+    /// loop that feeds it (stop, rebuild).
+    public private(set) var outage: ServerOutage?
+
     /// Favorite state the transport bar shows, read through the user-state
     /// overlay — the same authority the detail pages read, so a heart
     /// pressed anywhere agrees everywhere (#193).
@@ -85,6 +94,11 @@ public final class PlaybackViewModel {
     private var playMethod: PlayMethod = .transcode
     private var progressTask: Task<Void, Never>?
     private var hasStopped = false
+
+    /// The detector behind `outage`, fed one sample per progress report.
+    /// Readable so a test can wait for a sample to be folded in rather
+    /// than for the report to be sent — they are one actor hop apart.
+    private(set) var outageMonitor = ServerOutageMonitor()
 
     /// First-frame deadline for the current session (#151). The engine's
     /// failure events and this watchdog are the only routes a post-`play()`
@@ -1060,6 +1074,11 @@ public final class PlaybackViewModel {
         deliveryFailureEventsArmed = false
         steadyStateEventsArmed = false
         mediaSelectionReconcileArmed = false
+        // The heartbeat that feeds the monitor stops with the session, and
+        // a rebuild against a dead server produces the real error screen
+        // from its own `getPlaybackInfo` — the banner has nothing to add
+        outageMonitor.reset()
+        outage = nil
     }
 
     // MARK: - Engine Events
@@ -1621,10 +1640,12 @@ public final class PlaybackViewModel {
     private func reportProgress() async {
         guard engine.isLoaded, !hasStopped else { return }
 
-        let positionTicks = currentPositionTicks()
+        let positionTicks = reportedPositionTicks()
         // Tracked locally regardless of whether the report lands — the
         // viewer's position is a fact about the viewer, not the network
         userState.recordPosition(itemID: item.id, ticks: positionTicks)
+        let generation = loadGeneration
+        let outcome: ServerOutageMonitor.ReportOutcome
         do {
             try await client.reportPlaybackProgress(
                 itemId: item.id,
@@ -1639,14 +1660,64 @@ public final class PlaybackViewModel {
             // Success at debug level — one line every heartbeat is only
             // interesting when actively diagnosing
             Self.logger.debug("[report] progress ok \"\(self.item.name, privacy: .public)\" pos=\(positionTicks)")
+            outcome = .ok
         } catch {
             Self.logger.error("[report] progress FAILED \"\(self.item.name, privacy: .public)\" pos=\(positionTicks): \(PlaybackLog.error(error), privacy: .public)")
+            outcome = .failed(error)
+        }
+        // Under a frozen server the request only comes back when the
+        // transport times out, and by then a rebuild or a stop may have
+        // moved the session on; a sample of the old session says nothing
+        // about the new one
+        guard isCurrentLoad(generation) else { return }
+        recordReportOutcome(outcome)
+    }
+
+    /// Fold one report attempt into the outage monitor and publish the
+    /// verdict when it changes. One log line per transition — the lines a
+    /// device run is read for — and none per heartbeat.
+    private func recordReportOutcome(_ outcome: ServerOutageMonitor.ReportOutcome) {
+        let failuresBefore = outageMonitor.consecutiveFailures
+        let playhead = engine.observedPlayheadSeconds
+        let verdict = outageMonitor.record(
+            outcome,
+            playhead: playhead,
+            transportStatus: engine.transportStatus,
+        )
+        guard verdict != outage else { return }
+        outage = verdict
+
+        let playheadDescription = playhead.map { String(format: "%.1fs", $0) } ?? "none"
+        if let verdict {
+            Self.logger.warning("""
+            [stall] reconnecting (\(String(describing: verdict), privacy: .public)) \
+            after \(self.outageMonitor.consecutiveFailures) failed reports; \
+            playhead frozen at \(playheadDescription, privacy: .public)
+            """)
+        } else {
+            Self.logger.info("[stall] recovered after \(failuresBefore) failed reports; playhead \(playheadDescription, privacy: .public)")
         }
     }
 
+    /// The position a heartbeat reports: the engine's playhead mirror,
+    /// so the one read that runs periodically through a stall never blocks
+    /// on the media pipeline it is measuring (#188). The live read stands
+    /// in only while the mirror has nothing yet — before the first tick of
+    /// a fresh load — which is never a wedge, since a wedge follows
+    /// playback that ran.
+    private func reportedPositionTicks() -> Int64 {
+        Self.ticks(fromPlayhead: engine.observedPlayheadSeconds ?? engine.currentTimeSeconds)
+    }
+
+    /// The exact playhead, read live — for the one-off reads that must
+    /// not be a second stale: a stop's final position, a rebuild's anchor,
+    /// the first-frame watchdog's baseline.
     private func currentPositionTicks() -> Int64 {
-        guard let seconds = engine.currentTimeSeconds,
-              seconds.isFinite, seconds > 0 else { return 0 }
+        Self.ticks(fromPlayhead: engine.currentTimeSeconds)
+    }
+
+    private static func ticks(fromPlayhead seconds: Double?) -> Int64 {
+        guard let seconds, seconds.isFinite, seconds > 0 else { return 0 }
         return PlaybackTicks.ticks(fromSeconds: seconds)
     }
 }

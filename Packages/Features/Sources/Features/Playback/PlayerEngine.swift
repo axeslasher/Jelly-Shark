@@ -198,7 +198,25 @@ protocol PlayerEngine: AnyObject {
     // MARK: State
 
     var isLoaded: Bool { get }
+
+    /// The playhead, read live. Exact, and expensive in the wrong moment:
+    /// AVFoundation answers it with a synchronous XPC round trip to
+    /// mediaserverd, which a wedged media server can hold for seconds
+    /// (13 s measured — #188). Right for the one-off reads that need the
+    /// exact value — a stop's final position, a rebuild's anchor — and
+    /// wrong for anything periodic. See `observedPlayheadSeconds`.
     var currentTimeSeconds: Double? { get }
+
+    /// The playhead as last *reported* by the engine — a mirror fed by a
+    /// periodic time observer, never a live read. At most one observer
+    /// interval stale while playing, and frozen while playback is: the
+    /// observer fires only as time advances (and on seeks and rate
+    /// changes), so a stall is visible here as a value that stops moving.
+    /// This is what the reporting heartbeat and the outage monitor read
+    /// (#188). Nil until the engine has reported a position for the
+    /// current load.
+    var observedPlayheadSeconds: Double? { get }
+
     var transportStatus: PlaybackTransportStatus { get }
 
     /// The engine's error for the current session, non-nil only once

@@ -219,6 +219,11 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     @ObservationIgnored private var healthSampler: PlaybackHealthSampler?
     @ObservationIgnored private var healthTimeObserver: Any?
 
+    /// The playhead mirror — see `observePlayhead`. Observation-ignored on
+    /// purpose: it changes every second and no view reads it.
+    @ObservationIgnored private(set) var observedPlayheadSeconds: Double?
+    @ObservationIgnored private var playheadObserver: Any?
+
     #if os(tvOS)
         /// The Up Next proposal waiting to attach, kept so a duration that
         /// arrives after `setUpNextProposal` was called (common on
@@ -295,6 +300,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         observeEnd(of: playerItem, generation: generation)
         observeMediaSelection(of: playerItem, generation: generation)
         observePlaybackHealth(of: player)
+        observePlayhead(of: player, generation: generation)
         loadMediaSelectionOptions(for: playerItem, loadsLegible: loadsLegibleOptions, generation: generation)
     }
 
@@ -351,6 +357,11 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             player?.removeTimeObserver(healthTimeObserver)
         }
         healthTimeObserver = nil
+        if let playheadObserver {
+            player?.removeTimeObserver(playheadObserver)
+        }
+        playheadObserver = nil
+        observedPlayheadSeconds = nil
         // Playback of this item is over (teardown, rebuild, or a new load):
         // one last read catches drops after the final periodic tick.
         healthSampler?.stopTimelineWatch()
@@ -686,7 +697,9 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     /// Its sibling `playbackStalledNotification` is deliberately NOT
     /// observed: a stall is a rebuffer, it recovers on its own, and treating
     /// one as fatal would turn every slow moment on a busy network into an
-    /// error screen.
+    /// error screen. A stall that outlives the server is surfaced instead by
+    /// the session layer's outage monitor, from the reporting heartbeat and
+    /// the playhead mirror, and never as a failure (#188).
     private func observeFailedToPlayToEnd(of playerItem: AVPlayerItem, generation: Int) {
         failedToEndObserver = NotificationCenter.default.addObserver(
             forName: AVPlayerItem.failedToPlayToEndTimeNotification,
@@ -757,6 +770,36 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             sampler.sampleOnQueue(item, atSeconds: time.seconds)
         }
         sampler.startTimelineWatch(of: player)
+    }
+
+    /// How often the playhead mirror refreshes. Coarse on purpose: what it
+    /// serves is a ten-second reporting heartbeat and a stall check, and a
+    /// finer interval would only cost main-actor turns.
+    private static let playheadMirrorInterval: Double = 1
+
+    /// Keep `observedPlayheadSeconds` current without ever asking the player
+    /// for its time (#188).
+    ///
+    /// `currentTime()` is a synchronous XPC call to mediaserverd, and a
+    /// wedged media pipeline — exactly what a stalled stream is — can hold
+    /// it for seconds (13 s measured by another engine on this same
+    /// failure). A periodic time observer costs nothing to read: the player
+    /// pushes the value as time advances, and the push simply stops when
+    /// playback does, which is the signal the outage monitor wants. Delivered
+    /// on the main queue and hopped onto the actor like every other observer
+    /// here; the generation fence drops a tick that lands after the load it
+    /// belonged to.
+    private func observePlayhead(of player: AVPlayer, generation: Int) {
+        playheadObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: Self.playheadMirrorInterval, preferredTimescale: 600),
+            queue: .main,
+        ) { [weak self] time in
+            let seconds = time.seconds
+            Task { @MainActor [weak self] in
+                guard let self, self.generation == generation, seconds.isFinite else { return }
+                self.observedPlayheadSeconds = seconds
+            }
+        }
     }
 
     /// Playback-health counter state, confined to its own serial queue

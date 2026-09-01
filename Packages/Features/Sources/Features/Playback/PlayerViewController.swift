@@ -19,6 +19,11 @@
         let selectedSubtitleIndex: Int?
         let people: [CastMember]
         let isFavorite: Bool
+
+        /// The server outage the session is riding out, if any — presented
+        /// as a passive card inside AVKit's overlay (#188)
+        let outage: ServerOutage?
+
         let headshotURL: (CastMember) -> URL?
         let onSelectAudio: (Int) -> Void
         let onSelectSubtitle: (Int?) -> Void
@@ -105,6 +110,11 @@
             /// What the track menus were last built from; unchanged means
             /// the assigned items are still correct
             var trackMenuSignature: String?
+
+            /// The reconnecting card's host, mounted once in AVKit's
+            /// `contentOverlayView` and kept for the controller's lifetime;
+            /// the SwiftUI root animates the card in and out (#188)
+            var reconnectingBannerHost: UIHostingController<ReconnectingBanner>?
 
             /// Latest dismissal handler, refreshed every update pass for the
             /// same reason `onToggleFavorite` is: the delegate outlives the
@@ -229,6 +239,7 @@
             context.coordinator.onDeferUpNext = onDeferUpNext
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
+            syncReconnectingBanner(for: controller, coordinator: context.coordinator)
             #if os(tvOS)
                 // Install the Up Next card once, here in a main-actor context;
                 // AVKit reuses it for every proposal and the `shouldPresent`
@@ -252,6 +263,44 @@
             }
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
+            syncReconnectingBanner(for: controller, coordinator: context.coordinator)
+        }
+
+        /// Present the reconnecting card (#188) inside AVKit's own hierarchy.
+        ///
+        /// `contentOverlayView` sits between the video and the playback
+        /// controls on both platforms: the frozen frame shows through, the
+        /// transport bar and AVKit's buffering spinner stay on top, and on
+        /// visionOS — where AVKit draws in a window of its own and a SwiftUI
+        /// sibling of the player is invisible — it is the only place a
+        /// passive overlay renders at all. Passive is the point: the host
+        /// takes no interaction, so focus never leaves AVKit's controls and
+        /// nothing the viewer could press is added over the player.
+        ///
+        /// The host is mounted once and kept; the SwiftUI root animates the
+        /// card in and out, so no view is added to or removed from the
+        /// player mid-session. AVKit creates the overlay view with its own
+        /// view, so a `make` that runs before that finds nil and the first
+        /// update pass installs the host instead.
+        private func syncReconnectingBanner(for controller: AVPlayerViewController, coordinator: Coordinator) {
+            if let host = coordinator.reconnectingBannerHost {
+                host.rootView = ReconnectingBanner(outage: outage)
+                return
+            }
+            guard let overlay = controller.contentOverlayView else { return }
+
+            let host = UIHostingController(rootView: ReconnectingBanner(outage: outage))
+            host.view.backgroundColor = .clear
+            host.view.isUserInteractionEnabled = false
+            host.view.translatesAutoresizingMaskIntoConstraints = false
+            overlay.addSubview(host.view)
+            NSLayoutConstraint.activate([
+                host.view.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+                host.view.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+                host.view.topAnchor.constraint(equalTo: overlay.topAnchor),
+                host.view.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+            ])
+            coordinator.reconnectingBannerHost = host
         }
 
         /// Builds `customInfoViewControllers` from the Cast & Crew tab and,
