@@ -43,3 +43,51 @@ struct LibraryCardView: View {
         }
     }
 }
+
+#if DEBUG
+    /// The preview trait's session has no client, so the sample fetch no-ops
+    /// and each card renders its seeded gradient wash — the same face a library
+    /// with no artwork shows in production, and the one worth checking across
+    /// five themes. The sampled-backdrop state needs a real server, so it is a
+    /// device check rather than a canvas one.
+    ///
+    /// Sized to `LibrariesGridView`'s card width so the label's wrapping and
+    /// the wash's proportions read here the way they will on the grid.
+    private struct LibraryCardViewPreview: View {
+        var body: some View {
+            NavigationStack {
+                HStack(spacing: SpacingTokens.cardGap) {
+                    LibraryCardView(
+                        library: Library(id: "preview-movies", name: "Movies", collectionType: .movies),
+                        width: 380,
+                    )
+                    LibraryCardView(
+                        library: Library(id: "preview-shows", name: "TV Shows", collectionType: .tvshows),
+                        width: 380,
+                    )
+                }
+                .padding(SpacingTokens.screenPadding)
+            }
+        }
+    }
+
+    #Preview("Standard", traits: .featuresEnvironment) {
+        LibraryCardViewPreview()
+    }
+
+    #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
+        LibraryCardViewPreview()
+    }
+
+    #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
+        LibraryCardViewPreview()
+    }
+
+    #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        LibraryCardViewPreview()
+    }
+
+    #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        LibraryCardViewPreview()
+    }
+#endif

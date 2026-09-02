@@ -193,6 +193,24 @@ public struct RootView: View {
             default:
                 break
             }
+
+            #if !os(tvOS)
+                // The grid is the Libraries stack's root, so a changed library
+                // set invalidates whatever was pushed from it: a profile
+                // switch or a server swap would otherwise leave that tab
+                // sitting inside a `LibraryItemsView` for a library the new
+                // session has never heard of, which the viewer only discovers
+                // on returning to the tab. Any change resets it, not just an
+                // emptying one — `onChange` fires only when the set actually
+                // differs, so a refresh that returns the same libraries leaves
+                // a pushed grid alone.
+                //
+                // tvOS is deliberately outside this: its libraries are tabs,
+                // each with its own stack that the switch above already
+                // handles, and writing this key there would put an entry in
+                // `tabPaths` for a tab that platform never declares.
+                tabPaths[.libraries] = NavigationPath()
+            #endif
         }
     }
 

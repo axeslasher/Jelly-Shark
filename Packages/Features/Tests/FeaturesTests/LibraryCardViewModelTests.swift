@@ -260,10 +260,14 @@ struct LibraryCardViewModelTests {
         await viewModel.backdropUnavailable(client: client, library: Self.movies)
         #expect(viewModel.selection?.itemId == "live")
 
-        // Only once: a replacement that also fails must not spin.
+        // Only once: a replacement that also fails must not spin. Pinning the
+        // request count is the real assertion — without it a second fetch that
+        // happened to re-pick "live" would pass while the card quietly spun.
+        let requestsAfterRepair = client.libraryItemsRequests.count
         client.libraryItemsPages = [.success(page(["another"]))]
         await viewModel.backdropUnavailable(client: client, library: Self.movies)
         #expect(viewModel.selection?.itemId == "live")
+        #expect(client.libraryItemsRequests.count == requestsAfterRepair)
     }
 
     @Test("A library that has lost all its artwork drops to the wash")
