@@ -17,6 +17,55 @@ Jelly Shark is a premium Jellyfin client for tvOS and visionOS that elevates the
 - Apple TV 4K (tvOS 26.0+)
 - Apple Vision Pro (visionOS 26.2+)
 
+## Working Agreements
+
+These bind every session and every subagent — a subagent inherits this file and nothing
+else. Where they collide with convenience, they win.
+
+### Evidence before assertion
+
+- Label every conclusion **verified** (and cite what verifies it) or **hypothesis
+  (unverified)**. A hypothesis never lands in a doc, issue body, PR description, commit
+  message, or memory file as settled fact.
+- "Semantically inert", "no-op", "should be safe" are claims, not observations. Cite the
+  build, test, or device evidence, or say plainly that it wasn't checked.
+- A suite is green when the **exit code** says so. Never report a result read off a grepped
+  summary line. Never report device behaviour from a console session you didn't open in this
+  run — check the run timestamp and device name first.
+- **Device evidence outranks a green suite.** If a device-verified fix fails a test, the
+  harness is wrong; fix the harness, not the fix.
+- Probe instrumentation, scratch scripts, and spike scaffolding stay in place until the
+  findings are written up and merged. Don't tidy them away early.
+
+See § What tests cannot verify: appearance and tvOS focus behaviour aren't verifiable by any
+suite here, and asserting them from a passing build is the same error.
+
+### Plan gate
+
+Before writing code for anything touching more than one file, post this and wait:
+
+1. The smallest change that satisfies the acceptance criteria.
+2. What previously-merged work it could regress, and why it won't.
+3. The file footprint.
+4. How it gets verified, and in which venue — host suite, simulator suite, or device.
+5. Anything removed, rebuilt, or renamed that wouldn't be expected.
+
+Never start version-bump, release, or tag work unasked; release timing is a product call.
+When offering options, say up front which ones regress existing behaviour. Run plans and
+multi-step procedures go in numbered lists or tables, never prose paragraphs.
+
+### Working with agents
+
+- **One reviewer per diff.** A single Opus agent reviews a branch or PR. Never fan out
+  parallel reviewers over the same files — that has twice hit the rate limit and spent a
+  large share of session budget in minutes without adding findings.
+- **Parallel implementers get worktrees.** Agents sharing the checkout collide. Fence each to
+  its own worktree and a non-overlapping file footprint, and check the footprints don't
+  overlap before launching.
+- **Stop review agents before editing the working tree.** They scope from the tree, so a
+  mid-flight edit invalidates their findings: stop, edit, re-spawn.
+- State the fencing — which issue and which files each agent owns — before spawning anything.
+
 ## Building & Running
 
 ### Run Tests
