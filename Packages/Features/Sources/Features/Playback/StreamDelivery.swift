@@ -329,7 +329,7 @@ final class RemuxHLSDelivery: StreamDelivery {
 
     func prepare() async -> DeliveredStream {
         if let reason = Self.rung1DeclineReason(context: context) {
-            Self.logger.info("[remux-hls] skipping the in-app remux (\(reason, privacy: .public)); trying the master-less copy variant")
+            Self.logger.info("[remux-hls] skipping the in-app remux (\(reason, privacy: .public)); descending the ladder")
             return await descendLadder()
         }
         do {
@@ -356,23 +356,32 @@ final class RemuxHLSDelivery: StreamDelivery {
         if context.avoidInAppRemux {
             return "a remux session already failed mid-file"
         }
-        // Rung 1 serves the ORIGINAL file's bytes: it demuxes what the
-        // server has on disk, so no bitrate ceiling can constrain it. On a
-        // link the viewer has told us is narrow, that is exactly the stream
-        // that cannot arrive — a 30 Mbps HDR MKV over a 2 Mbps cap stalls
-        // forever. Declining hands the session to the server transcode,
-        // which is the only delivery here that honors the ceiling at all.
-        //
-        // Only the viewer's own cap counts. Measuring against the declared
-        // 120 Mbps would push every UHD remux above it off rung 1 on a LAN,
-        // where rung 1 is the whole point.
-        if let cap = context.userStreamingBitrateCap,
-           let bitrate = context.mediaSource?.bitrate,
-           bitrate > cap
-        {
-            return "the source's \(bitrate) bps exceeds the viewer's \(cap) bps ceiling"
-        }
-        return nil
+        return originalBytesDeclineReason(context: context)
+    }
+
+    /// Why this session must not be served the source's video untouched, or
+    /// nil when it may be.
+    ///
+    /// Rungs 1 and 2 both deliver the ORIGINAL file's video: rung 1 demuxes
+    /// what the server has on disk, and rung 2 asks for
+    /// `AllowVideoStreamCopy=true` and then plays exactly that variant. No
+    /// bitrate ceiling constrains either one. On a link the viewer has told
+    /// us is narrow, that is precisely the stream that cannot arrive — a
+    /// 30 Mbps HDR MKV over a 2 Mbps cap stalls forever — so a source over
+    /// the cap skips both rungs and lands on the server transcode, the only
+    /// delivery here that honors the ceiling at all.
+    ///
+    /// Only the viewer's own cap counts. Measuring against the declared
+    /// 120 Mbps would push every UHD remux off these rungs on a LAN, where
+    /// they are the whole point. An unknown source bitrate is not evidence
+    /// of anything either: the rungs stay available rather than transcoding
+    /// every unanalyzed source on the chance that it is large.
+    static func originalBytesDeclineReason(context: DeliveryContext) -> String? {
+        guard let cap = context.userStreamingBitrateCap,
+              let bitrate = context.mediaSource?.bitrate,
+              bitrate > cap
+        else { return nil }
+        return "the source's \(bitrate) bps exceeds the viewer's \(cap) bps ceiling"
     }
 
     /// Rungs 2 and 3, in order: the copy variant, then the interposer.
@@ -393,6 +402,13 @@ final class RemuxHLSDelivery: StreamDelivery {
     /// Returns nil on any miss so the caller descends to the interposer.
     private func prepareCopyVariant() async -> DeliveredStream? {
         guard let source = context.mediaSource else { return nil }
+        // This rung carries the source's video untouched as well, so the
+        // ceiling that turned rung 1 away turns this one away with it —
+        // whether the session declined rung 1 or attempted it and failed.
+        if let reason = Self.originalBytesDeclineReason(context: context) {
+            Self.logger.info("[copy-variant] declined (\(reason, privacy: .public))")
+            return nil
+        }
         // Re-resolve rather than reuse `resolution.url`: the engine's
         // declared ranges exclude DOVIWithEL (profile 7), so the session's
         // own master has no copy variant for those sources. Widening is

@@ -60,10 +60,10 @@ struct RemuxHLSDeliveryTests {
     /// server-transcoded on the external-audio path (#249/#252) — so the only
     /// thing left that pins a session below rung 1 is a remux that already
     /// failed mid-file on this item.
-    /// Rung 1 serves the original file's bytes, so no bitrate ceiling can
-    /// constrain it. A viewer who set a cap because their link is narrow
-    /// must not be handed the full-rate original (#168).
-    @Test("Rung 1 declines a source above the viewer's own ceiling")
+    /// Rungs 1 and 2 both serve the original file's video, so no bitrate
+    /// ceiling can constrain either. A viewer who set a cap because their
+    /// link is narrow must not be handed the full-rate original (#168).
+    @Test("The original-bytes rungs decline a source above the viewer's own ceiling")
     func rung1DeclinesOverTheViewerCap() {
         // Over the cap: the session belongs on the server transcode, the
         // only delivery below here that honors a ceiling at all.
@@ -84,6 +84,17 @@ struct RemuxHLSDeliveryTests {
         // stays the better path for the HDR-on-SDR case it owns.
         #expect(RemuxHLSDelivery.rung1DeclineReason(context: context(
             bitrate: nil, userStreamingBitrateCap: 2_000_000,
+        )) == nil)
+
+        // Rung 2 answers the cap on its own, so a session that attempted
+        // rung 1 and failed cannot land on the copy variant and blow the
+        // ceiling that way either. `avoidInAppRemux` is rung 1's business
+        // alone and leaves rung 2 available.
+        #expect(RemuxHLSDelivery.originalBytesDeclineReason(context: context(
+            bitrate: 30_000_000, userStreamingBitrateCap: 2_000_000,
+        )) != nil)
+        #expect(RemuxHLSDelivery.originalBytesDeclineReason(context: context(
+            avoidInAppRemux: true, bitrate: 1_500_000, userStreamingBitrateCap: 2_000_000,
         )) == nil)
     }
 
