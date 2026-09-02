@@ -25,5 +25,11 @@
 	     the per-build export-compliance hold in App Store Connect. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Local-network discovery (#282) broadcasts a UDP probe, which counts as a local
+	     network operation. In practice only visionOS ever shows this prompt — tvOS has
+	     no local-network privacy at all (TN3179) — but the key is harmless there and
+	     belongs next to the other privacy keys rather than in a build setting. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Jelly Shark looks for Jellyfin servers on your network so you can pick yours instead of typing its address.</string>
 </dict>
 </plist>
