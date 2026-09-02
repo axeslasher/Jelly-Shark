@@ -54,6 +54,27 @@ Never start version-bump, release, or tag work unasked; release timing is a prod
 When offering options, say up front which ones regress existing behaviour. Run plans and
 multi-step procedures go in numbered lists or tables, never prose paragraphs.
 
+### Writing
+
+Everything written for a person to read — commit messages, PR bodies, issue bodies, docs,
+and code comments — follows the same shape. This binds subagents too.
+
+- **Lead with the outcome or the action.** The first line says what changed, or what to do.
+  Context comes after, if it earns its place.
+- **Numbered lists and tables for anything with steps.** Never a procedure buried in a
+  paragraph. Cap a list at five items; past five, split into must / nice-to-have.
+- **Plain words.** No jargon where a common word works; expand an acronym on first use.
+  Short paragraphs, three sentences at most.
+- **Current state only.** Delete superseded text rather than layering a correction on top of
+  it. One short history note at most, and only when the history changes what to do next.
+- **Never append a session link.** No `Claude-Session:` trailer, no `claude.ai` URL in a
+  commit, PR, or issue. They are not useful to come back to.
+
+Code comments say *why*, not *what*, and match the density of the code around them.
+
+A PR body answers three things and stops: what changed, how it was verified, what needs a
+human eye. An issue body answers: the decision, the evidence, the acceptance criteria.
+
 ### Working with agents
 
 - **One reviewer per diff.** A single Opus agent reviews a branch or PR. Never fan out
