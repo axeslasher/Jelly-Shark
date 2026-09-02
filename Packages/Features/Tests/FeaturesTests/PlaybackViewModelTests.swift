@@ -35,6 +35,9 @@ struct PlaybackViewModelTests {
             engine: engine,
             progressInterval: progressInterval,
             mediaSourceId: mediaSourceId,
+            // No sample spacing: these tests drive heartbeats back to back,
+            // and the spacing rule has its own suite (ServerOutageMonitorTests)
+            outageMonitor: ServerOutageMonitor(minimumSampleSpacing: .zero),
         )
         return (viewModel, engine)
     }
@@ -202,16 +205,24 @@ struct PlaybackViewModelTests {
         #expect(engine.teardownCount == 0)
     }
 
-    @Test("The heartbeat reports the playhead mirror, not the live read")
+    @Test("The heartbeat reports the playhead mirror, and repeats its last report when there is none — never the live read")
     func heartbeatReportsTheMirror() async {
         let client = MockJellyfinClient()
         let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
         await viewModel.start()
         engine.currentTimeSeconds = 999
-        engine.observedPlayheadSeconds = 120
 
+        // No mirror yet and nothing reported: zero, not the live 999
         await heartbeat(viewModel, engine)
+        #expect(client.progressReports.last?.positionTicks == 0)
 
+        engine.observedPlayheadSeconds = 120
+        await heartbeat(viewModel, engine)
+        #expect(client.progressReports.last?.positionTicks == 1_200_000_000)
+
+        // Mirror gone again: the last report stands in, still not the live read
+        engine.observedPlayheadSeconds = nil
+        await heartbeat(viewModel, engine)
         #expect(client.progressReports.last?.positionTicks == 1_200_000_000)
     }
 
@@ -262,6 +273,10 @@ struct PlaybackViewModelTests {
         await heartbeat(viewModel, engine)
 
         #expect(viewModel.outage == nil)
+        // Both samples were folded — the feature is exercised, not absent —
+        // and neither accrued: a paused viewer's failures are not evidence
+        #expect(viewModel.outageMonitor.sampleCount == 2)
+        #expect(viewModel.outageMonitor.consecutiveFailures == 0)
     }
 
     @Test("A rebuild during an outage clears it; the dead server fails the rebuild itself")

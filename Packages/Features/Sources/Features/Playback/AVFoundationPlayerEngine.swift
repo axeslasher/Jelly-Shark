@@ -772,9 +772,10 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         sampler.startTimelineWatch(of: player)
     }
 
-    /// How often the playhead mirror refreshes. Coarse on purpose: what it
-    /// serves is a ten-second reporting heartbeat and a stall check, and a
-    /// finer interval would only cost main-actor turns.
+    /// How often the playhead mirror refreshes. One second because the
+    /// mirror is the position every heartbeat reports: if the session dies,
+    /// the last report is where Continue Watching resumes, and a second is
+    /// the staleness that position can afford.
     private static let playheadMirrorInterval: Double = 1
 
     /// Keep `observedPlayheadSeconds` current without ever asking the player
@@ -786,18 +787,18 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     /// failure). A periodic time observer costs nothing to read: the player
     /// pushes the value as time advances, and the push simply stops when
     /// playback does, which is the signal the outage monitor wants. Delivered
-    /// on the main queue and hopped onto the actor like every other observer
-    /// here; the generation fence drops a tick that lands after the load it
+    /// on the main queue and written there synchronously — a Task per tick
+    /// would be a needless main-actor turn every second — with the
+    /// generation fence dropping a tick that lands after the load it
     /// belonged to.
     private func observePlayhead(of player: AVPlayer, generation: Int) {
         playheadObserver = player.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: Self.playheadMirrorInterval, preferredTimescale: 600),
             queue: .main,
         ) { [weak self] time in
-            let seconds = time.seconds
-            Task { @MainActor [weak self] in
-                guard let self, self.generation == generation, seconds.isFinite else { return }
-                self.observedPlayheadSeconds = seconds
+            MainActor.assumeIsolated {
+                guard let self, self.generation == generation, time.seconds.isFinite else { return }
+                self.observedPlayheadSeconds = time.seconds
             }
         }
     }

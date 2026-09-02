@@ -98,7 +98,11 @@ public final class PlaybackViewModel {
     /// The detector behind `outage`, fed one sample per progress report.
     /// Readable so a test can wait for a sample to be folded in rather
     /// than for the report to be sent — they are one actor hop apart.
-    private(set) var outageMonitor = ServerOutageMonitor()
+    private(set) var outageMonitor: ServerOutageMonitor
+
+    /// What the last heartbeat reported, so a heartbeat that finds no
+    /// mirror yet repeats it rather than reading the player live
+    private var lastReportedPositionTicks: Int64 = 0
 
     /// First-frame deadline for the current session (#151). The engine's
     /// failure events and this watchdog are the only routes a post-`play()`
@@ -167,6 +171,9 @@ public final class PlaybackViewModel {
     ///   - progressInterval: How often to report progress (injectable for tests)
     ///   - mediaSourceId: The version the launch surface chose; nil plays the
     ///     server default
+    ///   - outageMonitor: The stall detector behind `outage` (#188); tests
+    ///     inject one with no sample spacing so they can drive heartbeats
+    ///     back to back
     init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
@@ -174,11 +181,13 @@ public final class PlaybackViewModel {
         progressInterval: Duration = .seconds(10),
         userState: UserStateStore? = nil,
         mediaSourceId: String? = nil,
+        outageMonitor: ServerOutageMonitor = ServerOutageMonitor(),
     ) {
         self.client = client
         self.item = item
         self.engine = engine
         self.progressInterval = progressInterval
+        self.outageMonitor = outageMonitor
         self.userState = userState ?? UserStateStore()
         preferredMediaSourceId = mediaSourceId
         engine.onEvent = { [weak self] event in
@@ -1079,6 +1088,7 @@ public final class PlaybackViewModel {
         // from its own `getPlaybackInfo` — the banner has nothing to add
         outageMonitor.reset()
         outage = nil
+        lastReportedPositionTicks = 0
     }
 
     // MARK: - Engine Events
@@ -1505,6 +1515,12 @@ public final class PlaybackViewModel {
     /// requested resume tick: seeking with a forward tolerance can land well
     /// past what was asked for, and comparing against the request would read
     /// that jump as playback progress.
+    ///
+    /// The baseline is the one live read. Each deadline compares the
+    /// playhead *mirror* against it, so a watchdog re-armed by a rebuild
+    /// never polls the player through the very stall it is measuring
+    /// (#188); the mirror fires on the seek, so it holds the same landing
+    /// position the baseline read.
     private func startFirstFrameWatchdog() {
         firstFrameWatchdog?.cancel()
         let baseline = currentPositionTicks()
@@ -1557,7 +1573,7 @@ public final class PlaybackViewModel {
 
         switch Self.firstFrameVerdict(
             transportStatus: engine.transportStatus,
-            positionAdvanced: currentPositionTicks() > baseline,
+            positionAdvanced: Self.ticks(fromPlayhead: engine.observedPlayheadSeconds) > baseline,
             errorDescription: engine.currentErrorDescription,
             progress: progress,
             previousProgress: previousProgress,
@@ -1641,6 +1657,7 @@ public final class PlaybackViewModel {
         guard engine.isLoaded, !hasStopped else { return }
 
         let positionTicks = reportedPositionTicks()
+        lastReportedPositionTicks = positionTicks
         // Tracked locally regardless of whether the report lands — the
         // viewer's position is a fact about the viewer, not the network
         userState.recordPosition(itemID: item.id, ticks: positionTicks)
@@ -1701,12 +1718,13 @@ public final class PlaybackViewModel {
 
     /// The position a heartbeat reports: the engine's playhead mirror,
     /// so the one read that runs periodically through a stall never blocks
-    /// on the media pipeline it is measuring (#188). The live read stands
-    /// in only while the mirror has nothing yet — before the first tick of
-    /// a fresh load — which is never a wedge, since a wedge follows
-    /// playback that ran.
+    /// on the media pipeline it is measuring (#188). Before the mirror has
+    /// its first tick the heartbeat repeats what it last reported — zero
+    /// on a fresh session — rather than reach for the live read: this is
+    /// the periodic path, and it must never take the blocking call.
     private func reportedPositionTicks() -> Int64 {
-        Self.ticks(fromPlayhead: engine.observedPlayheadSeconds ?? engine.currentTimeSeconds)
+        guard let seconds = engine.observedPlayheadSeconds else { return lastReportedPositionTicks }
+        return Self.ticks(fromPlayhead: seconds)
     }
 
     /// The exact playhead, read live — for the one-off reads that must

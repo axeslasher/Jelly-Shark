@@ -15,6 +15,12 @@ import SwiftUI
 /// Takes an optional so the host can stay mounted for the whole session
 /// and let the card animate in and out here, instead of adding and
 /// removing a view over the player mid-playback.
+///
+/// Hosted in a UIKit tree detached from the app's, so the host re-applies
+/// the theme at the root it wraps this in
+/// (`PlayerViewControllerRepresentable.reconnectingBannerRoot`). It cannot
+/// be applied here: this view's own `@Environment(\.theme)` read sits above
+/// any modifier its body adds.
 struct ReconnectingBanner: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -31,9 +37,6 @@ struct ReconnectingBanner: View {
         .padding(SpacingTokens.lg)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .animation(reduceMotion ? nil : theme.animation, value: outage)
-        // Hosted in a detached UIKit tree (AVKit's overlay), so the app's
-        // theme environment is re-applied here, as the cast tab does
-        .withThemeEnvironment()
     }
 
     private func card(for outage: ServerOutage) -> some View {
