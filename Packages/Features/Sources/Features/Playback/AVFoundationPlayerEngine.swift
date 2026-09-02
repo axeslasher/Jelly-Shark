@@ -175,7 +175,7 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     /// The viewer's streaming ceiling for this session (#168), or nil for
     /// the declared one. Fixed for the life of the engine: Settings is
     /// unreachable during playback, so a change lands on the next launch.
-    private nonisolated let streamingBitrateCap: Int?
+    nonisolated let streamingBitrateCap: Int?
 
     /// The declaration above, narrowed by the viewer's cap. The static stays
     /// the engine's honest claim about its decoder — a cap is policy about

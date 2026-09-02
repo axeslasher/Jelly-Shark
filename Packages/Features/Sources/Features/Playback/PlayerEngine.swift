@@ -143,6 +143,15 @@ protocol PlayerEngine: AnyObject {
     /// stream — a second engine sends its own profile with no other change.
     var capabilities: PlaybackCapabilities { get }
 
+    /// The viewer's streaming ceiling in bits per second (#168), or nil at
+    /// the default tier.
+    ///
+    /// Reported separately from `capabilities`, whose ceiling is already the
+    /// narrowed one: delivery selection has to tell a cap the *viewer* set
+    /// from the engine's own declared 120 Mbps, and only the former is a
+    /// reason to refuse a delivery that ignores bitrate.
+    var streamingBitrateCap: Int? { get }
+
     /// Event sink, invoked synchronously on the main actor. Set once by the
     /// session layer before the first `load`.
     var onEvent: ((PlayerEngineEvent) -> Void)? { get set }
@@ -257,4 +266,12 @@ protocol PlayerEngine: AnyObject {
     /// nothing. A no-op on visionOS, where the post-roll SwiftUI overlay
     /// stands in pending #182.
     func setUpNextProposal(_ proposal: UpNextProposal?)
+}
+
+extension PlayerEngine {
+    /// No cap unless an engine says otherwise, so conforming types that
+    /// predate #168 — and the test double — need no change.
+    var streamingBitrateCap: Int? {
+        nil
+    }
 }

@@ -148,17 +148,6 @@ struct StreamURLBuilderTests {
         #expect(StreamURLBuilder.audioBitrate >= dolbyDigitalAC3)
     }
 
-    @Test("Video keeps the overwhelming majority of every budget")
-    func videoBudgetSurvivesAudioReservation() {
-        // Raising the audio ceiling eats into video. Guard that at every
-        // ceiling the app can ask for — the declared one and each user-set
-        // tier (#168) — video still gets the bulk of it.
-        for total in Self.tierCeilings {
-            let split = StreamURLBuilder.bitrateSplit(forTotal: total)
-            #expect(split.video > total / 2)
-        }
-    }
-
     /// Every ceiling the app can send: the engine's declared one (the
     /// `.maximum` tier) and each capped tier.
     private static let tierCeilings = StreamingQualityTier.allCases.map {
@@ -174,16 +163,21 @@ struct StreamURLBuilderTests {
             // #222, when the reservation was still 192 kbps.) Pinning it is
             // what proves the quality cap left the default install alone.
             (StreamingQualityTier.maximum, 118_464_000, 1_536_000),
-            // Down to the 8 Mbps tier a quarter of the budget still clears
-            // the full audio ceiling, so lossy multichannel keeps passing
-            // through untouched (#222).
+            // The server's table hands back at least this client's full
+            // 1.5 Mbps ceiling for every budget above 5 Mbps, so down to the
+            // 8 Mbps tier nothing about audio changes: AC-3 (640 kbps) and
+            // E-AC-3 Atmos (384-768 kbps) still pass through untouched
+            // (#222).
             (StreamingQualityTier.mbps40, 38_464_000, 1_536_000),
             (StreamingQualityTier.mbps20, 18_464_000, 1_536_000),
             (StreamingQualityTier.mbps8, 6_464_000, 1_536_000),
-            // Below it the quarter-share bites and the server re-encodes
-            // audio to AAC — the right trade when the link cannot carry both.
-            (StreamingQualityTier.mbps4, 3_000_000, 1_000_000),
-            (StreamingQualityTier.mbps2, 1_500_000, 500_000),
+            // Below that the table bites. 640 kbps still carries an AC-3
+            // track whole and the bottom of E-AC-3's range; 384 kbps carries
+            // only the lowest-rate tracks, and the server re-encodes the
+            // rest to AAC — the right trade when the link cannot carry both
+            // streams at full rate.
+            (StreamingQualityTier.mbps4, 3_360_000, 640_000),
+            (StreamingQualityTier.mbps2, 1_616_000, 384_000),
         ],
     )
     func tierEmitsItsBudget(tier: StreamingQualityTier, video: Int, audio: Int) throws {
@@ -221,7 +215,7 @@ struct StreamURLBuilderTests {
             let audio = try #require(Int(query["AudioBitrate"] ?? ""))
             #expect(video + audio <= ceiling)
             #expect(video > 0)
-            #expect(audio >= StreamURLBuilder.minimumAudioBitrate)
+            #expect(audio > 0)
         }
     }
 

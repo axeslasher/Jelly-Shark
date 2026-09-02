@@ -241,7 +241,7 @@ public struct SettingsView: View {
 }
 
 /// Row label for the main Settings list. Focused rows sit on the light system
-/// platter, so the text swaps to the on-platter tokens (see ``ThemeRowLabel``).
+/// platter, so the text swaps to the on-platter tokens (see ``SelectionRowLabel``).
 private struct SettingsRowLabel: View {
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
@@ -313,6 +313,12 @@ private struct SelectionRowLabel: View {
 /// (they are what the server is asked for); the words are the app's, so the
 /// client package carries no UI strings.
 private extension StreamingQualityTier {
+    /// The engine's declared ceiling, formatted for the Maximum row, so the
+    /// label and the declaration cannot drift apart.
+    static var declaredCeilingLabel: String {
+        "\(AVFoundationPlayerEngine.capabilities.maxStreamingBitrate / 1_000_000) Mbps"
+    }
+
     var displayName: String {
         switch self {
         case .maximum: "Maximum"
@@ -324,14 +330,18 @@ private extension StreamingQualityTier {
         }
     }
 
+    /// Deliberately no resolution promises: the request carries a bitrate
+    /// ceiling and nothing else, so what the server sends back at a given
+    /// tier depends on the source and its own encoder settings. These say
+    /// which connection a tier is for, which is the part that is true.
     var summary: String {
         switch self {
-        case .maximum: "Up to 120 Mbps, best quality on a fast network"
-        case .mbps40: "4K and HDR remuxes over a strong home network"
-        case .mbps20: "4K transcodes and high-bitrate 1080p"
-        case .mbps8: "1080p on a shared or busy connection"
-        case .mbps4: "720p over a slow or metered link"
-        case .mbps2: "Standard definition, for a link that stalls above this"
+        case .maximum: "Up to \(Self.declaredCeilingLabel), best quality on a fast network"
+        case .mbps40: "Plenty of room for large files on a strong home network"
+        case .mbps20: "A comfortable ceiling for most home networks"
+        case .mbps8: "For a shared or busy connection"
+        case .mbps4: "For a slow or metered connection"
+        case .mbps2: "For a connection that stalls at anything higher"
         }
     }
 }

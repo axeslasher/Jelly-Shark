@@ -76,35 +76,57 @@ enum StreamURLBuilder {
     /// `aac,ac3,eac3`, so TrueHD and DTS still re-encode regardless of headroom.
     static let audioBitrate = 1_536_000
 
-    /// Floor on the audio ceiling, so a small budget still names a rate an
-    /// encoder would actually produce.
-    static let minimumAudioBitrate = 128_000
+    /// Jellyfin's own ceiling on audio for a given total budget, mirrored
+    /// from `StreamBuilder.GetMaxAudioBitrateForTotalBitrate`
+    /// (jellyfin/jellyfin, `MediaBrowser.Model/Dlna/StreamBuilder.cs`, lines
+    /// 730-760 on `master`; reached from `GetAudioBitrate` at line 747 as
+    /// `Math.Min(GetMaxAudioBitrateForTotalBitrate(maxTotalBitrate),
+    /// defaultBitrate)`).
+    ///
+    /// Mirrored rather than invented so a capped request is split the way
+    /// the server would have split it — the alternative is two different
+    /// notions of "how much of this budget is audio" negotiating with each
+    /// other.
+    static func serverAudioBitrateCeiling(forTotal total: Int) -> Int {
+        switch total {
+        case ...640_000: 128_000
+        case ...2_000_000: 384_000
+        case ...3_000_000: 448_000
+        case ...4_000_000: 640_000
+        case ...5_000_000: 768_000
+        case ...10_000_000: 1_536_000
+        case ...15_000_000: 2_304_000
+        case ...20_000_000: 3_584_000
+        default: 7_168_000
+        }
+    }
 
     /// Split a total streaming budget into the video and audio ceilings the
-    /// stream URL carries. The two together never exceed the budget.
+    /// stream URL carries. The two together always equal the budget.
     ///
-    /// The audio ceiling above is what a full-fat budget affords, but it
-    /// cannot be reserved unconditionally once the budget is a user-set cap
-    /// (#168): against a 2 Mbps cap a fixed 1.5 Mbps reservation is most of
-    /// the money, and the old `max(total - audio, audio)` split emitted
-    /// 1.5 Mbps of video *plus* 1.5 Mbps of audio — a 3 Mbps request against
-    /// the 2 Mbps ceiling the viewer asked for, which is precisely the
-    /// over-ask this issue exists to stop.
+    /// `audioBitrate` above is what this client wants for audio; the table
+    /// is what the budget affords. The reservation cannot be unconditional
+    /// once the budget is a user-set cap (#168): against a 2 Mbps ceiling a
+    /// fixed 1.5 Mbps of audio is most of the money, and the old
+    /// `max(total - audio, audio)` split emitted 1.5 Mbps of video *plus*
+    /// 1.5 Mbps of audio — a 3 Mbps request against the 2 Mbps ceiling the
+    /// viewer had just asked for, which is the over-ask this issue exists to
+    /// stop.
     ///
-    /// So the reservation is a quarter of the budget, capped at the full
-    /// ceiling. That quarter clears 1.5 Mbps at ~6.1 Mbps and above, so every
-    /// budget from the 8 Mbps tier up reserves the unchanged `audioBitrate`
-    /// and keeps #222's Atmos passthrough intact. Below it the server
-    /// re-encodes multichannel audio to AAC, which is the right trade when
-    /// the link cannot carry both.
+    /// The table reaches this client's 1.5 Mbps ceiling once the budget passes
+    /// 5 Mbps, so the 8 Mbps tier and every tier above it reserve the unchanged
+    /// `audioBitrate` and every lossy multichannel track still passes
+    /// through untouched (#222). At 4 Mbps the ceiling is 640 kbps, which
+    /// still carries AC-3 but re-encodes the upper half of E-AC-3's range;
+    /// at 2 Mbps it is 384 kbps, where only the lowest-rate tracks survive.
+    /// Re-encoding to AAC is the right trade at those budgets — the link
+    /// cannot carry both streams at full rate.
     ///
     /// The old video floor is deliberately gone: it existed only because the
     /// audio reservation was fixed, and it is what put the sum over budget.
-    /// A quarter-share leaves video three quarters of any budget above the
-    /// audio floor, and the lowest shipped tier is 2 Mbps.
     static func bitrateSplit(forTotal total: Int) -> (video: Int, audio: Int) {
-        let audio = min(audioBitrate, max(total / 4, minimumAudioBitrate))
-        return (video: max(total - audio, 0), audio: audio)
+        let audio = min(audioBitrate, serverAudioBitrateCeiling(forTotal: total))
+        return (video: total - audio, audio: audio)
     }
 
     /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`

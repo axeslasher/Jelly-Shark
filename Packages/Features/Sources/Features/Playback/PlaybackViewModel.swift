@@ -808,6 +808,7 @@ public final class PlaybackViewModel {
                 trickplayInfo: trickplayInfo,
                 capabilities: engine.capabilities,
                 avoidInAppRemux: avoidInAppRemuxDelivery,
+                userStreamingBitrateCap: engine.streamingBitrateCap,
             ),
             client: client,
         )

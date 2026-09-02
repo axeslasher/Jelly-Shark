@@ -270,6 +270,21 @@ Raising the ceiling cannot let an undecodable track through: `AudioCodec=aac,ac3
 
 Two more precise fixes were considered and not taken, since they need the selected audio stream at URL-build time: omitting `AudioBitrate` entirely when the source codec is already client-playable, or deriving the ceiling from that stream's actual bitrate. Worth revisiting if the re-encode bitrate ever matters.
 
+⚠️ **Amended by #168.** The 1.5 Mbps reservation is no longer unconditional — it is now a ceiling on what the *budget* affords, not a fixed carve-out. `StreamURLBuilder.bitrateSplit` reserves `min(audioBitrate, serverAudioBitrateCeiling(forTotal:))`, mirroring Jellyfin's own `StreamBuilder.GetMaxAudioBitrateForTotalBitrate`. The reason is that a user-set quality cap makes the total budget small: against a 2 Mbps ceiling the old fixed reservation emitted 1.5 Mbps of video *plus* 1.5 Mbps of audio, a 3 Mbps request against a 2 Mbps cap.
+
+So the passthrough this section documents holds **from the 8 Mbps tier up**, which includes the default. Below it the ceiling drops and some tracks re-encode again — deliberately, because the link cannot carry both streams at full rate.
+
+| Tier | `VideoBitrate` | `AudioBitrate` | Lossy multichannel passthrough |
+|---|---|---|---|
+| Maximum (120 Mbps, default) | `118464000` | `1536000` | AC-3 and E-AC-3 Atmos, whole |
+| 40 Mbps | `38464000` | `1536000` | AC-3 and E-AC-3 Atmos, whole |
+| 20 Mbps | `18464000` | `1536000` | AC-3 and E-AC-3 Atmos, whole |
+| 8 Mbps | `6464000` | `1536000` | AC-3 and E-AC-3 Atmos, whole |
+| 4 Mbps | `3360000` | `640000` | AC-3 (640 kbps) and the bottom of E-AC-3's range |
+| 2 Mbps | `1616000` | `384000` | Only tracks at or below 384 kbps |
+
+Unverified on device at the sub-8 Mbps tiers — the table above is what the app *sends*; what the server does with it at those budgets still needs a run.
+
 ### ✅ Rung 1 honors any committed audio selection
 
 Two mechanisms, landed in sequence. #249/#251 gave the in-app remux an **external-audio leg**: `/Audio/{id}/main.m3u8` transcodes just the named stream to AAC (640 kbps ceiling) in segment-addressable form, and `RemuxHLSServer` muxes those samples into its own fragments — so a DTS/TrueHD default no longer forces the whole session onto rung 2 and the #99 frameskip. #252 then pointed both legs at the **committed selection** instead of the default, and #259 pointed the **default itself** at the same mapping, so `selection == default` and an explicit switch now resolve identically: a carriable selection (`A_AAC`/`A_AC3`/`A_EAC3`/`A_FLAC`) is stream-copied bit-exact out of the file, anything else takes the external-audio leg with the selected index. Carriage requires the Jellyfin-stream-index → Matroska-track-number mapping to verify positionally (count, track-number uniqueness, whole-sequence codec corroboration, positive codec agreement, ICU-canonicalized language agreement); any inconclusive answer falls back to the server transcode of that same index, which the server resolves itself and cannot get wrong.

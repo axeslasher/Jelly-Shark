@@ -52,6 +52,13 @@ struct DeliveryContext {
     /// rebuild must start from the copy variant instead of standing the
     /// remux up again to fail on the same cluster.
     var avoidInAppRemux = false
+
+    /// The viewer's streaming ceiling in bits per second (#168), or nil at
+    /// the default tier. Deliberately not read off
+    /// `capabilities.maxStreamingBitrate`, which carries the declared
+    /// ceiling when the viewer set none — rung 1 must refuse a source only
+    /// against a ceiling a person actually chose.
+    var userStreamingBitrateCap: Int?
 }
 
 /// Picks the delivery for a resolved stream. The rule is the play method:
@@ -348,6 +355,22 @@ final class RemuxHLSDelivery: StreamDelivery {
     static func rung1DeclineReason(context: DeliveryContext) -> String? {
         if context.avoidInAppRemux {
             return "a remux session already failed mid-file"
+        }
+        // Rung 1 serves the ORIGINAL file's bytes: it demuxes what the
+        // server has on disk, so no bitrate ceiling can constrain it. On a
+        // link the viewer has told us is narrow, that is exactly the stream
+        // that cannot arrive — a 30 Mbps HDR MKV over a 2 Mbps cap stalls
+        // forever. Declining hands the session to the server transcode,
+        // which is the only delivery here that honors the ceiling at all.
+        //
+        // Only the viewer's own cap counts. Measuring against the declared
+        // 120 Mbps would push every UHD remux above it off rung 1 on a LAN,
+        // where rung 1 is the whole point.
+        if let cap = context.userStreamingBitrateCap,
+           let bitrate = context.mediaSource?.bitrate,
+           bitrate > cap
+        {
+            return "the source's \(bitrate) bps exceeds the viewer's \(cap) bps ceiling"
         }
         return nil
     }

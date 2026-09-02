@@ -613,7 +613,7 @@ JellyfinKit/Sources/JellyfinKit/
 
 ### Bandwidth Management
 - Respect user's network conditions
-- Quality settings for transcoding (Auto, High, Medium, Low)
+- Streaming quality cap, user-set in Settings (#168): Maximum / 40 / 20 / 8 / 4 / 2 Mbps, persisted in `PlaybackPreferences`. The chosen ceiling narrows the engine's declared `maxStreamingBitrate`, so it reaches both the PlaybackInfo request (which decides `SupportsDirectPlay`) and the HLS `VideoBitrate`/`AudioBitrate` pair. Maximum is the default and leaves the declared 120 Mbps ceiling in place. A measured "Auto" tier is not built.
 - Cellular data warnings/restrictions (iOS)
 - Download size estimates before transcoding
 

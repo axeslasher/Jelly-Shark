@@ -56,6 +56,20 @@ struct PlaybackPreferencesTests {
         #expect(PlaybackPreferences(defaults: defaults).streamingQuality == .mbps20)
     }
 
+    @Test("An explicit Maximum is stored, not just implied by absence")
+    func explicitMaximumIsPersisted() {
+        // Picking Maximum after another tier has to write a value, not clear
+        // one: absence and an explicit choice read the same today, but only
+        // a stored value can survive a future change of default.
+        let defaults = makeDefaults()
+        let preferences = PlaybackPreferences(defaults: defaults)
+        preferences.streamingQuality = .mbps8
+        preferences.streamingQuality = .maximum
+
+        #expect(defaults.object(forKey: "streamingQualityBitrate") as? Int == 0)
+        #expect(PlaybackPreferences(defaults: defaults).streamingQuality == .maximum)
+    }
+
     @Test("A stored ceiling this build no longer names falls back to Maximum")
     func unknownStoredTierFallsBack() {
         let defaults = makeDefaults()

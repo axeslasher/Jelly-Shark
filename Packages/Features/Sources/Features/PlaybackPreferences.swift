@@ -40,12 +40,14 @@ public final class PlaybackPreferences {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         asksVersionBeforePlaying = defaults.bool(forKey: Self.asksVersionKey)
-        // `integer(forKey:)` reads absence as 0, which is `.maximum` — the
-        // default this setting must have. A stored value the current tier
-        // list no longer names (an older or newer build's) falls back there
-        // too, rather than being remapped to some other speed.
-        streamingQuality = StreamingQualityTier(
-            rawValue: defaults.integer(forKey: Self.streamingQualityKey),
-        ) ?? .maximum
+        // `object(forKey:)` rather than `integer(forKey:)`: absence has to
+        // stay distinguishable from an explicit 0 (`.maximum`). Both resolve
+        // to `.maximum` today, but reading them as the same value would let a
+        // future change of default silently migrate the viewers who picked
+        // Maximum on purpose. A stored value the current tier list no longer
+        // names (an older or newer build's) falls back to the default too,
+        // rather than being remapped to some other speed.
+        streamingQuality = (defaults.object(forKey: Self.streamingQualityKey) as? Int)
+            .flatMap(StreamingQualityTier.init(rawValue:)) ?? .maximum
     }
 }

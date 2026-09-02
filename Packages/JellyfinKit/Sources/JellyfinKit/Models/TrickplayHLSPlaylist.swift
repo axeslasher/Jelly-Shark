@@ -165,8 +165,17 @@ public enum TrickplayHLSPlaylist {
             {
                 let uri = lines[index + 1]
                 if uri.contains("VideoCodec=h264") {
-                    result.append(clampedSDRTagLine(line))
-                    result.append(clampedSDRURI(uri))
+                    // A ceiling, not a target: a session whose budget is
+                    // already below it (a user-set quality cap, #168) keeps
+                    // its own, lower rate — re-stamping the full 15 Mbps
+                    // here would put the fallback variant back over the cap
+                    // the rest of the request honors.
+                    let clamped = min(
+                        videoBitrate(inURI: uri) ?? sdrFallbackVideoBitrate,
+                        sdrFallbackVideoBitrate,
+                    )
+                    result.append(clampedSDRTagLine(line, videoBitrate: clamped))
+                    result.append(clampedSDRURI(uri, videoBitrate: clamped))
                 }
                 // The HEVC-SDR fallback (VideoCodec=hevc) is dropped: a
                 // software x265 encode is unsustainable at any 4K rate
@@ -181,12 +190,12 @@ public enum TrickplayHLSPlaylist {
 
     /// Rewrite the kept SDR fallback's attributes to match the clamped
     /// encode it will actually request
-    private static func clampedSDRTagLine(_ line: String) -> String {
+    private static func clampedSDRTagLine(_ line: String, videoBitrate: Int) -> String {
         var result = line
         for attribute in ["AVERAGE-BANDWIDTH", "BANDWIDTH"] {
             result = result.replacingOccurrences(
                 of: "\(attribute)=[0-9]+",
-                with: "\(attribute)=\(sdrFallbackVideoBitrate)",
+                with: "\(attribute)=\(videoBitrate)",
                 options: .regularExpression,
             )
         }
@@ -198,13 +207,21 @@ public enum TrickplayHLSPlaylist {
     }
 
     /// Clamp the SDR fallback's stream request to a sustainable encode
-    private static func clampedSDRURI(_ uri: String) -> String {
+    private static func clampedSDRURI(_ uri: String, videoBitrate: Int) -> String {
         let rewritten = uri.replacingOccurrences(
             of: "VideoBitrate=[0-9]+",
-            with: "VideoBitrate=\(sdrFallbackVideoBitrate)",
+            with: "VideoBitrate=\(videoBitrate)",
             options: .regularExpression,
         )
         return rewritten + "&MaxWidth=\(sdrFallbackMaxWidth)"
+    }
+
+    /// The `VideoBitrate` query value carried by a variant URI, if any.
+    private static func videoBitrate(inURI uri: String) -> Int? {
+        guard let range = uri.range(of: "VideoBitrate=[0-9]+", options: .regularExpression) else {
+            return nil
+        }
+        return Int(uri[range].dropFirst("VideoBitrate=".count))
     }
 
     private static func isSubtitleRendition(_ line: String) -> Bool {

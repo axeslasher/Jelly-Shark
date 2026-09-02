@@ -301,8 +301,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
-    /// Capability declarations received by playback calls, in arrival order
+    /// Capability declarations received by `getPlaybackInfo`, in arrival order
     var receivedCapabilities: [PlaybackCapabilities] = []
+
+    /// Capability declarations received by `resolveStream`, in arrival
+    /// order. Separate from `receivedCapabilities` so each call site can be
+    /// asserted on its own — the two are the pair #168's ceiling has to
+    /// reach, and a shared array could not tell them apart.
+    var resolveStreamCapabilities: [PlaybackCapabilities] = []
 
     /// Play session ids released with `stopEncoding`, in arrival order
     var stopEncodingCalls: [String] = []
@@ -346,9 +352,10 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     func resolveStream(
         for source: MediaSource,
         parameters: StreamParameters,
-        capabilities _: PlaybackCapabilities,
+        capabilities: PlaybackCapabilities,
         assumeInterposer _: Bool,
     ) throws -> StreamResolution {
+        resolveStreamCapabilities.append(capabilities)
         // Route through the real decision rule so tests exercise it end to end
         let method = source.playMethod(
             audioStreamIndex: parameters.audioStreamIndex,
