@@ -118,22 +118,48 @@ struct ServerDiscoveryTests {
         #expect(await discovery.discoverServers().isEmpty)
     }
 
-    @Test("A cancelled call returns instead of hanging on the window")
-    func cancelledCallReturns() async {
-        // Nothing is collected on either path here — the call returns early if the
-        // cancellation lands before the probe, and the group is torn down if it lands
-        // after. That "what had already arrived is still returned" is covered by the
-        // tests above, where the stream ends the round instead of the window: there is
-        // no race-free way to assert a datagram landed *before* a cancellation.
+    @Test("Replies still in hand when the window elapses are returned")
+    func windowEndsTheRoundWithRepliesCollected() async {
+        // The production shape, and the one no other test here covers: a socket never
+        // closes itself, so on a real network it is always the window that ends the
+        // round, with the reply stream still open underneath it.
+        let gate = HandshakeGate()
         let discovery = ServerDiscovery(
-            transport: FakeTransport(datagrams: [], finishesStream: false),
+            transport: PendingReplyTransport(
+                datagrams: [
+                    reply(id: "server-a", name: "Attic", address: "http://10.0.0.4:8096"),
+                    reply(id: "server-b", name: "Basement", address: "http://10.0.0.9:8096"),
+                ],
+                gate: gate,
+            ),
+            window: GatedWindow(gate: gate),
+        )
+
+        let servers = await discovery.discoverServers(within: .seconds(60))
+
+        #expect(servers.map(\.id) == ["server-a", "server-b"])
+    }
+
+    @Test("A cancelled round returns the replies it had already collected")
+    func cancelledRoundReturnsWhatItCollected() async {
+        // Gated on the handshake, so the cancellation provably lands after the reply
+        // was accepted and while the window is still open. That is the teardown path —
+        // not the early return at the top of discoverServers, which an ungated cancel
+        // would hit about as often.
+        let gate = HandshakeGate()
+        let discovery = ServerDiscovery(
+            transport: PendingReplyTransport(
+                datagrams: [reply(id: "server-a", name: "Attic", address: "http://10.0.0.4:8096")],
+                gate: gate,
+            ),
             window: HangingWindow(),
         )
 
         let task = Task { await discovery.discoverServers(within: .seconds(60)) }
+        await gate.waitUntilOpen()
         task.cancel()
 
-        #expect(await task.value.isEmpty)
+        #expect(await task.value.map(\.id) == ["server-a"])
     }
 
     // MARK: - Broadcast addressing
@@ -147,11 +173,15 @@ struct ServerDiscoveryTests {
     }
 
     @Test("Masks with no meaningful directed broadcast are skipped")
-    func degenerateMasksAreSkipped() {
-        // A /32's broadcast address is the host itself, and a /0's is 255.255.255.255,
-        // which every probe goes to anyway.
-        #expect(broadcast(host: "192.168.1.50", netmask: "255.255.255.255") == nil)
-        #expect(broadcast(host: "192.168.1.50", netmask: "0.0.0.0") == nil)
+    func degenerateMasksAreSkipped() throws {
+        // Asserted against the function itself rather than through the dotted-quad
+        // helper, whose nil would also be what a failed parse looks like.
+        let host = try #require(parseIPv4("192.168.1.50"))
+
+        // A /32's broadcast address is the host itself...
+        #expect(IPv4Broadcast.address(host: host, netmask: .max) == nil)
+        // ...and a /0's is 255.255.255.255, which every probe goes to anyway.
+        #expect(IPv4Broadcast.address(host: host, netmask: 0) == nil)
     }
 }
 
@@ -233,6 +263,70 @@ private final class ProbeLog: Sendable {
 
     func record(payload: Data, port: UInt16) {
         state.withLock { $0 = (payload, port) }
+    }
+}
+
+/// A transport whose reply stream never ends on its own, like a real socket's, and
+/// which hands back a signal once every reply it was given has provably been taken by
+/// the collector.
+///
+/// The proof is a handshake rather than a timer. The stream buffers exactly one
+/// element, so `yield` reports `.dropped` until the consumer has taken the previous
+/// one; a trailing datagram that decodes to nothing is yielded last, and its
+/// acceptance into the buffer is what proves the final real reply was consumed.
+private struct PendingReplyTransport: DiscoveryTransport {
+    let datagrams: [Data]
+    let gate: HandshakeGate
+
+    func probe(payload _: Data, port _: UInt16) throws(DiscoveryFailure) -> AsyncStream<Data> {
+        AsyncStream(bufferingPolicy: .bufferingOldest(1)) { continuation in
+            Task {
+                for datagram in datagrams {
+                    await enqueue(datagram, into: continuation)
+                }
+                await enqueue(Data("handshake".utf8), into: continuation)
+                gate.open()
+                // Deliberately never finished: only the window can end this round.
+            }
+        }
+    }
+
+    private func enqueue(_ datagram: Data, into continuation: AsyncStream<Data>.Continuation) async {
+        while true {
+            switch continuation.yield(datagram) {
+            case .dropped:
+                await Task.yield()
+            default:
+                return
+            }
+        }
+    }
+}
+
+/// A one-shot signal: opened by the transport, awaited by a window or by the test.
+private final class HandshakeGate: Sendable {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncStream<Void>.makeStream()
+    }
+
+    func open() {
+        continuation.finish()
+    }
+
+    func waitUntilOpen() async {
+        for await _ in stream {}
+    }
+}
+
+/// A window that elapses the moment the transport says every reply has landed.
+private struct GatedWindow: DiscoveryWindow {
+    let gate: HandshakeGate
+
+    func wait(_: Duration) async {
+        await gate.waitUntilOpen()
     }
 }
 

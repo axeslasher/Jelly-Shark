@@ -54,10 +54,11 @@ struct BroadcastUDPSocket: DiscoveryTransport {
             address.sin_port = port.bigEndian
             address.sin_addr = in_addr(s_addr: destination)
 
+            var sendErrno: Int32 = 0
             let sent = payload.withUnsafeBytes { buffer in
                 withUnsafePointer(to: &address) { pointer in
                     pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { socketAddress in
-                        sendto(
+                        let result = sendto(
                             handle,
                             buffer.baseAddress,
                             buffer.count,
@@ -65,6 +66,11 @@ struct BroadcastUDPSocket: DiscoveryTransport {
                             socketAddress,
                             socklen_t(MemoryLayout<sockaddr_in>.size),
                         )
+                        // Read here, not after the closures unwind: errno only holds
+                        // its value until the next library call, and unwinding two
+                        // nested closures is not guaranteed to be free of those.
+                        sendErrno = errno
+                        return result
                     }
                 }
             }
@@ -72,7 +78,7 @@ struct BroadcastUDPSocket: DiscoveryTransport {
             if sent == payload.count {
                 delivered += 1
             } else {
-                lastErrno = errno
+                lastErrno = sendErrno
             }
         }
 
@@ -103,8 +109,13 @@ struct BroadcastUDPSocket: DiscoveryTransport {
 
         var addresses: [in_addr_t] = []
         for interface in sequence(first: first, next: { $0.pointee.ifa_next }) {
-            let flags = Int32(interface.pointee.ifa_flags)
-            guard flags & IFF_UP != 0, flags & IFF_BROADCAST != 0, flags & IFF_LOOPBACK == 0 else { continue }
+            // Compared in the field's own UInt32 width: narrowing it to Int32 would
+            // trap on a flags word the app doesn't control.
+            let flags = interface.pointee.ifa_flags
+            guard flags & UInt32(IFF_UP) != 0,
+                  flags & UInt32(IFF_BROADCAST) != 0,
+                  flags & UInt32(IFF_LOOPBACK) == 0
+            else { continue }
 
             guard let addressPointer = interface.pointee.ifa_addr,
                   addressPointer.pointee.sa_family == sa_family_t(AF_INET),
@@ -131,8 +142,23 @@ struct BroadcastUDPSocket: DiscoveryTransport {
                 // A discovery reply is a few hundred bytes; this is just headroom.
                 var buffer = [UInt8](repeating: 0, count: 8192)
                 let count = buffer.withUnsafeMutableBytes { recv(handle, $0.baseAddress, $0.count, 0) }
-                guard count > 0 else { return }
-                continuation.yield(Data(buffer.prefix(count)))
+                if count > 0 {
+                    continuation.yield(Data(buffer.prefix(count)))
+                    return
+                }
+
+                // A zero-length datagram is legal UDP and simply carries nothing.
+                guard count < 0 else { return }
+
+                // The read source is level-triggered, so a persistent error would
+                // re-arm this handler forever and spin the queue. Only "nothing left
+                // to read" on a non-blocking socket, and an interrupted call, are
+                // worth waiting out; anything else ends the round.
+                let failure = errno
+                guard failure == EAGAIN || failure == EWOULDBLOCK || failure == EINTR else {
+                    continuation.finish()
+                    return
+                }
             }
 
             // The cancel handler owns the descriptor. Closing it anywhere else could
