@@ -1,21 +1,57 @@
 import Foundation
 import JellyfinKit
 
-/// Which genre card a remembered backdrop belongs to.
+/// Which card a remembered backdrop belongs to.
 ///
 /// `libraryId` is optional deliberately. Home's genre shelves are always
 /// scoped to a library, but a genre shelf on a media detail page (#108) has no
 /// library to scope to — keying on `String?` lets that case store alongside
 /// these without a format migration.
 struct GenreBackdropKey: Hashable, Sendable {
+    /// What the remembered face stands in for.
+    ///
+    /// A library card (#138) has no genre to name — the library *is* the
+    /// subject — so it gets a case of its own rather than a genre string
+    /// carrying a reserved value. Modelling it keeps the two storage
+    /// namespaces disjoint by construction instead of by convention.
+    enum Subject: Hashable, Sendable {
+        case genre(String)
+        case library
+    }
+
     var libraryId: String?
-    var genre: String
+    var subject: Subject
+
+    init(libraryId: String?, subject: Subject) {
+        self.libraryId = libraryId
+        self.subject = subject
+    }
+
+    /// A genre card's key. Same shape it always had, so no call site and no
+    /// already-persisted entry has to change.
+    init(libraryId: String?, genre: String) {
+        self.init(libraryId: libraryId, subject: .genre(genre))
+    }
+
+    /// A library card's key (#138). Always scoped — a library card samples
+    /// inside exactly one library.
+    static func library(id: String) -> Self {
+        Self(libraryId: id, subject: .library)
+    }
 
     /// Flattened form used as the dictionary key in the cached map. The unit
     /// separator can't occur in a library id or a genre name, so a real genre
     /// like "Action/Adventure" can't be confused with a library boundary.
+    ///
+    /// The genre form is byte-identical to what shipped before the library
+    /// subject existed, so no cached map needs migrating. The library form
+    /// adds a record separator, which no real genre name carries, so a
+    /// library's face and a genre's can't overwrite one another.
     var storageKey: String {
-        "\(libraryId ?? "")\u{1F}\(genre)"
+        switch subject {
+        case let .genre(genre): "\(libraryId ?? "")\u{1F}\(genre)"
+        case .library: "\(libraryId ?? "")\u{1F}\u{1E}library"
+        }
     }
 }
 
@@ -40,8 +76,9 @@ struct GenreBackdropSelection: Codable, Equatable, Sendable {
     }
 }
 
-/// Remembers which item's backdrop stands in for each genre card, so returning
-/// to a genre shelf costs no request and shows the same face it showed before.
+/// Remembers which item's backdrop stands in for each genre card — and, since
+/// #138, each visionOS library card — so returning to a shelf or grid costs no
+/// request and shows the same face it showed before.
 ///
 /// Backed by the metadata cache (#207, following #24), which is what makes the
 /// picks *per profile*: `UserDefaults` is not scoped, so before this the picks

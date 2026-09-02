@@ -75,9 +75,13 @@ public extension Library {
     /// are dropped at the source rather than shown as a tab (or a Library
     /// filter pill) that leads somewhere useless.
     ///
-    /// Keeping the list short also matters on visionOS, where the ornament
-    /// silently drops tabs past its limit — an unbrowsable library there costs
-    /// a slot that Settings needs.
+    /// This is no longer load-bearing for visionOS tab budgeting. It was:
+    /// the ornament silently drops tabs past its limit, so with one tab per
+    /// library an unbrowsable one cost a slot Settings needed. Since #138
+    /// every library sits behind a single Libraries tab, the ornament holds a
+    /// fixed four entries at any library count, and nothing the server exposes
+    /// can push an app destination out of it. The filter stands on the reason
+    /// above alone — it decides what the app can open, not how many tabs fit.
     var isBrowsable: Bool {
         switch collectionType {
         case .books, .folders, .music, .musicvideos, .livetv, .photos:

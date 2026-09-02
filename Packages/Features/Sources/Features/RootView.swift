@@ -91,10 +91,17 @@ public struct RootView: View {
             // sidebar representation can draw. So the grouping is tvOS-only.
             // On visionOS's ornament a section collapses to a single stub tab
             // (labeled, iconless, and with its children unreachable — a
-            // headerless one draws as a blank slot), so the same tabs are
-            // declared flat there, in the order the tvOS sidebar ends up
-            // showing them: it hoists loose tabs above sections, which is why
-            // Search is declared after the libraries but displays before them.
+            // headerless one draws as a blank slot).
+            //
+            // The two platforms' library navigation now diverges deliberately
+            // (#138, and #36 needs to know). tvOS keeps one tab per library:
+            // its sidebar scrolls, so a long list costs nothing but a scroll,
+            // and a library one press from anywhere is the right 10-foot
+            // shape. visionOS cannot afford that — its ornament silently drops
+            // tabs past a limit observed at 8, so enough libraries pushed
+            // Settings, declared last, out of existence. There, every library
+            // lives behind one Libraries tab, which fixes the ornament at four
+            // entries no matter what the server exposes.
             #if os(tvOS)
                 if !connectionViewModel.libraries.isEmpty {
                     TabSection("Libraries") {
@@ -111,8 +118,21 @@ public struct RootView: View {
                     settingsTab
                 }
             #else
+                // Declared in the order the ornament shows them, which is
+                // also the order the tvOS sidebar settles on — it hoists loose
+                // tabs above sections, so Search sits above the libraries
+                // there too.
                 searchTab
-                libraryTabs
+
+                // Withdrawn when the server exposes no browsable library,
+                // mirroring the tvOS section above: an always-present tab
+                // would open on an empty page with nothing to look at or
+                // select. `tabSelection` is moved off it below if the list
+                // empties while the viewer is standing in it.
+                if !connectionViewModel.libraries.isEmpty {
+                    librariesTab
+                }
+
                 settingsTab
             #endif
         }
@@ -161,12 +181,36 @@ public struct RootView: View {
         // If the selected library tab disappears (disconnect clears the list,
         // or the server removed a library), fall back to Home rather than
         // leaving the selection pointing at a tab that no longer exists.
+        //
+        // The `.libraries` arm is unreachable on tvOS, which never selects that
+        // tab; it costs that platform nothing and keeps the rule in one place.
         .onChange(of: connectionViewModel.libraries) { _, libraries in
-            if case let .library(id) = selectedTab,
-               !libraries.contains(where: { $0.id == id })
-            {
+            switch selectedTab {
+            case let .library(id) where !libraries.contains(where: { $0.id == id }):
                 selectedTab = .home
+            case .libraries where libraries.isEmpty:
+                selectedTab = .home
+            default:
+                break
             }
+
+            #if !os(tvOS)
+                // The grid is the Libraries stack's root, so a changed library
+                // set invalidates whatever was pushed from it: a profile
+                // switch or a server swap would otherwise leave that tab
+                // sitting inside a `LibraryItemsView` for a library the new
+                // session has never heard of, which the viewer only discovers
+                // on returning to the tab. Any change resets it, not just an
+                // emptying one — `onChange` fires only when the set actually
+                // differs, so a refresh that returns the same libraries leaves
+                // a pushed grid alone.
+                //
+                // tvOS is deliberately outside this: its libraries are tabs,
+                // each with its own stack that the switch above already
+                // handles, and writing this key there would put an entry in
+                // `tabPaths` for a tab that platform never declares.
+                tabPaths[.libraries] = NavigationPath()
+            #endif
         }
     }
 
@@ -185,31 +229,64 @@ public struct RootView: View {
         }
     }
 
-    /// One tab per server library, using the user's display name (which they
-    /// may have renamed, e.g. "Films") and an icon derived from the library's
-    /// collection type (which renames don't touch).
-    ///
-    /// Plain string labels on purpose: the tvOS sidebar normalizes label
-    /// styling — custom fonts/colors on Tab labels and TabSection headers
-    /// compile but are ignored at runtime (verified). Theming the nav beyond
-    /// `.tint` means replacing the system sidebar, which is the navigation
-    /// component-variant work, not a token tweak.
-    private var libraryTabs: some TabContent<AppTab> {
-        ForEach(connectionViewModel.libraries) { library in
-            Tab(
-                library.name,
-                systemImage: library.systemImageName,
-                value: AppTab.library(library.id),
-            ) {
-                navigationRoot(for: .library(library.id)) {
-                    // No `libraryOptions`: a tab is scoped to its own library
-                    // for good, so it gets no Library pill and its label stays
-                    // true.
-                    LibraryItemsView(initialQuery: LibraryQuery(library: library))
+    #if os(tvOS)
+        /// One tab per server library, using the user's display name (which
+        /// they may have renamed, e.g. "Films") and an icon derived from the
+        /// library's collection type (which renames don't touch).
+        ///
+        /// tvOS only since #138 — visionOS collapses the same libraries into
+        /// `librariesTab`. The platforms are allowed to differ here because
+        /// their navigation containers do: a sidebar scrolls, an ornament
+        /// silently truncates.
+        ///
+        /// Plain string labels on purpose: the tvOS sidebar normalizes label
+        /// styling — custom fonts/colors on Tab labels and TabSection headers
+        /// compile but are ignored at runtime (verified). Theming the nav
+        /// beyond `.tint` means replacing the system sidebar, which is the
+        /// navigation component-variant work, not a token tweak.
+        private var libraryTabs: some TabContent<AppTab> {
+            ForEach(connectionViewModel.libraries) { library in
+                Tab(
+                    library.name,
+                    systemImage: library.systemImageName,
+                    value: AppTab.library(library.id),
+                ) {
+                    navigationRoot(for: .library(library.id)) {
+                        // No `libraryOptions`: a tab is scoped to its own
+                        // library for good, so it gets no Library pill and its
+                        // label stays true.
+                        LibraryItemsView(initialQuery: LibraryQuery(library: library))
+                    }
                 }
             }
         }
-    }
+    #else
+        /// Every library behind one tab (#138): a grid of library cards, each
+        /// pushing that library's grid onto this tab's own stack.
+        ///
+        /// The `Library` destination is registered here rather than in
+        /// `navigationRoot`, which every tab shares: nothing on tvOS pushes a
+        /// library, so scoping it to this stack keeps that platform's
+        /// navigation literally untouched by this change.
+        ///
+        /// `libraryOptions` *is* passed, unlike a tvOS library tab: the
+        /// destination arrives with a back button rather than a tab label, so
+        /// there is no label for the Library pill to contradict, and the
+        /// viewer can re-scope without walking back to the grid.
+        private var librariesTab: some TabContent<AppTab> {
+            Tab("Libraries", systemImage: "square.stack.3d.down.forward.fill", value: AppTab.libraries) {
+                navigationRoot(for: .libraries) {
+                    LibrariesGridView(libraries: connectionViewModel.libraries)
+                        .navigationDestination(for: Library.self) { library in
+                            LibraryItemsView(
+                                initialQuery: LibraryQuery(library: library),
+                                libraryOptions: connectionViewModel.libraries,
+                            )
+                        }
+                }
+            }
+        }
+    #endif
 
     /// `role: .search` declares that this tab owns searching. On its own it did
     /// not clear the collision in #148 — the tvOS `sidebarAdaptable` collapsed
@@ -345,11 +422,19 @@ extension EnvironmentValues {
 // MARK: - Tab
 
 extension RootView {
-    /// Top-level navigation destinations. Library tabs are dynamic — one per
-    /// server library, keyed by the library's id.
+    /// Top-level navigation destinations.
+    ///
+    /// Both library cases are declared on both platforms even though each is
+    /// selectable on only one — tvOS gets the dynamic per-library tabs,
+    /// visionOS the single collapsed one (#138). A case that platform never
+    /// selects is inert, and that costs far less than an `#if` at every switch
+    /// over this enum.
     enum AppTab: Hashable {
         case home
+        /// tvOS: one tab per server library, keyed by the library's id.
         case library(String)
+        /// visionOS: every library behind one grid.
+        case libraries
         case search
         case settings
     }
