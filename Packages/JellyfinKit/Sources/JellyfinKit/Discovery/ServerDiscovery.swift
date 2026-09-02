@@ -73,7 +73,19 @@ public struct ServerDiscovery: Sendable {
             _ = await group.next()
             group.cancelAll()
         }
-        return await collected.servers
+
+        let servers = await collected.servers
+        // Datagrams and servers are separate numbers on purpose: a broadcast port
+        // hears traffic that isn't ours, so "heard 3, kept 0" and "heard 0" are
+        // different problems. Addresses are public for the same reason as the probe
+        // log; server names are deliberately left out, being neither needed here nor
+        // ours to publish.
+        let received = await collected.received
+        let addresses = servers.map(\.address).joined(separator: ", ")
+        Self.logger.debug(
+            "Discovery round: \(received, privacy: .public) datagram(s), \(servers.count, privacy: .public) server(s) [\(addresses, privacy: .public)]",
+        )
+        return servers
     }
 }
 
@@ -82,11 +94,16 @@ public struct ServerDiscovery: Sendable {
 private actor ReplyCollector {
     private var collector = DiscoveredServerCollector()
 
+    /// Every datagram the socket handed us, including the ones that weren't discovery
+    /// replies at all. Only the log reads this.
+    private(set) var received = 0
+
     var servers: [DiscoveredServer] {
         collector.servers
     }
 
     func accept(_ datagram: Data) {
+        received += 1
         collector.accept(datagram)
     }
 }

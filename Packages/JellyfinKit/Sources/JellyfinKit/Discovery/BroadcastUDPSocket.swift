@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import OSLog
 
 /// An unconnected IPv4 UDP socket that broadcasts the discovery probe and yields the
 /// replies.
@@ -10,6 +11,8 @@ import Foundation
 /// to: the server answers from its own `<ip>:7359`, which the connected UDP flow an
 /// `NWConnection` sets up would discard as coming from the wrong peer.
 struct BroadcastUDPSocket: DiscoveryTransport {
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Discovery")
+
     func probe(payload: Data, port: UInt16) throws(DiscoveryFailure) -> AsyncStream<Data> {
         let handle = socket(AF_INET, SOCK_DGRAM, 0)
         guard handle >= 0 else { throw DiscoveryFailure.socketUnavailable(errno: errno) }
@@ -46,6 +49,7 @@ struct BroadcastUDPSocket: DiscoveryTransport {
     private static func send(_ payload: Data, from handle: Int32, to port: UInt16) throws(DiscoveryFailure) {
         var delivered = 0
         var lastErrno: Int32 = 0
+        var outcomes: [String] = []
 
         for destination in destinations() {
             var address = sockaddr_in()
@@ -77,14 +81,34 @@ struct BroadcastUDPSocket: DiscoveryTransport {
 
             if sent == payload.count {
                 delivered += 1
+                outcomes.append("\(dottedQuad(destination))=sent")
             } else {
                 lastErrno = sendErrno
+                outcomes.append("\(dottedQuad(destination))=errno \(sendErrno)")
             }
         }
+
+        // Which subnets the probe actually reached is the one fact a device check
+        // can't get any other way: interface enumeration is what differs between the
+        // Mac, the simulator, and an Apple TV with both Ethernet and Wi-Fi up. These
+        // are the device's own RFC 1918 addresses, logged at debug level, so they're
+        // marked public — redacting them would leave the log unable to answer the
+        // only question it exists to answer.
+        Self.logger.debug("Discovery probe: \(outcomes.joined(separator: ", "), privacy: .public)")
 
         // One interface refusing the probe is normal; every one refusing it means the
         // round can't produce anything, so the caller may as well stop now.
         guard delivered > 0 else { throw DiscoveryFailure.probeUnsent(errno: lastErrno) }
+    }
+
+    /// Renders a network-order IPv4 address for the log.
+    ///
+    /// Done arithmetically rather than through `inet_ntop`, whose C string has to come
+    /// back out of a `CChar` buffer, and every way of doing that is either deprecated
+    /// or noisier than the four shifts it replaces.
+    private static func dottedQuad(_ address: in_addr_t) -> String {
+        let host = UInt32(bigEndian: address)
+        return "\(host >> 24 & 0xFF).\(host >> 16 & 0xFF).\(host >> 8 & 0xFF).\(host & 0xFF)"
     }
 
     /// 255.255.255.255, plus the directed broadcast address of every broadcast-capable
