@@ -676,7 +676,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             // yields series + seasons + episodes); the type filter keeps the
             // grid to top-level titles.
             parameters.includeItemTypes = itemTypes.map { $0.compactMap(\.baseItemKind) }
-            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
+            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources, .recursiveItemCount]
             parameters.sortBy = query.sort.sdkSortBy
             parameters.sortOrder = [query.direction.sdkSortOrder]
             parameters.enableTotalRecordCount = true
@@ -826,7 +826,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             var parameters = Paths.GetSimilarItemsParameters()
             parameters.userID = userId
             parameters.limit = limit
-            parameters.fields = [.overview, .genres, .dateCreated]
+            parameters.fields = [.overview, .genres, .dateCreated, .recursiveItemCount]
 
             let response = try await sdkClient.send(
                 Paths.getSimilarItems(itemID: itemId, parameters: parameters),
@@ -859,7 +859,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.limit = SearchRelevance.fetchWindow(for: limit)
             parameters.isRecursive = true
             parameters.includeItemTypes = itemTypes.compactMap(\.baseItemKind)
-            parameters.fields = [.overview, .genres, .dateCreated]
+            parameters.fields = [.overview, .genres, .dateCreated, .recursiveItemCount]
             // Alphabetical is the *fetch* order, not the order anyone sees:
             // Jellyfin has no relevance sort, and unsorted means undefined, so
             // this is the only deterministic window on offer. It survives as
@@ -949,7 +949,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.personIDs = [personId]
             parameters.personTypes = personTypes
             parameters.includeItemTypes = itemTypes.compactMap(\.baseItemKind)
-            parameters.fields = [.overview, .genres, .dateCreated]
+            parameters.fields = [.overview, .genres, .dateCreated, .recursiveItemCount]
             // Newest work first: recency is the natural read of a filmography.
             parameters.sortBy = [.premiereDate, .productionYear, .sortName]
             parameters.sortOrder = [JellyfinAPI.SortOrder.descending]
@@ -1049,7 +1049,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             // on every cold Home load. The hero fills sources for just its
             // curated few via `getMediaItems(ids:)` instead (#147's picker
             // still gets them).
-            parameters.fields = [.overview, .genres, .dateCreated]
+            // `.recursiveItemCount` is two ints per item and the only
+            // source of a series' watched fraction — a container carries no
+            // playback position. (`.childCount` comes back as 0 here.)
+            parameters.fields = [.overview, .genres, .dateCreated, .recursiveItemCount]
 
             let response = try await sdkClient.send(
                 Paths.getLatestMedia(parameters: parameters),
@@ -1078,7 +1081,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             // Same fields as the list fetches whose items these enrich,
             // plus the MediaSources the ids-filtered endpoint serves
             // dependably (#220).
-            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources]
+            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources, .recursiveItemCount]
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 

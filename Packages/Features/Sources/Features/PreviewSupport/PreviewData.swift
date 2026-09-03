@@ -141,6 +141,7 @@ import JellyfinKit
             endDate: Date(timeIntervalSince1970: 1_680_000_000),
             status: "Ended",
             childCount: 3,
+            recursiveItemCount: 24,
             imageTags: ImageTags(
                 primaryBlurHash: Shared.posterHashes[4],
                 backdropBlurHash: Shared.backdropHashes[3],
@@ -186,6 +187,8 @@ import JellyfinKit
         )
 
         /// A shelf's worth of poster cards — every title paired with a hash.
+        /// The second card is mid-watch, so any shelf showing two or more
+        /// exercises the progress band.
         static let shelf: [MediaItem] = Array(zip(Shared.movieTitles, Shared.posterHashes).enumerated())
             .map { index, pair in
                 MediaItem(
@@ -193,8 +196,39 @@ import JellyfinKit
                     name: pair.0,
                     type: .movie,
                     productionYear: 1980 + index * 4,
+                    runTimeTicks: 66_000_000_000,
                     imageTags: ImageTags(primaryBlurHash: pair.1),
+                    userData: index == 1
+                        ? UserData(playbackPositionTicks: 26_400_000_000)
+                        : nil,
                 )
             }
+
+        /// A TV shelf spanning what a real library looks like: most series
+        /// untouched or finished and so carrying no bar, a few part-way
+        /// through. Unwatched counts ride along, which is the pairing the
+        /// design calls for — count badge above, watched fraction below.
+        static let tvShelf: [MediaItem] = {
+            // episodes, unplayed
+            let counts: [(Int, Int)] = [
+                (24, 5), // most of the way through
+                (10, 10), // untouched: no bar
+                (66, 51), // just started
+                (8, 0), // finished: no bar
+                (136, 77), // mid-run
+                (19, 19), // untouched: no bar
+            ]
+            return counts.enumerated().map { index, count in
+                MediaItem(
+                    id: "preview-tv-\(index)",
+                    name: Shared.movieTitles[index + 4],
+                    type: .series,
+                    productionYear: 2005 + index * 3,
+                    recursiveItemCount: count.0,
+                    imageTags: ImageTags(primaryBlurHash: Shared.posterHashes[index + 4]),
+                    userData: UserData(unplayedItemCount: count.1),
+                )
+            }
+        }()
     }
 #endif

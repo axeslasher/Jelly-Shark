@@ -202,28 +202,16 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .hoverEffectDisabled()
             .aspectRatio(aspectRatio, contentMode: .fit)
             .frame(width: width)
-            .overlay(alignment: .bottomLeading) {
-                if let progress {
-                    Rectangle()
-                        .fill(theme.accent)
-                        .frame(width: width * progress, height: 4)
-                }
-            }
-            // Playback-state treatment across the bottom quarter of the
-            // still: play/replay + runtime, or play + progress bar. A soft
-            // scrim keeps it legible over arbitrary artwork.
+            // Playback treatment banding the foot of the artwork: play or
+            // replay beside a runtime, or a progress track — alone on the
+            // cards that pass `progress` without a badge (posters, where a
+            // series' watched fraction is the whole story). A soft scrim
+            // keeps it legible over arbitrary artwork.
             .overlay(alignment: .bottom) {
                 if let playbackBadge {
-                    playbackBadgeContent(playbackBadge)
-                        .frame(height: width / aspectRatio / 4)
-                        .frame(maxWidth: .infinity)
-                        .background {
-                            LinearGradient(
-                                colors: [theme.background.opacity(0.55), .clear],
-                                startPoint: .bottom,
-                                endPoint: .top,
-                            )
-                        }
+                    playbackBand { playbackBadgeContent(playbackBadge) }
+                } else if let progress {
+                    playbackBand { progressTrack(progress) }
                 }
             }
             .artworkCornerRadius(theme.cornerRadius)
@@ -254,6 +242,41 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             .hoverEffect(.highlight)
     }
 
+    /// The scrim band both playback treatments sit in.
+    ///
+    /// Its height is intrinsic — whatever is inside sets it. A bare track
+    /// gets a shallow band; an icon-and-runtime row gets the depth that row
+    /// needs. Sizing the band off the artwork instead (a fixed bottom
+    /// quarter) put 75pt of scrim behind an 8pt track on a poster.
+    private func playbackBand(@ViewBuilder _ content: () -> some View) -> some View {
+        content()
+            .jsStyle(.body, .subtle)
+            .foregroundStyle(theme.primary.opacity(0.9))
+            .padding(SpacingTokens.sm)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                LinearGradient(
+                    colors: [theme.background.opacity(0.55), .clear],
+                    startPoint: .bottom,
+                    endPoint: .top,
+                )
+            }
+    }
+
+    /// Themed fill over a dimmed track, filling the width it is given.
+    private func progressTrack(_ progress: Double) -> some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.background.opacity(0.9))
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(width: geometry.size.width * min(max(progress, 0), 1))
+            }
+        }
+        .frame(height: 8)
+    }
+
     private func playbackBadgeContent(_ badge: PlaybackBadge) -> some View {
         HStack(spacing: SpacingTokens.xs) {
             switch badge {
@@ -269,25 +292,12 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
                 }
             case let .inProgress(progress, remaining):
                 Image(systemName: "play.fill")
-                GeometryReader { geometry in
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(theme.background.opacity(0.9))
-                        Capsule()
-                            .fill(theme.accent)
-                            .frame(width: geometry.size.width * min(max(progress, 0), 1))
-                    }
-                }
-                .frame(height: 8)
+                progressTrack(progress)
                 if let remaining {
                     Text(remaining)
                 }
             }
         }
-        .jsStyle(.body, .subtle)
-        .foregroundStyle(theme.primary.opacity(0.9))
-        .padding(.horizontal, SpacingTokens.sm)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     /// Multi-line description beneath the captions (episode synopses).
@@ -389,6 +399,17 @@ private extension View {
                             blurHash: PreviewData.invalidHash,
                             title: PreviewData.shortTitle,
                             value: "placeholder-fallback",
+                        )
+                        // Poster carrying progress without a badge: a
+                        // part-watched series, count badge and all.
+                        ArtworkShelfItem(
+                            url: nil,
+                            blurHash: PreviewData.posterHashes[1],
+                            title: PreviewData.movieTitles[1],
+                            subtitle: "1987",
+                            progress: 0.4,
+                            countBadge: 9,
+                            value: "poster-progress",
                         )
                         ArtworkShelfItem(
                             url: nil,

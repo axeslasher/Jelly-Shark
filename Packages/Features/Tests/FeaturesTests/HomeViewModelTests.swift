@@ -22,12 +22,23 @@ struct HomeViewModelTests {
         )
     }
 
-    private func series(_ id: String, backdrop: Bool = true) -> MediaItem {
+    private func series(
+        _ id: String,
+        backdrop: Bool = true,
+        episodes: Int? = nil,
+        unplayed: Int? = nil,
+    ) -> MediaItem {
         MediaItem(
             id: id,
             name: id,
             type: .series,
+            recursiveItemCount: episodes,
             imageTags: backdrop ? ImageTags(backdrop: "tag") : nil,
+            // Deliberately not `unplayed.map { ... }`: the mock runs its
+            // handlers off the main actor, and a closure written here inherits
+            // this suite's @MainActor isolation — the check traps the moment
+            // a non-nil count makes `map` actually call it.
+            userData: unplayed == nil ? nil : UserData(unplayedItemCount: unplayed),
         )
     }
 
@@ -888,6 +899,54 @@ struct HomeViewModelTests {
         #expect(viewModel.heroItems.map(\.id) == ["hero-1"])
         #expect(viewModel.latestShelves.map(\.id) == ["movies"])
         #expect(viewModel.latestStatus == .loaded)
+    }
+
+    @Test("refreshUserState re-reads the unwatched counts on Recently Added series")
+    func refreshUserStateUpdatesContainerCounts() async {
+        let tv = Library(id: "tv", name: "TV", collectionType: .tvshows)
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case "tv": .success([series("show-1", episodes: 10, unplayed: 6)])
+            default: .success([])
+            }
+        }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [tv])
+        #expect(viewModel.latestShelves.first?.items.first?.cardProgress == 0.4)
+
+        // An episode was watched during playback: the series now has one
+        // fewer unwatched. Recently Added itself must not refetch.
+        client.latestItemsHandler = { _ in .failure(APIError.networkError("must not refetch")) }
+        // Built here, not inside the handler: the mock calls handlers off the
+        // main actor, and this suite is @MainActor.
+        let refreshed = [series("show-1", episodes: 10, unplayed: 5)]
+        client.mediaItemsHandler = { _ in .success(refreshed) }
+        await viewModel.refreshUserState()
+
+        let card = viewModel.latestShelves.first?.items.first
+        #expect(card?.userData?.unplayedItemCount == 5)
+        #expect(card?.cardProgress == 0.5)
+        // The count came from an ids= fetch, and the immutable episode total
+        // survived it.
+        #expect(client.mediaItemsRequests == [["show-1"]])
+        #expect(card?.recursiveItemCount == 10)
+    }
+
+    @Test("refreshUserState asks for no counts when no series are on screen")
+    func refreshUserStateSkipsCountsWithoutSeries() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == "movies" ? .success([movie("latest-1")]) : .success([])
+        }
+
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+        let before = client.mediaItemsRequests.count
+        await viewModel.refreshUserState()
+
+        #expect(client.mediaItemsRequests.count == before)
     }
 
     // MARK: - Merged Continue Watching lane

@@ -416,8 +416,9 @@ public final class HomeViewModel {
     }
 
     /// Refresh just the watch-state sections after playback ends — resume and
-    /// next-up move, but the hero and Recently Added rows don't, so this skips
-    /// them (no marquee flicker on dismiss).
+    /// next-up move, and so do the unwatched counts on Recently Added's series
+    /// cards. Reloading that row outright would rebuild the hero and flicker
+    /// the marquee, so its counts are patched in place instead.
     public func refreshUserState() async {
         guard let client else { return }
         loadGeneration += 1
@@ -425,7 +426,37 @@ public final class HomeViewModel {
         async let resume: Void = loadResume(client: client, generation: generation)
         async let nextUp: Void = loadNextUp(client: client, generation: generation)
         async let watchDates: Void = loadWatchDates(client: client, generation: generation)
-        _ = await (resume, nextUp, watchDates)
+        async let counts: Void = refreshContainerCounts(client: client, generation: generation)
+        _ = await (resume, nextUp, watchDates, counts)
+    }
+
+    /// Re-read the unwatched counts behind Recently Added's series cards.
+    ///
+    /// Both the count badge and the progress band read `unplayedItemCount`,
+    /// and watching an episode moves it — but the episode is its own item, so
+    /// the user-state overlay (keyed by item id) never reaches its parent.
+    /// One `ids=` fetch covers every series on screen; the cards keep their
+    /// identity, so nothing re-enters the focus engine.
+    private func refreshContainerCounts(client: any JellyfinClientProtocol, generation: Int) async {
+        let ids = Set(rawLatestShelves.flatMap(\.items).filter { $0.type == .series }.map(\.id))
+        guard !ids.isEmpty,
+              let refreshed = try? await client.getMediaItems(ids: Array(ids)),
+              generation == loadGeneration
+        else { return }
+
+        let counts = Dictionary(
+            refreshed.map { ($0.id, $0.userData?.unplayedItemCount) },
+            uniquingKeysWith: { first, _ in first },
+        )
+        rawLatestShelves = rawLatestShelves.map { shelf in
+            LibraryShelf(
+                library: shelf.library,
+                items: shelf.items.map { item in
+                    guard let count = counts[item.id] else { return item }
+                    return item.settingUnplayedItemCount(count)
+                },
+            )
+        }
     }
 
     // MARK: - User-Data Actions

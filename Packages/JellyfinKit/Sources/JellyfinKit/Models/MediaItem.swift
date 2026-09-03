@@ -450,6 +450,26 @@ public extension MediaItem {
         return copy
     }
 
+    /// Copy carrying a freshly fetched container count, everything else this
+    /// item's own.
+    ///
+    /// A series' unwatched count moves whenever one of its episodes is
+    /// watched, but nothing else about the card does — and `recursiveItemCount`
+    /// is immutable for good reason: a refetched `/Latest` entry would lose
+    /// the grouped-series state the original carries.
+    func settingUnplayedItemCount(_ count: Int?) -> MediaItem {
+        var copy = self
+        copy.userData = UserData(
+            playbackPositionTicks: userData?.playbackPositionTicks,
+            playCount: userData?.playCount,
+            isFavorite: userData?.isFavorite ?? false,
+            played: userData?.played ?? false,
+            lastPlayedDate: userData?.lastPlayedDate,
+            unplayedItemCount: count,
+        )
+        return copy
+    }
+
     /// Copy with the favorite flag flipped; all other user data untouched.
     func settingFavorite(_ favorite: Bool) -> MediaItem {
         var copy = self
@@ -507,6 +527,32 @@ public extension MediaItem {
     var hasProgress: Bool {
         guard let percentage = progressPercentage else { return false }
         return percentage > 0 && percentage < 1
+    }
+
+    /// How far through a container (series, season) the user is, taken from
+    /// the server's own episode counts — a container carries no playback
+    /// position of its own.
+    ///
+    /// Nil unless the container is part-watched. An untouched one and a
+    /// finished one both have nothing worth drawing: an empty bar is noise,
+    /// and a full bar on every completed series is bookkeeping, not a cue.
+    var watchedFraction: Double? {
+        guard let total = recursiveItemCount, total > 0,
+              let unplayed = userData?.unplayedItemCount,
+              unplayed > 0, unplayed < total
+        else { return nil }
+        return Double(total - unplayed) / Double(total)
+    }
+
+    /// The fraction a shelf card's progress bar should draw: a leaf item's
+    /// own resume position, or a container's watched fraction. Nil at either
+    /// end of the range for both, so a card only carries a bar mid-way
+    /// through.
+    var cardProgress: Double? {
+        if let watchedFraction {
+            return watchedFraction
+        }
+        return hasProgress ? progressPercentage : nil
     }
 
     /// Year text for display: a plain year for most items, a span for series —
