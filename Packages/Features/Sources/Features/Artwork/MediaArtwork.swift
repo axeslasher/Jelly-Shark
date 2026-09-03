@@ -190,6 +190,9 @@ extension MediaItem {
     /// Portrait poster card (2:3). Title is the item name; subtitle is the
     /// year. `countBadge` overlays a count on the poster's top-trailing
     /// corner (unwatched episodes on a series card).
+    ///
+    /// The progress track carries a movie's resume position or a series'
+    /// watched fraction — see `MediaItem.cardProgress`.
     @MainActor
     func posterShelfItem(
         client: JellyfinClientProtocol?,
@@ -204,7 +207,7 @@ extension MediaItem {
             subtitle: productionYear.map(String.init),
             aspectRatio: 2.0 / 3.0,
             width: width,
-            progress: progressPercentage,
+            progress: cardProgress,
             countBadge: countBadge,
             menuActions: shelfMenuActions(menu?.withoutViewDetails),
             value: self,
@@ -319,7 +322,7 @@ extension MediaItem {
             captionAlignment: .leading,
             aspectRatio: 16.0 / 9.0,
             width: width,
-            progress: progressPercentage,
+            progress: cardProgress,
             value: self,
         )
     }

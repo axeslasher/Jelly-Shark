@@ -79,6 +79,9 @@ public struct ContentShelf<Content: View>: View {
                         blurHash: PreviewData.posterHashes[index],
                         title: title,
                         subtitle: "2024",
+                        // One card mid-watch, so the shelf shows how the
+                        // progress band sits between neighbours.
+                        progress: index == 1 ? 0.4 : nil,
                         action: {},
                     )
                 }

@@ -139,10 +139,19 @@ struct HomeShelvesSection: View {
                         mergedStatus: .loaded,
                         resumeItems: [],
                         nextUpItems: [],
-                        latestShelves: [HomeViewModel.LibraryShelf(
-                            library: Library(id: "preview-lib", name: "Movies", collectionType: .movies),
-                            items: Array(PreviewData.shelf.prefix(6)),
-                        )],
+                        latestShelves: [
+                            HomeViewModel.LibraryShelf(
+                                library: Library(id: "preview-lib", name: "Movies", collectionType: .movies),
+                                items: Array(PreviewData.shelf.prefix(6)),
+                            ),
+                            // TV shelf: the count badge and the series
+                            // watched fraction on one card, and the
+                            // untouched/finished series that show neither.
+                            HomeViewModel.LibraryShelf(
+                                library: Library(id: "preview-tv", name: "TV", collectionType: .tvshows),
+                                items: PreviewData.tvShelf,
+                            ),
+                        ],
                         resumeStatus: .loaded,
                         nextUpStatus: .loaded,
                         latestStatus: .loaded,
