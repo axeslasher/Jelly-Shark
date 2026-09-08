@@ -20,6 +20,21 @@ struct PlaybackCapabilitiesDeclarationTests {
         #expect(capabilities.maxStreamingBitrate == 120_000_000)
     }
 
+    @Test("A user-set cap narrows the declaration the session negotiates with")
+    func userCapNarrowsTheCeiling() {
+        // `capabilities` on the *instance* is what the view model hands to
+        // both the PlaybackInfo request and the stream URL builder, so this
+        // is the object the viewer's tier has to reach (#168).
+        #expect(AVFoundationPlayerEngine().capabilities.maxStreamingBitrate == 120_000_000)
+
+        let capped = AVFoundationPlayerEngine(streamingBitrateCap: StreamingQualityTier.mbps2.bitsPerSecond)
+        #expect(capped.capabilities.maxStreamingBitrate == 2_000_000)
+
+        // The static declaration is the engine's own claim about its decoder
+        // and never moves, whatever the viewer picked.
+        #expect(AVFoundationPlayerEngine.capabilities.maxStreamingBitrate == 120_000_000)
+    }
+
     @Test("Direct play claims the mp4 family with hardware codecs")
     func directPlayClaims() throws {
         let rule = try #require(capabilities.directPlay.first)

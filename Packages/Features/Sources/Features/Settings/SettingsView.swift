@@ -1,4 +1,5 @@
 import DesignSystem
+import JellyfinKit
 import SwiftUI
 
 /// Settings screen for app configuration
@@ -16,6 +17,7 @@ public struct SettingsView: View {
     enum Destination: Hashable {
         case serverConnection
         case themeSelection
+        case streamingQuality
     }
 
     /// No NavigationStack here: RootView owns each tab's stack (with a path
@@ -71,6 +73,14 @@ public struct SettingsView: View {
 
             // Playback Section
             Section {
+                NavigationLink(value: Destination.streamingQuality) {
+                    settingsRow(
+                        icon: "gauge.with.dots.needle.67percent",
+                        title: "Streaming Quality",
+                        subtitle: playbackPreferences.streamingQuality.displayName,
+                    )
+                }
+
                 Toggle(isOn: $playbackPreferences.asksVersionBeforePlaying) {
                     settingsRow(
                         icon: "square.stack.3d.up.fill",
@@ -108,6 +118,8 @@ public struct SettingsView: View {
                 ServerConnectionView()
             case .themeSelection:
                 themeSelectionView
+            case .streamingQuality:
+                streamingQualityView
             }
         }
     }
@@ -168,7 +180,7 @@ public struct SettingsView: View {
                 Button {
                     themeManager.switchTheme(to: themeId)
                 } label: {
-                    ThemeRowLabel(
+                    SelectionRowLabel(
                         name: themeId.displayName,
                         description: themeDescription(for: themeId),
                         isSelected: themeManager.currentThemeId == themeId,
@@ -180,6 +192,34 @@ public struct SettingsView: View {
         #if os(visionOS)
         .scrollContentBackground(.hidden)
         .navigationTitle("Theme")
+        #endif
+        .background(theme.background)
+    }
+
+    /// The streaming ceiling picker (#168). Deliberately the same shape as
+    /// the theme picker above — a list of plain buttons with a checkmark —
+    /// rather than a `Picker`: that shape is the one whose focus and themed
+    /// platter behavior is proven on device here.
+    private var streamingQualityView: some View {
+        List {
+            pageTitle("Streaming Quality")
+
+            ForEach(StreamingQualityTier.allCases, id: \.self) { tier in
+                Button {
+                    playbackPreferences.streamingQuality = tier
+                } label: {
+                    SelectionRowLabel(
+                        name: tier.displayName,
+                        description: tier.summary,
+                        isSelected: playbackPreferences.streamingQuality == tier,
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        #if os(visionOS)
+        .scrollContentBackground(.hidden)
+        .navigationTitle("Streaming Quality")
         #endif
         .background(theme.background)
     }
@@ -201,7 +241,7 @@ public struct SettingsView: View {
 }
 
 /// Row label for the main Settings list. Focused rows sit on the light system
-/// platter, so the text swaps to the on-platter tokens (see ``ThemeRowLabel``).
+/// platter, so the text swaps to the on-platter tokens (see ``SelectionRowLabel``).
 private struct SettingsRowLabel: View {
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
@@ -232,12 +272,12 @@ private struct SettingsRowLabel: View {
     }
 }
 
-/// Label for a theme row in the selection list. When the `.plain` button gains
-/// focus, tvOS lifts it onto a light system platter — the theme's content
-/// colors disappear against it, so the text swaps to the on-platter tokens.
-/// `\.isFocused` only resolves inside the focusable's subtree, hence a
-/// dedicated view (same pattern as ``OverviewLabel``).
-private struct ThemeRowLabel: View {
+/// Label for a row in a selection sub-list (themes, streaming quality). When
+/// the `.plain` button gains focus, tvOS lifts it onto a light system platter
+/// — the theme's content colors disappear against it, so the text swaps to
+/// the on-platter tokens. `\.isFocused` only resolves inside the focusable's
+/// subtree, hence a dedicated view (same pattern as ``OverviewLabel``).
+private struct SelectionRowLabel: View {
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
 
@@ -266,6 +306,43 @@ private struct ThemeRowLabel: View {
         }
         .padding(.vertical, SpacingTokens.xs)
         .animation(theme.animation, value: isFocused)
+    }
+}
+
+/// How the streaming tiers read to a viewer. The values live in JellyfinKit
+/// (they are what the server is asked for); the words are the app's, so the
+/// client package carries no UI strings.
+private extension StreamingQualityTier {
+    /// The engine's declared ceiling, formatted for the Maximum row, so the
+    /// label and the declaration cannot drift apart.
+    static var declaredCeilingLabel: String {
+        "\(AVFoundationPlayerEngine.capabilities.maxStreamingBitrate / 1_000_000) Mbps"
+    }
+
+    var displayName: String {
+        switch self {
+        case .maximum: "Maximum"
+        case .mbps40: "40 Mbps"
+        case .mbps20: "20 Mbps"
+        case .mbps8: "8 Mbps"
+        case .mbps4: "4 Mbps"
+        case .mbps2: "2 Mbps"
+        }
+    }
+
+    /// Deliberately no resolution promises: the request carries a bitrate
+    /// ceiling and nothing else, so what the server sends back at a given
+    /// tier depends on the source and its own encoder settings. These say
+    /// which connection a tier is for, which is the part that is true.
+    var summary: String {
+        switch self {
+        case .maximum: "Up to \(Self.declaredCeilingLabel), best quality on a fast network"
+        case .mbps40: "Plenty of room for large files on a strong home network"
+        case .mbps20: "A comfortable ceiling for most home networks"
+        case .mbps8: "For a shared or busy connection"
+        case .mbps4: "For a slow or metered connection"
+        case .mbps2: "For a connection that stalls at anything higher"
+        }
     }
 }
 

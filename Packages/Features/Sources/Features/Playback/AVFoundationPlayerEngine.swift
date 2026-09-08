@@ -172,8 +172,16 @@ final class AVFoundationPlayerEngine: PlayerEngine {
         ),
     )
 
+    /// The viewer's streaming ceiling for this session (#168), or nil for
+    /// the declared one. Fixed for the life of the engine: Settings is
+    /// unreachable during playback, so a change lands on the next launch.
+    nonisolated let streamingBitrateCap: Int?
+
+    /// The declaration above, narrowed by the viewer's cap. The static stays
+    /// the engine's honest claim about its decoder — a cap is policy about
+    /// the *connection* and can only lower the ceiling, never widen anything.
     nonisolated var capabilities: PlaybackCapabilities {
-        Self.capabilities
+        Self.capabilities.cappedStreamingBitrate(to: streamingBitrateCap)
     }
 
     /// The player, for the hosting view. Not part of `PlayerEngine`: only
@@ -237,6 +245,12 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     @ObservationIgnored private var sessionMetadata: PlayerSessionMetadata?
 
     // MARK: - Lifecycle
+
+    /// - Parameter streamingBitrateCap: The viewer's `StreamingQualityTier`
+    ///   in bits per second; nil (the default) leaves the declared ceiling.
+    init(streamingBitrateCap: Int? = nil) {
+        self.streamingBitrateCap = streamingBitrateCap
+    }
 
     func load(url: URL, metadata: PlayerSessionMetadata, loadsLegibleOptions: Bool) {
         removeObservers()

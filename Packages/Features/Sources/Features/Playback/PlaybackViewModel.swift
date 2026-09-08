@@ -808,6 +808,7 @@ public final class PlaybackViewModel {
                 trickplayInfo: trickplayInfo,
                 capabilities: engine.capabilities,
                 avoidInAppRemux: avoidInAppRemuxDelivery,
+                userStreamingBitrateCap: engine.streamingBitrateCap,
             ),
             client: client,
         )
@@ -1369,14 +1370,14 @@ public final class PlaybackViewModel {
     ///   - errorDescription: the engine's error, non-nil only once playback
     ///     has failed outright
     ///   - progress: buffered duration and bytes transferred, sampled now
-    ///   - previousProgress: the same pair at the previous deadline, zero on
-    ///     the first
+    ///   - previousProgress: the same pair at the previous deadline, or nil
+    ///     at the first — where there is nothing yet to compare against
     static func firstFrameVerdict(
         transportStatus: PlaybackTransportStatus,
         positionAdvanced: Bool,
         errorDescription: String?,
         progress: DeliveryProgress,
-        previousProgress: DeliveryProgress,
+        previousProgress: DeliveryProgress?,
     ) -> FirstFrameVerdict {
         // An error is only published once playback has failed outright, and
         // no amount of further waiting recovers from that. Checked first
@@ -1414,6 +1415,19 @@ public final class PlaybackViewModel {
             // under a throttled one, because the playhead was the only
             // progress signal and it does not move while media buffers.
             //
+            // The first deadline has nothing to compare against, so it can
+            // conclude nothing: a session that has delivered zero bytes may
+            // be a dead server, or a server still starting an encoder. #168
+            // made the second case reachable — a quality cap turns a session
+            // the server would have stream-copied into a full re-encode, and
+            // a 44 Mbps 1080p source capped to 1.6 Mbps took longer than one
+            // deadline to produce its first segment on a real Apple TV. It
+            // failed with `bytes=0` against a synthetic zero, then played on
+            // the retry with the encoder warm. Costing a genuinely dead
+            // server one more deadline buys that session the second sample
+            // this comparison has always needed.
+            guard let previousProgress else { return .keepWaiting }
+
             // Progress that has not moved since the last deadline is the
             // failure this whole mechanism exists for: a rate was requested,
             // the deadline is up, and nothing at all is arriving.
@@ -1481,7 +1495,7 @@ public final class PlaybackViewModel {
             // slow it is, and the loop ends itself the moment it stops — so a
             // narrow link waits, while a silent server still fails on
             // schedule.
-            var previous = DeliveryProgress()
+            var previous: DeliveryProgress?
             while true {
                 try? await Task.sleep(for: Self.firstFrameTimeout)
                 guard !Task.isCancelled, let self else { return }
@@ -1501,7 +1515,7 @@ public final class PlaybackViewModel {
     private func firstFrameDeadlineElapsed(
         baseline: Int64,
         progress: DeliveryProgress,
-        previousProgress: DeliveryProgress,
+        previousProgress: DeliveryProgress?,
     ) -> Bool {
         guard engine.isLoaded, !hasStopped else { return false }
 
@@ -1513,13 +1527,14 @@ public final class PlaybackViewModel {
         // spelling is `OSLogMessage` interpolation and does not exist on
         // `String`. Xcode 27 beta compiled it anyway; release Xcode and CI do
         // not.
+        let previousSample = previousProgress.map {
+            String(format: "%.1fs / %lld", $0.bufferedSeconds, $0.bytesTransferred)
+        } ?? "no prior sample"
         let sample = String(
-            format: "buffered=%.1fs bytes=%lld (was %.1fs / %lld)",
+            format: "buffered=%.1fs bytes=%lld",
             progress.bufferedSeconds,
             progress.bytesTransferred,
-            previousProgress.bufferedSeconds,
-            previousProgress.bytesTransferred,
-        )
+        ) + " (was \(previousSample))"
 
         switch Self.firstFrameVerdict(
             transportStatus: engine.transportStatus,

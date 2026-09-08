@@ -161,7 +161,51 @@ public struct PlaybackCapabilities: Sendable, Equatable {
     }
 }
 
+/// A user-set ceiling on what the app asks the server to deliver (#168).
+///
+/// `PlaybackCapabilities.maxStreamingBitrate` declares what the *engine* can
+/// take; this declares what the *connection* should be asked for, and can
+/// only narrow that declaration — see `cappedStreamingBitrate(to:)`.
+///
+/// Raw values are the ceiling in bits per second rather than a position in
+/// the list, so a persisted choice survives the tiers being reordered or one
+/// being dropped: a stored value the current build no longer names falls back
+/// to the default instead of silently meaning some other speed.
+public enum StreamingQualityTier: Int, CaseIterable, Sendable {
+    /// No user cap — the engine's declared ceiling stands, which is the
+    /// default and the shape the app sent before this setting existed. Zero
+    /// rather than a large number so it can never read as a real bitrate.
+    case maximum = 0
+    case mbps40 = 40_000_000
+    case mbps20 = 20_000_000
+    case mbps8 = 8_000_000
+    case mbps4 = 4_000_000
+    case mbps2 = 2_000_000
+
+    /// The ceiling in bits per second, or nil when uncapped.
+    public var bitsPerSecond: Int? {
+        self == .maximum ? nil : rawValue
+    }
+}
+
 public extension PlaybackCapabilities {
+    /// These capabilities narrowed to a user-set streaming ceiling (#168).
+    ///
+    /// A cap can only *lower* what is declared: the declaration states what
+    /// the engine's decoder can take, and no user setting makes it able to
+    /// take more — so a cap above the declared ceiling is a no-op rather than
+    /// a widening. `nil` (the default tier) is the identity, which is what
+    /// keeps an untouched install sending byte-identical requests.
+    ///
+    /// Only the ceiling moves. Codec, range and subtitle claims are still
+    /// facts about the engine, and a slow link does not change them.
+    func cappedStreamingBitrate(to cap: Int?) -> PlaybackCapabilities {
+        guard let cap else { return self }
+        var capped = self
+        capped.maxStreamingBitrate = min(maxStreamingBitrate, cap)
+        return capped
+    }
+
     /// The declared video range types, read back out of the codec rules —
     /// the `videoRangeType` condition is the single stored source, so the
     /// PlaybackInfo negotiation (pipe-joined, in the derived profile) and

@@ -12,6 +12,12 @@ final class MockPlayerEngine: PlayerEngine {
     /// exercise the same negotiation values production does
     var capabilities: PlaybackCapabilities = AVFoundationPlayerEngine.capabilities
 
+    /// The viewer's streaming ceiling (#168). Set alongside `capabilities`
+    /// when a test needs a capped session; the real engine derives one from
+    /// the other, but keeping them independent here lets a test prove the
+    /// session layer forwards each to the right place.
+    var streamingBitrateCap: Int?
+
     var onEvent: ((PlayerEngineEvent) -> Void)?
 
     // Recorded calls

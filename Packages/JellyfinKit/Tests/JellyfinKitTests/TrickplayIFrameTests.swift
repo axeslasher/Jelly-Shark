@@ -228,6 +228,33 @@ struct TrickplayHLSPlaylistTests {
         #expect(rewritten.contains("VideoCodec=h264&VideoBitrate=15000000&AllowVideoStreamCopy=false&MaxWidth=1920"))
     }
 
+    @Test("The SDR clamp is a ceiling: an already-capped variant keeps its rate")
+    func sdrClampNeverRaisesTheRequest() throws {
+        // With a user-set quality cap (#168) the master already carries a
+        // VideoBitrate below the clamp. Stamping the full 15 Mbps back on
+        // would put this one variant over the ceiling every other part of
+        // the request honors, on exactly the slow link the cap exists for.
+        let rewritten = try rewrite(
+            """
+            #EXTM3U
+            #EXT-X-STREAM-INF:BANDWIDTH=1500000,AVERAGE-BANDWIDTH=1500000,VIDEO-RANGE=PQ,CODECS="hvc1.2.4.L153.B0",RESOLUTION=3840x2160
+            main.m3u8?VideoCodec=hevc,h264&VideoBitrate=1500000
+            #EXT-X-STREAM-INF:BANDWIDTH=1500000,AVERAGE-BANDWIDTH=1500000,VIDEO-RANGE=SDR,CODECS="avc1.640033",RESOLUTION=3840x2160
+            main.m3u8?VideoCodec=h264&VideoBitrate=1500000&AllowVideoStreamCopy=false
+            """,
+            info: sampleInfo,
+        )
+
+        #expect(rewritten.contains("VideoCodec=h264&VideoBitrate=1500000&AllowVideoStreamCopy=false&MaxWidth=1920"))
+        let sdrLines = rewritten.split(separator: "\n").filter { $0.contains("VIDEO-RANGE=SDR") }
+        #expect(sdrLines.count == 1)
+        #expect(sdrLines.first?.contains("BANDWIDTH=1500000") == true)
+        #expect(sdrLines.first?.contains("BANDWIDTH=15000000") == false)
+        // The resolution attribute is still corrected: the clamp caps width
+        // regardless of the rate.
+        #expect(sdrLines.first?.contains("RESOLUTION=1920x1080") == true)
+    }
+
     @Test("An SDR-source master with no fallback variants is untouched")
     func keepsPlainSDRVariant() throws {
         // Only the injected fallbacks carry AllowVideoStreamCopy=false; a

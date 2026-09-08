@@ -56,6 +56,39 @@ struct PlaybackViewModelTests {
         #expect(client.startReports[0].positionTicks == 0)
     }
 
+    @Test("The viewer's quality cap reaches both server-facing calls")
+    func qualityCapReachesBothServerCalls() async {
+        // #168: a tier is only real if it survives the whole path — the
+        // PlaybackInfo request, which is what decides SupportsDirectPlay,
+        // and the stream URL, which carries VideoBitrate. Asserting on the
+        // engine's declaration alone would still pass if the session layer
+        // dropped it between the two.
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.streamingBitrateCap = 2_000_000
+        engine.capabilities = AVFoundationPlayerEngine.capabilities
+            .cappedStreamingBitrate(to: 2_000_000)
+
+        await viewModel.start()
+
+        #expect(client.receivedCapabilities.last?.maxStreamingBitrate == 2_000_000)
+        #expect(client.resolveStreamCapabilities.last?.maxStreamingBitrate == 2_000_000)
+    }
+
+    @Test("The default tier sends the engine's declared ceiling to both calls")
+    func defaultTierSendsTheDeclaredCeiling() async {
+        // The other half of the same claim: an untouched install must still
+        // negotiate at 120 Mbps, or direct play stops being offered for
+        // files it is offered for today.
+        let client = MockJellyfinClient()
+        let (viewModel, _) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+
+        #expect(client.receivedCapabilities.last?.maxStreamingBitrate == 120_000_000)
+        #expect(client.resolveStreamCapabilities.last?.maxStreamingBitrate == 120_000_000)
+    }
+
     @Test("start() requests playback info with the resume position")
     func startWithResumePosition() async {
         let client = MockJellyfinClient()
