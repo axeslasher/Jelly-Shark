@@ -387,7 +387,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         URL(string: "https://example.com/Videos/\(parameters.itemId)/stream.mkv?static=true")!
     }
 
-    func audioHLSStream(parameters: StreamParameters, audioStreamIndex _: Int?) throws -> AudioHLSStream {
+    func audioHLSStream(
+        parameters: StreamParameters,
+        audioStreamIndex _: Int?,
+        streamingBitrateCap _: Int?,
+    ) throws -> AudioHLSStream {
         AudioHLSStream(
             playlistURL: URL(string: "https://example.com/Audio/\(parameters.itemId)/main.m3u8")!,
             segmentBase: URL(string: "https://example.com/Audio/\(parameters.itemId)/hls1/main")!,

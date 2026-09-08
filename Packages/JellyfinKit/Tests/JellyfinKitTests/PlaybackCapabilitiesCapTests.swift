@@ -56,4 +56,36 @@ struct PlaybackCapabilitiesCapTests {
             2_000_000,
         ])
     }
+
+    // MARK: - The external-audio remux session (#249)
+
+    @Test("With no cap the remux audio session asks for its full ceiling")
+    func remuxAudioIsUnchangedWithoutACap() {
+        #expect(StreamURLBuilder.remuxAudioBitrate(cappedTo: nil) == 640_000)
+    }
+
+    @Test("A cap narrows the remux audio session by the same table as the video split")
+    func remuxAudioFollowsTheServerTable() {
+        // Rung 1 serves the source's own video bytes, so this rate is
+        // negotiated on its own endpoint rather than split out of a budget.
+        // It must still land where `bitrateSplit` would put it, or the two
+        // streams together exceed the ceiling the viewer chose.
+        let expected: [(cap: Int, audio: Int)] = [
+            (2_000_000, 384_000),
+            (4_000_000, 640_000),
+            (8_000_000, 640_000),
+            (20_000_000, 640_000),
+        ]
+
+        for (cap, audio) in expected {
+            #expect(StreamURLBuilder.remuxAudioBitrate(cappedTo: cap) == audio)
+        }
+    }
+
+    @Test("The remux audio rate never exceeds the tier that set it")
+    func remuxAudioNeverExceedsItsCap() {
+        for cap in [2_000_000, 4_000_000, 8_000_000, 20_000_000, 40_000_000] {
+            #expect(StreamURLBuilder.remuxAudioBitrate(cappedTo: cap) <= cap)
+        }
+    }
 }

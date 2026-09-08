@@ -258,7 +258,11 @@ public protocol JellyfinClientProtocol: Sendable {
     /// default or selected (#252) — can be neither carried nor decoded
     /// on-device.
     /// - Throws: `APIError.notAuthenticated` if there is no access token
-    func audioHLSStream(parameters: StreamParameters, audioStreamIndex: Int?) throws -> AudioHLSStream
+    func audioHLSStream(
+        parameters: StreamParameters,
+        audioStreamIndex: Int?,
+        streamingBitrateCap: Int?,
+    ) throws -> AudioHLSStream
 
     /// Report that playback has started
     func reportPlaybackStart(
@@ -1212,19 +1216,21 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return url
     }
 
-    public func audioHLSStream(parameters: StreamParameters, audioStreamIndex: Int?) throws -> AudioHLSStream {
+    public func audioHLSStream(
+        parameters: StreamParameters,
+        audioStreamIndex: Int?,
+        streamingBitrateCap: Int?,
+    ) throws -> AudioHLSStream {
         guard let accessToken = _accessToken else {
             throw APIError.notAuthenticated
         }
-        // 640 kbps: the ceiling Jellyfin's own web client requests for 5.1
-        // AAC re-encodes; the server clamps below it as channel count allows.
         guard let stream = StreamURLBuilder.audioHLSStream(
             serverURL: serverURL,
             accessToken: accessToken,
             deviceId: configuration.deviceID,
             parameters: parameters,
             audioStreamIndex: audioStreamIndex,
-            audioBitrate: 640_000,
+            audioBitrate: StreamURLBuilder.remuxAudioBitrate(cappedTo: streamingBitrateCap),
         ) else {
             throw APIError.invalidURL
         }

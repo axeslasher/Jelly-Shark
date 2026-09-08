@@ -270,8 +270,16 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         )
     }
 
-    public func audioHLSStream(parameters: StreamParameters, audioStreamIndex: Int?) throws -> AudioHLSStream {
-        try inner.audioHLSStream(parameters: parameters, audioStreamIndex: audioStreamIndex)
+    public func audioHLSStream(
+        parameters: StreamParameters,
+        audioStreamIndex: Int?,
+        streamingBitrateCap: Int?,
+    ) throws -> AudioHLSStream {
+        try inner.audioHLSStream(
+            parameters: parameters,
+            audioStreamIndex: audioStreamIndex,
+            streamingBitrateCap: streamingBitrateCap,
+        )
     }
 
     public func staticStreamURL(for source: MediaSource, parameters: StreamParameters) throws -> URL {
