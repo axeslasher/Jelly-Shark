@@ -90,6 +90,40 @@ struct PlaybackDeliveryFailureTests {
         #expect(verdict == .keepWaiting)
     }
 
+    @Test("The first deadline never fails, because it has nothing to compare against")
+    func firstDeadlineKeepsWaiting() {
+        // Device-measured (#168): a 44 Mbps 1080p source capped to 1.6 Mbps
+        // delivered zero bytes inside the first deadline while the server
+        // started its encoder, failed against a synthetic zero baseline, and
+        // played on the retry with the encoder warm. Every later deadline has
+        // a real prior sample; this one must earn its second.
+        let verdict = PlaybackViewModel.firstFrameVerdict(
+            transportStatus: .waitingToPlay,
+            positionAdvanced: false,
+            errorDescription: nil,
+            progress: .init(),
+            previousProgress: nil,
+        )
+
+        #expect(verdict == .keepWaiting)
+    }
+
+    @Test("A first deadline with a failed item still fails")
+    func firstDeadlineStillHonoursAnItemError() {
+        // The grace above is only for the absence of evidence. An engine that
+        // has reported an error has produced evidence, and no amount of
+        // further waiting recovers from it.
+        let verdict = PlaybackViewModel.firstFrameVerdict(
+            transportStatus: .waitingToPlay,
+            positionAdvanced: false,
+            errorDescription: "Cannot Open",
+            progress: .init(),
+            previousProgress: nil,
+        )
+
+        #expect(verdict == .failed(PlaybackViewModel.deliveryFailureMessage(reason: "Cannot Open")))
+    }
+
     @Test("Progress that stopped moving is a failure, however much it holds")
     func stalledDeliveryFails() {
         // Media arrived once and then stopped. Waiting further would restore
@@ -111,8 +145,10 @@ struct PlaybackDeliveryFailureTests {
 
     // MARK: - Failures
 
-    @Test("Still waiting with nothing delivered is a failure")
+    @Test("Still waiting with nothing delivered across two deadlines is a failure")
     func waitingWithNothingDeliveredFails() {
+        // The second deadline, where a prior sample exists to compare
+        // against: nothing arrived in the window between them.
         let verdict = PlaybackViewModel.firstFrameVerdict(
             transportStatus: .waitingToPlay,
             positionAdvanced: false,
