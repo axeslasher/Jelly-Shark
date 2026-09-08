@@ -37,7 +37,7 @@ public struct PlaybackContainerView: View {
         item: MediaItem,
         userState: UserStateStore? = nil,
         mediaSourceId: String? = nil,
-        streamingBitrateCap: Int? = nil,
+        streamingBitrateCap: Int?,
     ) {
         let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)

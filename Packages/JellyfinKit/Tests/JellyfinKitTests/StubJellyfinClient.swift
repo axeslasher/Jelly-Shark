@@ -254,7 +254,11 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         fatalError("unstubbed chapterImageURL")
     }
 
-    func audioHLSStream(parameters _: StreamParameters, audioStreamIndex _: Int?) throws -> AudioHLSStream {
+    func audioHLSStream(
+        parameters _: StreamParameters,
+        audioStreamIndex _: Int?,
+        streamingBitrateCap _: Int?,
+    ) throws -> AudioHLSStream {
         fatalError("unstubbed audioHLSStream")
     }
 

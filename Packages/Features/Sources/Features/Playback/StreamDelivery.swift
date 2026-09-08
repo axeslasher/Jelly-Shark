@@ -543,6 +543,7 @@ final class RemuxHLSDelivery: StreamDelivery {
                     playSessionId: context.playSessionId,
                 ),
                 audioStreamIndex: transcodedAudioStreamIndex,
+                streamingBitrateCap: context.userStreamingBitrateCap,
             ))
             let info = try await audioSession.start()
             // Any unused fMP4 track ID works; past the file's own numbers

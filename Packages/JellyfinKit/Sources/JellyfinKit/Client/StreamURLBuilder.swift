@@ -129,6 +129,46 @@ enum StreamURLBuilder {
         return (video: total - audio, audio: audio)
     }
 
+    /// What the external-audio remux session (#249) asks the server to
+    /// encode: the ceiling Jellyfin's own web client requests for a 5.1 AAC
+    /// re-encode. The server clamps below it as channel count allows.
+    static let remuxAudioBitrateCeiling = 640_000
+
+    /// That ceiling narrowed by a user-set cap (#168), or unchanged when the
+    /// viewer set none.
+    ///
+    /// This path is not covered by `bitrateSplit`: rung 1 serves the source's
+    /// own video bytes, so there is no `VideoBitrate` to split a budget
+    /// against — the audio rate is negotiated on its own endpoint. Left
+    /// alone it asked for 640 kbps beside a video stream already sized close
+    /// to the cap, putting the pair over the ceiling the viewer chose. The
+    /// same table decides the share here so both paths divide a budget the
+    /// one way.
+    ///
+    /// The allowance is deliberately not netted against the source's video
+    /// bitrate. Doing so would imply a guarantee rung 1 does not make: this
+    /// rung serves the source's own video bytes unshaped, and
+    /// `MediaSource.bitrate` is an average, so a file that averages under the
+    /// cap still peaks over it. Exact audio arithmetic beside an unshaped
+    /// average is precision the delivery cannot honour.
+    ///
+    /// The overshoot it admits is bounded and rare. It needs a source whose
+    /// existing audio is *smaller* than the allowance — so a non-carriable
+    /// track (`MatroskaFMP4Remuxer.supportedAudioCodecIDs` carries AAC, AC-3,
+    /// E-AC-3 and FLAC; everything else transcodes) below 384 kbps, beside HDR
+    /// video, under a 2 Mbps total. DTS and TrueHD, which are what actually
+    /// reach this path, run 1.3-6.7 Mbps and shrink by an order of magnitude
+    /// here. Measured against a 660-film library: zero source/tier pairs where
+    /// the swap crosses the cap, and the lowest HDR source present is 3.8 Mbps.
+    ///
+    /// Declining the rung on a near-miss would also be the worse trade — it
+    /// buys a bounded overshoot by sending an HDR source to a full server
+    /// transcode.
+    static func remuxAudioBitrate(cappedTo cap: Int?) -> Int {
+        guard let cap else { return remuxAudioBitrateCeiling }
+        return min(remuxAudioBitrateCeiling, serverAudioBitrateCeiling(forTotal: cap))
+    }
+
     /// Build an HLS universal stream URL: `/Videos/{itemId}/master.m3u8`
     ///
     /// The master playlist (not `main.m3u8`, which is the video-only media
