@@ -138,6 +138,55 @@ make install-hooks # one-time opt-in: enables the lint-only pre-commit hook (.gi
 
 **Always run `make format` after modifying Swift code and before finishing a change.** A GitHub Actions check (`.github/workflows/swiftformat.yml`) runs `swiftformat --lint` on every PR with the same pinned version, so unformatted code fails CI.
 
+## Swift & SwiftUI conventions
+
+Modern-API rules the formatter can't enforce. The tree currently has zero violations of
+the first two groups — keep it that way rather than cleaning up later.
+
+**Data flow and concurrency**
+
+1. Shared state is an `@Observable` class, owned with `@State`, passed with `@Bindable` or
+   `@Environment`. Never `ObservableObject`, `@Published`, `@StateObject`,
+   `@ObservedObject`, or `@EnvironmentObject`.
+2. Mark every `@Observable` class `@MainActor`.
+3. Prefer `async`/`await` to closure-based variants wherever both exist. No
+   `DispatchQueue.main.async`.
+4. No force unwraps or force `try` outside tests and genuinely unrecoverable paths.
+
+**SwiftUI API choices**
+
+1. `foregroundStyle()`, not `foregroundColor()`. `clipShape(.rect(cornerRadius:))`, not
+   `cornerRadius()`.
+2. `Tab`, not `tabItem()`. `NavigationStack` + `navigationDestination(for:)`, not
+   `NavigationView`.
+3. `Task.sleep(for:)`, not `Task.sleep(nanoseconds:)`.
+4. `Button` over `onTapGesture()` unless the tap's location or count is actually needed.
+   An image-only button always carries text — `Button("Play", systemImage: "play.fill")`
+   — which is also how it gets a VoiceOver label.
+5. `FormatStyle` for user-facing numbers and dates, never `DateFormatter`,
+   `NumberFormatter`, or `String(format:)`.
+
+**Deliberate exceptions — do not "modernize" these**
+
+| Pattern | Why it stays |
+| --- | --- |
+| `String(format:)` in HLS playlists and `S%02dE%02d` IDs | Protocol text and identifiers, not user-facing numbers. `FormatStyle` is the wrong tool. |
+| `DispatchQueue` in the playback servers and discovery socket | Network.framework listeners take a queue. Not a concurrency choice. |
+| `AnyView` in `UpNextProposalViewController` | `UIHostingController` bridge. Required. |
+| UIKit in playback | `AVPlayerViewController` owns its own `UIWindow`; the player layer is UIKit by necessity. |
+| `ScrollViewReader`, `GeometryReader`, `onGeometryChange` | Device-verified scroll and focus behaviour depends on them. See § What tests cannot verify before changing them. |
+
+## Xcode MCP
+
+When the Xcode MCP is available, prefer its tools to generic equivalents:
+
+| Tool | Use for |
+| --- | --- |
+| `DocumentationSearch` | Confirm an API exists and is available on tvOS/visionOS 26 before writing against it. |
+| `BuildProject` / `GetBuildLog` | Build and read errors after a change. |
+| `RenderPreview` | Render the five-theme `#Preview` tabs. Still not proof of appearance — see § What tests cannot verify. |
+| `XcodeRead`, `XcodeWrite`, `XcodeUpdate` | Editing files Xcode has open, so the project file stays consistent. |
+
 ## Architecture
 
 Three local SPM packages under `Packages/` (JellyfinKit, DesignSystem, Features) plus the
