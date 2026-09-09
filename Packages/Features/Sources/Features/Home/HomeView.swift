@@ -21,8 +21,13 @@ struct HomeView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pushMediaDetail) private var pushMediaDetail
 
-    @State private var viewModel = HomeViewModel()
-    @State private var genreShelves = GenreShelvesViewModel()
+    /// Owned by `RootView` so they survive tvOS tearing this tab's view down
+    /// on switch — a returning tab repaints from memory in its first layout
+    /// pass instead of refetching (#236 § 3).
+    let viewModel: HomeViewModel
+    let genreShelves: GenreShelvesViewModel
+    let ui: HomeUIState
+    let isEligible: Bool
 
     /// The item being played, driving the player cover — set by the hero Play
     /// button and the Continue Watching / Next Up cards (which play
@@ -391,31 +396,56 @@ private struct HeroBackdropBridge: View {
     // welcome empty state rather than shelves.
     #Preview("Standard", traits: .featuresEnvironment) {
         NavigationStack {
-            HomeView()
+            HomeView(
+                viewModel: HomeViewModel(),
+                genreShelves: GenreShelvesViewModel(),
+                ui: HomeUIState(),
+                isEligible: true,
+            )
         }
     }
 
     #Preview("Horror", traits: .featuresEnvironment(theme: .horror)) {
         NavigationStack {
-            HomeView()
+            HomeView(
+                viewModel: HomeViewModel(),
+                genreShelves: GenreShelvesViewModel(),
+                ui: HomeUIState(),
+                isEligible: true,
+            )
         }
     }
 
     #Preview("Action", traits: .featuresEnvironment(theme: .action)) {
         NavigationStack {
-            HomeView()
+            HomeView(
+                viewModel: HomeViewModel(),
+                genreShelves: GenreShelvesViewModel(),
+                ui: HomeUIState(),
+                isEligible: true,
+            )
         }
     }
 
     #Preview("Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
         NavigationStack {
-            HomeView()
+            HomeView(
+                viewModel: HomeViewModel(),
+                genreShelves: GenreShelvesViewModel(),
+                ui: HomeUIState(),
+                isEligible: true,
+            )
         }
     }
 
     #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
         NavigationStack {
-            HomeView()
+            HomeView(
+                viewModel: HomeViewModel(),
+                genreShelves: GenreShelvesViewModel(),
+                ui: HomeUIState(),
+                isEligible: true,
+            )
         }
     }
 #endif

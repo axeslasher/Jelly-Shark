@@ -12,6 +12,17 @@ public struct RootView: View {
     @State private var playbackPreferences = PlaybackPreferences()
     @State private var selectedTab: AppTab = .home
 
+    /// Home's view models and UI state, owned here (not in `HomeView`) so
+    /// tvOS tearing the tab down on switch loses neither the fetched data
+    /// nor where the viewer was standing in it (#236 § 3).
+    @State private var homeViewModel = HomeViewModel()
+    @State private var genreShelves = GenreShelvesViewModel()
+    @State private var homeUI = HomeUIState()
+
+    /// Collects the reasons Home's content has gone stale, so a mutation
+    /// made anywhere in the app is not lost while Home is off screen.
+    @State private var refreshCoordinator = ContentRefreshCoordinator()
+
     /// One navigation path per tab, owned here (the tab views don't create
     /// their own `NavigationStack`s) so `tabSelection` can pop a stack to root
     /// before a tab switch. All pushes are value-based for the same reason —
@@ -92,6 +103,36 @@ public struct RootView: View {
         )
     }
 
+    /// Whether Home may refresh right now.
+    ///
+    /// Three conditions, not one. `tabSelection` empties the outgoing tab's
+    /// path synchronously and only commits `selectedTab` after the settle, so
+    /// leaving Home with a detail pushed makes the first two transiently true
+    /// while the viewer is on their way out. `pendingSwitch` is precisely the
+    /// "we are leaving" signal, so it closes that window at the source
+    /// (#236 § 4). Task 7 makes a completed switch clear the handle; without
+    /// that this is false forever after the first deferred switch.
+    static func homeRefreshEligible(
+        selectedTab: AppTab,
+        homePathIsEmpty: Bool,
+        hasPendingSwitch: Bool,
+    ) -> Bool {
+        selectedTab == .home && homePathIsEmpty && !hasPendingSwitch
+    }
+
+    private var isHomeRefreshEligible: Bool {
+        #if os(tvOS)
+            let switching = pendingSwitch != nil
+        #else
+            let switching = false
+        #endif
+        return Self.homeRefreshEligible(
+            selectedTab: selectedTab,
+            homePathIsEmpty: tabPaths[.home, default: NavigationPath()].isEmpty,
+            hasPendingSwitch: switching,
+        )
+    }
+
     public var body: some View {
         TabView(selection: tabSelection) {
             homeTab
@@ -159,6 +200,7 @@ public struct RootView: View {
         .environment(connectionViewModel)
         .environment(homePreferences)
         .environment(playbackPreferences)
+        .environment(refreshCoordinator)
         .environment(\.openSettings, OpenSettingsAction {
             tabSelection.wrappedValue = .settings
         })
@@ -188,6 +230,14 @@ public struct RootView: View {
                 }
             #endif
         }
+        // `UserStateStore` lives in JellyfinKit and cannot know about the
+        // coordinator, so it publishes a counter and the translation happens at
+        // the Features boundary. Every successful mutation from every surface
+        // already funnels through `confirm`/`recordPosition`, so no producer can
+        // silently forget to post (#236 § 5.2).
+        .onChange(of: session.userState.mutationRevision) { _, _ in
+            refreshCoordinator.post(.watchState)
+        }
         // If the selected library tab disappears (disconnect clears the list,
         // or the server removed a library), fall back to Home rather than
         // leaving the selection pointing at a tab that no longer exists.
@@ -195,6 +245,7 @@ public struct RootView: View {
         // The `.libraries` arm is unreachable on tvOS, which never selects that
         // tab; it costs that platform nothing and keeps the rule in one place.
         .onChange(of: connectionViewModel.libraries) { _, libraries in
+            refreshCoordinator.post(.libraries)
             switch selectedTab {
             case let .library(id) where !libraries.contains(where: { $0.id == id }):
                 selectedTab = .home
@@ -234,7 +285,12 @@ public struct RootView: View {
     private var homeTab: some TabContent<AppTab> {
         Tab("Home", systemImage: "house.fill", value: AppTab.home) {
             navigationRoot(for: .home) {
-                HomeView()
+                HomeView(
+                    viewModel: homeViewModel,
+                    genreShelves: genreShelves,
+                    ui: homeUI,
+                    isEligible: isHomeRefreshEligible,
+                )
             }
         }
     }
