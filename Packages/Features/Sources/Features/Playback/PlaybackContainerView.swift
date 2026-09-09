@@ -99,6 +99,15 @@ public struct PlaybackContainerView: View {
         }
         .ignoresSafeArea()
         .task {
+            // SwiftUI cancels this task on disappear, but cancellation is
+            // cooperative — an early dismiss can still resume this body after
+            // `onDisappear` already ran its own fallback-ticket teardown. A
+            // cancelled body must not register a session nothing will ever
+            // finish: the coordinator has no unregister, so that ticket would
+            // sit in `awaitPlaybackReporting`'s loop forever and wedge every
+            // future drain. `onDisappear`'s `stop()` already covers teardown
+            // for this case, idempotently.
+            guard !Task.isCancelled else { return }
             // Registered before the player even starts, so no dismissal can
             // observe "nothing in flight" — SwiftUI guarantees no ordering
             // between `onDisappear` and a presenter's `onDismiss` (#236 § 6).

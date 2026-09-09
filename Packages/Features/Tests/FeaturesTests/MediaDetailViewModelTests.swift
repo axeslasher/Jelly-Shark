@@ -461,6 +461,7 @@ struct MediaDetailViewModelTests {
         let coordinator = ContentRefreshCoordinator()
         let viewModel = MediaDetailViewModel()
         await load(viewModel, client: client, item: movie("m-1"))
+        let requestsBeforeRefresh = client.mediaItemRequests.count
 
         // Arm the probe only AFTER the initial load, or the load's own fetch
         // trips it and the test passes or fails for the wrong reason.
@@ -477,6 +478,12 @@ struct MediaDetailViewModelTests {
         let gate = AsyncGate()
         coordinator.finishPlayback(ticket, stop: Task {
             try? await gate.wait()
+            // The client isn't actor-isolated, so without this handicap the
+            // fetch and this resumption race on raw dispatch order and a
+            // missing `awaitPlaybackReporting()` call can still pass. The
+            // sleep guarantees the report lands well after the gate opens,
+            // so a regression is always observed as an early fetch.
+            try? await Task.sleep(for: .milliseconds(50))
             reportLanded = true
         })
 
@@ -485,6 +492,11 @@ struct MediaDetailViewModelTests {
         await refresh.value
 
         #expect(fetchedBeforeReport == false)
+        // Positive control: a refresh that returned early (e.g. the `guard
+        // let client, let item` short-circuiting) would trivially satisfy
+        // the above without ever calling the client.
+        #expect(reportLanded == true)
+        #expect(client.mediaItemRequests.count > requestsBeforeRefresh)
     }
 
     // MARK: - User-data actions (episode card menus)
