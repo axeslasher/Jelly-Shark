@@ -319,6 +319,16 @@ struct UserStateStoreTests {
         #expect(resolved.userData?.playbackPositionTicks == nil)
     }
 
+    @Test func confirmedPlayedToggleClearsThePositionEvenAgainstAStaleItemCopy() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.confirm(store.beginPlayedToggle(itemID: "m-1", target: true))
+        // A stale Continue Watching copy still carries the old server
+        // ticks — the cleared position must not resurrect through it.
+        let resolved = store.resolve(item("m-1", played: true, position: 900))
+        #expect(resolved.userData?.playbackPositionTicks == nil)
+    }
+
     @Test func ingestAcceptsTheServerPositionOnceTheGuardExpires() async {
         let store = UserStateStore()
         await store.activate(cache: cache)

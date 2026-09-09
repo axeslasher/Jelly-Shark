@@ -127,10 +127,17 @@ public final class UserStateStore {
             playCount: item.userData?.playCount,
             lastPlayedDate: item.userData?.lastPlayedDate,
         )
-        value.playbackPositionTicks = authoritativePosition(
-            for: item.id,
-            serverValue: item.userData?.playbackPositionTicks,
-        )
+        // Past the TTL a recorded playhead stops being authoritative; fall
+        // back to what the item itself carries (the
+        // MinResumeDurationSeconds case). Any other guard state — active,
+        // or never armed — leaves `value` alone: committed state already
+        // reflects what `ingest`/`confirm` decided, including a played
+        // toggle's deliberate nil.
+        if let recordedAt = positionRecordedAt[item.id],
+           Date.now.timeIntervalSince(recordedAt) >= Self.positionGuardTTL.timeIntervalValue
+        {
+            value.playbackPositionTicks = item.userData?.playbackPositionTicks
+        }
         if let played = itemPending?[.played]?.target {
             value.played = played
             // Mirrors MediaItem.settingPlayed: both transitions clear
@@ -293,25 +300,6 @@ public final class UserStateStore {
     }
 
     // MARK: - Internals
-
-    /// A locally recorded playhead is only authoritative while its stamp is
-    /// fresh. Past the TTL, fall back to what the item itself carries —
-    /// otherwise an item the server never stores a position for (the
-    /// `MinResumeDurationSeconds` case) shows a Resume button forever, since
-    /// no later `ingest` ever arrives to clear the guard.
-    private func authoritativePosition(
-        for itemID: String,
-        serverValue: Int64?,
-        now: Date = .now,
-    ) -> Int64? {
-        guard let recordedAt = positionRecordedAt[itemID] else {
-            return states[itemID]?.playbackPositionTicks ?? serverValue
-        }
-        guard now.timeIntervalSince(recordedAt) < Self.positionGuardTTL.timeIntervalValue else {
-            return serverValue
-        }
-        return states[itemID]?.playbackPositionTicks ?? serverValue
-    }
 
     /// Clears the local playhead guard for `itemID`, cancelling its
     /// scheduled expiry so a later firing can't clear a guard that ingest
