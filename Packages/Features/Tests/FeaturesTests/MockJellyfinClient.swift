@@ -175,11 +175,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Optional gate awaited before serving an item detail, for in-flight tests
     var mediaItemDelay: (() async -> Void)?
 
+    /// Overrides `mediaItemsById` when set — for tests that need to observe
+    /// *when* the fetch ran (relative to some other signal) rather than pin
+    /// its content.
+    var mediaItemHandler: ((String) -> MediaItem)?
+
     func getMediaItem(itemId: String) async throws -> MediaItem {
         let result: Result<MediaItem, Error> = lock.withLock {
             mediaItemRequests.append(itemId)
             if mediaItemFailureIds.contains(itemId) {
                 return .failure(APIError.generic("Item fetch failed"))
+            }
+            if let mediaItemHandler {
+                return .success(mediaItemHandler(itemId))
             }
             return .success(mediaItemsById[itemId] ?? MediaItem(id: itemId, name: "Item", type: .movie))
         }

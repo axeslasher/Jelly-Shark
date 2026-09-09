@@ -41,6 +41,7 @@ public struct MediaDetailView: View {
     @Environment(AppSession.self) private var session
     @Environment(PlaybackPreferences.self) private var playbackPreferences
     @Environment(\.pushMediaDetail) private var pushMediaDetail
+    @Environment(ContentRefreshCoordinator.self) private var refreshCoordinator
 
     /// Owns every server-side fetch and its status; this view keeps only
     /// presentation state (scroll, focus, playback covers).
@@ -560,7 +561,8 @@ public struct MediaDetailView: View {
     /// view model once the player dismisses.
     private func refreshAfterPlayback() {
         Task {
-            await viewModel.refreshAfterPlayback()
+            await viewModel.refreshAfterPlayback(waitingFor: refreshCoordinator)
+            refreshCoordinator.post(.watchState)
         }
     }
 }

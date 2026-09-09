@@ -456,6 +456,37 @@ struct MediaDetailViewModelTests {
         #expect(viewModel.nextUpEpisode?.id == "e2")
     }
 
+    @Test func refreshAfterPlaybackWaitsForTheStoppedReport() async {
+        let client = MockJellyfinClient()
+        let coordinator = ContentRefreshCoordinator()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m-1"))
+
+        // Arm the probe only AFTER the initial load, or the load's own fetch
+        // trips it and the test passes or fails for the wrong reason.
+        var reportLanded = false
+        var fetchedBeforeReport = false
+        client.mediaItemHandler = { _ in
+            if !reportLanded {
+                fetchedBeforeReport = true
+            }
+            return MediaItem(id: "m-1", name: "m-1", type: .movie)
+        }
+
+        let ticket = coordinator.registerPlayback()
+        let gate = AsyncGate()
+        coordinator.finishPlayback(ticket, stop: Task {
+            try? await gate.wait()
+            reportLanded = true
+        })
+
+        let refresh = Task { await viewModel.refreshAfterPlayback(waitingFor: coordinator) }
+        await gate.open()
+        await refresh.value
+
+        #expect(fetchedBeforeReport == false)
+    }
+
     // MARK: - User-data actions (episode card menus)
 
     @Test("setPlayed persists and refreshes next-up like a finished playback")

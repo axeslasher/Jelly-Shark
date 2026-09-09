@@ -9,8 +9,13 @@ import SwiftUI
 public struct PlaybackContainerView: View {
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
+    @Environment(ContentRefreshCoordinator.self) private var refreshCoordinator
 
     @State private var viewModel: PlaybackViewModel
+
+    /// Set by `.task` at presentation; `onDisappear` reads it to hand the
+    /// same session to `finishPlayback`. Nil only if `.task` never ran.
+    @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
 
     /// The concrete engine, held alongside the view model: the AVKit
     /// hosting below needs the typed `player` the `PlayerEngine` protocol
@@ -94,6 +99,10 @@ public struct PlaybackContainerView: View {
         }
         .ignoresSafeArea()
         .task {
+            // Registered before the player even starts, so no dismissal can
+            // observe "nothing in flight" — SwiftUI guarantees no ordering
+            // between `onDisappear` and a presenter's `onDismiss` (#236 § 6).
+            playbackTicket = refreshCoordinator.registerPlayback()
             await viewModel.start()
         }
         .onChange(of: viewModel.state) { _, newState in
@@ -102,7 +111,16 @@ public struct PlaybackContainerView: View {
             }
         }
         .onDisappear {
-            Task { await viewModel.stop() }
+            // Teardown is unconditional. An early dismiss can run this before
+            // `.task` ever registered, and skipping `stop()` there would leak
+            // the session and orphan a server-side transcode.
+            //
+            // The fallback still takes a ticket: merely posting would leave the
+            // coordinator with nothing to await, and a refresh could then read
+            // server state while this stop report was still landing — the exact
+            // race this sequencing exists to remove.
+            let ticket = playbackTicket ?? refreshCoordinator.registerPlayback()
+            refreshCoordinator.finishPlayback(ticket, stop: Task { await viewModel.stop() })
         }
     }
 
