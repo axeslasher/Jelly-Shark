@@ -39,19 +39,36 @@ enum HomeFocusReconciler {
             return ShelfFocusID(row: survivor.id, item: survivor.itemIDs[target])
         }
 
-        /// The row is gone or empty. Walk the *old* ordering outward, and
-        /// take the first row that still exists with something in it.
-        func firstLiving(_ candidates: some Sequence<Row>) -> ShelfFocusID? {
-            for candidate in candidates {
-                guard let now = after.first(where: { $0.id == candidate.id }),
-                      let first = now.itemIDs.first
-                else { continue }
-                return ShelfFocusID(row: now.id, item: first)
+        // The row is gone or empty. Anchor focus in the old layout's
+        // ordering (a row that disappeared shouldn't move the viewer), but
+        // walk the new layout (a shelf that just appeared is a real row
+        // the viewer is looking at, not a phantom to skip).
+        let anchorIndex: Int = {
+            // Find the nearest row above the vanished position that still exists.
+            for i in (0 ..< position).reversed() {
+                if after.contains(where: { $0.id == before[i].id }) {
+                    return after.firstIndex(where: { $0.id == before[i].id }) ?? -1
+                }
             }
-            return nil
+            return -1
+        }()
+
+        // Search forward from the anchor in the new layout.
+        for i in (anchorIndex + 1) ..< after.count {
+            if let first = after[i].itemIDs.first {
+                return ShelfFocusID(row: after[i].id, item: first)
+            }
         }
 
-        return firstLiving(before[(position + 1)...])
-            ?? firstLiving(before[..<position].reversed())
+        // Search backward from the anchor.
+        if anchorIndex >= 0 {
+            for i in (0 ... anchorIndex).reversed() {
+                if let first = after[i].itemIDs.first {
+                    return ShelfFocusID(row: after[i].id, item: first)
+                }
+            }
+        }
+
+        return nil
     }
 }

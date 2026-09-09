@@ -40,16 +40,15 @@ struct HomeFocusReconcilerTests {
     @Test func aRemovedRowDoesNotLetTheRowBelowInheritItsIndex() {
         // "latest-movies" is gone entirely, so "genres" now sits at index
         // 1. Resolving by index would call that the same row and pick its
-        // index-0 card as a *sibling*; it is a different row, so the rule
-        // is "first card of the next row down" — which happens to agree
-        // here, but must agree for the right reason. The distinguishing
-        // case is the one below.
+        // index-1 card as a *sibling*; it is a different row, so the rule
+        // is "first card of the next row down" — which must agree for the
+        // right reason (by id), not by index.
         let next = HomeFocusReconciler.nextFocus(
-            before: rows([("continue", ["a"]), ("latest-movies", ["m1", "m2"]), ("genres", ["g1", "g2"])]),
-            after: rows([("continue", ["a"]), ("genres", ["g1", "g2"])]),
-            vanished: ShelfFocusID(row: "latest-movies", item: "m2"),
+            before: rows([("continue", ["a"]), ("latest-movies", ["m1", "m2", "m3"]), ("genres", ["g1", "g2", "g3"])]),
+            after: rows([("continue", ["a"]), ("genres", ["g1", "g2", "g3"])]),
+            vanished: ShelfFocusID(row: "latest-movies", item: "m3"),
         )
-        // Index-based logic would have returned g2 (index 1 of the row
+        // Index-based logic would have returned g2 (index 2 of the row
         // that moved up). The row is gone, so focus goes to the first
         // card of the next surviving row.
         #expect(next == ShelfFocusID(row: "genres", item: "g1"))
@@ -92,5 +91,23 @@ struct HomeFocusReconcilerTests {
             vanished: ShelfFocusID(row: "ghost", item: "x"),
         )
         #expect(next == nil)
+    }
+
+    @Test func clampsToTheLastSurvivorWhenTheRowShrankPastTheGap() {
+        let next = HomeFocusReconciler.nextFocus(
+            before: rows([("continue", ["a", "b", "c"])]),
+            after: rows([("continue", ["a"])]),
+            vanished: ShelfFocusID(row: "continue", item: "c"),
+        )
+        #expect(next == ShelfFocusID(row: "continue", item: "a"))
+    }
+
+    @Test func aShelfThatAppearedBelowTheGapTakesFocusBeforeOlderRows() {
+        let next = HomeFocusReconciler.nextFocus(
+            before: rows([("continue", ["a"]), ("genres", ["g1"])]),
+            after: rows([("continue", []), ("latest-new", ["n1"]), ("genres", ["g1"])]),
+            vanished: ShelfFocusID(row: "continue", item: "a"),
+        )
+        #expect(next == ShelfFocusID(row: "latest-new", item: "n1"))
     }
 }
