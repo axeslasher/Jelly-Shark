@@ -386,22 +386,6 @@ private extension View {
     }
 }
 
-/// `.focused` takes a non-optional binding, and a `@ViewBuilder` branch
-/// would give the two arms different view identities — which on tvOS
-/// re-enters the focus engine and drops focus. One modifier, one identity.
-struct OptionalShelfFocus: ViewModifier {
-    let binding: FocusState<ShelfFocusID?>.Binding?
-    let id: ShelfFocusID?
-
-    func body(content: Content) -> some View {
-        if let binding, let id {
-            content.focused(binding, equals: id)
-        } else {
-            content
-        }
-    }
-}
-
 #if DEBUG
     /// Static render shows the resting lockup; the focus lift and caption
     /// choreography need canvas interaction or a device.
