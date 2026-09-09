@@ -38,6 +38,12 @@ struct HomeShelvesSection: View {
     /// Retry action for the failed-section notices; re-runs just the failed
     /// loads (`HomeViewModel.retryFailedSections`).
     let onRetry: () -> Void
+    /// Reports which card owns focus so Home can restore it after tvOS
+    /// rebuilds the tab, and so the reconciler can name a survivor when a
+    /// card vanishes under the viewer (#236 § 11). Nil in previews; the
+    /// nil-ness must stay constant for a card's life, or the focus
+    /// modifier's branch flips and rebuilds the subtree.
+    var focusBinding: FocusState<ShelfFocusID?>.Binding?
 
     /// Measured section width, feeding the shared poster-column math so
     /// Recently Added posters match the library grid's card size exactly.
@@ -60,7 +66,12 @@ struct HomeShelvesSection: View {
                 if !mergedItems.isEmpty {
                     ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(mergedItems) { item in
-                            item.playableShelfItem(client: session.client, menu: menu(item)) {
+                            item.playableShelfItem(
+                                client: session.client,
+                                menu: menu(item),
+                                focusBinding: focusBinding,
+                                focusID: ShelfFocusID(row: HomeShelfRowID.continueWatching, item: item.id),
+                            ) {
                                 onPlay(item)
                             }
                         }
@@ -72,7 +83,12 @@ struct HomeShelvesSection: View {
                 if !resumeItems.isEmpty {
                     ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(resumeItems) { item in
-                            item.playableShelfItem(client: session.client, menu: menu(item)) {
+                            item.playableShelfItem(
+                                client: session.client,
+                                menu: menu(item),
+                                focusBinding: focusBinding,
+                                focusID: ShelfFocusID(row: HomeShelfRowID.continueWatching, item: item.id),
+                            ) {
                                 onPlay(item)
                             }
                         }
@@ -84,7 +100,12 @@ struct HomeShelvesSection: View {
                 if !nextUpItems.isEmpty {
                     ContentShelf("Next Up", icon: "play.square.stack") {
                         ForEach(nextUpItems) { item in
-                            item.playableShelfItem(client: session.client, menu: menu(item)) {
+                            item.playableShelfItem(
+                                client: session.client,
+                                menu: menu(item),
+                                focusBinding: focusBinding,
+                                focusID: ShelfFocusID(row: HomeShelfRowID.nextUp, item: item.id),
+                            ) {
                                 onPlay(item)
                             }
                         }
@@ -102,6 +123,8 @@ struct HomeShelvesSection: View {
                             width: posterWidth,
                             countBadge: unwatchedBadge(for: item, in: shelf),
                             menu: menu(item),
+                            focusBinding: focusBinding,
+                            focusID: ShelfFocusID(row: HomeShelfRowID.latest(shelf.library.id), item: item.id),
                         )
                     }
                 }

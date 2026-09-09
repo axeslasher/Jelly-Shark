@@ -1288,8 +1288,8 @@ struct HomeViewModelTests {
 
     // MARK: - User-data actions (shelf card menus)
 
-    @Test("setPlayed persists, then refreshes lane membership")
-    func setPlayedRefreshesLanes() async {
+    @Test("setPlayed persists and flips the card in place")
+    func setPlayedFlipsTheCard() async {
         let client = MockJellyfinClient()
         let item = movie("resume-1", lastPlayed: day(1))
         client.resumeItemsResult = .success([item])
@@ -1297,14 +1297,46 @@ struct HomeViewModelTests {
         await load(viewModel, client: client)
         #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
 
-        // Once marked watched the server drops it from resume; the refresh
-        // that follows the successful call applies that membership change.
-        client.resumeItemsResult = .success([])
         await viewModel.setPlayed(true, for: item)
 
         #expect(client.userDataCalls.map(\.action) == ["played"])
         #expect(client.userDataCalls.map(\.itemId) == ["resume-1"])
-        #expect(viewModel.resumeItems.isEmpty)
+        // Lane membership — the watched item leaving Continue Watching —
+        // is the drain's job now, not a second fan-out from here (#236).
+        #expect(viewModel.resumeItems[0].userData?.played == true)
+    }
+
+    @Test func setPlayedDoesNotRefreshOnItsOwn() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        let afterLoad = client.resumeItemsRequests.count
+
+        await viewModel.setPlayed(true, for: movie("m-1"))
+
+        // The confirmed toggle bumps `mutationRevision`, RootView posts
+        // `.watchState`, and the drain refreshes once. Refreshing here too
+        // would fan out twice for one toggle.
+        #expect(client.resumeItemsRequests.count == afterLoad)
+    }
+
+    // MARK: - Tiered refresh (#236 § 5.1)
+
+    @Test func aLibrariesRefreshReloadsRecentlyAddedAndAWatchStateOneDoesNot() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        let afterLoad = client.latestItemsRequests.count
+
+        // The shallow tier must not rebuild the hero's source — a silent
+        // re-check that restarts the marquee reads as a bug.
+        _ = await viewModel.refresh(.watchState)
+        #expect(client.latestItemsRequests.count == afterLoad)
+
+        _ = await viewModel.refresh(.libraries)
+        #expect(client.latestItemsRequests.count > afterLoad)
     }
 
     @Test("setPlayed reverts the optimistic flip when the server call fails")

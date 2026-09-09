@@ -120,6 +120,19 @@ struct ContentRefreshCoordinatorTests {
         #expect(coordinator.revision == before)
     }
 
+    @Test func aSessionCountsAsPlayingOnlyUntilItStartsReporting() {
+        let coordinator = ContentRefreshCoordinator()
+        #expect(coordinator.hasPlayingSession == false)
+
+        let ticket = coordinator.registerPlayback()
+        #expect(coordinator.hasPlayingSession)
+
+        // Reporting takes seconds and a drain can wait it out; playing
+        // takes as long as the film. Home gates on the difference.
+        coordinator.finishPlayback(ticket, stop: Task {})
+        #expect(coordinator.hasPlayingSession == false)
+    }
+
     @Test func awaitingReportingReturnsImmediatelyWithNoSessions() async {
         let coordinator = ContentRefreshCoordinator()
         await coordinator.awaitPlaybackReporting()

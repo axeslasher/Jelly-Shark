@@ -292,9 +292,15 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var resumeItemsHandler: (@Sendable (Int?) -> Result<[MediaItem], Error>)?
     /// Optional gate awaited before serving resume items, for in-flight tests
     var resumeItemsDelay: (() async -> Void)?
+    /// Resume fetches by requested limit, in arrival order; lock-guarded
+    /// because a refresh fans this out alongside the other lane loaders
+    var resumeItemsRequests: [Int?] = []
 
     func getResumeItems(limit: Int?) async throws -> [MediaItem] {
-        let result: Result<[MediaItem], Error> = resumeItemsHandler?(limit) ?? resumeItemsResult
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            resumeItemsRequests.append(limit)
+            return resumeItemsHandler?(limit) ?? resumeItemsResult
+        }
         await resumeItemsDelay?()
         return try result.get()
     }

@@ -199,6 +199,8 @@ extension MediaItem {
         width: CGFloat = 200,
         countBadge: Int? = nil,
         menu: ShelfMenuHandlers? = nil,
+        focusBinding: FocusState<ShelfFocusID?>.Binding? = nil,
+        focusID: ShelfFocusID? = nil,
     ) -> some View {
         ArtworkShelfItem(
             url: client?.posterURL(for: self),
@@ -210,6 +212,8 @@ extension MediaItem {
             progress: cardProgress,
             countBadge: countBadge,
             menuActions: shelfMenuActions(menu?.withoutViewDetails),
+            focusBinding: focusBinding,
+            focusID: focusID,
             value: self,
         )
     }
@@ -275,6 +279,8 @@ extension MediaItem {
         client: JellyfinClientProtocol?,
         width: CGFloat = 440,
         menu: ShelfMenuHandlers? = nil,
+        focusBinding: FocusState<ShelfFocusID?>.Binding? = nil,
+        focusID: ShelfFocusID? = nil,
         onPlay: @escaping () -> Void,
     ) -> some View {
         ArtworkShelfItem(
@@ -292,6 +298,8 @@ extension MediaItem {
             width: width,
             playbackBadge: playbackBadge,
             menuActions: shelfMenuActions(menu),
+            focusBinding: focusBinding,
+            focusID: focusID,
             action: onPlay,
         )
     }

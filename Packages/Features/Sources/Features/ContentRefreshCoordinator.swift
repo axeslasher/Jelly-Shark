@@ -72,6 +72,14 @@ public final class ContentRefreshCoordinator {
         !sessions.isEmpty
     }
 
+    /// Whether a player is still on screen — registered, with no stop task
+    /// yet. Split from `hasPlaybackInFlight` because the two waits are
+    /// nothing alike: reporting is seconds and a drain can await it, while
+    /// playing lasts the length of the film.
+    public var hasPlayingSession: Bool {
+        sessions.values.contains { $0 == nil }
+    }
+
     public init() {}
 
     // MARK: - Producers

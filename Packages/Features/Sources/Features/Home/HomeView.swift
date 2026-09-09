@@ -18,6 +18,7 @@ struct HomeView: View {
     @Environment(ServerConnectionViewModel.self) private var connection
     @Environment(HomePreferences.self) private var homePreferences
     @Environment(PlaybackPreferences.self) private var playbackPreferences
+    @Environment(ContentRefreshCoordinator.self) private var refreshCoordinator
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pushMediaDetail) private var pushMediaDetail
 
@@ -51,9 +52,38 @@ struct HomeView: View {
     }
 
     @FocusState private var focusedRegion: FocusRegion?
+
+    /// Which shelf card owns focus. Restored on a tab return and re-aimed
+    /// when a refresh removes the card out from under the viewer (#236 § 11).
+    @FocusState private var focusedCard: ShelfFocusID?
+
+    /// The empty state's Settings button — the page's only focusable when
+    /// Home has nothing to show.
+    @FocusState private var isEmptyStateActionFocused: Bool
+
     @State private var snapMetrics = ScrollSnapMetrics(containerHeight: 0, topInset: 0)
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var regionSnapTask: Task<Void, Never>?
+
+    /// `RootView`'s pop-settle plus margin, derived rather than restated: if
+    /// the settle moves, this must move with it.
+    private static var settleGuard: Duration {
+        #if os(tvOS)
+            RootView.popSettle + .milliseconds(50)
+        #else
+            .zero
+        #endif
+    }
+
+    /// Changes whenever a drain is owed: on arrival (eligibility flips) and
+    /// on any post while Home is already on screen. `.task(id:)` re-runs only
+    /// when its id changes, so keying on arrival alone would miss every
+    /// library change and every menu toggle made from Home itself (§ 5.1).
+    private struct DrainKey: Equatable {
+        let eligible: Bool
+        let settled: Bool
+        let revision: Int
+    }
 
     /// Where the shelves' top parks: one fractional hero plus the hero→shelf
     /// gap into the content. `scrollTo(y:)` works in the same inset-adjusted
@@ -80,12 +110,16 @@ struct HomeView: View {
                 if viewModel.isInitialLoading {
                     HomeSkeleton()
                 } else if viewModel.isEmptyServer {
-                    HomeEmptyState(isConnected: true, userName: connection.connectedUser?.name)
+                    HomeEmptyState(
+                        isConnected: true,
+                        userName: connection.connectedUser?.name,
+                        actionFocus: $isEmptyStateActionFocused,
+                    )
                 } else {
                     contentScroll
                 }
             } else if connection.hasAttemptedRestore, connection.state == .disconnected {
-                HomeEmptyState(isConnected: false, userName: nil)
+                HomeEmptyState(isConnected: false, userName: nil, actionFocus: $isEmptyStateActionFocused)
             } else {
                 HomeSkeleton()
             }
@@ -102,20 +136,123 @@ struct HomeView: View {
                 cache: session.scopedCache,
                 userState: session.userState,
             )
-            await viewModel.load()
+            // Read before the load: reasons raised before it are covered by
+            // it, anything posted while it ran is not (§ 8).
+            let revisionAtStart = refreshCoordinator.revision
+            let didLoad = await viewModel.load()
             genreShelves.attach(client: session.client, libraries: connection.libraries)
             await genreShelves.load()
+
+            // Flipping this is what releases the drain task below.
+            refreshCoordinator.isInitialLoadSettled = true
+            // Seed the floor only if a load actually ran: tvOS re-runs this
+            // task on every tab return, and stamping the timestamp for a
+            // guarded-out call would disable the external-client fallback
+            // forever.
+            guard didLoad else { return }
+            refreshCoordinator.completeInitialLoad(
+                revisionAtStart: revisionAtStart,
+                succeeded: viewModel.lastLoadOutcome == .succeeded,
+                now: .now,
+            )
+        }
+        .task(id: DrainKey(
+            eligible: isEligible,
+            settled: refreshCoordinator.isInitialLoadSettled,
+            revision: refreshCoordinator.revision,
+        )) {
+            // The drain's `.libraries` tier calls `forceReload()` and starts
+            // its own `load()`. Running that while the initial fan-out is
+            // still in flight supersedes the very load this page is waiting
+            // on — and library discovery posting `.libraries` makes it
+            // likely, since the first load routinely outlasts the settle
+            // guard (#236 § 8.1).
+            guard isEligible, refreshCoordinator.isInitialLoadSettled else { return }
+
+            // A player is up over this page. Its progress ticks post every
+            // ~10s and `finishPlayback` posts again once the stop task
+            // exists, so this task is woken when there is something to do —
+            // polling for it here would spin the main actor for the whole
+            // film.
+            guard !refreshCoordinator.hasPlayingSession else { return }
+
+            // Let the pop-settle finish and re-check: `tabSelection` clears
+            // the outgoing path before it commits the switch, so eligibility
+            // can be true for one frame while the viewer is leaving (§ 4).
+            try? await Task.sleep(for: Self.settleGuard)
+            guard !Task.isCancelled, isEligible else { return }
+
+            // Never read server state while a stopped report is still landing.
+            await refreshCoordinator.awaitPlaybackReporting()
+            guard !Task.isCancelled else { return }
+
+            // The token serializes this against a second drain and puts the
+            // reason back if we are cancelled part-way (§ 8.1).
+            guard let token = refreshCoordinator.beginDrain(now: .now) else { return }
+
+            let before = shelfRows
+            let focusedBefore = focusedCard
+
+            var outcome = await viewModel.refresh(token.reason)
+            if token.reason != .watchState {
+                outcome = await HomeViewModel.LoadOutcome.combine([outcome, genreShelves.reload()])
+            }
+
+            guard !Task.isCancelled else {
+                refreshCoordinator.endDrain(token, outcome: .cancelled, now: .now)
+                return
+            }
+
+            reconcileFocus(from: before, previouslyFocused: focusedBefore)
+            refreshCoordinator.endDrain(token, outcome: outcome.drainOutcome, now: .now)
         }
         .onChange(of: reduceMotion, initial: true) { _, isReduced in
             viewModel.setPaused(isReduced, reason: .reduceMotion)
         }
+        // The empty state is reachable mid-session now, not only at launch: a
+        // refresh can empty Home while the viewer is standing in it. If this
+        // button does not take focus, the remote is dead (#69).
+        .onChange(of: viewModel.isEmptyServer) { _, isEmpty in
+            if isEmpty {
+                isEmptyStateActionFocused = true
+            }
+        }
+        .onChange(of: focusedCard) { _, target in
+            // Only a positive card focus updates the stored target.
+            // `focusedCard` also goes nil when Home is torn down, when a
+            // cover or the sidebar takes focus, and transiently mid-move —
+            // treating any of those as "the hero has focus" overwrites the
+            // saved card and recreates the tab-return focus loss this task
+            // exists to fix.
+            guard let target else { return }
+            ui.focusedItem = target
+        }
         .onDisappear {
             viewModel.stopAutoAdvance()
+            ui.scrollOffset = scroll.offset
+            ui.hasRestoredThisAppearance = false
         }
         .onAppear {
             viewModel.startAutoAdvance()
+            guard !ui.hasRestoredThisAppearance else { return }
+            ui.hasRestoredThisAppearance = true
+            if !ui.focusIsOnHero, let target = ui.focusedItem {
+                focusedCard = target
+                #if os(tvOS)
+                    // Restore the region too. The card's own `.focused`
+                    // binding does not imply the region binding, and leaving
+                    // the region on `.hero` makes the next scroll snap yank
+                    // the page back to the top.
+                    focusedRegion = .shelves
+                #endif
+            }
+            #if os(tvOS)
+                if ui.scrollOffset > 0 {
+                    scrollPosition.scrollTo(y: ui.scrollOffset)
+                }
+            #endif
         }
-        .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
+        .fullScreenCover(item: $playbackItem, onDismiss: { refreshCoordinator.post(.watchState) }) { target in
             if let client = session.client {
                 PlaybackContainerView(
                     client: client,
@@ -198,12 +335,14 @@ struct HomeView: View {
                             )
                         },
                         onRetry: { Task { await viewModel.retryFailedSections() } },
+                        focusBinding: $focusedCard,
                     )
 
                     GenreShelvesView(
                         shelves: genreShelves.shelves,
                         status: genreShelves.status,
                         onRetry: { Task { await genreShelves.retry() } },
+                        focusBinding: $focusedCard,
                     )
                 }
                 #if os(tvOS)
@@ -225,6 +364,10 @@ struct HomeView: View {
                 viewModel.setPaused(region == .hero, reason: .focused)
                 regionSnapTask?.cancel()
                 guard let region else { return }
+                // The region is the honest hero-vs-shelves signal: it is set
+                // by the page's own focus sections, not by a card
+                // disappearing.
+                ui.focusIsOnHero = region == .hero
                 regionSnapTask = Task {
                     // Let the focus engine finish its own reveal scroll first,
                     // then assert the page anchor over it.
@@ -315,12 +458,57 @@ struct HomeView: View {
         }
     }
 
-    /// Watched state and progress move during playback; refresh the sections
-    /// that show them once the player dismisses.
-    private func refreshAfterPlayback() {
-        Task {
-            await viewModel.refreshUserState()
+    /// The shelf rows as ids, top to bottom — genre rows included, since they
+    /// are focusable like any other and must not be skipped when focus falls
+    /// through (§ 11.3). Row ids come from `HomeShelfRowID`, which the views
+    /// bind from too, because a mismatch here is silent.
+    private var shelfRows: [HomeFocusReconciler.Row] {
+        var rows: [HomeFocusReconciler.Row] = []
+        if homePreferences.mergesContinueWatching {
+            rows.append(.init(
+                id: HomeShelfRowID.continueWatching,
+                itemIDs: viewModel.mergedContinueWatchingItems.map(\.id),
+            ))
+        } else {
+            rows.append(.init(id: HomeShelfRowID.continueWatching, itemIDs: viewModel.resumeItems.map(\.id)))
+            rows.append(.init(id: HomeShelfRowID.nextUp, itemIDs: viewModel.nextUpItems.map(\.id)))
         }
+        rows.append(contentsOf: viewModel.latestShelves.map {
+            .init(id: HomeShelfRowID.latest($0.library.id), itemIDs: $0.items.map(\.id))
+        })
+        rows.append(contentsOf: genreShelves.shelves.map {
+            .init(id: HomeShelfRowID.genre($0.library.id), itemIDs: $0.genres)
+        })
+        return rows
+    }
+
+    /// Re-aim focus if the refresh removed the card the viewer was standing
+    /// on. A survivor keeps its own focus, so the common case does nothing.
+    private func reconcileFocus(
+        from before: [HomeFocusReconciler.Row],
+        previouslyFocused: ShelfFocusID?,
+    ) {
+        guard let previouslyFocused else { return }
+
+        let rowsNow = shelfRows
+        let survives = rowsNow.contains {
+            $0.id == previouslyFocused.row && $0.itemIDs.contains(previouslyFocused.item)
+        }
+        guard !survives else { return }
+
+        // The focused card left under the viewer. Say where focus goes rather
+        // than letting the engine pick — nil means the hero.
+        let next = HomeFocusReconciler.nextFocus(
+            before: before,
+            after: rowsNow,
+            vanished: previouslyFocused,
+        )
+        focusedCard = next
+        ui.focusedItem = next
+        ui.focusIsOnHero = next == nil
+        #if os(tvOS)
+            focusedRegion = next == nil ? .hero : .shelves
+        #endif
     }
 }
 

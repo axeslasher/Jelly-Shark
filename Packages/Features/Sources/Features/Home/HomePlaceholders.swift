@@ -139,6 +139,10 @@ struct HomeEmptyState: View {
 
     let isConnected: Bool
     let userName: String?
+    /// The page drives this when a refresh empties Home mid-session — the
+    /// old tree had nothing focusable left, and the collapsed sidebar can't
+    /// take focus either (#69).
+    let actionFocus: FocusState<Bool>.Binding
 
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
@@ -166,6 +170,7 @@ struct HomeEmptyState: View {
                     .jsStyle(.headline)
                 }
                 .glassButtonStyle(tint: theme.focusFill)
+                .focused(actionFocus)
                 .padding(.top, SpacingTokens.sm)
             }
         }

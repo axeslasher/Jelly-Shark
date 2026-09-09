@@ -496,6 +496,22 @@ public final class HomeViewModel {
         return await LoadOutcome.combine([resume, nextUp, watchDates, counts])
     }
 
+    /// Refresh at the given depth, reporting what the network actually did.
+    ///
+    /// The tiers are cumulative and deliberately asymmetric: `watchState`
+    /// leaves the hero alone, because a silent re-check that restarts the
+    /// marquee under an idle viewer reads as a bug rather than freshness.
+    public func refresh(_ reason: RefreshReason) async -> LoadOutcome {
+        switch reason {
+        case .watchState:
+            return await refreshUserState()
+        case .libraries, .deep:
+            forceReload()
+            await load()
+            return lastLoadOutcome
+        }
+    }
+
     /// Re-read the unwatched counts behind Recently Added's series cards.
     ///
     /// Both the count badge and the progress band read `unplayedItemCount`,
@@ -541,9 +557,9 @@ public final class HomeViewModel {
     /// Apply a watched-state change from a shelf card's menu through the
     /// user-state overlay (every section showing the item updates at once);
     /// the server's acknowledgment commits it, a failure withdraws it.
-    /// Success also refreshes the lanes whose membership the change moves
-    /// (a watched item leaves Continue Watching; a watched episode advances
-    /// Next Up).
+    /// The confirm bumps `UserStateStore.mutationRevision`, which RootView
+    /// turns into a `.watchState` post — so lane membership is reconciled by
+    /// the drain, once, rather than by a second fan-out from here (#236).
     public func setPlayed(_ played: Bool, for item: MediaItem) async {
         guard let client else { return }
         let token = userState.beginPlayedToggle(itemID: item.id, target: played)
@@ -554,7 +570,6 @@ public final class HomeViewModel {
                 try await client.markUnplayed(itemId: item.id)
             }
             userState.confirm(token)
-            await refreshUserState()
         } catch {
             userState.revert(token)
         }
@@ -1098,6 +1113,18 @@ public final class HomeViewModel {
             }
         default:
             break
+        }
+    }
+}
+
+extension HomeViewModel.LoadOutcome {
+    /// A superseded pass is a cancellation as far as the drain is
+    /// concerned: nothing was confirmed, and the reason is still owed.
+    var drainOutcome: ContentRefreshCoordinator.DrainOutcome {
+        switch self {
+        case .succeeded: .succeeded
+        case .failed: .failed
+        case .superseded: .cancelled
         }
     }
 }

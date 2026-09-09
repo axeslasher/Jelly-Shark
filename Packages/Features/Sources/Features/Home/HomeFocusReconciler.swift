@@ -1,5 +1,25 @@
 import DesignSystem
 
+/// The row ids Home's shelves bind, in one place.
+///
+/// `HomeView.shelfRows` and the views carrying the focus binding must name
+/// each row identically, and a mismatch is silent — the reconciler picks a
+/// card no view has bound and focus simply goes nowhere (#236 § 11).
+enum HomeShelfRowID {
+    /// Both the merged lane and the split Continue Watching shelf: they are
+    /// the same row to the viewer, and only one is ever on screen.
+    static let continueWatching = "continue"
+    static let nextUp = "nextUp"
+
+    static func latest(_ libraryID: String) -> String {
+        "latest-\(libraryID)"
+    }
+
+    static func genre(_ libraryID: String) -> String {
+        "genre-\(libraryID)"
+    }
+}
+
 /// Decides where tvOS focus lands when the focused shelf card disappears
 /// under the viewer — a refresh removing a finished item, or a whole row
 /// emptying (#236 § 11.3).
