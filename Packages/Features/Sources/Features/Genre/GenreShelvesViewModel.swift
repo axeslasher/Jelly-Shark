@@ -88,6 +88,7 @@ public final class GenreShelvesViewModel {
         guard needsLoad else { return }
         needsLoad = false
         loadGeneration += 1
+        hadPartialFailure = false
         let generation = loadGeneration
 
         guard let client else {
@@ -144,6 +145,11 @@ public final class GenreShelvesViewModel {
         let before = loadGeneration
         await load()
         guard loadGeneration == before + 1 else { return .superseded }
+        // A load that had no client completes at `.loading` — can't build
+        // without a client, so that's a failure.
+        if status == .loading {
+            return .failed
+        }
         // `status` cannot carry this: a partial failure deliberately stays
         // `.loaded` so surviving shelves keep rendering (`:115`), and
         // reporting that as success would let the coordinator discard the

@@ -227,20 +227,22 @@ struct GenreShelvesViewModelTests {
     func reloadRecoversAfterAPartialFailure() async {
         let client = MockJellyfinClient()
         struct Boom: Error {}
-        var shouldFail = true
-        client.filterOptionsHandler = { _ in
-            if shouldFail {
-                return .failure(Boom())
-            }
-            return .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        client.filterOptionsHandler = { libraryId in
+            libraryId == "movies"
+                ? .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+                : .failure(Boom())
         }
         let viewModel = GenreShelvesViewModel()
-        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        viewModel.attach(client: client, libraries: [Self.movies, Self.moreMovies])
         await viewModel.load()
 
-        shouldFail = false
-        // A sticky flag keeps reporting `.failed`, and the coordinator
-        // re-posts `.libraries` on every drain forever.
+        // While one library is still failing, reload reports the failure.
+        #expect(await viewModel.reload() == .failed)
+
+        // When all libraries succeed, a subsequent reload recovers.
+        client.filterOptionsHandler = { _ in
+            .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        }
         #expect(await viewModel.reload() == .succeeded)
     }
 }
