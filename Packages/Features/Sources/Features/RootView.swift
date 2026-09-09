@@ -309,6 +309,13 @@ public struct RootView: View {
         // silently forget to post (#236 § 5.2). Not only surfaces:
         // `UserStateStore`'s position guard expires about 30s after playback
         // and bumps the revision too, so that expiry posts as well.
+        .onChange(of: isHomeRefreshEligible) { _, eligible in
+            // Marks a real departure, so Home's next appearance can tell a
+            // tab return from an in-place rebuild (see `HomeUIState`).
+            if !eligible {
+                homeUI.wasOffScreen = true
+            }
+        }
         .onChange(of: session.userState.mutationRevision) { _, _ in
             refreshCoordinator.post(.watchState)
         }

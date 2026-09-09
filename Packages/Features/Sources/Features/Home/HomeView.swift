@@ -1,5 +1,6 @@
 import DesignSystem
 import JellyfinKit
+import os
 import SwiftUI
 
 /// Home: a paged hero marquee over the curated latest additions, with
@@ -15,6 +16,8 @@ import SwiftUI
 struct HomeView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
+
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Home")
     @Environment(ServerConnectionViewModel.self) private var connection
     @Environment(HomePreferences.self) private var homePreferences
     @Environment(PlaybackPreferences.self) private var playbackPreferences
@@ -292,6 +295,9 @@ struct HomeView: View {
             viewModel.startAutoAdvance()
             guard !ui.hasRestoredThisAppearance else { return }
             ui.hasRestoredThisAppearance = true
+            let returning = ui.wasOffScreen
+            ui.wasOffScreen = false
+            Self.logger.debug("Home appeared; returning \(returning, privacy: .public), stored offset \(Int(ui.scrollOffset), privacy: .public), stored card \(ui.focusedItem != nil, privacy: .public)")
             if !ui.focusIsOnHero, let stored = ui.focusedItem {
                 // What survives, not what was stored — and `ui` records what
                 // was actually restored, so a later reconcile reasons about
@@ -315,7 +321,10 @@ struct HomeView: View {
                 }
             }
             #if os(tvOS)
-                if ui.scrollOffset > 0 {
+                // Only a return replays the offset. A rebuild in place keeps the
+                // restored card, and the focus engine's reveal scroll brings it
+                // into view against the content that actually exists now.
+                if returning, ui.scrollOffset > 0 {
                     scrollPosition.scrollTo(y: ui.scrollOffset)
                 }
             #endif

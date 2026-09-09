@@ -29,5 +29,14 @@ public final class HomeUIState {
     /// does not yank the viewer back to a stale offset.
     public var hasRestoredThisAppearance = false
 
+    /// Whether Home stopped being eligible since the offset was stored — a
+    /// tab switch or a pushed detail. `onAppear` also fires when tvOS
+    /// rebuilds the tab's content in place (the library tab set changed),
+    /// and there the stored offset was measured against content that no
+    /// longer exists: scrolling to it overshoots and the page slides off
+    /// screen. Only a genuine return replays the offset; a rebuild restores
+    /// focus and lets the reveal scroll place the page (#236, spec § 15.3).
+    public var wasOffScreen = false
+
     public init() {}
 }
