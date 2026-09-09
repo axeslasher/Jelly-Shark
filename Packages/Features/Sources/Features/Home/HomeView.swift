@@ -129,6 +129,23 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(theme.animation, value: viewModel.isInitialLoading)
         .background(theme.background)
+        // A library added on the server while the viewer sits on Home has
+        // no producer at all: nothing on the client changes. Poll the list at
+        // the floor's cadence — one cheap request — while the page is on
+        // screen and idle; a changed set posts `.libraries` through RootView
+        // and the drain reloads (#236 device row 5).
+        .task(id: isEligible) {
+            guard isEligible else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: ContentRefreshCoordinator.floor)
+                guard !Task.isCancelled,
+                      isEligible,
+                      refreshCoordinator.isInitialLoadSettled,
+                      !refreshCoordinator.hasPlayingSession
+                else { continue }
+                await connection.refreshLibraries()
+            }
+        }
         .task(id: DrainKey(
             eligible: isEligible,
             settled: refreshCoordinator.isInitialLoadSettled,
