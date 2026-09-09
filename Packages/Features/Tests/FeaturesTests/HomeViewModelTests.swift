@@ -516,6 +516,71 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
     }
 
+    // MARK: - Warm reload lifecycle (#236 § 3)
+
+    @Test func aWarmReloadNeverReturnsToTheSkeleton() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isInitialLoading == false)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        viewModel.forceReload()
+        let second = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        // Content is rendered; a reload must reconcile in place. Parking at
+        // `.loading` here is what put the skeleton back over a warm page.
+        #expect(viewModel.isInitialLoading == false)
+        await gate.open()
+        await second.value
+    }
+
+    @Test func anEmptyServerStaysEmptyAcrossAReloadRatherThanFlashingTheSkeleton() async {
+        // Emptiness is content state, not lifecycle state: this Home has
+        // completed a load and has nothing to show, which is not the same as
+        // "still finding out".
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isEmptyServer)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        viewModel.forceReload()
+        let second = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(viewModel.isInitialLoading == false)
+        await gate.open()
+        await second.value
+    }
+
+    @Test func aColdLoadStillShowsTheSkeletonExactlyOnce() async {
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        let first = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(viewModel.isInitialLoading)
+        await gate.open()
+        await first.value
+        #expect(viewModel.isInitialLoading == false)
+    }
+
+    @Test func loadReportsWhetherItActuallyRan() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        #expect(await viewModel.load())
+        // Guarded out: the caller must be able to tell, or it will stamp the
+        // refresh floor for a load that never happened.
+        #expect(await viewModel.load() == false)
+    }
+
     // MARK: - Hero fallback
 
     @Test("A failed hero source promotes the first backdrop-bearing item")

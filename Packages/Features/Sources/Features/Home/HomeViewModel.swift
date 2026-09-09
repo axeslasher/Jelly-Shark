@@ -213,6 +213,12 @@ public final class HomeViewModel {
     /// (mirrors `GenreShelvesViewModel`); a failed load re-arms this so the
     /// next appearance retries.
     private var needsLoad = true
+    /// Whether a load has ever settled for the current client. Distinct from
+    /// "the raw arrays are empty", which is content state: an empty server, a
+    /// hero-only Home, and a genre-shelves-only Home have all completed a
+    /// load and must never be told they are still finding out (#236 § 3).
+    /// Reset only when the client is genuinely replaced.
+    private var hasCompletedInitialLoad = false
     private var loadGeneration = 0
 
     private var advanceTask: Task<Void, Never>?
@@ -245,14 +251,22 @@ public final class HomeViewModel {
         if let userState {
             self.userState = userState
         }
+        if clientChanged {
+            hasCompletedInitialLoad = false
+        }
         if clientChanged || librariesChanged {
             needsLoad = true
         }
     }
 
     /// Load every section. No-op once loaded for the current client + libraries.
-    public func load() async {
-        guard needsLoad else { return }
+    ///
+    /// - Returns: whether the load actually ran. A caller that stamps a
+    ///   refresh timestamp needs this — a guarded-out call refreshed nothing
+    ///   and must not mark the page fresh (#236 § 8).
+    @discardableResult
+    public func load() async -> Bool {
+        guard needsLoad else { return false }
         needsLoad = false
         loadGeneration += 1
         let generation = loadGeneration
@@ -277,7 +291,7 @@ public final class HomeViewModel {
             nextUpStatus = .loading
             latestStatus = .loading
             heroIndex = 0
-            return
+            return true
         }
 
         // Hydrate the whole page from the last successful load before any
@@ -290,7 +304,7 @@ public final class HomeViewModel {
         var hydratedHeroIds: [String]?
         if rawResumeItems.isEmpty, rawNextUpItems.isEmpty, rawLatestShelves.isEmpty, let cache {
             let snapshot = await cache.read(CachedHomeSnapshot.self, key: .homeSnapshot)
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return true }
             if let snapshot {
                 rawResumeItems = snapshot.resume
                 rawNextUpItems = snapshot.nextUp
@@ -305,7 +319,12 @@ public final class HomeViewModel {
                 hydratedHeroIds = rawHeroItems.map(\.id)
             }
         }
-        if hydratedHeroIds == nil {
+        // Park at `.loading` only before the first load has ever settled.
+        // A warm reload — a library change, a floor re-check, a deep refresh
+        // — has an established page and must reconcile in place; flipping
+        // these makes `isInitialLoading` true and swaps the whole page for
+        // the skeleton, which is what the #237 device review saw (#236 § 3).
+        if hydratedHeroIds == nil, !hasCompletedInitialLoad {
             resumeStatus = .loading
             nextUpStatus = .loading
             latestStatus = .loading
@@ -319,16 +338,17 @@ public final class HomeViewModel {
         async let watchDates: Void = loadWatchDates(client: client, generation: generation)
         _ = await (resume, nextUp, latest, watchDates)
 
-        guard generation == loadGeneration else { return }
+        guard generation == loadGeneration else { return true }
         if Task.isCancelled {
             needsLoad = true
-            return
+            return true
         }
 
         // On a hydrated load the previous ids are the snapshot's, so an
         // unchanged hero set skips the index reset and the marquee doesn't
         // yank under the viewer mid-reconcile.
         settleHero(client: client, previousHeroIds: hydratedHeroIds)
+        hasCompletedInitialLoad = true
 
         if resumeStatus.isFailed || nextUpStatus.isFailed || latestStatus.isFailed {
             needsLoad = true
@@ -348,6 +368,14 @@ public final class HomeViewModel {
                 key: .homeSnapshot,
             )
         }
+        return true
+    }
+
+    /// Re-arm the once-only guard so the next `load()` runs. Separate from
+    /// `attach()`, which only re-arms on a changed client or library-id list
+    /// — a refresh often has neither.
+    public func forceReload() {
+        needsLoad = true
     }
 
     /// Re-run only the sections currently marked `.failed` — the action
