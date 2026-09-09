@@ -62,6 +62,11 @@ public final class GenreShelvesViewModel {
     private var needsLoad = true
     private var loadGeneration = 0
 
+    /// True when the last completed build had a partial failure (at least one library
+    /// failed). Assigned on every completed build, not only when something fails, so
+    /// that `reload()` doesn't report a stale failure state forever (#236).
+    public private(set) var hadPartialFailure = false
+
     public init(genreLimit: Int = 50) {
         self.genreLimit = genreLimit
     }
@@ -108,6 +113,7 @@ public final class GenreShelvesViewModel {
         )
         guard generation == loadGeneration else { return }
         shelves = built
+        hadPartialFailure = firstError != nil
         if let firstError {
             // Show what survived, but re-arm so the next appearance (or the
             // notice's Retry) refetches; report failure only when nothing did.
@@ -122,6 +128,27 @@ public final class GenreShelvesViewModel {
     public func retry() async {
         needsLoad = true
         await load()
+    }
+
+    /// Rebuild the shelves regardless of the once-only guard.
+    ///
+    /// `load()`'s guard is right for an appearance (genres are stable) and
+    /// wrong for a library-set change, where the shelves are exactly what
+    /// went stale — `attach()` only re-arms on a *changed* library-id list,
+    /// so a same-ids refresh would skip them entirely (#236 § 8.6).
+    ///
+    /// - Returns: what the rebuild did, for the drain outcome.
+    @discardableResult
+    public func reload() async -> HomeViewModel.LoadOutcome {
+        needsLoad = true
+        let before = loadGeneration
+        await load()
+        guard loadGeneration == before + 1 else { return .superseded }
+        // `status` cannot carry this: a partial failure deliberately stays
+        // `.loaded` so surviving shelves keep rendering (`:115`), and
+        // reporting that as success would let the coordinator discard the
+        // `.libraries` reason with one library's row still stale (#236 § 8.3).
+        return hadPartialFailure ? .failed : .succeeded
     }
 
     // MARK: - Building

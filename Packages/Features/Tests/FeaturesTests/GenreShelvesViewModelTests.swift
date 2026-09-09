@@ -199,4 +199,48 @@ struct GenreShelvesViewModelTests {
 
         #expect(viewModel.shelves.first?.genres == ["Horror"])
     }
+
+    // MARK: - Reload
+
+    @Test("reload() rebuilds even though load() is guarded")
+    func reloadRebuildsEvenThoughLoadIsGuarded() async {
+        let client = MockJellyfinClient()
+        var calls = 0
+        client.filterOptionsHandler = { _ in
+            calls += 1
+            return .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        }
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+
+        await viewModel.load()
+        #expect(calls == 1)
+        // The once-only guard is right for an appearance and wrong for a
+        // library change, where the shelves are exactly what went stale.
+        await viewModel.load()
+        #expect(calls == 1)
+        #expect(await viewModel.reload() == .succeeded)
+        #expect(calls == 2)
+    }
+
+    @Test("reload() recovers after a partial failure")
+    func reloadRecoversAfterAPartialFailure() async {
+        let client = MockJellyfinClient()
+        struct Boom: Error {}
+        var shouldFail = true
+        client.filterOptionsHandler = { _ in
+            if shouldFail {
+                return .failure(Boom())
+            }
+            return .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        }
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        await viewModel.load()
+
+        shouldFail = false
+        // A sticky flag keeps reporting `.failed`, and the coordinator
+        // re-posts `.libraries` on every drain forever.
+        #expect(await viewModel.reload() == .succeeded)
+    }
 }
