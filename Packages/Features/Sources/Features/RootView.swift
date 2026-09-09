@@ -239,6 +239,16 @@ public struct RootView: View {
         // cancels the old task while its replacement finds `needsLoad` already
         // consumed. A task on the root survives whatever the tab does.
         .task(id: session.isConnected) {
+            // The update that flips `isConnected` can also change `libraries`
+            // (restore publishes the cached list, then the fresh one, in one
+            // turn). Its `onChange` posts `.libraries` in that same update, and
+            // this task's first synchronous stretch can run before it does —
+            // reading a revision the post has not reached yet, so the load
+            // covers the change but never retires the reason, and the drain
+            // redoes the whole load (#236 device row 1). One yield lets every
+            // handler of this update land before anything here is read.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
             homeViewModel.attach(
                 client: session.client,
                 libraries: connectionViewModel.libraries,
