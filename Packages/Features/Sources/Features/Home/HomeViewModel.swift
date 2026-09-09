@@ -126,6 +126,11 @@ public final class HomeViewModel {
     /// interleave with resume items in the merged lane.
     public private(set) var seriesLastPlayedDates: [String: Date] = [:]
 
+    /// Set by `HomeView` from `accessibilityReduceMotion` — the view model
+    /// has no `@Environment`, so the view forwards the accessibility
+    /// setting for the shelf membership transactions below.
+    public var reducesMotion = false
+
     public private(set) var resumeStatus: SectionStatus = .loading
     public private(set) var nextUpStatus: SectionStatus = .loading
     /// Covers the hero curation source and the per-library rows.
@@ -594,12 +599,25 @@ public final class HomeViewModel {
         }
     }
 
+    /// Animates a shelf membership write with the exit curve, unless Reduce
+    /// Motion is on — one branch, so the three loaders below don't each
+    /// repeat the check.
+    private func animatingMembership(_ body: () -> Void) {
+        if reducesMotion {
+            body()
+        } else {
+            withAnimation(HomeHeroMotion.shelfItemExit) {
+                body()
+            }
+        }
+    }
+
     @discardableResult
     private func loadResume(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
         do {
             let items = try await client.getResumeItems(limit: Self.resumeLimit)
             guard generation == loadGeneration else { return .superseded }
-            withAnimation(HomeHeroMotion.shelfItemExit) {
+            animatingMembership {
                 rawResumeItems = items
             }
             resumeStatus = items.isEmpty ? .empty : .loaded
@@ -625,7 +643,7 @@ public final class HomeViewModel {
         do {
             let items = try await client.getNextUpItems(limit: Self.nextUpLimit)
             guard generation == loadGeneration else { return .superseded }
-            withAnimation(HomeHeroMotion.shelfItemExit) {
+            animatingMembership {
                 rawNextUpItems = items
             }
             nextUpStatus = items.isEmpty ? .empty : .loaded
@@ -692,11 +710,19 @@ public final class HomeViewModel {
             curated = await Self.resolvingHeroMediaSources(in: curated, client: client)
 
             guard generation == loadGeneration else { return .superseded }
-            withAnimation(HomeHeroMotion.shelfItemExit) {
+            animatingMembership {
                 rawLatestShelves = shelves
             }
-            episodePrimaryHeroIds = primaryIds
-            rawHeroItems = curated
+            // The hero has its own motion (page-turn choreography, not shelf
+            // membership) and must not inherit the shelf-exit transaction
+            // just because it lands in the same main-actor tick as the write
+            // above.
+            var heroTransaction = Transaction()
+            heroTransaction.disablesAnimations = true
+            withTransaction(heroTransaction) {
+                episodePrimaryHeroIds = primaryIds
+                rawHeroItems = curated
+            }
             // A partial library failure still shows what survived, but re-arms
             // the load so the next appearance refetches the missing rows.
             // (`load()` only ever re-sets this to true at its end, so setting

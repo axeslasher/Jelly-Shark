@@ -219,6 +219,9 @@ struct HomeView: View {
         }
         .onChange(of: reduceMotion, initial: true) { _, isReduced in
             viewModel.setPaused(isReduced, reason: .reduceMotion)
+            // The view model has no `@Environment`, so the view forwards the
+            // accessibility setting for the shelf membership transactions.
+            viewModel.reducesMotion = isReduced
         }
         // The empty state is reachable mid-session now, not only at launch: a
         // refresh can empty Home while the viewer is standing in it. If this

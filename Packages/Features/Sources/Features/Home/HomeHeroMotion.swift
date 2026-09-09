@@ -131,7 +131,7 @@ enum HomeHeroMotion {
     /// collapse because they carry different meanings: an item leaving
     /// Continue Watching is a completed thing settling out, a new Next Up
     /// episode is an offer appearing, and a row emptying is the page
-    /// reflowing. Symmetric curves made all three read as "the list twitched".
+    /// reflowing. Symmetric curves would make all three read as one twitch.
     ///
     /// Feel values — bisect on device. Nothing in this repo can measure them.
     static let shelfItemExit: Animation = .smooth(duration: 0.45)

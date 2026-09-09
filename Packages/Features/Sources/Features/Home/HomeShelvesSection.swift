@@ -102,6 +102,7 @@ struct HomeShelvesSection: View {
                             .transition(itemTransition)
                         }
                     }
+                    .transition(rowTransition)
                 } else if mergedStatus.isFailed {
                     FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
                 }
