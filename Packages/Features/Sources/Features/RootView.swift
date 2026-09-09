@@ -25,6 +25,10 @@ public struct RootView: View {
         /// wakes last and clobbers the selection ("I pressed Search but it
         /// jumped to Home").
         @State private var pendingSwitch: Task<Void, Never>?
+
+        /// Distinguishes the current deferred switch from a superseded one, so a
+        /// late task cannot clear a newer switch's handle.
+        @State private var switchGeneration = 0
     #endif
 
     /// - Parameter cache: the app's metadata cache; nil (previews, tests)
@@ -60,10 +64,16 @@ public struct RootView: View {
                     let outgoing = selectedTab
                     if let path = tabPaths[outgoing], !path.isEmpty {
                         tabPaths[outgoing] = NavigationPath()
+                        switchGeneration &+= 1
+                        let generation = switchGeneration
                         pendingSwitch = Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(350))
-                            guard !Task.isCancelled else { return }
+                            try? await Task.sleep(for: Self.popSettle)
+                            guard !Task.isCancelled, generation == switchGeneration else { return }
                             selectedTab = newValue
+                            // Clear the handle so "a switch is in flight" stops being true.
+                            // Guarded by the generation so a stale task cannot clear a newer
+                            // switch's handle out from under it (#236 § 4).
+                            pendingSwitch = nil
                         }
                     } else {
                         selectedTab = newValue
@@ -330,6 +340,14 @@ public struct RootView: View {
         /// not. Bisect against hardware if it ever needs revisiting — nothing
         /// in this repo can measure it.
         private static let searchHeadroom: CGFloat = SpacingTokens.sm
+
+        /// How long to let the outgoing stack's pop land before committing a
+        /// tab switch. Named so anything that must outlast the settle derives
+        /// from it rather than restating the number (#236 § 4).
+        ///
+        /// Tuned on an Apple TV. Bisect against hardware if it needs
+        /// revisiting; nothing in this repo can measure it.
+        static let popSettle: Duration = .milliseconds(350)
     #endif
 
     private var settingsTab: some TabContent<AppTab> {
