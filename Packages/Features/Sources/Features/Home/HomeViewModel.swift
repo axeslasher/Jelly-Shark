@@ -364,13 +364,18 @@ public final class HomeViewModel {
         async let nextUpOutcome = loadNextUp(client: client, generation: generation)
         async let latestOutcome = loadLatest(client: client, generation: generation)
         async let watchDatesOutcome = loadWatchDates(client: client, generation: generation)
-        lastLoadOutcome = await LoadOutcome.combine([resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome])
+        let outcome = await LoadOutcome.combine([resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome])
 
         guard generation == loadGeneration else { return true }
         if Task.isCancelled {
             needsLoad = true
             return true
         }
+        // Only a pass that actually ran to completion for the current
+        // generation gets to record an outcome — a superseded or cancelled
+        // pass returning here would let a stale `.succeeded` overwrite the
+        // real result the still-running generation is about to report.
+        lastLoadOutcome = outcome
 
         // On a hydrated load the previous ids are the snapshot's, so an
         // unchanged hero set skips the index reset and the marquee doesn't
@@ -501,27 +506,34 @@ public final class HomeViewModel {
     @discardableResult
     private func refreshContainerCounts(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
         let ids = Set(rawLatestShelves.flatMap(\.items).filter { $0.type == .series }.map(\.id))
-        // Nothing to refresh, and a failed fetch, are both enrichment misses —
-        // the badges just stay stale, which is never a reportable failure.
-        guard !ids.isEmpty, let refreshed = try? await client.getMediaItems(ids: Array(ids)) else {
-            return .succeeded
-        }
-        guard generation == loadGeneration else { return .superseded }
+        // Nothing was attempted, so nothing failed.
+        guard !ids.isEmpty else { return .succeeded }
 
-        let counts = Dictionary(
-            refreshed.map { ($0.id, $0.userData?.unplayedItemCount) },
-            uniquingKeysWith: { first, _ in first },
-        )
-        rawLatestShelves = rawLatestShelves.map { shelf in
-            LibraryShelf(
-                library: shelf.library,
-                items: shelf.items.map { item in
-                    guard let count = counts[item.id] else { return item }
-                    return item.settingUnplayedItemCount(count)
-                },
+        do {
+            let refreshed = try await client.getMediaItems(ids: Array(ids))
+            guard generation == loadGeneration else { return .superseded }
+
+            let counts = Dictionary(
+                refreshed.map { ($0.id, $0.userData?.unplayedItemCount) },
+                uniquingKeysWith: { first, _ in first },
             )
+            rawLatestShelves = rawLatestShelves.map { shelf in
+                LibraryShelf(
+                    library: shelf.library,
+                    items: shelf.items.map { item in
+                        guard let count = counts[item.id] else { return item }
+                        return item.settingUnplayedItemCount(count)
+                    },
+                )
+            }
+            return .succeeded
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            // The badges just stay stale — no `SectionStatus` covers counts,
+            // so this never blanks anything — but the coordinator still needs
+            // to know the fetch genuinely failed.
+            return .failed
         }
-        return .succeeded
     }
 
     // MARK: - User-Data Actions
@@ -613,17 +625,20 @@ public final class HomeViewModel {
 
     @discardableResult
     private func loadWatchDates(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
-        // `try?` is enrichment, not swallowing: the dates only order the
-        // merged lane, so a failure keeps the previous (possibly stale) map —
-        // stale dates still order better than sinking every next-up item to
-        // the bottom — and never fails a section, so a fetch miss is not a
-        // reportable failure either.
-        guard let episodes = try? await client.getRecentlyPlayedEpisodes(limit: Self.recentlyPlayedLimit) else {
+        do {
+            let episodes = try await client.getRecentlyPlayedEpisodes(limit: Self.recentlyPlayedLimit)
+            guard generation == loadGeneration else { return .superseded }
+            seriesLastPlayedDates = Self.seriesLastPlayedMap(from: episodes)
             return .succeeded
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            // A failure keeps the previous (possibly stale) map — stale
+            // dates still order better than sinking every next-up item to
+            // the bottom — and never fails a section (there's no
+            // `SectionStatus` for this), but the coordinator still needs to
+            // know the fetch genuinely failed.
+            return .failed
         }
-        guard generation == loadGeneration else { return .superseded }
-        seriesLastPlayedDates = Self.seriesLastPlayedMap(from: episodes)
-        return .succeeded
     }
 
     @discardableResult

@@ -763,14 +763,17 @@ struct HomeViewModelTests {
         // `loadLatest` keeps `.loaded` when some shelves survived, so the
         // status says "fine" while one library's row is stale.
         let client = MockJellyfinClient()
-        var calls = 0
-        client.latestItemsHandler = { _ in
-            calls += 1
-            return calls > 1 ? .failure(APIError.networkError("offline")) : .success([])
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            default: .failure(APIError.networkError("offline"))
+            }
         }
         let viewModel = HomeViewModel()
         viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
         await viewModel.load()
+        #expect(viewModel.latestStatus == .loaded)
         #expect(viewModel.lastLoadOutcome == .failed)
     }
 
@@ -1065,7 +1068,11 @@ struct HomeViewModelTests {
 
     @Test func refreshUserStateReportsFailureEvenWhenTheLaneKeepsItsContent() async {
         let client = MockJellyfinClient()
-        client.resumeItemsHandler = { _ in .success([]) }
+        // Built here, not inside the handler: `resumeItemsHandler` is
+        // `@Sendable` and runs off the main actor, but `movie(_:)` inherits
+        // this suite's @MainActor isolation.
+        let resumeItem = movie("resume-1")
+        client.resumeItemsHandler = { _ in .success([resumeItem]) }
         let viewModel = HomeViewModel()
         viewModel.attach(client: client, libraries: [Self.movies])
         await viewModel.load()
@@ -1076,6 +1083,7 @@ struct HomeViewModelTests {
         // The lane deliberately keeps `.loaded` so a rendered row is not
         // blanked over a refresh failure — so status cannot be the signal.
         #expect(await viewModel.refreshUserState() == .failed)
+        #expect(viewModel.resumeStatus == .loaded)
     }
 
     // MARK: - Merged Continue Watching lane
