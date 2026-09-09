@@ -380,7 +380,9 @@ public final class HomeViewModel {
         async let nextUpOutcome = loadNextUp(client: client, generation: generation)
         async let latestOutcome = loadLatest(client: client, generation: generation)
         async let watchDatesOutcome = loadWatchDates(client: client, generation: generation)
-        let outcome = await LoadOutcome.combine([resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome])
+        let outcomes = await [resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome]
+        let outcome = LoadOutcome.combine(outcomes)
+        Self.logger.debug("load generation \(generation, privacy: .public) outcomes resume/nextUp/latest/watchDates \(outcomes.map { String(describing: $0) }.joined(separator: "/"), privacy: .public); current generation \(self.loadGeneration, privacy: .public), cancelled \(Task.isCancelled, privacy: .public)")
 
         guard generation == loadGeneration else { return true }
         if Task.isCancelled {
@@ -563,6 +565,7 @@ public final class HomeViewModel {
             return .succeeded
         } catch {
             guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("refreshContainerCounts failed: \(PlaybackLog.error(error), privacy: .public)")
             // The badges just stay stale — no `SectionStatus` covers counts,
             // so this never blanks anything — but the coordinator still needs
             // to know the fetch genuinely failed.
@@ -636,6 +639,7 @@ public final class HomeViewModel {
             return .succeeded
         } catch {
             guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadResume failed: \(PlaybackLog.error(error), privacy: .public)")
             if rawResumeItems.isEmpty {
                 resumeStatus = .failed(error.localizedDescription)
             } else {
@@ -662,6 +666,7 @@ public final class HomeViewModel {
             return .succeeded
         } catch {
             guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadNextUp failed: \(PlaybackLog.error(error), privacy: .public)")
             if rawNextUpItems.isEmpty {
                 nextUpStatus = .failed(error.localizedDescription)
             } else {
@@ -682,6 +687,7 @@ public final class HomeViewModel {
             return .succeeded
         } catch {
             guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadWatchDates failed: \(PlaybackLog.error(error), privacy: .public)")
             // A failure keeps the previous (possibly stale) map — stale
             // dates still order better than sinking every next-up item to
             // the bottom — and never fails a section (there's no
@@ -752,9 +758,13 @@ public final class HomeViewModel {
             // A surviving-shelves failure keeps `latestStatus` at `.loaded` on
             // purpose (a rendered row must not blank), so the outcome has to
             // carry what the status deliberately hides.
+            if let shelfError {
+                Self.logger.debug("loadLatest partial failure: \(shelfError, privacy: .public)")
+            }
             return shelfError != nil ? .failed : .succeeded
         } catch {
             guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadLatest failed: \(PlaybackLog.error(error), privacy: .public)")
             if rawLatestShelves.isEmpty, rawHeroItems.isEmpty {
                 rawLatestShelves = shelves
                 episodePrimaryHeroIds = []
