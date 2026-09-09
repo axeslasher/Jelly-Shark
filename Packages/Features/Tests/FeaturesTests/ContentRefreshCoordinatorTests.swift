@@ -205,6 +205,20 @@ struct ContentRefreshCoordinatorTests {
 
     // MARK: - Drain transaction (§ 8)
 
+    @Test func aFloorDrainIsMarkedAndAPostedOneIsNot() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.watchState)
+        guard let posted = coordinator.beginDrain(now: epoch) else {
+            Issue.record("expected a drain")
+            return
+        }
+        #expect(posted.isFloorCheck == false)
+        coordinator.endDrain(posted, outcome: .succeeded, now: epoch)
+        // Only an idle return re-checks the library list; a posted reason
+        // already knows what changed.
+        #expect(coordinator.beginDrain(now: epoch.addingTimeInterval(3600))?.isFloorCheck == true)
+    }
+
     @Test func onlyOneDrainRunsAtATime() {
         let coordinator = ContentRefreshCoordinator()
         coordinator.post(.libraries)

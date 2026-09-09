@@ -177,9 +177,15 @@ public final class ContentRefreshCoordinator {
     /// The reason to refresh right now, or nil for "do nothing". Removes
     /// what it returns; `finishDrain` decides whether it stays removed.
     func takeReasons(now: Date) -> RefreshReason? {
+        takeReasonsWithOrigin(now: now)?.reason
+    }
+
+    /// `takeReasons`, plus whether the reason came from the floor rather
+    /// than a post.
+    private func takeReasonsWithOrigin(now: Date) -> (reason: RefreshReason, fromFloor: Bool)? {
         if let deepest = pending.keys.max() {
             pending.removeAll()
-            return deepest
+            return (deepest, false)
         }
         // Nothing has refreshed yet, so the page's own initial load is the
         // refresh. Returning a reason here made cold launch fan out twice.
@@ -187,7 +193,7 @@ public final class ContentRefreshCoordinator {
         guard now.timeIntervalSince(lastRefresh) >= Self.floor.timeIntervalValue else {
             return nil
         }
-        return .watchState
+        return (.watchState, true)
     }
 
     /// Close a drain. A failure re-posts its reason and leaves the floor
@@ -210,6 +216,11 @@ public final class ContentRefreshCoordinator {
     public struct DrainToken: Sendable {
         fileprivate let id: UUID
         public let reason: RefreshReason
+        /// True when nothing was owed and the floor expired: an idle return.
+        /// That is the one moment the page also re-checks the server's
+        /// library list, since no producer on the client can see a library
+        /// added on the server (#236 device row 5).
+        public let isFloorCheck: Bool
     }
 
     /// How a drain ended. `cancelled` is neither of the other two: it must
@@ -226,10 +237,10 @@ public final class ContentRefreshCoordinator {
     /// Claim the next refresh, or nil for "nothing owed, or one is already
     /// running".
     public func beginDrain(now: Date) -> DrainToken? {
-        guard activeDrain == nil, let reason = takeReasons(now: now) else { return nil }
-        let token = DrainToken(id: UUID(), reason: reason)
+        guard activeDrain == nil, let taken = takeReasonsWithOrigin(now: now) else { return nil }
+        let token = DrainToken(id: UUID(), reason: taken.reason, isFloorCheck: taken.fromFloor)
         activeDrain = token.id
-        Self.logger.debug("drain begin \(String(describing: reason), privacy: .public)")
+        Self.logger.debug("drain begin \(String(describing: taken.reason), privacy: .public)\(taken.fromFloor ? " (floor)" : "", privacy: .public)")
         return token
     }
 

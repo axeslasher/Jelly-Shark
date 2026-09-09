@@ -227,6 +227,15 @@ struct HomeView: View {
             }
 
             refreshCoordinator.endDrain(token, outcome: outcome.drainOutcome, now: .now)
+
+            // An idle return is the one moment to ask whether the server's
+            // library set changed, because no producer can see it. A changed
+            // list posts `.libraries` through RootView, and the next drain
+            // reloads; the drain is already closed, so nothing is cancelled
+            // part-way.
+            if token.isFloorCheck, outcome == .succeeded {
+                await connection.refreshLibraries()
+            }
         }
         .onChange(of: reduceMotion, initial: true) { _, isReduced in
             viewModel.setPaused(isReduced, reason: .reduceMotion)
