@@ -11,6 +11,7 @@ import SwiftUI
 /// resume, no next-up) simply doesn't render — that's normal, not an error.
 struct HomeShelvesSection: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Single-lane vs two-shelf rendering — the user's Settings choice.
     /// Both sets of inputs are always supplied (the view model loads every
@@ -57,6 +58,30 @@ struct HomeShelvesSection: View {
         return PosterGridLayout.columns(for: sectionWidth - SpacingTokens.screenPadding * 2).width
     }
 
+    /// Shelf-item membership transition: fade + scale down on removal, fade +
+    /// scale up on insertion, each carrying its own curve so an arriving
+    /// card can't inherit a departing card's timing (see `HomeHeroMotion`).
+    /// Suppressed under Reduce Motion, matching the hero and shelf-caption
+    /// animations elsewhere on Home.
+    private var itemTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.92))
+                .animation(reduceMotion ? nil : HomeHeroMotion.shelfItemInsert),
+            removal: .opacity
+                .combined(with: .scale(scale: 0.88))
+                .animation(reduceMotion ? nil : HomeHeroMotion.shelfItemExit),
+        )
+    }
+
+    /// Row-collapse transition for a shelf that can empty out and leave the
+    /// column entirely.
+    private var rowTransition: AnyTransition {
+        .opacity
+            .combined(with: .move(edge: .top))
+            .animation(reduceMotion ? nil : HomeHeroMotion.shelfRowCollapse)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             if mergesContinueWatching {
@@ -74,6 +99,7 @@ struct HomeShelvesSection: View {
                             ) {
                                 onPlay(item)
                             }
+                            .transition(itemTransition)
                         }
                     }
                 } else if mergedStatus.isFailed {
@@ -91,8 +117,10 @@ struct HomeShelvesSection: View {
                             ) {
                                 onPlay(item)
                             }
+                            .transition(itemTransition)
                         }
                     }
+                    .transition(rowTransition)
                 } else if resumeStatus.isFailed {
                     FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
                 }
@@ -108,8 +136,10 @@ struct HomeShelvesSection: View {
                             ) {
                                 onPlay(item)
                             }
+                            .transition(itemTransition)
                         }
                     }
+                    .transition(rowTransition)
                 } else if nextUpStatus.isFailed {
                     FailedShelfNotice(title: "Next Up", icon: "play.square.stack", retry: onRetry)
                 }
@@ -126,8 +156,10 @@ struct HomeShelvesSection: View {
                             focusBinding: focusBinding,
                             focusID: ShelfFocusID(row: HomeShelfRowID.latest(shelf.library.id), item: item.id),
                         )
+                        .transition(itemTransition)
                     }
                 }
+                .transition(rowTransition)
             }
             if latestShelves.isEmpty, latestStatus.isFailed {
                 FailedShelfNotice(title: "Recently Added", icon: "sparkles", retry: onRetry)

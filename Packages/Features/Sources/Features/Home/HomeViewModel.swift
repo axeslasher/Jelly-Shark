@@ -1,6 +1,7 @@
 import Foundation
 import JellyfinKit
 import Observation
+import SwiftUI
 
 /// Loads the Home screen's sections and drives the hero carousel.
 ///
@@ -598,7 +599,9 @@ public final class HomeViewModel {
         do {
             let items = try await client.getResumeItems(limit: Self.resumeLimit)
             guard generation == loadGeneration else { return .superseded }
-            rawResumeItems = items
+            withAnimation(HomeHeroMotion.shelfItemExit) {
+                rawResumeItems = items
+            }
             resumeStatus = items.isEmpty ? .empty : .loaded
             return .succeeded
         } catch {
@@ -622,7 +625,9 @@ public final class HomeViewModel {
         do {
             let items = try await client.getNextUpItems(limit: Self.nextUpLimit)
             guard generation == loadGeneration else { return .superseded }
-            rawNextUpItems = items
+            withAnimation(HomeHeroMotion.shelfItemExit) {
+                rawNextUpItems = items
+            }
             nextUpStatus = items.isEmpty ? .empty : .loaded
             return .succeeded
         } catch {
@@ -687,7 +692,9 @@ public final class HomeViewModel {
             curated = await Self.resolvingHeroMediaSources(in: curated, client: client)
 
             guard generation == loadGeneration else { return .superseded }
-            rawLatestShelves = shelves
+            withAnimation(HomeHeroMotion.shelfItemExit) {
+                rawLatestShelves = shelves
+            }
             episodePrimaryHeroIds = primaryIds
             rawHeroItems = curated
             // A partial library failure still shows what survived, but re-arms
