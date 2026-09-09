@@ -256,4 +256,105 @@ struct UserStateStoreTests {
         #expect(store.resolve(item("m-1")) == item("m-1"))
         #expect(store.isFavorite(itemID: "m-1", fallback: false) == false)
     }
+
+    // MARK: - Mutation revision (§ 5.2)
+
+    @Test func confirmBumpsTheMutationRevision() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        let before = store.mutationRevision
+        store.confirm(store.beginPlayedToggle(itemID: "m-1", target: true))
+        #expect(store.mutationRevision > before)
+    }
+
+    @Test func revertDoesNotBumpTheMutationRevision() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        let token = store.beginFavoriteToggle(itemID: "m-1", target: true)
+        let before = store.mutationRevision
+        store.revert(token)
+        // Nothing changed downstream, so nothing should wake.
+        #expect(store.mutationRevision == before)
+    }
+
+    @Test func recordPositionBumpsTheMutationRevision() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        let before = store.mutationRevision
+        store.recordPosition(itemID: "m-1", ticks: 900)
+        #expect(store.mutationRevision > before)
+    }
+
+    // MARK: - Position merge (§ 7)
+
+    @Test func ingestKeepsARecentlyRecordedPositionAgainstAStaleServerValue() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000)
+        // The server has not processed the stopped report yet.
+        store.ingest(serverItems: [item("m-1", position: 0)])
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 60_000_000_000)
+    }
+
+    @Test func ingestAcceptsAServerPositionWithinTolerance() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000)
+        // Within tolerance — the round trip closed, so the guard lifts.
+        store.ingest(serverItems: [item("m-1", position: 60_010_000_000)])
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 60_010_000_000)
+        // Guard lifted: a genuinely different later value now lands.
+        store.ingest(serverItems: [item("m-1", position: 5_000_000_000)])
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 5_000_000_000)
+    }
+
+    @Test func ingestYieldsToServerPlayedAndClearsThePosition() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000)
+        // The server's watched verdict outranks a local playhead.
+        store.ingest(serverItems: [item("m-1", played: true, position: 0)])
+        let resolved = store.resolve(item("m-1"))
+        #expect(resolved.userData?.played == true)
+        #expect(resolved.userData?.playbackPositionTicks == nil)
+    }
+
+    @Test func ingestAcceptsTheServerPositionOnceTheGuardExpires() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000, now: .distantPast)
+        store.ingest(serverItems: [item("m-1", position: 0)])
+        // The MinResumeDurationSeconds case: the server legitimately holds
+        // nothing, and a stale local value must not stand as a false Resume.
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 0)
+    }
+
+    @Test func deactivateClearsThePositionGuard() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000)
+        store.deactivate()
+        await store.activate(cache: cache)
+        // A profile switch must not carry one user's playhead into another's
+        // session — the guard is scoped state like everything else here.
+        store.ingest(serverItems: [item("m-1", position: 0)])
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 0)
+    }
+
+    @Test func anExpiredGuardStopsShadowingTheItemEvenWithNoFurtherIngest() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000, now: .distantPast)
+        // No `ingest` at all — the server was never going to store this.
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == nil)
+    }
+
+    @Test func aNewerPositionSurvivesAnOlderExpiry() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        store.recordPosition(itemID: "m-1", ticks: 10, now: .distantPast)
+        store.recordPosition(itemID: "m-1", ticks: 999)
+        // The first write's expiry must not clear the second write's guard.
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 999)
+    }
 }
