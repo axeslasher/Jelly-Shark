@@ -76,9 +76,13 @@ struct HomeShelvesSection: View {
 
     /// Row-collapse transition for a shelf that can empty out and leave the
     /// column entirely.
+    /// Fade only. With `.move(edge: .top)` a row removed under focus travelled
+    /// for the length of the collapse while focus was being moved off it,
+    /// and the tvOS reveal scroll followed the moving row — the whole page
+    /// slid up out of view before focus recovered (#236 device round, spec
+    /// § 11.4). The rows below still rise through the ambient transaction.
     private var rowTransition: AnyTransition {
         .opacity
-            .combined(with: .move(edge: .top))
             .animation(reduceMotion ? nil : HomeHeroMotion.shelfRowCollapse)
     }
 
