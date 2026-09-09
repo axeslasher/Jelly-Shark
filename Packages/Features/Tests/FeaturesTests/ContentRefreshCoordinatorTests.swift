@@ -153,4 +153,104 @@ struct ContentRefreshCoordinatorTests {
         // next drain would race its stopped report.
         #expect(coordinator.hasPlaybackInFlight)
     }
+
+    // MARK: - Drain transaction (§ 8)
+
+    @Test func onlyOneDrainRunsAtATime() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.libraries)
+        #expect(coordinator.beginDrain(now: epoch) != nil)
+        // A second drain while the first is open would fan out twice for one
+        // reason and race its own writes.
+        #expect(coordinator.beginDrain(now: epoch) == nil)
+    }
+
+    @Test func aCancelledDrainRestoresItsReason() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.libraries)
+        guard let token = coordinator.beginDrain(now: epoch) else {
+            Issue.record("expected a drain")
+            return
+        }
+        coordinator.endDrain(token, outcome: .cancelled, now: epoch)
+        // Cancelled is not success: the reason is still owed, and the floor
+        // must not have started.
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == .libraries)
+    }
+
+    @Test func aStaleTokenCannotCloseANewerDrain() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.watchState)
+        guard let first = coordinator.beginDrain(now: epoch) else { return }
+        coordinator.endDrain(first, outcome: .cancelled, now: epoch)
+        guard let second = coordinator.beginDrain(now: epoch) else { return }
+        coordinator.endDrain(first, outcome: .succeeded, now: epoch)
+        // The stale token must not stamp the floor for work the second drain
+        // is still doing.
+        coordinator.endDrain(second, outcome: .failed, now: epoch)
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == .watchState)
+    }
+
+    @Test func completingTheInitialLoadSatisfiesReasonsRaisedBeforeIt() {
+        let coordinator = ContentRefreshCoordinator()
+        // Library discovery posts before the first load finishes; that load
+        // already covers it.
+        coordinator.post(.libraries)
+        let revision = coordinator.revision
+        coordinator.completeInitialLoad(revisionAtStart: revision, succeeded: true, now: epoch)
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == nil)
+    }
+
+    @Test func completingTheInitialLoadRetiresOnlyThePreLoadReason() {
+        let coordinator = ContentRefreshCoordinator()
+        // The realistic shape, and the one two separate tests miss: library
+        // discovery posts before the load, playback ends during it.
+        coordinator.post(.libraries)
+        let revision = coordinator.revision
+        coordinator.post(.watchState)
+        coordinator.completeInitialLoad(revisionAtStart: revision, succeeded: true, now: epoch)
+        // `.libraries` was covered; repeating it redoes the fan-out that just
+        // finished.
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == .watchState)
+    }
+
+    @Test func aCancelledDrainWakesTheNextOne() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.libraries)
+        guard let token = coordinator.beginDrain(now: epoch) else {
+            Issue.record("expected a drain")
+            return
+        }
+        let before = coordinator.revision
+        // Restoring a reason without a revision bump leaves it owed with
+        // nothing scheduled to drain it.
+        coordinator.endDrain(token, outcome: .cancelled, now: epoch)
+        #expect(coordinator.revision > before)
+    }
+
+    @Test func aFailedDrainRestoresItsReasonWithoutWakingADrain() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.libraries)
+        guard let token = coordinator.beginDrain(now: epoch) else {
+            Issue.record("expected a drain")
+            return
+        }
+        let before = coordinator.revision
+        // Failure restores the reason but must not bump the revision: the
+        // page keys its drain task on the revision, so bumping here would
+        // re-run the drain immediately — an unbounded retry loop against a
+        // dead server.
+        coordinator.endDrain(token, outcome: .failed, now: epoch)
+        #expect(coordinator.revision == before)
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == .libraries)
+    }
+
+    @Test func completingTheInitialLoadKeepsReasonsRaisedDuringIt() {
+        let coordinator = ContentRefreshCoordinator()
+        let revision = coordinator.revision
+        // Something finished playing while the first load was in flight.
+        coordinator.post(.watchState)
+        coordinator.completeInitialLoad(revisionAtStart: revision, succeeded: true, now: epoch)
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == .watchState)
+    }
 }

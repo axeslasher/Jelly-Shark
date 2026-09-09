@@ -157,6 +157,71 @@ public final class ContentRefreshCoordinator {
             pending[deepest] = revision
         }
     }
+
+    /// One open drain. Held by the page for the length of its refresh so a
+    /// second cannot start and a cancelled one can put its reason back.
+    public struct DrainToken: Sendable {
+        fileprivate let id: UUID
+        public let reason: RefreshReason
+    }
+
+    /// How a drain ended. `cancelled` is neither of the other two: it must
+    /// not start the floor (nothing was confirmed) and it must put the
+    /// reason back (the work is still owed).
+    public enum DrainOutcome: Sendable {
+        case succeeded
+        case failed
+        case cancelled
+    }
+
+    private var activeDrain: UUID?
+
+    /// Claim the next refresh, or nil for "nothing owed, or one is already
+    /// running".
+    public func beginDrain(now: Date) -> DrainToken? {
+        guard activeDrain == nil, let reason = takeReasons(now: now) else { return nil }
+        let token = DrainToken(id: UUID(), reason: reason)
+        activeDrain = token.id
+        return token
+    }
+
+    /// Close a drain. A stale token is ignored, so a superseded page
+    /// cannot stamp the floor for work a newer drain is still doing.
+    ///
+    /// Only `.cancelled` bumps the revision before restoring its reason.
+    /// `.failed` restores the reason without bumping: the page keys its
+    /// drain task on the revision, so bumping on failure would re-run the
+    /// drain immediately — an unbounded retry loop against a dead server.
+    /// A reason restored on failure stays owed until the next arrival or
+    /// post wakes a drain for it.
+    public func endDrain(_ token: DrainToken, outcome: DrainOutcome, now: Date) {
+        guard activeDrain == token.id else { return }
+        activeDrain = nil
+        switch outcome {
+        case .succeeded:
+            lastRefresh = now
+        case .cancelled:
+            revision &+= 1
+            pending[token.reason] = revision
+        case .failed:
+            pending[token.reason] = revision
+        }
+    }
+
+    /// The page's own first load stands in for a refresh.
+    ///
+    /// - Parameter revisionAtStart: the revision read immediately before the
+    ///   load began. Reasons raised before that point are covered by the load
+    ///   and are cleared; anything posted while it ran is not, and survives.
+    public func completeInitialLoad(revisionAtStart: Int, succeeded: Bool, now: Date) {
+        guard succeeded else { return }
+        lastRefresh = now
+        // Retire only what the load covered. Clearing everything drops a
+        // reason posted mid-load; clearing nothing repeats the full load that
+        // just finished. Both happen at once routinely — library discovery
+        // posts `.libraries` before the load, and playback can end during it.
+        pending = pending.filter { $0.value > revisionAtStart }
+    }
 }
 
 extension Duration {
