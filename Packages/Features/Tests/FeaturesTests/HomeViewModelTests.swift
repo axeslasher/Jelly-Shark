@@ -1096,6 +1096,47 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeStatus.isFailed == false)
     }
 
+    @Test("Task cancellation leaves no failure in any lane")
+    func taskCancellationLeavesNoFailure() async {
+        // Real clients emit APIError.networkError(URLError(.cancelled).localizedDescription),
+        // not CancellationError. This test verifies the fix works against that shape.
+        let realCancellationError = APIError.networkError(URLError(.cancelled).localizedDescription)
+
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+
+        // Hold all three section loaders at their delay point until after task cancel.
+        client.resumeItemsResult = .failure(realCancellationError)
+        client.nextUpItemsResult = .failure(realCancellationError)
+        client.latestItemsHandler = { _ in .failure(realCancellationError) }
+        client.resumeItemsDelay = { try? await gate.wait() }
+        client.nextUpItemsDelay = { try? await gate.wait() }
+        client.latestItemsDelay = { try? await gate.wait() }
+
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+
+        // Load in a task so we can cancel it mid-flight.
+        let task = Task {
+            await viewModel.load()
+        }
+
+        // Let loaders reach the gate, then cancel the task.
+        try? await Task.sleep(for: .milliseconds(10))
+        task.cancel()
+
+        // Release the gate: the requests that resumed will throw the
+        // cancellation-shaped error after the task saw isCancelled.
+        await gate.open()
+        await task.value
+
+        // No lane paints failure despite the error shape matching a network
+        // error: Task.isCancelled short-circuits the failure path.
+        #expect(viewModel.resumeStatus.isFailed == false)
+        #expect(viewModel.nextUpStatus.isFailed == false)
+        #expect(viewModel.latestStatus.isFailed == false)
+    }
+
     // MARK: - User-data actions (shelf card menus)
 
     @Test("setPlayed persists, then refreshes lane membership")

@@ -282,9 +282,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var resumeItemsResult: Result<[MediaItem], Error> = .success([])
     /// Optional handler for getResumeItems; nil falls back to resumeItemsResult
     var resumeItemsHandler: (@Sendable (Int?) -> Result<[MediaItem], Error>)?
+    /// Optional gate awaited before serving resume items, for in-flight tests
+    var resumeItemsDelay: (() async -> Void)?
 
     func getResumeItems(limit: Int?) async throws -> [MediaItem] {
         let result: Result<[MediaItem], Error> = resumeItemsHandler?(limit) ?? resumeItemsResult
+        await resumeItemsDelay?()
         return try result.get()
     }
 
@@ -520,9 +523,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     var nextUpItemsResult: Result<[MediaItem], Error> = .success([])
+    /// Optional gate awaited before serving next-up items, for in-flight tests
+    var nextUpItemsDelay: (() async -> Void)?
 
     func getNextUpItems(limit _: Int?) async throws -> [MediaItem] {
-        try nextUpItemsResult.get()
+        await nextUpItemsDelay?()
+        return try nextUpItemsResult.get()
     }
 
     var recentlyPlayedEpisodesResult: Result<[MediaItem], Error> = .success([])

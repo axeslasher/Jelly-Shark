@@ -508,7 +508,7 @@ public final class HomeViewModel {
             rawResumeItems = items
             resumeStatus = items.isEmpty ? .empty : .loaded
         } catch {
-            guard generation == loadGeneration, !Self.isCancellation(error) else { return }
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return }
             if rawResumeItems.isEmpty {
                 resumeStatus = .failed(error.localizedDescription)
             } else {
@@ -529,7 +529,7 @@ public final class HomeViewModel {
             rawNextUpItems = items
             nextUpStatus = items.isEmpty ? .empty : .loaded
         } catch {
-            guard generation == loadGeneration, !Self.isCancellation(error) else { return }
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return }
             if rawNextUpItems.isEmpty {
                 nextUpStatus = .failed(error.localizedDescription)
             } else {
@@ -600,7 +600,7 @@ public final class HomeViewModel {
                 latestStatus = (shelves.isEmpty && rawHeroItems.isEmpty) ? .empty : .loaded
             }
         } catch {
-            guard generation == loadGeneration, !Self.isCancellation(error) else { return }
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return }
             if rawLatestShelves.isEmpty, rawHeroItems.isEmpty {
                 rawLatestShelves = shelves
                 episodePrimaryHeroIds = []
@@ -624,7 +624,7 @@ public final class HomeViewModel {
     /// A cancelled request is a cancellation, not a failure: the task was
     /// superseded (a newer load, a dismissed page), and painting "Couldn't
     /// load" over it reads as data loss (#236 § 8.4).
-    private static func isCancellation(_ error: any Error) -> Bool {
+    private nonisolated static func isCancellation(_ error: any Error) -> Bool {
         error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
@@ -648,6 +648,9 @@ public final class HomeViewModel {
                         }
                         return (index, .success(items.isEmpty ? nil : LibraryShelf(library: library, items: items)))
                     } catch {
+                        // A cancelled request is a cancellation, not a failure;
+                        // drop it so the caller doesn't record it as `firstError`.
+                        guard !Task.isCancelled, !Self.isCancellation(error) else { return (index, .success(nil)) }
                         return (index, .failure(error))
                     }
                 }
