@@ -190,9 +190,6 @@ struct HomeView: View {
             // reason back if we are cancelled part-way (§ 8.1).
             guard let token = refreshCoordinator.beginDrain(now: .now) else { return }
 
-            let before = shelfRows
-            let focusedBefore = focusedCard
-
             var outcome: HomeViewModel.LoadOutcome
             if token.reason == .watchState {
                 outcome = await viewModel.refresh(token.reason)
@@ -218,7 +215,6 @@ struct HomeView: View {
                 return
             }
 
-            reconcileFocus(from: before, previouslyFocused: focusedBefore)
             refreshCoordinator.endDrain(token, outcome: outcome.drainOutcome, now: .now)
         }
         .onChange(of: reduceMotion, initial: true) { _, isReduced in
@@ -237,6 +233,21 @@ struct HomeView: View {
                 await Task.yield()
                 isEmptyStateActionFocused = true
             }
+        }
+        .onChange(of: shelfRows) { old, new in
+            // Fires in the update that removes the card, while `focusedCard`
+            // still names it — before the engine has picked a neighbour.
+            // Reconciling after the drain instead was too late: `refresh()`
+            // publishes each lane as it lands, so the engine had already
+            // moved on. A viewer who moved to a surviving card during the
+            // refresh is left alone (§ 11.2); a card that vanished under them
+            // lands where the rule says (§ 11.3), not where geometry happens
+            // to put it.
+            guard let focused = focusedCard,
+                  !new.contains(where: { $0.id == focused.row && $0.itemIDs.contains(focused.item) })
+            else { return }
+            let next = HomeFocusReconciler.nextFocus(before: old, after: new, vanished: focused)
+            land(next, deferred: next.map { target in !old.contains { $0.id == target.row } } ?? false)
         }
         .onChange(of: focusedCard) { _, target in
             // Only a positive card focus updates the stored target.
@@ -530,48 +541,27 @@ struct HomeView: View {
         return row.itemIDs.contains(stored.item) ? stored : ShelfFocusID(row: row.id, item: first)
     }
 
-    /// Re-aim focus if the refresh removed the card the viewer was standing
-    /// on. A survivor keeps its own focus, so the common case does nothing.
-    private func reconcileFocus(
-        from before: [HomeFocusReconciler.Row],
-        previouslyFocused: ShelfFocusID?,
-    ) {
-        // The refresh is a multi-second round trip and the viewer keeps
-        // moving through it. If focus has moved since, the card that
-        // vanished is not the one they are standing on, and re-aiming would
-        // yank them off it (§ 11.2).
-        guard focusedCard == previouslyFocused else { return }
-        guard let previouslyFocused else { return }
-
-        let rowsNow = shelfRows
-        let survives = rowsNow.contains {
-            $0.id == previouslyFocused.row && $0.itemIDs.contains(previouslyFocused.item)
-        }
-        guard !survives else { return }
-
-        // The focused card left under the viewer. Say where focus goes rather
-        // than letting the engine pick — nil means the hero.
-        let next = HomeFocusReconciler.nextFocus(
-            before: before,
-            after: rowsNow,
-            vanished: previouslyFocused,
-        )
-        ui.focusedItem = next
-        ui.focusIsOnHero = next == nil
+    /// Put focus on `target` — nil meaning the hero — and record where it
+    /// went, so the page says where focus lands rather than letting the
+    /// engine pick.
+    ///
+    /// - Parameter deferred: the target's row is new in this same update, so
+    ///   its cards are not in the hierarchy yet and a write aimed at one is
+    ///   dropped. One main-actor tick later they are.
+    private func land(_ target: ShelfFocusID?, deferred: Bool) {
+        ui.focusedItem = target
+        ui.focusIsOnHero = target == nil
         #if os(tvOS)
-            focusedRegion = next == nil ? .hero : .shelves
+            focusedRegion = target == nil ? .hero : .shelves
         #endif
 
-        guard let next, !before.contains(where: { $0.id == next.row }) else {
-            focusedCard = next
+        guard deferred, let target else {
+            focusedCard = target
             return
         }
-        // The chosen row is new in this same update, so its cards are not in
-        // the hierarchy yet and the write would be dropped. One tick later
-        // they are.
         Task { @MainActor in
             await Task.yield()
-            focusedCard = next
+            focusedCard = target
         }
     }
 }
