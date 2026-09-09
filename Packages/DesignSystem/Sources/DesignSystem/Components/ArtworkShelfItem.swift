@@ -71,6 +71,11 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
     private let menuActions: [ShelfMenuAction]
     private let value: Value?
     private let action: (() -> Void)?
+    /// Reports which card owns focus, so a page can restore it after its
+    /// view is rebuilt — tvOS tears a tab's view down on switch (#236 § 3).
+    /// Optional: shelves that need not survive a rebuild pass nothing.
+    private let focusBinding: FocusState<ShelfFocusID?>.Binding?
+    private let focusID: ShelfFocusID?
 
     @Environment(\.theme) private var theme
 
@@ -89,6 +94,8 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         playbackBadge: PlaybackBadge? = nil,
         countBadge: Int? = nil,
         menuActions: [ShelfMenuAction] = [],
+        focusBinding: FocusState<ShelfFocusID?>.Binding? = nil,
+        focusID: ShelfFocusID? = nil,
         value: Value,
     ) {
         self.action = nil
@@ -106,6 +113,8 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.playbackBadge = playbackBadge
         self.countBadge = countBadge
         self.menuActions = menuActions
+        self.focusBinding = focusBinding
+        self.focusID = focusID
         self.value = value
     }
 
@@ -127,6 +136,8 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         playbackBadge: PlaybackBadge? = nil,
         countBadge: Int? = nil,
         menuActions: [ShelfMenuAction] = [],
+        focusBinding: FocusState<ShelfFocusID?>.Binding? = nil,
+        focusID: ShelfFocusID? = nil,
         action: @escaping () -> Void,
     ) where Value == Bool {
         self.url = url
@@ -143,6 +154,8 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         self.playbackBadge = playbackBadge
         self.countBadge = countBadge
         self.menuActions = menuActions
+        self.focusBinding = focusBinding
+        self.focusID = focusID
         self.value = nil
         self.action = action
     }
@@ -164,6 +177,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
         #else
         .buttonStyle(CardButtonStyle())
         #endif
+        .modifier(OptionalShelfFocus(binding: focusBinding, id: focusID))
         .shelfContextMenu(menuActions)
     }
 
@@ -368,6 +382,22 @@ private extension View {
                     Button(entry.title, systemImage: entry.systemImage, action: entry.action)
                 }
             }
+        }
+    }
+}
+
+/// `.focused` takes a non-optional binding, and a `@ViewBuilder` branch
+/// would give the two arms different view identities — which on tvOS
+/// re-enters the focus engine and drops focus. One modifier, one identity.
+struct OptionalShelfFocus: ViewModifier {
+    let binding: FocusState<ShelfFocusID?>.Binding?
+    let id: ShelfFocusID?
+
+    func body(content: Content) -> some View {
+        if let binding, let id {
+            content.focused(binding, equals: id)
+        } else {
+            content
         }
     }
 }
