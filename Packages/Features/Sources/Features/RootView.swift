@@ -230,6 +230,23 @@ public struct RootView: View {
                 }
             #endif
         }
+        // The hoisted page state now outlives a disconnect, so a signed-out
+        // Home no longer gets torn down with it: without this, a sign-out
+        // while Home is unmounted (tvOS tears its view down on tab switch)
+        // leaves the previous user's shelves sitting in `homeViewModel` and
+        // `genreShelves`, and the next signed-in user's Home paints them for
+        // one frame before its own load replaces them (#236 § 14.1). A fresh
+        // instance carries no data to leak and no scroll/focus memory to
+        // misapply to a different library. Not gated on the *new* session
+        // connecting — nothing observes `isConnected` going true here, so
+        // resetting exactly on the false edge is enough and avoids
+        // discarding a session's state while it's still active.
+        .onChange(of: session.isConnected) { _, isConnected in
+            guard !isConnected else { return }
+            homeViewModel = HomeViewModel()
+            genreShelves = GenreShelvesViewModel()
+            homeUI = HomeUIState()
+        }
         // `UserStateStore` lives in JellyfinKit and cannot know about the
         // coordinator, so it publishes a counter and the translation happens at
         // the Features boundary. Every successful mutation from every surface
