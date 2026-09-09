@@ -759,6 +759,21 @@ struct HomeViewModelTests {
         #expect(viewModel.latestShelves.first?.items.map(\.id) == ["e1"])
     }
 
+    @Test func aPartialRecentlyAddedFailureIsReportedAsFailure() async {
+        // `loadLatest` keeps `.loaded` when some shelves survived, so the
+        // status says "fine" while one library's row is stale.
+        let client = MockJellyfinClient()
+        var calls = 0
+        client.latestItemsHandler = { _ in
+            calls += 1
+            return calls > 1 ? .failure(APIError.networkError("offline")) : .success([])
+        }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        await viewModel.load()
+        #expect(viewModel.lastLoadOutcome == .failed)
+    }
+
     // MARK: - Hero paging
 
     private func makePagedViewModel(heroCount: Int) async -> HomeViewModel {
@@ -1048,6 +1063,21 @@ struct HomeViewModelTests {
         #expect(client.mediaItemsRequests.count == before)
     }
 
+    @Test func refreshUserStateReportsFailureEvenWhenTheLaneKeepsItsContent() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsHandler = { _ in .success([]) }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        struct Boom: Error {}
+        client.resumeItemsHandler = { _ in .failure(Boom()) }
+
+        // The lane deliberately keeps `.loaded` so a rendered row is not
+        // blanked over a refresh failure — so status cannot be the signal.
+        #expect(await viewModel.refreshUserState() == .failed)
+    }
+
     // MARK: - Merged Continue Watching lane
 
     @Test("The merged lane orders a full load by last engagement")
@@ -1193,6 +1223,18 @@ struct HomeViewModelTests {
         await viewModel.load()
         // A cancelled request is a cancellation, never "Couldn't load".
         #expect(viewModel.resumeStatus.isFailed == false)
+    }
+
+    @Test func aCancelledRefreshIsSupersededNotFailed() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsHandler = { _ in .failure(CancellationError()) }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        // Neither outcome the drain acts on: a cancelled refresh must not
+        // start the floor, and re-posting for it would spin.
+        #expect(await viewModel.refreshUserState() == .superseded)
     }
 
     @Test("Task cancellation leaves no failure in any lane")
