@@ -1084,6 +1084,18 @@ struct HomeViewModelTests {
         #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1", "resume-1"])
     }
 
+    // MARK: - Cancellation is not failure (#236 § 8.4)
+
+    @Test func aCancelledResumeLoadLeavesNoFailureNotice() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsHandler = { _ in .failure(CancellationError()) }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        // A cancelled request is a cancellation, never "Couldn't load".
+        #expect(viewModel.resumeStatus.isFailed == false)
+    }
+
     // MARK: - User-data actions (shelf card menus)
 
     @Test("setPlayed persists, then refreshes lane membership")

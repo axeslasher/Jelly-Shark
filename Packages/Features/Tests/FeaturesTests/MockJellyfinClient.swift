@@ -280,9 +280,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     var resumeItemsResult: Result<[MediaItem], Error> = .success([])
+    /// Optional handler for getResumeItems; nil falls back to resumeItemsResult
+    var resumeItemsHandler: (@Sendable (Int?) -> Result<[MediaItem], Error>)?
 
-    func getResumeItems(limit _: Int?) async throws -> [MediaItem] {
-        try resumeItemsResult.get()
+    func getResumeItems(limit: Int?) async throws -> [MediaItem] {
+        let result: Result<[MediaItem], Error> = resumeItemsHandler?(limit) ?? resumeItemsResult
+        return try result.get()
     }
 
     /// Latest requests by libraryId (nil = the global hero-source fetch);
