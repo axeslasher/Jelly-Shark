@@ -325,6 +325,10 @@ public final class HomeViewModel {
             nextUpStatus = .loading
             latestStatus = .loading
             heroIndex = 0
+            // Not `.succeeded`: nothing was confirmed, so a caller reading
+            // this must not stamp the refresh floor. Leaving it stale handed
+            // `completeInitialLoad(succeeded:)` the enum's default.
+            lastLoadOutcome = .superseded
             return true
         }
 

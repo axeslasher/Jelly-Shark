@@ -143,8 +143,13 @@ struct HomeView: View {
             genreShelves.attach(client: session.client, libraries: connection.libraries)
             await genreShelves.load()
 
-            // Flipping this is what releases the drain task below.
-            refreshCoordinator.isInitialLoadSettled = true
+            // Flipping this is what releases the drain task below — so only a
+            // pass that had a client may flip it. This task runs once with
+            // `isConnected == false` on every cold launch; that pass takes
+            // `load()`'s no-client branch and settles nothing, and opening the
+            // gate for it let the drain supersede the real load that follows
+            // (#236 § 8.1).
+            refreshCoordinator.isInitialLoadSettled = session.client != nil
             // Seed the floor only if a load actually ran: tvOS re-runs this
             // task on every tab return, and stamping the timestamp for a
             // guarded-out call would disable the external-client fallback
@@ -167,7 +172,13 @@ struct HomeView: View {
             // on — and library discovery posting `.libraries` makes it
             // likely, since the first load routinely outlasts the settle
             // guard (#236 § 8.1).
-            guard isEligible, refreshCoordinator.isInitialLoadSettled else { return }
+            //
+            // The connection check is belt to the flag's braces, and matches
+            // the initial-load task's id: a disconnect posts `.libraries`
+            // (the list goes to `[]`), and a drain that runs against a nil
+            // client blanks the raw arrays and parks every status at
+            // `.loading` — the skeleton, forever.
+            guard isEligible, session.isConnected, refreshCoordinator.isInitialLoadSettled else { return }
 
             // A player is up over this page. Its progress ticks post every
             // ~10s and `finishPlayback` posts again once the stop task
@@ -237,6 +248,20 @@ struct HomeView: View {
                 isEmptyStateActionFocused = true
             }
         }
+        // The other way into the same single-focusable tree: a mid-session
+        // sign-out or a dropped session swaps content for the disconnected
+        // placeholder, whose only focusable view is the same Settings button.
+        // Focus was on a card that no longer exists, and nothing else can take
+        // it — a dead remote, the #69 class again.
+        .onChange(of: session.isConnected) { _, isConnected in
+            guard !isConnected else { return }
+            // Deferred for the same reason as above: the button is not in the
+            // hierarchy yet in the update that swaps the tree.
+            Task { @MainActor in
+                await Task.yield()
+                isEmptyStateActionFocused = true
+            }
+        }
         .onChange(of: shelfRows) { old, new in
             // Fires in the update that removes the card, while `focusedCard`
             // still names it — before the engine has picked a neighbour.
@@ -264,6 +289,8 @@ struct HomeView: View {
         }
         .onDisappear {
             viewModel.stopAutoAdvance()
+            // Stored on both platforms, restored on tvOS only: visionOS keeps
+            // the tab's own scroll state, so replaying it would fight it.
             ui.scrollOffset = scroll.offset
             ui.hasRestoredThisAppearance = false
         }

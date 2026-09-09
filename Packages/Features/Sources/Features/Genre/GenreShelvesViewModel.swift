@@ -151,7 +151,7 @@ public final class GenreShelvesViewModel {
             return .failed
         }
         // `status` cannot carry this: a partial failure deliberately stays
-        // `.loaded` so surviving shelves keep rendering (`:115`), and
+        // `.loaded` so surviving shelves keep rendering, and
         // reporting that as success would let the coordinator discard the
         // `.libraries` reason with one library's row still stale (#236 § 8.3).
         return hadPartialFailure ? .failed : .succeeded

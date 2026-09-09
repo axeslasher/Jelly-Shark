@@ -249,12 +249,18 @@ public struct RootView: View {
             // The fresh page owes its own initial load, and the § 8.1 gate is
             // what keeps a drain from superseding it.
             refreshCoordinator.isInitialLoadSettled = false
+            // The disconnect tore down any presented player with it, so a
+            // ticket registered at presentation may never get its stop task.
+            // One of those blocks every future drain for the process.
+            refreshCoordinator.clearPlaybackSessions()
         }
         // `UserStateStore` lives in JellyfinKit and cannot know about the
         // coordinator, so it publishes a counter and the translation happens at
         // the Features boundary. Every successful mutation from every surface
         // already funnels through `confirm`/`recordPosition`, so no producer can
-        // silently forget to post (#236 § 5.2).
+        // silently forget to post (#236 § 5.2). Not only surfaces:
+        // `UserStateStore`'s position guard expires about 30s after playback
+        // and bumps the revision too, so that expiry posts as well.
         .onChange(of: session.userState.mutationRevision) { _, _ in
             refreshCoordinator.post(.watchState)
         }

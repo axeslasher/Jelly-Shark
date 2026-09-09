@@ -57,6 +57,11 @@ public final class ContentRefreshCoordinator {
     /// Whether the page's own first load has settled. A drain must not
     /// start before it: the drain's `.libraries` tier calls `forceReload`
     /// and would supersede the very load it is waiting on (#236 § 8.1).
+    ///
+    /// Stored here, enforced by the page — this type never reads it. The
+    /// page owes two things: set it only after a load that had a real
+    /// client (a no-client pass settled nothing), and clear it when the
+    /// page state is rebuilt.
     public var isInitialLoadSettled = false
     private var lastRefresh: Date?
 
@@ -106,8 +111,24 @@ public final class ContentRefreshCoordinator {
         post(.watchState)
     }
 
+    /// Drop every registered session.
+    ///
+    /// A session disconnect tears down whatever player is presented without
+    /// a guaranteed `onDisappear`, so its ticket can outlive it with no stop
+    /// task ever arriving — and one such ticket makes `hasPlayingSession`
+    /// true for the rest of the process, which returns every future drain
+    /// early. Rebuilding the page state is the point to forget them.
+    public func clearPlaybackSessions() {
+        sessions.removeAll()
+    }
+
     /// Wait until every session registered *at the time each check runs*
     /// has reported.
+    ///
+    /// Safe to call from more than one consumer — Home's drain and
+    /// `MediaDetailViewModel` both do. The first to return removes the
+    /// tickets it awaited, and that return means every report it waited on
+    /// landed; a later caller finding no sessions is the truth, not a miss.
     ///
     /// Cancellation returns immediately and leaves the sessions
     /// registered, so the next drain waits for them properly. Swallowing

@@ -390,6 +390,17 @@ struct HomeViewModelTests {
         #expect(viewModel.isEmptyServer == false)
     }
 
+    @Test("A nil-client load reports .superseded, not the enum's default")
+    func nilClientReportsSuperseded() async {
+        // `completeInitialLoad(succeeded:)` reads this. Leaving it stale
+        // reported success for a load that fetched nothing, which stamped
+        // the refresh floor and suppressed the external-client fallback.
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: nil)
+
+        #expect(viewModel.lastLoadOutcome == .superseded)
+    }
+
     @Test("First paint waits for every section — a fast shelf can't beat the hero")
     func initialLoadingHoldsUntilAllSectionsSettle() async {
         // Regression: `isInitialLoading` used to clear when ANY section

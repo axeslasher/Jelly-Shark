@@ -190,6 +190,19 @@ struct ContentRefreshCoordinatorTests {
         #expect(coordinator.hasPlaybackInFlight)
     }
 
+    @Test func clearingSessionsRecoversFromAnOrphanedTicket() {
+        // A disconnect tears the player down without a guaranteed
+        // `onDisappear`, so the stop task may never arrive. Left registered,
+        // that ticket returns every future drain early for the whole process.
+        let coordinator = ContentRefreshCoordinator()
+        _ = coordinator.registerPlayback()
+        #expect(coordinator.hasPlayingSession)
+
+        coordinator.clearPlaybackSessions()
+        #expect(coordinator.hasPlaybackInFlight == false)
+        #expect(coordinator.hasPlayingSession == false)
+    }
+
     // MARK: - Drain transaction (§ 8)
 
     @Test func onlyOneDrainRunsAtATime() {
