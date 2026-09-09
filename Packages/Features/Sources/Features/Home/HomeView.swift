@@ -193,8 +193,23 @@ struct HomeView: View {
             let before = shelfRows
             let focusedBefore = focusedCard
 
-            var outcome = await viewModel.refresh(token.reason)
-            if token.reason != .watchState {
+            var outcome: HomeViewModel.LoadOutcome
+            if token.reason == .watchState {
+                outcome = await viewModel.refresh(token.reason)
+            } else {
+                // `load()` reads the library list `attach` last wrote, and
+                // only the initial-load task attaches — which on visionOS
+                // runs once for the whole session, since this page is never
+                // torn down. Without this a library added mid-session would
+                // never reach the reload it triggered (§ 8.5).
+                viewModel.attach(
+                    client: session.client,
+                    libraries: connection.libraries,
+                    cache: session.scopedCache,
+                    userState: session.userState,
+                )
+                genreShelves.attach(client: session.client, libraries: connection.libraries)
+                outcome = await viewModel.refresh(token.reason)
                 outcome = await HomeViewModel.LoadOutcome.combine([outcome, genreShelves.reload()])
             }
 
@@ -213,7 +228,13 @@ struct HomeView: View {
         // refresh can empty Home while the viewer is standing in it. If this
         // button does not take focus, the remote is dead (#69).
         .onChange(of: viewModel.isEmptyServer) { _, isEmpty in
-            if isEmpty {
+            guard isEmpty else { return }
+            // Deferred a tick on purpose: this fires in the same update that
+            // swaps the tree, so the Settings button is not in the hierarchy
+            // yet and a `@FocusState` write aimed at a view outside it is
+            // dropped. Dropped here means a dead remote (#69).
+            Task { @MainActor in
+                await Task.yield()
                 isEmptyStateActionFocused = true
             }
         }
@@ -236,15 +257,27 @@ struct HomeView: View {
             viewModel.startAutoAdvance()
             guard !ui.hasRestoredThisAppearance else { return }
             ui.hasRestoredThisAppearance = true
-            if !ui.focusIsOnHero, let target = ui.focusedItem {
-                focusedCard = target
-                #if os(tvOS)
-                    // Restore the region too. The card's own `.focused`
-                    // binding does not imply the region binding, and leaving
-                    // the region on `.hero` makes the next scroll snap yank
-                    // the page back to the top.
-                    focusedRegion = .shelves
-                #endif
+            if !ui.focusIsOnHero, let stored = ui.focusedItem {
+                // What survives, not what was stored — and `ui` records what
+                // was actually restored, so a later reconcile reasons about
+                // the card focus is really on.
+                let target = restoredTarget(for: stored)
+                ui.focusedItem = target
+                ui.focusIsOnHero = target == nil
+                if let target {
+                    focusedCard = target
+                    #if os(tvOS)
+                        // Restore the region too. The card's own `.focused`
+                        // binding does not imply the region binding, and
+                        // leaving the region on `.hero` makes the next scroll
+                        // snap yank the page back to the top.
+                        focusedRegion = .shelves
+                    #endif
+                } else {
+                    #if os(tvOS)
+                        focusedRegion = .hero
+                    #endif
+                }
             }
             #if os(tvOS)
                 if ui.scrollOffset > 0 {
@@ -482,12 +515,32 @@ struct HomeView: View {
         return rows
     }
 
+    /// Where focus lands for a stored card on a return, honouring rule 3
+    /// when it is gone: the same row's first card if that row survives
+    /// non-empty, otherwise nil for the hero.
+    ///
+    /// The stored id can name a card no view binds — a drain cancelled
+    /// between applying its refresh and reconciling focus leaves exactly
+    /// that — and writing a dropped id lands focus geometrically instead of
+    /// where we said (§ 11.1).
+    private func restoredTarget(for stored: ShelfFocusID) -> ShelfFocusID? {
+        guard let row = shelfRows.first(where: { $0.id == stored.row }),
+              let first = row.itemIDs.first
+        else { return nil }
+        return row.itemIDs.contains(stored.item) ? stored : ShelfFocusID(row: row.id, item: first)
+    }
+
     /// Re-aim focus if the refresh removed the card the viewer was standing
     /// on. A survivor keeps its own focus, so the common case does nothing.
     private func reconcileFocus(
         from before: [HomeFocusReconciler.Row],
         previouslyFocused: ShelfFocusID?,
     ) {
+        // The refresh is a multi-second round trip and the viewer keeps
+        // moving through it. If focus has moved since, the card that
+        // vanished is not the one they are standing on, and re-aiming would
+        // yank them off it (§ 11.2).
+        guard focusedCard == previouslyFocused else { return }
         guard let previouslyFocused else { return }
 
         let rowsNow = shelfRows
@@ -503,12 +556,23 @@ struct HomeView: View {
             after: rowsNow,
             vanished: previouslyFocused,
         )
-        focusedCard = next
         ui.focusedItem = next
         ui.focusIsOnHero = next == nil
         #if os(tvOS)
             focusedRegion = next == nil ? .hero : .shelves
         #endif
+
+        guard let next, !before.contains(where: { $0.id == next.row }) else {
+            focusedCard = next
+            return
+        }
+        // The chosen row is new in this same update, so its cards are not in
+        // the hierarchy yet and the write would be dropped. One tick later
+        // they are.
+        Task { @MainActor in
+            await Task.yield()
+            focusedCard = next
+        }
     }
 }
 

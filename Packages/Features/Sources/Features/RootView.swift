@@ -246,6 +246,9 @@ public struct RootView: View {
             homeViewModel = HomeViewModel()
             genreShelves = GenreShelvesViewModel()
             homeUI = HomeUIState()
+            // The fresh page owes its own initial load, and the § 8.1 gate is
+            // what keeps a drain from superseding it.
+            refreshCoordinator.isInitialLoadSettled = false
         }
         // `UserStateStore` lives in JellyfinKit and cannot know about the
         // coordinator, so it publishes a counter and the translation happens at

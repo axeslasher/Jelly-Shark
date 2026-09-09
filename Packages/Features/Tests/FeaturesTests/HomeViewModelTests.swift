@@ -1233,6 +1233,16 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeStatus.isFailed == false)
     }
 
+    @Test func theDrainOutcomeMappingTreatsSupersessionAsCancellation() {
+        #expect(HomeViewModel.LoadOutcome.succeeded.drainOutcome == .succeeded)
+        #expect(HomeViewModel.LoadOutcome.failed.drainOutcome == .failed)
+        // The whole cancellation story rests on this row: a superseded pass
+        // confirmed nothing, so the reason is still owed. Mapping it to
+        // `.failed` would leave it owed but never wake a drain for it, and
+        // `.succeeded` would stamp the floor for work that never happened.
+        #expect(HomeViewModel.LoadOutcome.superseded.drainOutcome == .cancelled)
+    }
+
     @Test func aCancelledRefreshIsSupersededNotFailed() async {
         let client = MockJellyfinClient()
         client.resumeItemsHandler = { _ in .failure(CancellationError()) }
