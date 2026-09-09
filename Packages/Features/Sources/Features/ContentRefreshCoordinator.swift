@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// Why a page owes a refresh. Ordered so a drain can take the deepest
 /// pending reason and satisfy the shallower ones for free.
@@ -36,6 +37,11 @@ public final class ContentRefreshCoordinator {
     /// How long an idle return goes without re-checking the server.
     /// A feel value — bisect on device, never against the simulator.
     public static let floor: Duration = .seconds(30)
+
+    /// Every post and drain, so a device round can count fan-outs from the
+    /// console — nothing in the app logs a request, and the server does not
+    /// log them either. Enum names and counts only; never an item.
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Home")
 
     /// How long to wait between checks for a registered-but-still-playing
     /// session. Not a timeout: the loop ends when the session reports or
@@ -92,6 +98,7 @@ public final class ContentRefreshCoordinator {
     public func post(_ reason: RefreshReason) {
         revision &+= 1
         pending[reason] = revision
+        Self.logger.debug("post \(String(describing: reason), privacy: .public) → revision \(self.revision, privacy: .public)")
     }
 
     // MARK: - Playback ordering
@@ -100,14 +107,19 @@ public final class ContentRefreshCoordinator {
     public func registerPlayback() -> PlaybackTicket {
         let ticket = PlaybackTicket(id: UUID())
         sessions[ticket] = Task<Void, Never>?.none
+        Self.logger.debug("playback registered, sessions \(self.sessions.count, privacy: .public)")
         return ticket
     }
 
     /// Call from the player's teardown with the task that reports the
     /// final position.
     public func finishPlayback(_ ticket: PlaybackTicket, stop: Task<Void, Never>) {
-        guard sessions.index(forKey: ticket) != nil else { return }
+        guard sessions.index(forKey: ticket) != nil else {
+            Self.logger.debug("playback finished with an unknown ticket, ignored")
+            return
+        }
         sessions[ticket] = stop
+        Self.logger.debug("playback finished, stop task stored")
         post(.watchState)
     }
 
@@ -119,6 +131,7 @@ public final class ContentRefreshCoordinator {
     /// true for the rest of the process, which returns every future drain
     /// early. Rebuilding the page state is the point to forget them.
     public func clearPlaybackSessions() {
+        Self.logger.debug("clearing \(self.sessions.count, privacy: .public) playback sessions")
         sessions.removeAll()
     }
 
@@ -216,6 +229,7 @@ public final class ContentRefreshCoordinator {
         guard activeDrain == nil, let reason = takeReasons(now: now) else { return nil }
         let token = DrainToken(id: UUID(), reason: reason)
         activeDrain = token.id
+        Self.logger.debug("drain begin \(String(describing: reason), privacy: .public)")
         return token
     }
 
@@ -229,8 +243,12 @@ public final class ContentRefreshCoordinator {
     /// A reason restored on failure stays owed until the next arrival or
     /// post wakes a drain for it.
     public func endDrain(_ token: DrainToken, outcome: DrainOutcome, now: Date) {
-        guard activeDrain == token.id else { return }
+        guard activeDrain == token.id else {
+            Self.logger.debug("drain end ignored: stale token")
+            return
+        }
         activeDrain = nil
+        Self.logger.debug("drain end \(String(describing: token.reason), privacy: .public) \(String(describing: outcome), privacy: .public)")
         switch outcome {
         case .succeeded:
             lastRefresh = now
@@ -248,8 +266,12 @@ public final class ContentRefreshCoordinator {
     ///   load began. Reasons raised before that point are covered by the load
     ///   and are cleared; anything posted while it ran is not, and survives.
     public func completeInitialLoad(revisionAtStart: Int, succeeded: Bool, now: Date) {
-        guard succeeded else { return }
+        guard succeeded else {
+            Self.logger.debug("initial load did not succeed; floor not started")
+            return
+        }
         lastRefresh = now
+        Self.logger.debug("initial load complete; retiring \(self.pending.values.filter { $0 <= revisionAtStart }.count, privacy: .public) of \(self.pending.count, privacy: .public) pending reasons")
         // Retire only what the load covered. Clearing everything drops a
         // reason posted mid-load; clearing nothing repeats the full load that
         // just finished. Both happen at once routinely — library discovery

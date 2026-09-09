@@ -1,6 +1,7 @@
 import Foundation
 import JellyfinKit
 import Observation
+import os
 import SwiftUI
 
 /// Loads the Home screen's sections and drives the hero carousel.
@@ -61,6 +62,10 @@ public final class HomeViewModel {
             library.id
         }
     }
+
+    /// Every network fan-out, so a device round can count them from the
+    /// console. Generation numbers and counts only; never an item.
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Home")
 
     /// Why the hero auto-advance timer is currently held.
     public enum PauseReason: Hashable {
@@ -368,6 +373,7 @@ public final class HomeViewModel {
             latestStatus = .loading
         }
 
+        Self.logger.debug("load fan-out, generation \(generation, privacy: .public), \(self.libraries.count, privacy: .public) libraries")
         // Sections resolve independently: each records its own items + status
         // as it completes, so a slow shelf never blocks its siblings.
         async let resumeOutcome = loadResume(client: client, generation: generation)
@@ -499,6 +505,7 @@ public final class HomeViewModel {
         guard let client else { return .failed }
         loadGeneration += 1
         let generation = loadGeneration
+        Self.logger.debug("refreshUserState fan-out, generation \(generation, privacy: .public)")
         async let resume = loadResume(client: client, generation: generation)
         async let nextUp = loadNextUp(client: client, generation: generation)
         async let watchDates = loadWatchDates(client: client, generation: generation)
@@ -512,6 +519,7 @@ public final class HomeViewModel {
     /// leaves the hero alone, because a silent re-check that restarts the
     /// marquee under an idle viewer reads as a bug rather than freshness.
     public func refresh(_ reason: RefreshReason) async -> LoadOutcome {
+        Self.logger.debug("refresh \(String(describing: reason), privacy: .public)")
         switch reason {
         case .watchState:
             return await refreshUserState()
