@@ -129,38 +129,6 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(theme.animation, value: viewModel.isInitialLoading)
         .background(theme.background)
-        .task(id: session.isConnected) {
-            viewModel.attach(
-                client: session.client,
-                libraries: connection.libraries,
-                cache: session.scopedCache,
-                userState: session.userState,
-            )
-            // Read before the load: reasons raised before it are covered by
-            // it, anything posted while it ran is not (§ 8).
-            let revisionAtStart = refreshCoordinator.revision
-            let didLoad = await viewModel.load()
-            genreShelves.attach(client: session.client, libraries: connection.libraries)
-            await genreShelves.load()
-
-            // Flipping this is what releases the drain task below — so only a
-            // pass that had a client may flip it. This task runs once with
-            // `isConnected == false` on every cold launch; that pass takes
-            // `load()`'s no-client branch and settles nothing, and opening the
-            // gate for it let the drain supersede the real load that follows
-            // (#236 § 8.1).
-            refreshCoordinator.isInitialLoadSettled = session.client != nil
-            // Seed the floor only if a load actually ran: tvOS re-runs this
-            // task on every tab return, and stamping the timestamp for a
-            // guarded-out call would disable the external-client fallback
-            // forever.
-            guard didLoad else { return }
-            refreshCoordinator.completeInitialLoad(
-                revisionAtStart: revisionAtStart,
-                succeeded: viewModel.lastLoadOutcome == .succeeded,
-                now: .now,
-            )
-        }
         .task(id: DrainKey(
             eligible: isEligible,
             settled: refreshCoordinator.isInitialLoadSettled,

@@ -230,6 +230,44 @@ public struct RootView: View {
                 }
             #endif
         }
+        // Home's initial load is owned here, with the view models, not by
+        // `HomeView`'s own `.task`. On device that task was cancelled about a
+        // second after connect, mid fan-out, and never restarted, so every
+        // cold launch's first load died and the drain redid it (#236 device
+        // row 1). The likely trigger — unverified — is the tab set changing as
+        // libraries and counts arrive, which rebuilds the tab's content and
+        // cancels the old task while its replacement finds `needsLoad` already
+        // consumed. A task on the root survives whatever the tab does.
+        .task(id: session.isConnected) {
+            homeViewModel.attach(
+                client: session.client,
+                libraries: connectionViewModel.libraries,
+                cache: session.scopedCache,
+                userState: session.userState,
+            )
+            // Read before the load: reasons raised before it are covered by
+            // it, anything posted while it ran is not (§ 8).
+            let revisionAtStart = refreshCoordinator.revision
+            let didLoad = await homeViewModel.load()
+            genreShelves.attach(client: session.client, libraries: connectionViewModel.libraries)
+            await genreShelves.load()
+
+            // Flipping this is what releases Home's drain — so only a pass
+            // that had a client may flip it. This task runs once with
+            // `isConnected == false` on every cold launch; that pass takes
+            // `load()`'s no-client branch and settles nothing, and opening the
+            // gate for it let the drain supersede the real load (#236 § 8.1).
+            refreshCoordinator.isInitialLoadSettled = session.client != nil
+            // Seed the floor only if a load actually ran; stamping the
+            // timestamp for a guarded-out call would disable the
+            // external-client fallback forever.
+            guard didLoad else { return }
+            refreshCoordinator.completeInitialLoad(
+                revisionAtStart: revisionAtStart,
+                succeeded: homeViewModel.lastLoadOutcome == .succeeded,
+                now: .now,
+            )
+        }
         // The hoisted page state now outlives a disconnect, so a signed-out
         // Home no longer gets torn down with it: without this, a sign-out
         // while Home is unmounted (tvOS tears its view down on tab switch)
