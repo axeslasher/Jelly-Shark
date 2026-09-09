@@ -558,17 +558,51 @@ struct HomeViewModelTests {
     }
 
     @Test func aColdLoadStillShowsTheSkeletonExactlyOnce() async {
-        let client = MockJellyfinClient()
-        let gate = AsyncGate()
-        client.resumeItemsDelay = { try? await gate.wait() }
+        let clientA = MockJellyfinClient()
         let viewModel = HomeViewModel()
-        viewModel.attach(client: client, libraries: [Self.movies])
-        let first = Task { await viewModel.load() }
-        try? await Task.sleep(for: .milliseconds(20))
+        viewModel.attach(client: clientA, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isInitialLoading == false)
+
+        // A genuinely new connection re-arms the skeleton (#236 § 3):
+        // `attach` resets `hasCompletedInitialLoad` only on a changed
+        // client, so this second cold load — unlike a warm reload of the
+        // same client above — must show the skeleton again exactly once.
+        let clientB = MockJellyfinClient()
+        let gate = AsyncGate()
+        clientB.resumeItemsDelay = { try? await gate.wait() }
+        viewModel.attach(client: clientB, libraries: [Self.movies])
+        let second = Task { await viewModel.load() }
+        await waitUntil { viewModel.isInitialLoading }
         #expect(viewModel.isInitialLoading)
         await gate.open()
-        await first.value
+        await second.value
         #expect(viewModel.isInitialLoading == false)
+    }
+
+    @Test func aLibraryListChangeDoesNotBringBackTheSkeleton() async {
+        // Acceptance criterion 5: adding/removing a library is a warm
+        // reload, not a new session — `attach` only re-arms the skeleton on
+        // a changed client (see the test above), never on a library-list
+        // change alone.
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isInitialLoading == false)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let latestRequestsBefore = client.latestItemsRequests.count
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        let second = Task { await viewModel.load() }
+        // Resume itself is gated, so wait on the ungated latest fetch firing
+        // instead — proof the load is genuinely in flight, not merely
+        // scheduled.
+        await waitUntil { client.latestItemsRequests.count > latestRequestsBefore }
+        #expect(viewModel.isInitialLoading == false)
+        await gate.open()
+        await second.value
     }
 
     @Test func loadReportsWhetherItActuallyRan() async {
