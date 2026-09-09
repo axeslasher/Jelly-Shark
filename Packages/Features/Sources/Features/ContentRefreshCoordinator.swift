@@ -134,7 +134,7 @@ public final class ContentRefreshCoordinator {
 
     /// The reason to refresh right now, or nil for "do nothing". Removes
     /// what it returns; `finishDrain` decides whether it stays removed.
-    public func takeReasons(now: Date) -> RefreshReason? {
+    func takeReasons(now: Date) -> RefreshReason? {
         if let deepest = pending.keys.max() {
             pending.removeAll()
             return deepest
@@ -150,7 +150,12 @@ public final class ContentRefreshCoordinator {
 
     /// Close a drain. A failure re-posts its reason and leaves the floor
     /// unstarted, so a dropped network cannot mark the page fresh.
-    public func finishDrain(deepest: RefreshReason, succeeded: Bool, now: Date) {
+    ///
+    /// Token-less: it never touches `activeDrain`, so it must never be paired
+    /// with `beginDrain` — that guard is released only by `endDrain`, and a
+    /// `beginDrain`/`finishDrain` pairing would wedge the serial guard open
+    /// forever. Exists only for the `takeReasons` tests exercised directly.
+    func finishDrain(deepest: RefreshReason, succeeded: Bool, now: Date) {
         if succeeded {
             lastRefresh = now
         } else {
