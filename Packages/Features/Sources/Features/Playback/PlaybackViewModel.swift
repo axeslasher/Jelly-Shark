@@ -1328,6 +1328,12 @@ public final class PlaybackViewModel {
     /// One line per stream resolution so a play session's delivery decisions
     /// can be read back from the console (filter the Xcode console or
     /// `log stream` on the "Playback" category).
+    ///
+    /// `serverSubtitle` is the server's own pick for this source, which it
+    /// makes from per-item state any client can write — so a track chosen on
+    /// Jellyfin web shows up here even though this app never asked for it
+    /// (#218). When it differs from `subtitle`, the delivery decision above
+    /// was not the app's alone.
     private func logResolution(_ resolution: StreamResolution, source: MediaSource, context: String) {
         Self.logger.info("""
         [\(context, privacy: .public)] "\(self.item.name, privacy: .public)" → \
@@ -1335,7 +1341,8 @@ public final class PlaybackViewModel {
         (container=\(source.container ?? "?", privacy: .public) \
         directPlay=\(source.supportsDirectPlay) directStream=\(source.supportsDirectStream) \
         audio=\(self.selectedAudioStreamIndex.map(String.init) ?? "default", privacy: .public) \
-        subtitle=\(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public)) \
+        subtitle=\(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public) \
+        serverSubtitle=\(source.defaultSubtitleStreamIndex.map(String.init) ?? "none", privacy: .public)) \
         url=\(PlaybackLog.url(resolution.url), privacy: .public)
         """)
     }

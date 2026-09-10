@@ -305,7 +305,13 @@ enum StreamURLBuilder {
         // and so does the degraded text path (the app owns delivery there).
         // On the normal text path AVKit owns selection and the master
         // advertises every text rendition regardless, so the index is
-        // omitted — subtitle state can never change the stream shape.
+        // omitted — this URL's shape is the same either way.
+        //
+        // Omitting it does not mean subtitles cannot move the session: with no
+        // index, PlaybackInfo falls back to the server's remembered per-item
+        // choice, and an image-based one there costs direct play and seeds
+        // burn-in before this builder ever runs (#218). The streaming endpoint
+        // itself ignores that state, so this URL stays honest.
         if let subtitleStreamIndex = parameters.subtitleStreamIndex,
            subtitleMethod == .encode || !assumeInterposer
         {
