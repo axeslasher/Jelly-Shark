@@ -44,6 +44,10 @@ final class MockPlayerEngine: PlayerEngine {
     // Settable state
     private(set) var isLoaded = false
     var currentTimeSeconds: Double?
+    /// The playhead mirror (#188). Set independently of
+    /// `currentTimeSeconds` so a test can hold it still — a frozen mirror
+    /// is the stall signal — while the exact read says whatever it likes
+    var observedPlayheadSeconds: Double?
     /// Updated by `play()`/`pause()` for realism; no event is emitted — the
     /// real engine's events come from KVO, so tests send them explicitly
     var transportStatus: PlaybackTransportStatus = .paused
@@ -103,6 +107,7 @@ final class MockPlayerEngine: PlayerEngine {
         teardownCount += 1
         isLoaded = false
         currentTimeSeconds = nil
+        observedPlayheadSeconds = nil
         transportStatus = .paused
         currentErrorDescription = nil
         audibleOptions = []

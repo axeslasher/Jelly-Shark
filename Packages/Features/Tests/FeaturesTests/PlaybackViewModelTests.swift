@@ -35,6 +35,9 @@ struct PlaybackViewModelTests {
             engine: engine,
             progressInterval: progressInterval,
             mediaSourceId: mediaSourceId,
+            // No sample spacing: these tests drive heartbeats back to back,
+            // and the spacing rule has its own suite (ServerOutageMonitorTests)
+            outageMonitor: ServerOutageMonitor(minimumSampleSpacing: .zero),
         )
         return (viewModel, engine)
     }
@@ -166,6 +169,186 @@ struct PlaybackViewModelTests {
 
         #expect(client.progressReports.count >= 2)
         #expect(client.progressReports.allSatisfy { $0.itemId == "movie-1" })
+    }
+
+    // MARK: - Server outage (#188)
+
+    /// Drive one heartbeat through the transport-status event — the same
+    /// `reportProgress` the interval timer calls, without the timer — and
+    /// wait for its verdict. Waiting on the monitor rather than the mock:
+    /// the mock records the attempt before it throws, one actor hop before
+    /// the view model folds the outcome in, and an assertion in that gap
+    /// reads the previous verdict.
+    private func heartbeat(_ viewModel: PlaybackViewModel, _ engine: MockPlayerEngine) async {
+        let expected = viewModel.outageMonitor.sampleCount + 1
+        engine.send(.transportStatusChanged)
+        await waitUntil { viewModel.outageMonitor.sampleCount >= expected }
+    }
+
+    @Test("Consecutive failed heartbeats on a frozen playhead raise the outage without failing the session")
+    func outageSurfacesWithoutFailing() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+
+        await heartbeat(viewModel, engine)
+        #expect(viewModel.outage == nil)
+
+        await heartbeat(viewModel, engine)
+
+        #expect(viewModel.outage == .unreachable)
+        // Non-fatal: the player keeps running exactly as it was
+        #expect(viewModel.state == .playing)
+        #expect(engine.pauseCount == 0)
+        #expect(engine.teardownCount == 0)
+    }
+
+    @Test("The heartbeat reports the playhead mirror, and repeats its last report when there is none — never the live read")
+    func heartbeatReportsTheMirror() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.currentTimeSeconds = 999
+
+        // No mirror yet and nothing reported: zero, not the live 999
+        await heartbeat(viewModel, engine)
+        #expect(client.progressReports.last?.positionTicks == 0)
+
+        engine.observedPlayheadSeconds = 120
+        await heartbeat(viewModel, engine)
+        #expect(client.progressReports.last?.positionTicks == 1_200_000_000)
+
+        // Mirror gone again: the last report stands in, still not the live read
+        engine.observedPlayheadSeconds = nil
+        await heartbeat(viewModel, engine)
+        #expect(client.progressReports.last?.positionTicks == 1_200_000_000)
+    }
+
+    @Test("The first heartbeat that lands clears the outage")
+    func outageClearsOnRecovery() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+        #expect(viewModel.outage == .unreachable)
+
+        // The picture has to move with the server for this to be a
+        // recovery — see `outageBecomesAStallWhenOnlyTheServerComesBack`
+        client.progressReportError = nil
+        engine.observedPlayheadSeconds = 135.4
+        await heartbeat(viewModel, engine)
+
+        #expect(viewModel.outage == nil)
+        #expect(viewModel.state == .playing)
+    }
+
+    @Test("A server that comes back over a frozen picture reads as a stall")
+    func outageBecomesAStallWhenOnlyTheServerComesBack() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+        #expect(viewModel.outage == .unreachable)
+
+        // Device-verified on directPlay: every report lands again and the
+        // playhead never moves, because AVPlayer never re-requests
+        client.progressReportError = nil
+        await heartbeat(viewModel, engine)
+
+        #expect(viewModel.outage == .stalled)
+        #expect(viewModel.state == .playing)
+    }
+
+    @Test("A heartbeat before the playhead mirror ticks reports the resume position, not zero")
+    func heartbeatBeforeTheMirrorTicksReportsTheResumePosition() async {
+        // A stall in the first seconds of a resumed session: the mirror has
+        // no value yet, and a report of zero would overwrite the saved
+        // resume position on the server with the start of the item.
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 600_000_000))
+        await viewModel.start()
+        engine.observedPlayheadSeconds = nil
+
+        await heartbeat(viewModel, engine)
+
+        #expect(client.progressReports.last?.positionTicks == 600_000_000)
+    }
+
+    @Test("A 503 while the server boots reads as starting")
+    func outageReadsBootingServer() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+
+        client.progressReportError = APIError.serverError(statusCode: 503)
+        await heartbeat(viewModel, engine)
+
+        #expect(viewModel.outage == .starting)
+    }
+
+    @Test("A paused viewer sees no outage")
+    func outageHiddenWhilePaused() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        engine.pause()
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+
+        #expect(viewModel.outage == nil)
+        // Both samples were folded — the feature is exercised, not absent —
+        // and neither accrued: a paused viewer's failures are not evidence
+        #expect(viewModel.outageMonitor.sampleCount == 2)
+        #expect(viewModel.outageMonitor.consecutiveFailures == 0)
+    }
+
+    @Test("A rebuild during an outage clears it; the dead server fails the rebuild itself")
+    func outageClearsOnRebuild() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+        #expect(viewModel.outage == .unreachable)
+
+        client.playbackInfoResult = .failure(APIError.networkError("Could not connect to the server."))
+        await viewModel.selectSubtitleStream(index: 5)
+
+        #expect(viewModel.outage == nil)
+        #expect(viewModel.state == .failed(APIError.networkError("Could not connect to the server.").localizedDescription))
+    }
+
+    @Test("stop() clears the outage")
+    func outageClearsOnStop() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+        #expect(viewModel.outage == .unreachable)
+
+        await viewModel.stop()
+
+        #expect(viewModel.outage == nil)
     }
 
     @Test("Track selection rebuilds the stream with the selected index")
