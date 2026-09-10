@@ -30,6 +30,7 @@ struct HomeView: View {
     /// pass instead of refetching (#236 § 3).
     let viewModel: HomeViewModel
     let genreShelves: GenreShelvesViewModel
+    let affinityShelves: AffinityShelvesViewModel
     let ui: HomeUIState
     let isEligible: Bool
 
@@ -190,8 +191,13 @@ struct HomeView: View {
             guard let token = refreshCoordinator.beginDrain(now: .now) else { return }
 
             var outcome: HomeViewModel.LoadOutcome
+            // Affinity runs in both branches and its outcome never joins
+            // `outcome`: `combine` lets any failure win, and a failed drain
+            // re-posts its reason, so a failing decoration would loop the
+            // drain forever (#86 § 11.2).
             if token.reason == .watchState {
                 outcome = await viewModel.refresh(token.reason)
+                await affinityShelves.validate()
             } else {
                 // `load()` reads the library list `attach` last wrote, and
                 // only the initial-load task attaches — which on visionOS
@@ -205,8 +211,17 @@ struct HomeView: View {
                     userState: session.userState,
                 )
                 genreShelves.attach(client: session.client, libraries: connection.libraries)
+                affinityShelves.attach(
+                    client: session.client,
+                    libraries: connection.libraries,
+                    cache: session.scopedCache,
+                )
                 outcome = await viewModel.refresh(token.reason)
                 outcome = await HomeViewModel.LoadOutcome.combine([outcome, genreShelves.reload()])
+                // `reload()`, not `validate()`: this branch already knows the
+                // library changed, so the stamp must be re-probed even inside
+                // its TTL.
+                await affinityShelves.reload()
             }
 
             guard !Task.isCancelled else {
@@ -224,6 +239,11 @@ struct HomeView: View {
             if token.isFloorCheck, outcome == .succeeded {
                 await connection.refreshLibraries()
             }
+        }
+        // Off cancels the in-flight pass and drops the rows; on restores them
+        // and validates only if something moved while it was off (#86 § 11.3).
+        .task(id: homePreferences.showsDiscoveryShelves) {
+            await affinityShelves.setEnabled(homePreferences.showsDiscoveryShelves)
         }
         .onChange(of: reduceMotion, initial: true) { _, isReduced in
             viewModel.setPaused(isReduced, reason: .reduceMotion)
@@ -408,18 +428,19 @@ struct HomeView: View {
                         showsResumeHeader: viewModel.currentHeroItem == nil
                             || scroll.revealsShelfHeader,
                         onPlay: { playbackItem = PlaybackRequest(item: $0) },
-                        menu: { item in
-                            ShelfMenuHandlers(
-                                viewDetails: { pushMediaDetail?(item) },
-                                setPlayed: { played in
-                                    Task { await viewModel.setPlayed(played, for: item) }
-                                },
-                                setFavorite: { favorite in
-                                    Task { await viewModel.setFavorite(favorite, for: item) }
-                                },
-                            )
-                        },
+                        menu: shelfMenu(for:),
                         onRetry: { Task { await viewModel.retryFailedSections() } },
+                        focusBinding: $focusedCard,
+                    )
+
+                    // Above the genre row: curated picks outrank a generic
+                    // browse affordance (#86 § 11). Renders nothing at all
+                    // when nothing qualified.
+                    AffinityShelvesView(
+                        shelves: affinityShelves.shelves,
+                        status: affinityShelves.status,
+                        menu: shelfMenu(for:),
+                        onRetry: { Task { await affinityShelves.retry() } },
                         focusBinding: $focusedCard,
                     )
 
@@ -549,6 +570,20 @@ struct HomeView: View {
         }
     }
 
+    /// Long-press menu handlers for a poster card, shared by the Recently
+    /// Added and affinity rows so both mutate through the same view model.
+    private func shelfMenu(for item: MediaItem) -> ShelfMenuHandlers {
+        ShelfMenuHandlers(
+            viewDetails: { pushMediaDetail?(item) },
+            setPlayed: { played in
+                Task { await viewModel.setPlayed(played, for: item) }
+            },
+            setFavorite: { favorite in
+                Task { await viewModel.setFavorite(favorite, for: item) }
+            },
+        )
+    }
+
     /// The shelf rows as ids, top to bottom — genre rows included, since they
     /// are focusable like any other and must not be skipped when focus falls
     /// through (§ 11.3). Row ids come from `HomeShelfRowID`, which the views
@@ -566,6 +601,12 @@ struct HomeView: View {
         }
         rows.append(contentsOf: viewModel.latestShelves.map {
             .init(id: HomeShelfRowID.latest($0.library.id), itemIDs: $0.items.map(\.id))
+        })
+        rows.append(contentsOf: affinityShelves.shelves.map {
+            .init(
+                id: HomeShelfRowID.affinity($0.descriptor.kind.identity),
+                itemIDs: $0.items.map(\.id),
+            )
         })
         rows.append(contentsOf: genreShelves.shelves.map {
             .init(id: HomeShelfRowID.genre($0.library.id), itemIDs: $0.genres)
@@ -689,6 +730,7 @@ private struct HeroBackdropBridge: View {
             HomeView(
                 viewModel: HomeViewModel(),
                 genreShelves: GenreShelvesViewModel(),
+                affinityShelves: AffinityShelvesViewModel(),
                 ui: HomeUIState(),
                 isEligible: true,
             )
@@ -700,6 +742,7 @@ private struct HeroBackdropBridge: View {
             HomeView(
                 viewModel: HomeViewModel(),
                 genreShelves: GenreShelvesViewModel(),
+                affinityShelves: AffinityShelvesViewModel(),
                 ui: HomeUIState(),
                 isEligible: true,
             )
@@ -711,6 +754,7 @@ private struct HeroBackdropBridge: View {
             HomeView(
                 viewModel: HomeViewModel(),
                 genreShelves: GenreShelvesViewModel(),
+                affinityShelves: AffinityShelvesViewModel(),
                 ui: HomeUIState(),
                 isEligible: true,
             )
@@ -722,6 +766,7 @@ private struct HeroBackdropBridge: View {
             HomeView(
                 viewModel: HomeViewModel(),
                 genreShelves: GenreShelvesViewModel(),
+                affinityShelves: AffinityShelvesViewModel(),
                 ui: HomeUIState(),
                 isEligible: true,
             )
@@ -733,6 +778,7 @@ private struct HeroBackdropBridge: View {
             HomeView(
                 viewModel: HomeViewModel(),
                 genreShelves: GenreShelvesViewModel(),
+                affinityShelves: AffinityShelvesViewModel(),
                 ui: HomeUIState(),
                 isEligible: true,
             )

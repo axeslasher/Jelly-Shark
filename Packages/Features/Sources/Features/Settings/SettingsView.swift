@@ -67,6 +67,15 @@ public struct SettingsView: View {
                     )
                 }
                 .tint(theme.accent)
+
+                Toggle(isOn: $homePreferences.showsDiscoveryShelves) {
+                    settingsRow(
+                        icon: "sparkles",
+                        title: "Picks for you",
+                        subtitle: "Shelves built from what you've watched and favorited",
+                    )
+                }
+                .tint(theme.accent)
             } header: {
                 sectionHeader("Home")
             }

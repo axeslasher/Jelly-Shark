@@ -18,6 +18,12 @@ enum HomeShelfRowID {
     static func genre(_ libraryID: String) -> String {
         "genre-\(libraryID)"
     }
+
+    /// One affinity shelf (#86), keyed by the shelf kind's identity rather
+    /// than a library id — affinity rows are not per-library.
+    static func affinity(_ identity: String) -> String {
+        "affinity-\(identity)"
+    }
 }
 
 /// Decides where tvOS focus lands when the focused shelf card disappears

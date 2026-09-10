@@ -9,7 +9,10 @@ public enum RefreshReason: Int, Comparable, Sendable {
     case watchState
     /// The above, plus Recently Added and the genre shelves.
     case libraries
-    /// The above, plus the affinity seam (#86). Nothing posts this yet.
+    /// The above, plus a full rebuild. Nothing posts this, by design: #86's
+    /// affinity shelves gate on a fingerprint of their own inputs rather
+    /// than on a tier, and `.deep` means a `forceReload()` that re-curates
+    /// the hero and restarts the marquee.
     case deep
 
     public static func < (lhs: Self, rhs: Self) -> Bool {

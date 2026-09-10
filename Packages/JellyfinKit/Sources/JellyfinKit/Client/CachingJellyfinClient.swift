@@ -397,6 +397,41 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         try await ingesting(inner.getRecentlyPlayedEpisodes(limit: limit))
     }
 
+    // MARK: - Affinity
+
+    // Four item-returning fetches ingest user data like every other list
+    // fetch; none is persisted as a snapshot, because affinity owns its own
+    // cache key. `favoritedPeople` and `affinityItemCount` return no
+    // `MediaItem`, so there is nothing to ingest.
+
+    public func recentlyPlayedMoviesForAffinity(limit: Int) async throws -> [MediaItem] {
+        try await ingesting(inner.recentlyPlayedMoviesForAffinity(limit: limit))
+    }
+
+    public func recentlyPlayedEpisodesForAffinity(limit: Int) async throws -> [MediaItem] {
+        try await ingesting(inner.recentlyPlayedEpisodesForAffinity(limit: limit))
+    }
+
+    public func itemsForAffinity(ids: [String]) async throws -> [MediaItem] {
+        try await ingesting(inner.itemsForAffinity(ids: ids))
+    }
+
+    public func favoritedItemsForAffinity(limit: Int) async throws -> [MediaItem] {
+        try await ingesting(inner.favoritedItemsForAffinity(limit: limit))
+    }
+
+    public func favoritedPeople() async throws -> [Person] {
+        try await inner.favoritedPeople()
+    }
+
+    public func affinityItemCount(
+        genres: Set<String>,
+        decades: Set<Int>,
+        personID: String?,
+    ) async throws -> Int? {
+        try await inner.affinityItemCount(genres: genres, decades: decades, personID: personID)
+    }
+
     // MARK: - User data
 
     // With a live overlay, mark* acknowledgments are committed (and

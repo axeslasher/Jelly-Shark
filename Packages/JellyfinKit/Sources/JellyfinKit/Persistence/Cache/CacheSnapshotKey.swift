@@ -29,6 +29,13 @@ public enum CacheSnapshotKey: Sendable, Hashable {
     /// profile's picks can't render on another's cards.
     case genreBackdrops
 
+    /// Home's affinity shelves (#86): the derived shelf set, the fingerprint
+    /// of the inputs that produced it, and the cached denominators. Its own
+    /// key rather than a section of `CachedHomeSnapshot`, because that blob
+    /// is deliberately all-or-nothing for the focus engine and affinity is
+    /// derived decoration that must be allowed to be absent.
+    case affinityShelves
+
     var storageKey: String {
         switch self {
         case .currentUser: "currentUser"
@@ -37,6 +44,7 @@ public enum CacheSnapshotKey: Sendable, Hashable {
         case let .libraryFirstPage(libraryID): "libraryFirstPage\u{1F}\(libraryID ?? "")"
         case let .mediaDetail(itemID): "mediaDetail\u{1F}\(itemID)"
         case .genreBackdrops: "genreBackdrops"
+        case .affinityShelves: "affinityShelves"
         }
     }
 
@@ -50,6 +58,7 @@ public enum CacheSnapshotKey: Sendable, Hashable {
         case .libraryFirstPage: "libraryFirstPage"
         case .mediaDetail: Self.mediaDetailKind
         case .genreBackdrops: "genreBackdrops"
+        case .affinityShelves: "affinityShelves"
         }
     }
 

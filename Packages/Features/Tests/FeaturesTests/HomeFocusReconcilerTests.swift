@@ -120,4 +120,45 @@ struct HomeFocusReconcilerTests {
         )
         #expect(next == ShelfFocusID(row: "latest-new", item: "n1"))
     }
+
+    @Test func affinityRowIdsAreDistinctFromGenreAndLatest() {
+        #expect(HomeShelfRowID.affinity("genre|Horror") == "affinity-genre|Horror")
+        #expect(HomeShelfRowID.affinity("x") != HomeShelfRowID.genre("x"))
+        #expect(HomeShelfRowID.affinity("x") != HomeShelfRowID.latest("x"))
+    }
+
+    /// A recompute can remove the focused row underneath the viewer. Rows are
+    /// matched by id, and focus anchors on the nearest surviving row above.
+    @Test func aVanishedAffinityRowLandsFocusInTheRowAbove() {
+        let before: [HomeFocusReconciler.Row] = [
+            .init(id: HomeShelfRowID.latest("lib"), itemIDs: ["a", "b"]),
+            .init(id: HomeShelfRowID.affinity("genre|Horror"), itemIDs: ["h1", "h2"]),
+            .init(id: HomeShelfRowID.genre("lib"), itemIDs: ["Horror"]),
+        ]
+        let after: [HomeFocusReconciler.Row] = [
+            .init(id: HomeShelfRowID.latest("lib"), itemIDs: ["a", "b"]),
+            .init(id: HomeShelfRowID.genre("lib"), itemIDs: ["Horror"]),
+        ]
+        let landed = HomeFocusReconciler.nextFocus(
+            before: before,
+            after: after,
+            vanished: ShelfFocusID(row: HomeShelfRowID.affinity("genre|Horror"), item: "h2"),
+        )
+        #expect(landed?.row == HomeShelfRowID.latest("lib"))
+    }
+
+    @Test func aSurvivingAffinityRowKeepsFocusInItself() {
+        let before: [HomeFocusReconciler.Row] = [
+            .init(id: HomeShelfRowID.affinity("genre|Horror"), itemIDs: ["h1", "h2", "h3"]),
+        ]
+        let after: [HomeFocusReconciler.Row] = [
+            .init(id: HomeShelfRowID.affinity("genre|Horror"), itemIDs: ["h1", "h3"]),
+        ]
+        let landed = HomeFocusReconciler.nextFocus(
+            before: before,
+            after: after,
+            vanished: ShelfFocusID(row: HomeShelfRowID.affinity("genre|Horror"), item: "h2"),
+        )
+        #expect(landed?.row == HomeShelfRowID.affinity("genre|Horror"))
+    }
 }

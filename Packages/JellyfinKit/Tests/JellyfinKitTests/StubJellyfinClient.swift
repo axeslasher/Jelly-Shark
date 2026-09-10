@@ -285,4 +285,37 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     func getRecentlyPlayedEpisodes(limit _: Int?) async throws -> [MediaItem] {
         fatalError("unstubbed getRecentlyPlayedEpisodes")
     }
+
+    // MARK: - Affinity
+
+    var affinityMoviesResult: [MediaItem] = []
+    var affinityEpisodesResult: [MediaItem] = []
+    var affinityItemsResult: [MediaItem] = []
+    var affinityFavoritesResult: [MediaItem] = []
+    var favoritedPeopleResult: [Person] = []
+    var affinityCountResult: Int?
+
+    func recentlyPlayedMoviesForAffinity(limit _: Int) async throws -> [MediaItem] {
+        affinityMoviesResult
+    }
+
+    func recentlyPlayedEpisodesForAffinity(limit _: Int) async throws -> [MediaItem] {
+        affinityEpisodesResult
+    }
+
+    func itemsForAffinity(ids _: [String]) async throws -> [MediaItem] {
+        affinityItemsResult
+    }
+
+    func favoritedItemsForAffinity(limit _: Int) async throws -> [MediaItem] {
+        affinityFavoritesResult
+    }
+
+    func favoritedPeople() async throws -> [Person] {
+        favoritedPeopleResult
+    }
+
+    func affinityItemCount(genres _: Set<String>, decades _: Set<Int>, personID _: String?) async throws -> Int? {
+        affinityCountResult
+    }
 }
