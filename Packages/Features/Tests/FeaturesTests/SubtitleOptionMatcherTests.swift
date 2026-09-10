@@ -30,6 +30,38 @@ struct SubtitleOptionMatcherTests {
         #expect(SubtitleOptionMatcher.match(target, in: options) == 1)
     }
 
+    @Test("The playlist NAME identifies a track when displayName cannot")
+    func titleMatchBeatsFormulatedDisplayName() {
+        // Device shape: AVFoundation formulates both labels as "English"
+        // (AVMediaSelectionOption.displayName "takes into account … locale
+        // properties to formulate a string"), but keeps the playlist's NAME
+        // in the option's common metadata.
+        let options = [
+            LegibleOption(
+                position: 0,
+                displayName: "English",
+                title: "English - SUBRIP",
+                languageTag: "en",
+            ),
+            LegibleOption(
+                position: 1,
+                displayName: "English",
+                title: "SDH - English - Hearing Impaired - SUBRIP",
+                languageTag: "en",
+            ),
+        ]
+        let streams = [
+            stream(index: 2, displayTitle: "English - SUBRIP", language: "eng"),
+            stream(index: 3, displayTitle: "SDH - English - Hearing Impaired - SUBRIP", language: "eng"),
+        ]
+
+        #expect(SubtitleOptionMatcher.match(streams[1], in: options) == 1)
+        // And the reverse direction, which is what reconciliation runs
+        #expect(SubtitleOptionMatcher.streamIndex(
+            forSelectedPosition: 0, streams: streams, options: options,
+        ) == 2)
+    }
+
     @Test("Unambiguous language match bridges ISO-639-2 and BCP-47")
     func languageMatch() {
         let options = [

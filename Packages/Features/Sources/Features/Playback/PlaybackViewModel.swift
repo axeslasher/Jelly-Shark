@@ -1219,10 +1219,21 @@ public final class PlaybackViewModel {
                 \(index.map(String.init) ?? "off", privacy: .public)
                 """)
             case .unmatched:
+                // Both refusal modes — several streams claiming the position,
+                // and none claiming it — print identically without the inputs,
+                // so the warning could not be acted on. Name what was compared.
+                let optionSummary = engine.legibleOptions
+                    .map { "\($0.position):\"\($0.displayName)\"" }
+                    .joined(separator: ", ")
+                let streamSummary = (mediaSource?.subtitleStreams ?? [])
+                    .map { "\($0.index):\"\($0.displayTitle ?? "?")\"" }
+                    .joined(separator: ", ")
                 Self.logger.warning("""
                 [subtitle] native selection at position \
                 \(position.map(String.init) ?? "nil", privacy: .public) \
-                matches no stream — menu and reporting may be stale
+                matches no stream — menu and reporting may be stale \
+                (options: [\(optionSummary, privacy: .public)] \
+                streams: [\(streamSummary, privacy: .public)])
                 """)
             case .noChange:
                 break
