@@ -1,6 +1,8 @@
 import Foundation
 import JellyfinKit
 import Observation
+import os
+import SwiftUI
 
 /// Loads the Home screen's sections and drives the hero carousel.
 ///
@@ -12,6 +14,30 @@ import Observation
 @Observable
 @MainActor
 public final class HomeViewModel {
+    /// What a load or refresh actually did, for the refresh coordinator.
+    ///
+    /// Three cases, not two: a superseded or cancelled pass neither succeeded
+    /// nor failed, and conflating it with either would let the drain start
+    /// its floor on work that never happened, or re-post a reason forever
+    /// (#236 § 8).
+    public enum LoadOutcome: Equatable, Sendable {
+        case succeeded
+        case failed
+        /// A newer generation took over, or the task was cancelled.
+        case superseded
+
+        /// Merge sibling loaders: any real failure wins, then supersession.
+        static func combine(_ outcomes: [LoadOutcome]) -> LoadOutcome {
+            if outcomes.contains(.failed) {
+                return .failed
+            }
+            if outcomes.contains(.superseded) {
+                return .superseded
+            }
+            return .succeeded
+        }
+    }
+
     /// Lifecycle of one Home section, independent of its siblings.
     public enum SectionStatus: Equatable {
         case loading
@@ -36,6 +62,10 @@ public final class HomeViewModel {
             library.id
         }
     }
+
+    /// Every network fan-out, so a device round can count them from the
+    /// console. Generation numbers and counts only; never an item.
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Home")
 
     /// Why the hero auto-advance timer is currently held.
     public enum PauseReason: Hashable {
@@ -101,10 +131,19 @@ public final class HomeViewModel {
     /// interleave with resume items in the merged lane.
     public private(set) var seriesLastPlayedDates: [String: Date] = [:]
 
+    /// Set by `HomeView` from `accessibilityReduceMotion` — the view model
+    /// has no `@Environment`, so the view forwards the accessibility
+    /// setting for the shelf membership transactions below.
+    public var reducesMotion = false
+
     public private(set) var resumeStatus: SectionStatus = .loading
     public private(set) var nextUpStatus: SectionStatus = .loading
     /// Covers the hero curation source and the per-library rows.
     public private(set) var latestStatus: SectionStatus = .loading
+
+    /// What the last `load()`'s network fan-out did. `load()` returns whether
+    /// it *ran*; this says how it went.
+    public private(set) var lastLoadOutcome: LoadOutcome = .succeeded
 
     public private(set) var heroIndex = 0
 
@@ -213,6 +252,12 @@ public final class HomeViewModel {
     /// (mirrors `GenreShelvesViewModel`); a failed load re-arms this so the
     /// next appearance retries.
     private var needsLoad = true
+    /// Whether a load has ever settled for the current client. Distinct from
+    /// "the raw arrays are empty", which is content state: an empty server, a
+    /// hero-only Home, and a genre-shelves-only Home have all completed a
+    /// load and must never be told they are still finding out (#236 § 3).
+    /// Reset only when the client is genuinely replaced.
+    private var hasCompletedInitialLoad = false
     private var loadGeneration = 0
 
     private var advanceTask: Task<Void, Never>?
@@ -245,14 +290,22 @@ public final class HomeViewModel {
         if let userState {
             self.userState = userState
         }
+        if clientChanged {
+            hasCompletedInitialLoad = false
+        }
         if clientChanged || librariesChanged {
             needsLoad = true
         }
     }
 
     /// Load every section. No-op once loaded for the current client + libraries.
-    public func load() async {
-        guard needsLoad else { return }
+    ///
+    /// - Returns: whether the load actually ran. A caller that stamps a
+    ///   refresh timestamp needs this — a guarded-out call refreshed nothing
+    ///   and must not mark the page fresh (#236 § 8).
+    @discardableResult
+    public func load() async -> Bool {
+        guard needsLoad else { return false }
         needsLoad = false
         loadGeneration += 1
         let generation = loadGeneration
@@ -277,7 +330,11 @@ public final class HomeViewModel {
             nextUpStatus = .loading
             latestStatus = .loading
             heroIndex = 0
-            return
+            // Not `.succeeded`: nothing was confirmed, so a caller reading
+            // this must not stamp the refresh floor. Leaving it stale handed
+            // `completeInitialLoad(succeeded:)` the enum's default.
+            lastLoadOutcome = .superseded
+            return true
         }
 
         // Hydrate the whole page from the last successful load before any
@@ -290,7 +347,7 @@ public final class HomeViewModel {
         var hydratedHeroIds: [String]?
         if rawResumeItems.isEmpty, rawNextUpItems.isEmpty, rawLatestShelves.isEmpty, let cache {
             let snapshot = await cache.read(CachedHomeSnapshot.self, key: .homeSnapshot)
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration else { return true }
             if let snapshot {
                 rawResumeItems = snapshot.resume
                 rawNextUpItems = snapshot.nextUp
@@ -305,30 +362,44 @@ public final class HomeViewModel {
                 hydratedHeroIds = rawHeroItems.map(\.id)
             }
         }
-        if hydratedHeroIds == nil {
+        // Park at `.loading` only before the first load has ever settled.
+        // A warm reload — a library change, a floor re-check, a deep refresh
+        // — has an established page and must reconcile in place; flipping
+        // these makes `isInitialLoading` true and swaps the whole page for
+        // the skeleton, which is what the #237 device review saw (#236 § 3).
+        if hydratedHeroIds == nil, !hasCompletedInitialLoad {
             resumeStatus = .loading
             nextUpStatus = .loading
             latestStatus = .loading
         }
 
+        Self.logger.debug("load fan-out, generation \(generation, privacy: .public), \(self.libraries.count, privacy: .public) libraries")
         // Sections resolve independently: each records its own items + status
         // as it completes, so a slow shelf never blocks its siblings.
-        async let resume: Void = loadResume(client: client, generation: generation)
-        async let nextUp: Void = loadNextUp(client: client, generation: generation)
-        async let latest: Void = loadLatest(client: client, generation: generation)
-        async let watchDates: Void = loadWatchDates(client: client, generation: generation)
-        _ = await (resume, nextUp, latest, watchDates)
+        async let resumeOutcome = loadResume(client: client, generation: generation)
+        async let nextUpOutcome = loadNextUp(client: client, generation: generation)
+        async let latestOutcome = loadLatest(client: client, generation: generation)
+        async let watchDatesOutcome = loadWatchDates(client: client, generation: generation)
+        let outcomes = await [resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome]
+        let outcome = LoadOutcome.combine(outcomes)
+        Self.logger.debug("load generation \(generation, privacy: .public) outcomes resume/nextUp/latest/watchDates \(outcomes.map { String(describing: $0) }.joined(separator: "/"), privacy: .public); current generation \(self.loadGeneration, privacy: .public), cancelled \(Task.isCancelled, privacy: .public)")
 
-        guard generation == loadGeneration else { return }
+        guard generation == loadGeneration else { return true }
         if Task.isCancelled {
             needsLoad = true
-            return
+            return true
         }
+        // Only a pass that actually ran to completion for the current
+        // generation gets to record an outcome — a superseded or cancelled
+        // pass returning here would let a stale `.succeeded` overwrite the
+        // real result the still-running generation is about to report.
+        lastLoadOutcome = outcome
 
         // On a hydrated load the previous ids are the snapshot's, so an
         // unchanged hero set skips the index reset and the marquee doesn't
         // yank under the viewer mid-reconcile.
         settleHero(client: client, previousHeroIds: hydratedHeroIds)
+        hasCompletedInitialLoad = true
 
         if resumeStatus.isFailed || nextUpStatus.isFailed || latestStatus.isFailed {
             needsLoad = true
@@ -348,6 +419,14 @@ public final class HomeViewModel {
                 key: .homeSnapshot,
             )
         }
+        return true
+    }
+
+    /// Re-arm the once-only guard so the next `load()` runs. Separate from
+    /// `attach()`, which only re-arms on a changed client or library-id list
+    /// — a refresh often has neither.
+    public func forceReload() {
+        needsLoad = true
     }
 
     /// Re-run only the sections currently marked `.failed` — the action
@@ -419,15 +498,44 @@ public final class HomeViewModel {
     /// next-up move, and so do the unwatched counts on Recently Added's series
     /// cards. Reloading that row outright would rebuild the hero and flicker
     /// the marquee, so its counts are patched in place instead.
-    public func refreshUserState() async {
-        guard let client else { return }
+    ///
+    /// - Returns: what the network actually did. The coordinator needs this,
+    ///   not the UI's status: a warm-refresh failure keeps the lane
+    ///   `.loaded` on purpose (#236 § 8.3).
+    @discardableResult
+    public func refreshUserState() async -> LoadOutcome {
+        guard let client else { return .failed }
         loadGeneration += 1
         let generation = loadGeneration
-        async let resume: Void = loadResume(client: client, generation: generation)
-        async let nextUp: Void = loadNextUp(client: client, generation: generation)
-        async let watchDates: Void = loadWatchDates(client: client, generation: generation)
-        async let counts: Void = refreshContainerCounts(client: client, generation: generation)
-        _ = await (resume, nextUp, watchDates, counts)
+        Self.logger.debug("refreshUserState fan-out, generation \(generation, privacy: .public)")
+        async let resume = loadResume(client: client, generation: generation)
+        async let nextUp = loadNextUp(client: client, generation: generation)
+        async let watchDates = loadWatchDates(client: client, generation: generation)
+        async let counts = refreshContainerCounts(client: client, generation: generation)
+        return await LoadOutcome.combine([resume, nextUp, watchDates, counts])
+    }
+
+    /// Refresh at the given depth, reporting what the network actually did.
+    ///
+    /// The tiers are cumulative and deliberately asymmetric: `watchState`
+    /// leaves the hero alone, because a silent re-check that restarts the
+    /// marquee under an idle viewer reads as a bug rather than freshness.
+    public func refresh(_ reason: RefreshReason) async -> LoadOutcome {
+        Self.logger.debug("refresh \(String(describing: reason), privacy: .public)")
+        switch reason {
+        case .watchState:
+            return await refreshUserState()
+        case .libraries, .deep:
+            forceReload()
+            // `load()` increments the generation first thing, so this is the
+            // pass we are about to run. A superseded or cancelled pass leaves
+            // `lastLoadOutcome` to the generation that won, and reporting that
+            // value here would let the drain retire a reason nothing served.
+            let generation = loadGeneration + 1
+            await load()
+            guard generation == loadGeneration, !Task.isCancelled else { return .superseded }
+            return lastLoadOutcome
+        }
     }
 
     /// Re-read the unwatched counts behind Recently Added's series cards.
@@ -437,25 +545,37 @@ public final class HomeViewModel {
     /// the user-state overlay (keyed by item id) never reaches its parent.
     /// One `ids=` fetch covers every series on screen; the cards keep their
     /// identity, so nothing re-enters the focus engine.
-    private func refreshContainerCounts(client: any JellyfinClientProtocol, generation: Int) async {
+    @discardableResult
+    private func refreshContainerCounts(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
         let ids = Set(rawLatestShelves.flatMap(\.items).filter { $0.type == .series }.map(\.id))
-        guard !ids.isEmpty,
-              let refreshed = try? await client.getMediaItems(ids: Array(ids)),
-              generation == loadGeneration
-        else { return }
+        // Nothing was attempted, so nothing failed.
+        guard !ids.isEmpty else { return .succeeded }
 
-        let counts = Dictionary(
-            refreshed.map { ($0.id, $0.userData?.unplayedItemCount) },
-            uniquingKeysWith: { first, _ in first },
-        )
-        rawLatestShelves = rawLatestShelves.map { shelf in
-            LibraryShelf(
-                library: shelf.library,
-                items: shelf.items.map { item in
-                    guard let count = counts[item.id] else { return item }
-                    return item.settingUnplayedItemCount(count)
-                },
+        do {
+            let refreshed = try await client.getMediaItems(ids: Array(ids))
+            guard generation == loadGeneration else { return .superseded }
+
+            let counts = Dictionary(
+                refreshed.map { ($0.id, $0.userData?.unplayedItemCount) },
+                uniquingKeysWith: { first, _ in first },
             )
+            rawLatestShelves = rawLatestShelves.map { shelf in
+                LibraryShelf(
+                    library: shelf.library,
+                    items: shelf.items.map { item in
+                        guard let count = counts[item.id] else { return item }
+                        return item.settingUnplayedItemCount(count)
+                    },
+                )
+            }
+            return .succeeded
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("refreshContainerCounts failed: \(PlaybackLog.error(error), privacy: .public)")
+            // The badges just stay stale — no `SectionStatus` covers counts,
+            // so this never blanks anything — but the coordinator still needs
+            // to know the fetch genuinely failed.
+            return .failed
         }
     }
 
@@ -464,9 +584,9 @@ public final class HomeViewModel {
     /// Apply a watched-state change from a shelf card's menu through the
     /// user-state overlay (every section showing the item updates at once);
     /// the server's acknowledgment commits it, a failure withdraws it.
-    /// Success also refreshes the lanes whose membership the change moves
-    /// (a watched item leaves Continue Watching; a watched episode advances
-    /// Next Up).
+    /// The confirm bumps `UserStateStore.mutationRevision`, which RootView
+    /// turns into a `.watchState` post — so lane membership is reconciled by
+    /// the drain, once, rather than by a second fan-out from here (#236).
     public func setPlayed(_ played: Bool, for item: MediaItem) async {
         guard let client else { return }
         let token = userState.beginPlayedToggle(itemID: item.id, target: played)
@@ -477,7 +597,6 @@ public final class HomeViewModel {
                 try await client.markUnplayed(itemId: item.id)
             }
             userState.confirm(token)
-            await refreshUserState()
         } catch {
             userState.revert(token)
         }
@@ -501,14 +620,32 @@ public final class HomeViewModel {
         }
     }
 
-    private func loadResume(client: any JellyfinClientProtocol, generation: Int) async {
+    /// Animates a shelf membership write with the exit curve, unless Reduce
+    /// Motion is on — one branch, so the three loaders below don't each
+    /// repeat the check.
+    private func animatingMembership(_ body: () -> Void) {
+        if reducesMotion {
+            body()
+        } else {
+            withAnimation(HomeHeroMotion.shelfItemExit) {
+                body()
+            }
+        }
+    }
+
+    @discardableResult
+    private func loadResume(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
         do {
             let items = try await client.getResumeItems(limit: Self.resumeLimit)
-            guard generation == loadGeneration else { return }
-            rawResumeItems = items
+            guard generation == loadGeneration else { return .superseded }
+            animatingMembership {
+                rawResumeItems = items
+            }
             resumeStatus = items.isEmpty ? .empty : .loaded
+            return .succeeded
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadResume failed: \(PlaybackLog.error(error), privacy: .public)")
             if rawResumeItems.isEmpty {
                 resumeStatus = .failed(error.localizedDescription)
             } else {
@@ -519,17 +656,23 @@ public final class HomeViewModel {
                 resumeStatus = .loaded
                 needsLoad = true
             }
+            return .failed
         }
     }
 
-    private func loadNextUp(client: any JellyfinClientProtocol, generation: Int) async {
+    @discardableResult
+    private func loadNextUp(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
         do {
             let items = try await client.getNextUpItems(limit: Self.nextUpLimit)
-            guard generation == loadGeneration else { return }
-            rawNextUpItems = items
+            guard generation == loadGeneration else { return .superseded }
+            animatingMembership {
+                rawNextUpItems = items
+            }
             nextUpStatus = items.isEmpty ? .empty : .loaded
+            return .succeeded
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadNextUp failed: \(PlaybackLog.error(error), privacy: .public)")
             if rawNextUpItems.isEmpty {
                 nextUpStatus = .failed(error.localizedDescription)
             } else {
@@ -537,22 +680,31 @@ public final class HomeViewModel {
                 nextUpStatus = .loaded
                 needsLoad = true
             }
+            return .failed
         }
     }
 
-    private func loadWatchDates(client: any JellyfinClientProtocol, generation: Int) async {
-        // `try?` is enrichment, not swallowing: the dates only order the
-        // merged lane, so a failure keeps the previous (possibly stale) map —
-        // stale dates still order better than sinking every next-up item to
-        // the bottom — and never fails a section.
-        guard let episodes = try? await client.getRecentlyPlayedEpisodes(limit: Self.recentlyPlayedLimit) else {
-            return
+    @discardableResult
+    private func loadWatchDates(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
+        do {
+            let episodes = try await client.getRecentlyPlayedEpisodes(limit: Self.recentlyPlayedLimit)
+            guard generation == loadGeneration else { return .superseded }
+            seriesLastPlayedDates = Self.seriesLastPlayedMap(from: episodes)
+            return .succeeded
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadWatchDates failed: \(PlaybackLog.error(error), privacy: .public)")
+            // A failure keeps the previous (possibly stale) map — stale
+            // dates still order better than sinking every next-up item to
+            // the bottom — and never fails a section (there's no
+            // `SectionStatus` for this), but the coordinator still needs to
+            // know the fetch genuinely failed.
+            return .failed
         }
-        guard generation == loadGeneration else { return }
-        seriesLastPlayedDates = Self.seriesLastPlayedMap(from: episodes)
     }
 
-    private func loadLatest(client: any JellyfinClientProtocol, generation: Int) async {
+    @discardableResult
+    private func loadLatest(client: any JellyfinClientProtocol, generation: Int) async -> LoadOutcome {
         async let heroSource = client.getLatestItems(libraryId: nil, limit: Self.heroSourceLimit)
 
         let capable = libraries.filter { library in
@@ -581,10 +733,20 @@ public final class HomeViewModel {
             curated.removeAll { $0.type == .episode && !primaryIds.contains($0.id) && !Self.hasSeriesBackdrop($0) }
             curated = await Self.resolvingHeroMediaSources(in: curated, client: client)
 
-            guard generation == loadGeneration else { return }
-            rawLatestShelves = shelves
-            episodePrimaryHeroIds = primaryIds
-            rawHeroItems = curated
+            guard generation == loadGeneration else { return .superseded }
+            animatingMembership {
+                rawLatestShelves = shelves
+            }
+            // The hero has its own motion (page-turn choreography, not shelf
+            // membership) and must not inherit the shelf-exit transaction
+            // just because it lands in the same main-actor tick as the write
+            // above.
+            var heroTransaction = Transaction()
+            heroTransaction.disablesAnimations = true
+            withTransaction(heroTransaction) {
+                episodePrimaryHeroIds = primaryIds
+                rawHeroItems = curated
+            }
             // A partial library failure still shows what survived, but re-arms
             // the load so the next appearance refetches the missing rows.
             // (`load()` only ever re-sets this to true at its end, so setting
@@ -599,8 +761,16 @@ public final class HomeViewModel {
             } else {
                 latestStatus = (shelves.isEmpty && rawHeroItems.isEmpty) ? .empty : .loaded
             }
+            // A surviving-shelves failure keeps `latestStatus` at `.loaded` on
+            // purpose (a rendered row must not blank), so the outcome has to
+            // carry what the status deliberately hides.
+            if let shelfError {
+                Self.logger.debug("loadLatest partial failure: \(shelfError, privacy: .public)")
+            }
+            return shelfError != nil ? .failed : .succeeded
         } catch {
-            guard generation == loadGeneration else { return }
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("loadLatest failed: \(PlaybackLog.error(error), privacy: .public)")
             if rawLatestShelves.isEmpty, rawHeroItems.isEmpty {
                 rawLatestShelves = shelves
                 episodePrimaryHeroIds = []
@@ -618,7 +788,18 @@ public final class HomeViewModel {
                 latestStatus = .loaded
                 needsLoad = true
             }
+            // The hero source itself failed here, regardless of how the
+            // per-library shelves fared — always a real failure, never
+            // superseded (the guard above already routed that case out).
+            return .failed
         }
+    }
+
+    /// A cancelled request is a cancellation, not a failure: the task was
+    /// superseded (a newer load, a dismissed page), and painting "Couldn't
+    /// load" over it reads as data loss (#236 § 8.4).
+    private nonisolated static func isCancellation(_ error: any Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled
     }
 
     /// One "Recently Added" fetch per qualifying library, concurrently, in
@@ -641,6 +822,9 @@ public final class HomeViewModel {
                         }
                         return (index, .success(items.isEmpty ? nil : LibraryShelf(library: library, items: items)))
                     } catch {
+                        // A cancelled request is a cancellation, not a failure;
+                        // drop it so the caller doesn't record it as `firstError`.
+                        guard !Task.isCancelled, !Self.isCancellation(error) else { return (index, .success(nil)) }
                         return (index, .failure(error))
                     }
                 }
@@ -990,6 +1174,18 @@ public final class HomeViewModel {
             }
         default:
             break
+        }
+    }
+}
+
+extension HomeViewModel.LoadOutcome {
+    /// A superseded pass is a cancellation as far as the drain is
+    /// concerned: nothing was confirmed, and the reason is still owed.
+    var drainOutcome: ContentRefreshCoordinator.DrainOutcome {
+        switch self {
+        case .succeeded: .succeeded
+        case .failed: .failed
+        case .superseded: .cancelled
         }
     }
 }

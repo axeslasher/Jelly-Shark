@@ -26,6 +26,7 @@ import SwiftUI
                 .environment(ServerConnectionViewModel())
                 .environment(HomePreferences())
                 .environment(PlaybackPreferences())
+                .environment(ContentRefreshCoordinator())
         }
     }
 

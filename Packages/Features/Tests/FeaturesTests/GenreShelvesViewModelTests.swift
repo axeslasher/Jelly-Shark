@@ -31,6 +31,30 @@ struct GenreShelvesViewModelTests {
         #expect(viewModel.status == .loaded)
     }
 
+    @Test("A cancelled reload keeps the last good shelves and reports superseded")
+    func cancelledReloadKeepsShelves() async {
+        let client = MockJellyfinClient()
+        client.filterOptionsResult = .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.shelves.count == 1)
+
+        // Home torn down mid-drain: the drain task is cancelled while the
+        // rebuild's requests are in flight.
+        let gate = AsyncGate()
+        client.filterOptionsDelay = { try? await gate.wait() }
+        let reload = Task { await viewModel.reload() }
+        try? await Task.sleep(for: .milliseconds(20))
+        reload.cancel()
+        await gate.open()
+        let outcome = await reload.value
+
+        #expect(outcome == .superseded)
+        #expect(viewModel.shelves.count == 1)
+        #expect(viewModel.status == .loaded)
+    }
+
     @Test("No genre-capable libraries yields no shelves")
     func noGenreLibraries() async {
         let client = MockJellyfinClient()
@@ -198,5 +222,51 @@ struct GenreShelvesViewModelTests {
         await viewModel.load()
 
         #expect(viewModel.shelves.first?.genres == ["Horror"])
+    }
+
+    // MARK: - Reload
+
+    @Test("reload() rebuilds even though load() is guarded")
+    func reloadRebuildsEvenThoughLoadIsGuarded() async {
+        let client = MockJellyfinClient()
+        var calls = 0
+        client.filterOptionsHandler = { _ in
+            calls += 1
+            return .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        }
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+
+        await viewModel.load()
+        #expect(calls == 1)
+        // The once-only guard is right for an appearance and wrong for a
+        // library change, where the shelves are exactly what went stale.
+        await viewModel.load()
+        #expect(calls == 1)
+        #expect(await viewModel.reload() == .succeeded)
+        #expect(calls == 2)
+    }
+
+    @Test("reload() recovers after a partial failure")
+    func reloadRecoversAfterAPartialFailure() async {
+        let client = MockJellyfinClient()
+        struct Boom: Error {}
+        client.filterOptionsHandler = { libraryId in
+            libraryId == "movies"
+                ? .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+                : .failure(Boom())
+        }
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies, Self.moreMovies])
+        await viewModel.load()
+
+        // While one library is still failing, reload reports the failure.
+        #expect(await viewModel.reload() == .failed)
+
+        // When all libraries succeed, a subsequent reload recovers.
+        client.filterOptionsHandler = { _ in
+            .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        }
+        #expect(await viewModel.reload() == .succeeded)
     }
 }

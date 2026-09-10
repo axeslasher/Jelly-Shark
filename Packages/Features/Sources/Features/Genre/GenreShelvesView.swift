@@ -13,12 +13,21 @@ struct GenreShelvesView: View {
     let status: GenreShelvesViewModel.Status
     /// Retry action for the failed notice (`GenreShelvesViewModel.retry`).
     let onRetry: () -> Void
+    /// Genre rows are focusable like any other shelf, so they carry the
+    /// page's focus binding too — the reconciler walks them when a card
+    /// vanishes and must not skip them (#236 § 11.3). Nil in previews.
+    var focusBinding: FocusState<ShelfFocusID?>.Binding?
 
     var body: some View {
         ForEach(shelves) { shelf in
             ContentShelf("Browse \(shelf.library.name) by genre", icon: shelf.library.systemImageName) {
                 ForEach(shelf.genres, id: \.self) { genre in
-                    GenreCardView(library: shelf.library, genre: genre)
+                    GenreCardView(
+                        library: shelf.library,
+                        genre: genre,
+                        focusBinding: focusBinding,
+                        focusID: ShelfFocusID(row: HomeShelfRowID.genre(shelf.library.id), item: genre),
+                    )
                 }
             }
         }

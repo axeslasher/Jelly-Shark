@@ -363,6 +363,18 @@ public final class ServerConnectionViewModel {
     /// Awaits completion of the in-flight library count fetch, if any.
     ///
     /// Intended for tests to observe results deterministically without sleeping.
+    /// Re-read the server's library list and publish it only if the set of
+    /// ids changed. Nothing on the client can observe a library added on the
+    /// server, so Home's idle-floor drain asks here; `RootView` turns a
+    /// changed list into a `.libraries` refresh (#236).
+    public func refreshLibraries() async {
+        guard state == .connected, let client else { return }
+        guard let fresh = try? await client.getLibraries().filter(\.isBrowsable) else { return }
+        guard Set(fresh.map(\.id)) != Set(libraries.map(\.id)) else { return }
+        libraries = fresh
+        refreshLibraryCounts(client: client)
+    }
+
     func awaitLibraryCounts() async {
         await countsTask?.value
     }

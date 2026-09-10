@@ -119,6 +119,27 @@ struct ServerConnectionViewModelTests {
         #expect(viewModel.libraryCounts.isEmpty)
     }
 
+    @Test("refreshLibraries publishes a changed library set and ignores an unchanged one")
+    func refreshLibrariesPublishesChanges() async {
+        let store = InMemorySessionStore()
+        store.session = makeSavedSession()
+        let client = MockJellyfinClient()
+        client.librariesResult = .success([Library(id: "lib-1", name: "Movies")])
+        let viewModel = makeViewModel(store: store, client: client, recorder: FactoryRecorder())
+        viewModel.attach(session: AppSession())
+        await viewModel.restoreSession()
+        #expect(viewModel.libraries.count == 1)
+
+        // Same set: nothing published, so RootView posts no `.libraries`.
+        await viewModel.refreshLibraries()
+        #expect(viewModel.libraries.count == 1)
+
+        // A library added on the server is the case no producer can see.
+        client.librariesResult = .success([Library(id: "lib-1", name: "Movies"), Library(id: "lib-2", name: "Shows")])
+        await viewModel.refreshLibraries()
+        #expect(viewModel.libraries.map(\.id) == ["lib-1", "lib-2"])
+    }
+
     @Test("restoreSession with no saved session is a no-op")
     func restoreWithoutSavedSession() async {
         let store = InMemorySessionStore()

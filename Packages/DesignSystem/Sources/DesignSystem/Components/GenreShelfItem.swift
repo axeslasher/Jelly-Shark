@@ -22,6 +22,11 @@ public struct GenreShelfItem<Value: Hashable>: View {
     private let width: CGFloat
     private let value: Value
     private let onBackdropUnavailable: (@MainActor () -> Void)?
+    /// Reports which card owns focus, so a page can restore it after its
+    /// view is rebuilt — tvOS tears a tab's view down on switch (#236 § 3).
+    /// Optional: shelves that need not survive a rebuild pass nothing.
+    private let focusBinding: FocusState<ShelfFocusID?>.Binding?
+    private let focusID: ShelfFocusID?
 
     // TODO(#21): expose the blob-styling knobs as init params (defaulted) so call
     // sites can tune them without editing the component — blob count, drift
@@ -34,6 +39,8 @@ public struct GenreShelfItem<Value: Hashable>: View {
         width: CGFloat = 664,
         value: Value,
         onBackdropUnavailable: (@MainActor () -> Void)? = nil,
+        focusBinding: FocusState<ShelfFocusID?>.Binding? = nil,
+        focusID: ShelfFocusID? = nil,
     ) {
         self.title = title
         self.backdropURL = backdropURL
@@ -41,6 +48,8 @@ public struct GenreShelfItem<Value: Hashable>: View {
         self.width = width
         self.value = value
         self.onBackdropUnavailable = onBackdropUnavailable
+        self.focusBinding = focusBinding
+        self.focusID = focusID
     }
 
     public var body: some View {
@@ -61,6 +70,7 @@ public struct GenreShelfItem<Value: Hashable>: View {
         #else
         .buttonStyle(CardButtonStyle())
         #endif
+        .modifier(OptionalShelfFocus(binding: focusBinding, id: focusID))
     }
 }
 

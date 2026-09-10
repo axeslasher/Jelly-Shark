@@ -351,7 +351,12 @@ public final class MediaDetailViewModel {
     /// when the player dismisses; unlike `load()`, nothing is blanked or
     /// re-statused first, so already-rendered shelves don't flash — which is
     /// why `try?` is right here: a failed refresh keeps the last-good data.
-    public func refreshAfterPlayback() async {
+    /// - Parameter coordinator: awaited before any fetch, so the page never
+    ///   reads server state while the final progress report is still landing
+    ///   — the "Resume plays from zero" race (#236 § 6). Optional so previews
+    ///   and tests can skip it.
+    public func refreshAfterPlayback(waitingFor coordinator: ContentRefreshCoordinator? = nil) async {
+        await coordinator?.awaitPlaybackReporting()
         guard let client, let item else { return }
         loadGeneration += 1
         let generation = loadGeneration

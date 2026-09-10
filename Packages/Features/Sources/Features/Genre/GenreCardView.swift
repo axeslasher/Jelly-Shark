@@ -21,6 +21,12 @@ struct GenreCardView: View {
 
     let library: Library?
     let genre: String
+    /// Passed together or not at all, and kept constant for the card's life
+    /// — flipping the pair rebuilds the subtree and drops focus. Home's
+    /// genre rows supply both; a detail page's unscoped cards supply
+    /// neither.
+    var focusBinding: FocusState<ShelfFocusID?>.Binding?
+    var focusID: ShelfFocusID?
 
     @State private var viewModel = GenreCardViewModel()
 
@@ -33,6 +39,8 @@ struct GenreCardView: View {
             onBackdropUnavailable: {
                 Task { await viewModel.backdropUnavailable(client: session.client, library: library, genre: genre) }
             },
+            focusBinding: focusBinding,
+            focusID: focusID,
         )
         // Undecorated on purpose: the remembered backdrop is the intended
         // presentation and cycling is a bonus, so this stays a power-user

@@ -124,4 +124,17 @@ enum HomeHeroMotion {
     /// How far below the hero's bottom edge the dots hang (into the
     /// hero→shelves gap).
     static let dotsDrop: CGFloat = 42
+
+    // MARK: Shelf membership motion
+
+    /// Shelf membership motion. Separate constants for exit, insert, and row
+    /// collapse because they carry different meanings: an item leaving
+    /// Continue Watching is a completed thing settling out, a new Next Up
+    /// episode is an offer appearing, and a row emptying is the page
+    /// reflowing. Symmetric curves would make all three read as one twitch.
+    ///
+    /// Feel values — bisect on device. Nothing in this repo can measure them.
+    static let shelfItemExit: Animation = .smooth(duration: 0.45)
+    static let shelfItemInsert: Animation = .snappy(duration: 0.3)
+    static let shelfRowCollapse: Animation = .smooth(duration: 0.5)
 }

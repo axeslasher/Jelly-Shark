@@ -11,6 +11,7 @@ import SwiftUI
 /// resume, no next-up) simply doesn't render — that's normal, not an error.
 struct HomeShelvesSection: View {
     @Environment(AppSession.self) private var session
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Single-lane vs two-shelf rendering — the user's Settings choice.
     /// Both sets of inputs are always supplied (the view model loads every
@@ -38,6 +39,12 @@ struct HomeShelvesSection: View {
     /// Retry action for the failed-section notices; re-runs just the failed
     /// loads (`HomeViewModel.retryFailedSections`).
     let onRetry: () -> Void
+    /// Reports which card owns focus so Home can restore it after tvOS
+    /// rebuilds the tab, and so the reconciler can name a survivor when a
+    /// card vanishes under the viewer (#236 § 11). Nil in previews; the
+    /// nil-ness must stay constant for a card's life, or the focus
+    /// modifier's branch flips and rebuilds the subtree.
+    var focusBinding: FocusState<ShelfFocusID?>.Binding?
 
     /// Measured section width, feeding the shared poster-column math so
     /// Recently Added posters match the library grid's card size exactly.
@@ -51,6 +58,34 @@ struct HomeShelvesSection: View {
         return PosterGridLayout.columns(for: sectionWidth - SpacingTokens.screenPadding * 2).width
     }
 
+    /// Shelf-item membership transition: fade + scale down on removal, fade +
+    /// scale up on insertion, each carrying its own curve so an arriving
+    /// card can't inherit a departing card's timing (see `HomeHeroMotion`).
+    /// Suppressed under Reduce Motion, matching the hero and shelf-caption
+    /// animations elsewhere on Home.
+    private var itemTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.92))
+                .animation(reduceMotion ? nil : HomeHeroMotion.shelfItemInsert),
+            removal: .opacity
+                .combined(with: .scale(scale: 0.88))
+                .animation(reduceMotion ? nil : HomeHeroMotion.shelfItemExit),
+        )
+    }
+
+    /// Row-collapse transition for a shelf that can empty out and leave the
+    /// column entirely.
+    /// Fade only. With `.move(edge: .top)` a row removed under focus travelled
+    /// for the length of the collapse while focus was being moved off it,
+    /// and the tvOS reveal scroll followed the moving row — the whole page
+    /// slid up out of view before focus recovered (#236 device round, spec
+    /// § 11.4). The rows below still rise through the ambient transaction.
+    private var rowTransition: AnyTransition {
+        .opacity
+            .animation(reduceMotion ? nil : HomeHeroMotion.shelfRowCollapse)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             if mergesContinueWatching {
@@ -60,11 +95,18 @@ struct HomeShelvesSection: View {
                 if !mergedItems.isEmpty {
                     ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(mergedItems) { item in
-                            item.playableShelfItem(client: session.client, menu: menu(item)) {
+                            item.playableShelfItem(
+                                client: session.client,
+                                menu: menu(item),
+                                focusBinding: focusBinding,
+                                focusID: ShelfFocusID(row: HomeShelfRowID.continueWatching, item: item.id),
+                            ) {
                                 onPlay(item)
                             }
+                            .transition(itemTransition)
                         }
                     }
+                    .transition(rowTransition)
                 } else if mergedStatus.isFailed {
                     FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
                 }
@@ -72,11 +114,18 @@ struct HomeShelvesSection: View {
                 if !resumeItems.isEmpty {
                     ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(resumeItems) { item in
-                            item.playableShelfItem(client: session.client, menu: menu(item)) {
+                            item.playableShelfItem(
+                                client: session.client,
+                                menu: menu(item),
+                                focusBinding: focusBinding,
+                                focusID: ShelfFocusID(row: HomeShelfRowID.continueWatching, item: item.id),
+                            ) {
                                 onPlay(item)
                             }
+                            .transition(itemTransition)
                         }
                     }
+                    .transition(rowTransition)
                 } else if resumeStatus.isFailed {
                     FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
                 }
@@ -84,11 +133,18 @@ struct HomeShelvesSection: View {
                 if !nextUpItems.isEmpty {
                     ContentShelf("Next Up", icon: "play.square.stack") {
                         ForEach(nextUpItems) { item in
-                            item.playableShelfItem(client: session.client, menu: menu(item)) {
+                            item.playableShelfItem(
+                                client: session.client,
+                                menu: menu(item),
+                                focusBinding: focusBinding,
+                                focusID: ShelfFocusID(row: HomeShelfRowID.nextUp, item: item.id),
+                            ) {
                                 onPlay(item)
                             }
+                            .transition(itemTransition)
                         }
                     }
+                    .transition(rowTransition)
                 } else if nextUpStatus.isFailed {
                     FailedShelfNotice(title: "Next Up", icon: "play.square.stack", retry: onRetry)
                 }
@@ -102,9 +158,13 @@ struct HomeShelvesSection: View {
                             width: posterWidth,
                             countBadge: unwatchedBadge(for: item, in: shelf),
                             menu: menu(item),
+                            focusBinding: focusBinding,
+                            focusID: ShelfFocusID(row: HomeShelfRowID.latest(shelf.library.id), item: item.id),
                         )
+                        .transition(itemTransition)
                     }
                 }
+                .transition(rowTransition)
             }
             if latestShelves.isEmpty, latestStatus.isFailed {
                 FailedShelfNotice(title: "Recently Added", icon: "sparkles", retry: onRetry)

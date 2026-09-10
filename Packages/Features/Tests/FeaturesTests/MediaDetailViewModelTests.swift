@@ -456,6 +456,49 @@ struct MediaDetailViewModelTests {
         #expect(viewModel.nextUpEpisode?.id == "e2")
     }
 
+    @Test func refreshAfterPlaybackWaitsForTheStoppedReport() async {
+        let client = MockJellyfinClient()
+        let coordinator = ContentRefreshCoordinator()
+        let viewModel = MediaDetailViewModel()
+        await load(viewModel, client: client, item: movie("m-1"))
+        let requestsBeforeRefresh = client.mediaItemRequests.count
+
+        // Arm the probe only AFTER the initial load, or the load's own fetch
+        // trips it and the test passes or fails for the wrong reason.
+        var reportLanded = false
+        var fetchedBeforeReport = false
+        client.mediaItemHandler = { _ in
+            if !reportLanded {
+                fetchedBeforeReport = true
+            }
+            return MediaItem(id: "m-1", name: "m-1", type: .movie)
+        }
+
+        let ticket = coordinator.registerPlayback()
+        let gate = AsyncGate()
+        coordinator.finishPlayback(ticket, stop: Task {
+            try? await gate.wait()
+            // The client isn't actor-isolated, so without this handicap the
+            // fetch and this resumption race on raw dispatch order and a
+            // missing `awaitPlaybackReporting()` call can still pass. The
+            // sleep guarantees the report lands well after the gate opens,
+            // so a regression is always observed as an early fetch.
+            try? await Task.sleep(for: .milliseconds(50))
+            reportLanded = true
+        })
+
+        let refresh = Task { await viewModel.refreshAfterPlayback(waitingFor: coordinator) }
+        await gate.open()
+        await refresh.value
+
+        #expect(fetchedBeforeReport == false)
+        // Positive control: a refresh that returned early (e.g. the `guard
+        // let client, let item` short-circuiting) would trivially satisfy
+        // the above without ever calling the client.
+        #expect(reportLanded == true)
+        #expect(client.mediaItemRequests.count > requestsBeforeRefresh)
+    }
+
     // MARK: - User-data actions (episode card menus)
 
     @Test("setPlayed persists and refreshes next-up like a finished playback")

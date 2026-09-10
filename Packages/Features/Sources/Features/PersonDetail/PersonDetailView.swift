@@ -14,6 +14,7 @@ public struct PersonDetailView: View {
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
     @Environment(PlaybackPreferences.self) private var playbackPreferences
+    @Environment(ContentRefreshCoordinator.self) private var refreshCoordinator
 
     let member: CastMember
 
@@ -95,7 +96,7 @@ public struct PersonDetailView: View {
             viewModel.attach(client: session.client, member: member, userState: session.userState)
             await viewModel.load()
         }
-        .fullScreenCover(item: $playbackItem) { target in
+        .fullScreenCover(item: $playbackItem, onDismiss: { refreshCoordinator.post(.watchState) }) { target in
             if let client = session.client {
                 PlaybackContainerView(
                     client: client,

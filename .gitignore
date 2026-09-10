@@ -34,3 +34,9 @@ Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.woff2
 # Exception: Atkinson Hyperlegible Next is OFL-licensed (redistribution allowed),
 # so it IS committed to the repo.
 !Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/AtkinsonHyperlegibleNext-*.ttf
+
+# Superpowers session artifacts: brainstorming specs and implementation plans.
+# Scratch, not documentation — the issue body is the durable record of a
+# decision, and docs/ here is current-state-only. A dated proposal would rot
+# beside it.
+docs/superpowers/

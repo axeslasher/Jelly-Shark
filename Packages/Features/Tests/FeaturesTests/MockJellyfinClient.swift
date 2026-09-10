@@ -148,11 +148,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
+    var filterOptionsDelay: (() async -> Void)?
+
     func getLibraryFilterOptions(libraryId: String?, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
         let result: Result<LibraryFilterOptions, Error> = lock.withLock {
             filterOptionsRequests.append(libraryId)
             return libraryId.flatMap { filterOptionsHandler?($0) } ?? filterOptionsResult
         }
+        await filterOptionsDelay?()
         return try result.get()
     }
 
@@ -175,11 +178,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Optional gate awaited before serving an item detail, for in-flight tests
     var mediaItemDelay: (() async -> Void)?
 
+    /// Overrides `mediaItemsById` when set — for tests that need to observe
+    /// *when* the fetch ran (relative to some other signal) rather than pin
+    /// its content.
+    var mediaItemHandler: ((String) -> MediaItem)?
+
     func getMediaItem(itemId: String) async throws -> MediaItem {
         let result: Result<MediaItem, Error> = lock.withLock {
             mediaItemRequests.append(itemId)
             if mediaItemFailureIds.contains(itemId) {
                 return .failure(APIError.generic("Item fetch failed"))
+            }
+            if let mediaItemHandler {
+                return .success(mediaItemHandler(itemId))
             }
             return .success(mediaItemsById[itemId] ?? MediaItem(id: itemId, name: "Item", type: .movie))
         }
@@ -280,9 +291,21 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     var resumeItemsResult: Result<[MediaItem], Error> = .success([])
+    /// Optional handler for getResumeItems; nil falls back to resumeItemsResult
+    var resumeItemsHandler: (@Sendable (Int?) -> Result<[MediaItem], Error>)?
+    /// Optional gate awaited before serving resume items, for in-flight tests
+    var resumeItemsDelay: (() async -> Void)?
+    /// Resume fetches by requested limit, in arrival order; lock-guarded
+    /// because a refresh fans this out alongside the other lane loaders
+    var resumeItemsRequests: [Int?] = []
 
-    func getResumeItems(limit _: Int?) async throws -> [MediaItem] {
-        try resumeItemsResult.get()
+    func getResumeItems(limit: Int?) async throws -> [MediaItem] {
+        let result: Result<[MediaItem], Error> = lock.withLock {
+            resumeItemsRequests.append(limit)
+            return resumeItemsHandler?(limit) ?? resumeItemsResult
+        }
+        await resumeItemsDelay?()
+        return try result.get()
     }
 
     /// Latest requests by libraryId (nil = the global hero-source fetch);
@@ -517,9 +540,12 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     var nextUpItemsResult: Result<[MediaItem], Error> = .success([])
+    /// Optional gate awaited before serving next-up items, for in-flight tests
+    var nextUpItemsDelay: (() async -> Void)?
 
     func getNextUpItems(limit _: Int?) async throws -> [MediaItem] {
-        try nextUpItemsResult.get()
+        await nextUpItemsDelay?()
+        return try nextUpItemsResult.get()
     }
 
     var recentlyPlayedEpisodesResult: Result<[MediaItem], Error> = .success([])

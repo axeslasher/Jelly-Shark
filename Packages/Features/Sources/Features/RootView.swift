@@ -12,6 +12,17 @@ public struct RootView: View {
     @State private var playbackPreferences = PlaybackPreferences()
     @State private var selectedTab: AppTab = .home
 
+    /// Home's view models and UI state, owned here (not in `HomeView`) so
+    /// tvOS tearing the tab down on switch loses neither the fetched data
+    /// nor where the viewer was standing in it (#236 § 3).
+    @State private var homeViewModel = HomeViewModel()
+    @State private var genreShelves = GenreShelvesViewModel()
+    @State private var homeUI = HomeUIState()
+
+    /// Collects the reasons Home's content has gone stale, so a mutation
+    /// made anywhere in the app is not lost while Home is off screen.
+    @State private var refreshCoordinator = ContentRefreshCoordinator()
+
     /// One navigation path per tab, owned here (the tab views don't create
     /// their own `NavigationStack`s) so `tabSelection` can pop a stack to root
     /// before a tab switch. All pushes are value-based for the same reason —
@@ -25,6 +36,10 @@ public struct RootView: View {
         /// wakes last and clobbers the selection ("I pressed Search but it
         /// jumped to Home").
         @State private var pendingSwitch: Task<Void, Never>?
+
+        /// Distinguishes the current deferred switch from a superseded one, so a
+        /// late task cannot clear a newer switch's handle.
+        @State private var switchGeneration = 0
     #endif
 
     /// - Parameter cache: the app's metadata cache; nil (previews, tests)
@@ -60,10 +75,16 @@ public struct RootView: View {
                     let outgoing = selectedTab
                     if let path = tabPaths[outgoing], !path.isEmpty {
                         tabPaths[outgoing] = NavigationPath()
+                        switchGeneration &+= 1
+                        let generation = switchGeneration
                         pendingSwitch = Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(350))
-                            guard !Task.isCancelled else { return }
+                            try? await Task.sleep(for: Self.popSettle)
+                            guard !Task.isCancelled, generation == switchGeneration else { return }
                             selectedTab = newValue
+                            // Clear the handle so "a switch is in flight" stops being true.
+                            // Guarded by the generation so a stale task cannot clear a newer
+                            // switch's handle out from under it (#236 § 4).
+                            pendingSwitch = nil
                         }
                     } else {
                         selectedTab = newValue
@@ -79,6 +100,36 @@ public struct RootView: View {
         Binding(
             get: { tabPaths[tab, default: NavigationPath()] },
             set: { tabPaths[tab] = $0 },
+        )
+    }
+
+    /// Whether Home may refresh right now.
+    ///
+    /// Three conditions, not one. `tabSelection` empties the outgoing tab's
+    /// path synchronously and only commits `selectedTab` after the settle, so
+    /// leaving Home with a detail pushed makes the first two transiently true
+    /// while the viewer is on their way out. `pendingSwitch` is precisely the
+    /// "we are leaving" signal, so it closes that window at the source
+    /// (#236 § 4). Task 7 makes a completed switch clear the handle; without
+    /// that this is false forever after the first deferred switch.
+    static func homeRefreshEligible(
+        selectedTab: AppTab,
+        homePathIsEmpty: Bool,
+        hasPendingSwitch: Bool,
+    ) -> Bool {
+        selectedTab == .home && homePathIsEmpty && !hasPendingSwitch
+    }
+
+    private var isHomeRefreshEligible: Bool {
+        #if os(tvOS)
+            let switching = pendingSwitch != nil
+        #else
+            let switching = false
+        #endif
+        return Self.homeRefreshEligible(
+            selectedTab: selectedTab,
+            homePathIsEmpty: tabPaths[.home, default: NavigationPath()].isEmpty,
+            hasPendingSwitch: switching,
         )
     }
 
@@ -149,6 +200,7 @@ public struct RootView: View {
         .environment(connectionViewModel)
         .environment(homePreferences)
         .environment(playbackPreferences)
+        .environment(refreshCoordinator)
         .environment(\.openSettings, OpenSettingsAction {
             tabSelection.wrappedValue = .settings
         })
@@ -178,6 +230,95 @@ public struct RootView: View {
                 }
             #endif
         }
+        // Home's initial load is owned here, with the view models, not by
+        // `HomeView`'s own `.task`. On device that task was cancelled about a
+        // second after connect, mid fan-out, and never restarted, so every
+        // cold launch's first load died and the drain redid it (#236 device
+        // row 1). The likely trigger — unverified — is the tab set changing as
+        // libraries and counts arrive, which rebuilds the tab's content and
+        // cancels the old task while its replacement finds `needsLoad` already
+        // consumed. A task on the root survives whatever the tab does.
+        .task(id: session.isConnected) {
+            // The update that flips `isConnected` can also change `libraries`
+            // (restore publishes the cached list, then the fresh one, in one
+            // turn). Its `onChange` posts `.libraries` in that same update, and
+            // this task's first synchronous stretch can run before it does —
+            // reading a revision the post has not reached yet, so the load
+            // covers the change but never retires the reason, and the drain
+            // redoes the whole load (#236 device row 1). One yield lets every
+            // handler of this update land before anything here is read.
+            await Task.yield()
+            guard !Task.isCancelled else { return }
+            homeViewModel.attach(
+                client: session.client,
+                libraries: connectionViewModel.libraries,
+                cache: session.scopedCache,
+                userState: session.userState,
+            )
+            // Read before the load: reasons raised before it are covered by
+            // it, anything posted while it ran is not (§ 8).
+            let revisionAtStart = refreshCoordinator.revision
+            let didLoad = await homeViewModel.load()
+            genreShelves.attach(client: session.client, libraries: connectionViewModel.libraries)
+            await genreShelves.load()
+
+            // Flipping this is what releases Home's drain — so only a pass
+            // that had a client may flip it. This task runs once with
+            // `isConnected == false` on every cold launch; that pass takes
+            // `load()`'s no-client branch and settles nothing, and opening the
+            // gate for it let the drain supersede the real load (#236 § 8.1).
+            refreshCoordinator.isInitialLoadSettled = session.client != nil
+            // Seed the floor only if a load actually ran; stamping the
+            // timestamp for a guarded-out call would disable the
+            // external-client fallback forever.
+            guard didLoad else { return }
+            refreshCoordinator.completeInitialLoad(
+                revisionAtStart: revisionAtStart,
+                succeeded: homeViewModel.lastLoadOutcome == .succeeded,
+                now: .now,
+            )
+        }
+        // The hoisted page state now outlives a disconnect, so a signed-out
+        // Home no longer gets torn down with it: without this, a sign-out
+        // while Home is unmounted (tvOS tears its view down on tab switch)
+        // leaves the previous user's shelves sitting in `homeViewModel` and
+        // `genreShelves`, and the next signed-in user's Home paints them for
+        // one frame before its own load replaces them (#236 § 14.1). A fresh
+        // instance carries no data to leak and no scroll/focus memory to
+        // misapply to a different library. Not gated on the *new* session
+        // connecting — nothing observes `isConnected` going true here, so
+        // resetting exactly on the false edge is enough and avoids
+        // discarding a session's state while it's still active.
+        .onChange(of: session.isConnected) { _, isConnected in
+            guard !isConnected else { return }
+            homeViewModel = HomeViewModel()
+            genreShelves = GenreShelvesViewModel()
+            homeUI = HomeUIState()
+            // The fresh page owes its own initial load, and the § 8.1 gate is
+            // what keeps a drain from superseding it.
+            refreshCoordinator.isInitialLoadSettled = false
+            // The disconnect tore down any presented player with it, so a
+            // ticket registered at presentation may never get its stop task.
+            // One of those blocks every future drain for the process.
+            refreshCoordinator.clearPlaybackSessions()
+        }
+        // `UserStateStore` lives in JellyfinKit and cannot know about the
+        // coordinator, so it publishes a counter and the translation happens at
+        // the Features boundary. Every successful mutation from every surface
+        // already funnels through `confirm`/`recordPosition`, so no producer can
+        // silently forget to post (#236 § 5.2). Not only surfaces:
+        // `UserStateStore`'s position guard expires about 30s after playback
+        // and bumps the revision too, so that expiry posts as well.
+        .onChange(of: isHomeRefreshEligible) { _, eligible in
+            // Marks a real departure, so Home's next appearance can tell a
+            // tab return from an in-place rebuild (see `HomeUIState`).
+            if !eligible {
+                homeUI.wasOffScreen = true
+            }
+        }
+        .onChange(of: session.userState.mutationRevision) { _, _ in
+            refreshCoordinator.post(.watchState)
+        }
         // If the selected library tab disappears (disconnect clears the list,
         // or the server removed a library), fall back to Home rather than
         // leaving the selection pointing at a tab that no longer exists.
@@ -185,6 +326,7 @@ public struct RootView: View {
         // The `.libraries` arm is unreachable on tvOS, which never selects that
         // tab; it costs that platform nothing and keeps the rule in one place.
         .onChange(of: connectionViewModel.libraries) { _, libraries in
+            refreshCoordinator.post(.libraries)
             switch selectedTab {
             case let .library(id) where !libraries.contains(where: { $0.id == id }):
                 selectedTab = .home
@@ -224,7 +366,12 @@ public struct RootView: View {
     private var homeTab: some TabContent<AppTab> {
         Tab("Home", systemImage: "house.fill", value: AppTab.home) {
             navigationRoot(for: .home) {
-                HomeView()
+                HomeView(
+                    viewModel: homeViewModel,
+                    genreShelves: genreShelves,
+                    ui: homeUI,
+                    isEligible: isHomeRefreshEligible,
+                )
             }
         }
     }
@@ -330,6 +477,14 @@ public struct RootView: View {
         /// not. Bisect against hardware if it ever needs revisiting — nothing
         /// in this repo can measure it.
         private static let searchHeadroom: CGFloat = SpacingTokens.sm
+
+        /// How long to let the outgoing stack's pop land before committing a
+        /// tab switch. Named so anything that must outlast the settle derives
+        /// from it rather than restating the number (#236 § 4).
+        ///
+        /// Tuned on an Apple TV. Bisect against hardware if it needs
+        /// revisiting; nothing in this repo can measure it.
+        static let popSettle: Duration = .milliseconds(350)
     #endif
 
     private var settingsTab: some TabContent<AppTab> {

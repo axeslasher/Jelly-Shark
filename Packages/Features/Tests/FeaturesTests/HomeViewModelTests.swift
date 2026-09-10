@@ -390,6 +390,17 @@ struct HomeViewModelTests {
         #expect(viewModel.isEmptyServer == false)
     }
 
+    @Test("A nil-client load reports .superseded, not the enum's default")
+    func nilClientReportsSuperseded() async {
+        // `completeInitialLoad(succeeded:)` reads this. Leaving it stale
+        // reported success for a load that fetched nothing, which stamped
+        // the refresh floor and suppressed the external-client fallback.
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: nil)
+
+        #expect(viewModel.lastLoadOutcome == .superseded)
+    }
+
     @Test("First paint waits for every section — a fast shelf can't beat the hero")
     func initialLoadingHoldsUntilAllSectionsSettle() async {
         // Regression: `isInitialLoading` used to clear when ANY section
@@ -514,6 +525,105 @@ struct HomeViewModelTests {
         await load(viewModel, client: client)
 
         #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
+    }
+
+    // MARK: - Warm reload lifecycle (#236 § 3)
+
+    @Test func aWarmReloadNeverReturnsToTheSkeleton() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isInitialLoading == false)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        viewModel.forceReload()
+        let second = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        // Content is rendered; a reload must reconcile in place. Parking at
+        // `.loading` here is what put the skeleton back over a warm page.
+        #expect(viewModel.isInitialLoading == false)
+        await gate.open()
+        await second.value
+    }
+
+    @Test func anEmptyServerStaysEmptyAcrossAReloadRatherThanFlashingTheSkeleton() async {
+        // Emptiness is content state, not lifecycle state: this Home has
+        // completed a load and has nothing to show, which is not the same as
+        // "still finding out".
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isEmptyServer)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        viewModel.forceReload()
+        let second = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(viewModel.isInitialLoading == false)
+        await gate.open()
+        await second.value
+    }
+
+    @Test func aColdLoadStillShowsTheSkeletonExactlyOnce() async {
+        let clientA = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: clientA, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isInitialLoading == false)
+
+        // A genuinely new connection re-arms the skeleton (#236 § 3):
+        // `attach` resets `hasCompletedInitialLoad` only on a changed
+        // client, so this second cold load — unlike a warm reload of the
+        // same client above — must show the skeleton again exactly once.
+        let clientB = MockJellyfinClient()
+        let gate = AsyncGate()
+        clientB.resumeItemsDelay = { try? await gate.wait() }
+        viewModel.attach(client: clientB, libraries: [Self.movies])
+        let second = Task { await viewModel.load() }
+        await waitUntil { viewModel.isInitialLoading }
+        #expect(viewModel.isInitialLoading)
+        await gate.open()
+        await second.value
+        #expect(viewModel.isInitialLoading == false)
+    }
+
+    @Test func aLibraryListChangeDoesNotBringBackTheSkeleton() async {
+        // Acceptance criterion 5: adding/removing a library is a warm
+        // reload, not a new session — `attach` only re-arms the skeleton on
+        // a changed client (see the test above), never on a library-list
+        // change alone.
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.isInitialLoading == false)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let latestRequestsBefore = client.latestItemsRequests.count
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        let second = Task { await viewModel.load() }
+        // Resume itself is gated, so wait on the ungated latest fetch firing
+        // instead — proof the load is genuinely in flight, not merely
+        // scheduled.
+        await waitUntil { client.latestItemsRequests.count > latestRequestsBefore }
+        #expect(viewModel.isInitialLoading == false)
+        await gate.open()
+        await second.value
+    }
+
+    @Test func loadReportsWhetherItActuallyRan() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        #expect(await viewModel.load())
+        // Guarded out: the caller must be able to tell, or it will stamp the
+        // refresh floor for a load that never happened.
+        #expect(await viewModel.load() == false)
     }
 
     // MARK: - Hero fallback
@@ -658,6 +768,24 @@ struct HomeViewModelTests {
         await load(viewModel, client: client, libraries: [Self.shows])
 
         #expect(viewModel.latestShelves.first?.items.map(\.id) == ["e1"])
+    }
+
+    @Test func aPartialRecentlyAddedFailureIsReportedAsFailure() async {
+        // `loadLatest` keeps `.loaded` when some shelves survived, so the
+        // status says "fine" while one library's row is stale.
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            switch libraryId {
+            case nil: .success([movie("hero-1")])
+            case "movies": .success([movie("latest-1")])
+            default: .failure(APIError.networkError("offline"))
+            }
+        }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies, Self.shows])
+        await viewModel.load()
+        #expect(viewModel.latestStatus == .loaded)
+        #expect(viewModel.lastLoadOutcome == .failed)
     }
 
     // MARK: - Hero paging
@@ -949,6 +1077,26 @@ struct HomeViewModelTests {
         #expect(client.mediaItemsRequests.count == before)
     }
 
+    @Test func refreshUserStateReportsFailureEvenWhenTheLaneKeepsItsContent() async {
+        let client = MockJellyfinClient()
+        // Built here, not inside the handler: `resumeItemsHandler` is
+        // `@Sendable` and runs off the main actor, but `movie(_:)` inherits
+        // this suite's @MainActor isolation.
+        let resumeItem = movie("resume-1")
+        client.resumeItemsHandler = { _ in .success([resumeItem]) }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        struct Boom: Error {}
+        client.resumeItemsHandler = { _ in .failure(Boom()) }
+
+        // The lane deliberately keeps `.loaded` so a rendered row is not
+        // blanked over a refresh failure — so status cannot be the signal.
+        #expect(await viewModel.refreshUserState() == .failed)
+        #expect(viewModel.resumeStatus == .loaded)
+    }
+
     // MARK: - Merged Continue Watching lane
 
     @Test("The merged lane orders a full load by last engagement")
@@ -1084,10 +1232,85 @@ struct HomeViewModelTests {
         #expect(viewModel.mergedContinueWatchingItems.map(\.id) == ["next-1", "resume-1"])
     }
 
+    // MARK: - Cancellation is not failure (#236 § 8.4)
+
+    @Test func aCancelledResumeLoadLeavesNoFailureNotice() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsHandler = { _ in .failure(CancellationError()) }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        // A cancelled request is a cancellation, never "Couldn't load".
+        #expect(viewModel.resumeStatus.isFailed == false)
+    }
+
+    @Test func theDrainOutcomeMappingTreatsSupersessionAsCancellation() {
+        #expect(HomeViewModel.LoadOutcome.succeeded.drainOutcome == .succeeded)
+        #expect(HomeViewModel.LoadOutcome.failed.drainOutcome == .failed)
+        // The whole cancellation story rests on this row: a superseded pass
+        // confirmed nothing, so the reason is still owed. Mapping it to
+        // `.failed` would leave it owed but never wake a drain for it, and
+        // `.succeeded` would stamp the floor for work that never happened.
+        #expect(HomeViewModel.LoadOutcome.superseded.drainOutcome == .cancelled)
+    }
+
+    @Test func aCancelledRefreshIsSupersededNotFailed() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsHandler = { _ in .failure(CancellationError()) }
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        // Neither outcome the drain acts on: a cancelled refresh must not
+        // start the floor, and re-posting for it would spin.
+        #expect(await viewModel.refreshUserState() == .superseded)
+    }
+
+    @Test("Task cancellation leaves no failure in any lane")
+    func taskCancellationLeavesNoFailure() async {
+        // Real clients emit APIError.networkError(URLError(.cancelled).localizedDescription),
+        // not CancellationError. This test verifies the fix works against that shape.
+        let realCancellationError = APIError.networkError(URLError(.cancelled).localizedDescription)
+
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+
+        // Hold all three section loaders at their delay point until after task cancel.
+        client.resumeItemsResult = .failure(realCancellationError)
+        client.nextUpItemsResult = .failure(realCancellationError)
+        client.latestItemsHandler = { _ in .failure(realCancellationError) }
+        client.resumeItemsDelay = { try? await gate.wait() }
+        client.nextUpItemsDelay = { try? await gate.wait() }
+        client.latestItemsDelay = { try? await gate.wait() }
+
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+
+        // Load in a task so we can cancel it mid-flight.
+        let task = Task {
+            await viewModel.load()
+        }
+
+        // Let loaders reach the gate, then cancel the task.
+        try? await Task.sleep(for: .milliseconds(10))
+        task.cancel()
+
+        // Release the gate: the requests that resumed will throw the
+        // cancellation-shaped error after the task saw isCancelled.
+        await gate.open()
+        await task.value
+
+        // No lane paints failure despite the error shape matching a network
+        // error: Task.isCancelled short-circuits the failure path.
+        #expect(viewModel.resumeStatus.isFailed == false)
+        #expect(viewModel.nextUpStatus.isFailed == false)
+        #expect(viewModel.latestStatus.isFailed == false)
+    }
+
     // MARK: - User-data actions (shelf card menus)
 
-    @Test("setPlayed persists, then refreshes lane membership")
-    func setPlayedRefreshesLanes() async {
+    @Test("setPlayed persists and flips the card in place")
+    func setPlayedFlipsTheCard() async {
         let client = MockJellyfinClient()
         let item = movie("resume-1", lastPlayed: day(1))
         client.resumeItemsResult = .success([item])
@@ -1095,14 +1318,68 @@ struct HomeViewModelTests {
         await load(viewModel, client: client)
         #expect(viewModel.resumeItems.map(\.id) == ["resume-1"])
 
-        // Once marked watched the server drops it from resume; the refresh
-        // that follows the successful call applies that membership change.
-        client.resumeItemsResult = .success([])
         await viewModel.setPlayed(true, for: item)
 
         #expect(client.userDataCalls.map(\.action) == ["played"])
         #expect(client.userDataCalls.map(\.itemId) == ["resume-1"])
-        #expect(viewModel.resumeItems.isEmpty)
+        // Lane membership — the watched item leaving Continue Watching —
+        // is the drain's job now, not a second fan-out from here (#236).
+        #expect(viewModel.resumeItems[0].userData?.played == true)
+    }
+
+    @Test func aSupersededLibraryRefreshReportsSupersededNotTheWinnersOutcome() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let first = Task { await viewModel.refresh(.libraries) }
+        try? await Task.sleep(for: .milliseconds(20))
+        // A Retry during the warm refresh starts a newer generation.
+        viewModel.forceReload()
+        let second = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        await gate.open()
+        _ = await second.value
+
+        // The drain must put `.libraries` back, not retire it on the strength
+        // of a pass that never rebuilt Recently Added.
+        #expect(await first.value == .superseded)
+    }
+
+    @Test func setPlayedDoesNotRefreshOnItsOwn() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        let afterLoad = client.resumeItemsRequests.count
+
+        await viewModel.setPlayed(true, for: movie("m-1"))
+
+        // The confirmed toggle bumps `mutationRevision`, RootView posts
+        // `.watchState`, and the drain refreshes once. Refreshing here too
+        // would fan out twice for one toggle.
+        #expect(client.resumeItemsRequests.count == afterLoad)
+    }
+
+    // MARK: - Tiered refresh (#236 § 5.1)
+
+    @Test func aLibrariesRefreshReloadsRecentlyAddedAndAWatchStateOneDoesNot() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        let afterLoad = client.latestItemsRequests.count
+
+        // The shallow tier must not rebuild the hero's source — a silent
+        // re-check that restarts the marquee reads as a bug.
+        _ = await viewModel.refresh(.watchState)
+        #expect(client.latestItemsRequests.count == afterLoad)
+
+        _ = await viewModel.refresh(.libraries)
+        #expect(client.latestItemsRequests.count > afterLoad)
     }
 
     @Test("setPlayed reverts the optimistic flip when the server call fails")
