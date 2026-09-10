@@ -148,11 +148,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
+    var filterOptionsDelay: (() async -> Void)?
+
     func getLibraryFilterOptions(libraryId: String?, itemTypes _: [MediaType]?) async throws -> LibraryFilterOptions {
         let result: Result<LibraryFilterOptions, Error> = lock.withLock {
             filterOptionsRequests.append(libraryId)
             return libraryId.flatMap { filterOptionsHandler?($0) } ?? filterOptionsResult
         }
+        await filterOptionsDelay?()
         return try result.get()
     }
 

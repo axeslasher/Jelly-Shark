@@ -31,6 +31,30 @@ struct GenreShelvesViewModelTests {
         #expect(viewModel.status == .loaded)
     }
 
+    @Test("A cancelled reload keeps the last good shelves and reports superseded")
+    func cancelledReloadKeepsShelves() async {
+        let client = MockJellyfinClient()
+        client.filterOptionsResult = .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.shelves.count == 1)
+
+        // Home torn down mid-drain: the drain task is cancelled while the
+        // rebuild's requests are in flight.
+        let gate = AsyncGate()
+        client.filterOptionsDelay = { try? await gate.wait() }
+        let reload = Task { await viewModel.reload() }
+        try? await Task.sleep(for: .milliseconds(20))
+        reload.cancel()
+        await gate.open()
+        let outcome = await reload.value
+
+        #expect(outcome == .superseded)
+        #expect(viewModel.shelves.count == 1)
+        #expect(viewModel.status == .loaded)
+    }
+
     @Test("No genre-capable libraries yields no shelves")
     func noGenreLibraries() async {
         let client = MockJellyfinClient()

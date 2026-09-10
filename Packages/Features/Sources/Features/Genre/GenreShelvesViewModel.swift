@@ -113,6 +113,13 @@ public final class GenreShelvesViewModel {
             genreLimit: genreLimit,
         )
         guard generation == loadGeneration else { return }
+        // A cancelled pass — Home torn down mid-drain — reports its requests
+        // as ordinary failures, and publishing those would replace the last
+        // good shelves with an empty, failed section. Keep them and re-arm.
+        guard !Task.isCancelled else {
+            needsLoad = true
+            return
+        }
         shelves = built
         hadPartialFailure = firstError != nil
         if let firstError {
@@ -144,7 +151,7 @@ public final class GenreShelvesViewModel {
         needsLoad = true
         let before = loadGeneration
         await load()
-        guard loadGeneration == before + 1 else { return .superseded }
+        guard loadGeneration == before + 1, !Task.isCancelled else { return .superseded }
         // A load that had no client completes at `.loading` — can't build
         // without a client, so that's a failure.
         if status == .loading {
