@@ -18,12 +18,23 @@ public final class HomePreferences {
         }
     }
 
+    /// Show Home's affinity shelves — the rows derived from what you have
+    /// played and favorited (#86). Off removes every affinity row and stops
+    /// its fetches entirely, rather than hiding a result it still paid for.
+    public var showsDiscoveryShelves: Bool {
+        didSet {
+            defaults.set(showsDiscoveryShelves, forKey: Self.discoveryKey)
+        }
+    }
+
     private let defaults: UserDefaults
     private static let mergesKey = "mergesContinueWatching"
+    private static let discoveryKey = "showsDiscoveryShelves"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         // object(forKey:), not bool(forKey:): absence must default to true.
         mergesContinueWatching = defaults.object(forKey: Self.mergesKey) as? Bool ?? true
+        showsDiscoveryShelves = defaults.object(forKey: Self.discoveryKey) as? Bool ?? true
     }
 }

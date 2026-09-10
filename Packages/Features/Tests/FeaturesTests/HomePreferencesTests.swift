@@ -31,4 +31,16 @@ struct HomePreferencesTests {
         second.mergesContinueWatching = true
         #expect(HomePreferences(defaults: defaults).mergesContinueWatching)
     }
+
+    @Test func discoveryShelvesDefaultToOn() {
+        let defaults = UserDefaults(suiteName: "affinity-default-\(UUID().uuidString)")!
+        #expect(HomePreferences(defaults: defaults).showsDiscoveryShelves)
+    }
+
+    @Test func discoveryShelvesPersistWhenTurnedOff() {
+        let suite = "affinity-persist-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        HomePreferences(defaults: defaults).showsDiscoveryShelves = false
+        #expect(!HomePreferences(defaults: defaults).showsDiscoveryShelves)
+    }
 }
