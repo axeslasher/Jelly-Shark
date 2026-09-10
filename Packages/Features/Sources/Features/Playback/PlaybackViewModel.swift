@@ -815,6 +815,12 @@ public final class PlaybackViewModel {
         // survives successive rebuilds.
         sessionResumeTicks = resumeTicks
 
+        // The heartbeat's fallback starts here too. A stall in the first
+        // seconds of a resumed session — before the playhead mirror has its
+        // first tick — would otherwise report position zero to the server
+        // and overwrite the saved resume position with it.
+        lastReportedPositionTicks = resumeTicks
+
         // The old session's delivery lives until its replacement is chosen,
         // exactly as the interposer did before the delivery seam existed
         delivery?.stop()
@@ -1705,14 +1711,20 @@ public final class PlaybackViewModel {
         outage = verdict
 
         let playheadDescription = playhead.map { String(format: "%.1fs", $0) } ?? "none"
-        if let verdict {
+        switch verdict {
+        case .none:
+            Self.logger.info("[stall] recovered after \(failuresBefore) failed reports; playhead \(playheadDescription, privacy: .public)")
+        case .stalled:
+            // Distinct from the reconnecting line: the server is answering,
+            // so a device run reading these can tell "no server" from
+            // "server fine, player parked" without correlating timestamps.
+            Self.logger.warning("[stall] server answering again but playhead still frozen at \(playheadDescription, privacy: .public)")
+        case let .some(verdict):
             Self.logger.warning("""
             [stall] reconnecting (\(String(describing: verdict), privacy: .public)) \
             after \(self.outageMonitor.consecutiveFailures) failed reports; \
             playhead frozen at \(playheadDescription, privacy: .public)
             """)
-        } else {
-            Self.logger.info("[stall] recovered after \(failuresBefore) failed reports; playhead \(playheadDescription, privacy: .public)")
         }
     }
 

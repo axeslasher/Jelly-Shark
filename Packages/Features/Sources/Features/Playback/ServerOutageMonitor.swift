@@ -26,15 +26,37 @@ public enum ServerOutage: Equatable, Sendable {
     /// `[report] progress FAILED` line.
     case unreachable
 
-    /// Classify one failed progress report.
-    static func classify(_ error: any Error) -> ServerOutage {
+    /// The server answers again, but the picture has not moved with it:
+    /// AVPlayer parked on the connection that was severed and never
+    /// re-requests. Device-verified on the directPlay path — a restored
+    /// server left the playhead frozen for the rest of the session while
+    /// every progress report landed.
+    ///
+    /// Reached only from an outage already on screen, never as a first
+    /// verdict: any frozen playhead would otherwise raise it, including
+    /// ordinary buffering.
+    case stalled
+
+    /// Classify one failed progress report, or nil when the failure says
+    /// nothing about reachability.
+    ///
+    /// Only a transport failure and a deliberate server status drive the
+    /// affordance. A revoked token, a 404, or a decoding failure prove
+    /// neither that the connection is lost nor that waiting will fix it,
+    /// and a card promising reconnection would stay up for the rest of the
+    /// session. The two shapes a real outage arrives in are device-verified
+    /// (#188): a severed connection as `networkError`, a booting Jellyfin
+    /// as `serverError(503)`.
+    static func classify(_ error: any Error) -> ServerOutage? {
         switch error {
         case APIError.serverError(statusCode: 503):
             .starting
         case let APIError.serverError(statusCode):
             .serverError(statusCode: statusCode)
-        default:
+        case APIError.networkError:
             .unreachable
+        default:
+            nil
         }
     }
 }
@@ -127,6 +149,44 @@ struct ServerOutageMonitor {
         transportStatus: PlaybackTransportStatus,
     ) -> ServerOutage? {
         let instant = now()
+
+        // Measured against the previous *counted* sample, so a sample the
+        // spacing ignores never becomes the baseline.
+        let moved = playhead != nil && lastPlayhead != nil && playhead != lastPlayhead
+
+        // What is already on screen is re-read before the spacing gate. The
+        // gate exists so two samples inside one tick of the playhead mirror
+        // cannot *raise* a false outage; applying it to a card that is up
+        // leaves it there over a picture that is already moving again.
+        if outage != nil {
+            if moved {
+                // The count survives, exactly as it does below: a seek that
+                // moves the mirror once mid-outage must not buy the session
+                // a fresh threshold before the card can come back.
+                outage = nil
+                lastPlayhead = playhead
+                return nil
+            }
+            if transportStatus == .paused {
+                // The viewer asked for this frozen playhead. The count
+                // survives, so resuming back into a dead server re-raises
+                // on its next sample instead of serving the threshold twice.
+                outage = nil
+                lastPlayhead = playhead
+                return nil
+            }
+            if case .ok = outcome {
+                // Telemetry is back and the picture is not. Clearing here
+                // would leave a frozen frame with no affordance at all, and
+                // "reconnecting" is no longer true, so the card says what is
+                // actually the case. The count survives for the same reason
+                // as above.
+                outage = .stalled
+                lastPlayhead = playhead
+                return outage
+            }
+        }
+
         if let lastSampleAt, instant - lastSampleAt < minimumSampleSpacing {
             return outage
         }
@@ -136,8 +196,6 @@ struct ServerOutageMonitor {
 
         switch outcome {
         case .ok:
-            // The first report that lands ends the outage outright, and the
-            // count with it (the body's first recovery signal)
             consecutiveFailures = 0
             outage = nil
 
@@ -147,17 +205,16 @@ struct ServerOutageMonitor {
                 break
             }
             consecutiveFailures += 1
-            // A playhead that moved since the last sample is the body's
-            // second recovery signal — media is flowing whatever telemetry
-            // says. The failure count is deliberately kept: a session that
-            // freezes again on the next failed sample is still the same
-            // outage and must not wait for the threshold a second time.
+            // A frozen playhead is half the evidence and the count is the
+            // other half. The count is deliberately kept across a clear: a
+            // session that freezes again on the next failed sample is still
+            // the same outage and must not wait for the threshold twice.
             let frozen = playhead != nil && playhead == lastPlayhead
-            let stalled = consecutiveFailures >= stallFailureThreshold && frozen
+            let raises = consecutiveFailures >= stallFailureThreshold && frozen
             // Re-classified on every failing sample, so a server that comes
             // back as 503 while booting updates a banner that started as
             // "unreachable"
-            outage = stalled ? ServerOutage.classify(error) : nil
+            outage = raises ? ServerOutage.classify(error) : nil
         }
 
         return outage

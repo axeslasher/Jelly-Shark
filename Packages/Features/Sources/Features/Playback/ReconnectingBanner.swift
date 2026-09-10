@@ -5,12 +5,11 @@ import SwiftUI
 /// at the top-leading corner naming what the server is doing and how to
 /// leave, over a frame that stays exactly where it froze.
 ///
-/// Passive by design. AVKit keeps retrying underneath — both measured
-/// outages healed on their own — so there is nothing for the viewer to
-/// press except the exit they already have, and the card names it rather
-/// than adding a control: a SwiftUI sibling cannot take focus from a live
-/// `AVPlayerViewController`, and the host this renders in
-/// (`contentOverlayView`) takes no interaction at all.
+/// Passive by design: it reports and carries nothing to press. A SwiftUI
+/// sibling cannot take focus from a live `AVPlayerViewController` and the
+/// host this renders in (`contentOverlayView`) takes no interaction at all,
+/// and there is nothing to offer anyway — AVKit keeps retrying underneath,
+/// and both measured outages healed on their own.
 ///
 /// Takes an optional so the host can stay mounted for the whole session
 /// and let the card animate in and out here, instead of adding and
@@ -79,31 +78,25 @@ extension ServerOutage {
             "Server error (\(statusCode))"
         case .unreachable:
             "Connection lost"
+        case .stalled:
+            "Playback stalled"
         }
     }
 
-    /// What is happening, and how to leave. The exit is named rather than
-    /// offered as a control — see `ReconnectingBanner`.
+    /// What is happening. The card states it and stops — the viewer's exit
+    /// is the one they already know, and spelling it out on every outage
+    /// reads as an instruction where none is needed.
     var detail: String {
-        let status = switch self {
+        switch self {
         case .starting:
             "Playback will resume when it's ready…"
         case .serverError:
             "Retrying…"
         case .unreachable:
             "Reconnecting to the server…"
+        case .stalled:
+            "The server is back, but the video hasn't resumed."
         }
-        return "\(status) \(Self.exitInstruction)"
-    }
-
-    /// The control that ends the session: the remote's Back button on tvOS,
-    /// the player's own close control on visionOS (which has no Back).
-    static var exitInstruction: String {
-        #if os(visionOS)
-            "Close the player to stop."
-        #else
-            "Press Back to stop."
-        #endif
     }
 
     var symbolName: String {
@@ -114,6 +107,8 @@ extension ServerOutage {
             "exclamationmark.triangle.fill"
         case .unreachable:
             "wifi.exclamationmark"
+        case .stalled:
+            "hourglass"
         }
     }
 }
@@ -121,13 +116,14 @@ extension ServerOutage {
 // MARK: - Previews
 
 #if DEBUG
-    /// All three states at once, so a theme's card is judged as a set
+    /// Every state at once, so a theme's card is judged as a set
     private struct ReconnectingBannerSpecimen: View {
         var body: some View {
             VStack(alignment: .leading, spacing: SpacingTokens.lg) {
                 ReconnectingBanner(outage: .unreachable)
                 ReconnectingBanner(outage: .starting)
                 ReconnectingBanner(outage: .serverError(statusCode: 500))
+                ReconnectingBanner(outage: .stalled)
             }
             .frame(maxHeight: .infinity, alignment: .top)
         }

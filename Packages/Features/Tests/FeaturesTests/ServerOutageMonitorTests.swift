@@ -180,7 +180,7 @@ struct ServerOutageMonitorTests {
         #expect(h.monitor.sampleCount == 2)
     }
 
-    @Test("A sample inside the spacing touches nothing and answers with the standing verdict")
+    @Test("A sample inside the spacing raises nothing, but never delays a standing card's change")
     func sampleInsideTheSpacingIsIgnored() {
         var h = Harness()
         h.record(.failed(refused), playhead: 30, transportStatus: .waitingToPlay)
@@ -194,24 +194,49 @@ struct ServerOutageMonitorTests {
         let raised = h.record(.failed(refused), playhead: 30, transportStatus: .waitingToPlay, after: .seconds(10))
         #expect(raised == .unreachable)
 
-        // With the outage standing, an ignored sample still answers with it
+        // The gate holds back evidence that would *raise* a card, never
+        // evidence that changes one already up: a report that lands a
+        // second later is read immediately
         let standing = h.record(.ok, playhead: 30, transportStatus: .waitingToPlay, after: .seconds(1))
-        #expect(standing == .unreachable)
-        #expect(h.monitor.outage == .unreachable)
+        #expect(standing == .stalled)
+        #expect(h.monitor.outage == .stalled)
     }
 
     // MARK: - Leaving
 
-    @Test("The first report that lands ends the outage and the count")
+    @Test("A report that lands over a moving picture ends the outage")
     func successEndsTheOutage() {
         var h = Harness()
         h.record(.failed(refused), playhead: 30, transportStatus: .waitingToPlay)
         h.record(.failed(refused), playhead: 30, transportStatus: .waitingToPlay)
 
-        let verdict = h.record(.ok, playhead: 30, transportStatus: .waitingToPlay)
+        let verdict = h.record(.ok, playhead: 41, transportStatus: .playing)
 
         #expect(verdict == nil)
-        #expect(h.monitor.consecutiveFailures == 0)
+    }
+
+    @Test("A report that lands over a frozen picture is a stall, not a recovery")
+    func landedReportOverAFrozenPictureIsAStall() {
+        // The device shape this exists for: the server came back, every
+        // report landed, and AVPlayer stayed parked on the connection that
+        // was severed. Clearing here leaves a frozen frame saying nothing.
+        var h = Harness()
+        h.record(.failed(refused), playhead: 101, transportStatus: .waitingToPlay)
+        h.record(.failed(refused), playhead: 101, transportStatus: .waitingToPlay)
+
+        #expect(h.record(.ok, playhead: 101, transportStatus: .waitingToPlay) == .stalled)
+        #expect(h.record(.ok, playhead: 101, transportStatus: .waitingToPlay) == .stalled)
+        #expect(h.record(.ok, playhead: 112, transportStatus: .playing) == nil)
+    }
+
+    @Test("A server that dies again during a stall goes back to its own verdict")
+    func aStallReturnsToTheServerVerdict() {
+        var h = Harness()
+        h.record(.failed(refused), playhead: 101, transportStatus: .waitingToPlay)
+        h.record(.failed(refused), playhead: 101, transportStatus: .waitingToPlay)
+        #expect(h.record(.ok, playhead: 101, transportStatus: .waitingToPlay) == .stalled)
+
+        #expect(h.record(.failed(refused), playhead: 101, transportStatus: .waitingToPlay) == .unreachable)
     }
 
     @Test("A playhead that moves ends the outage even while reports still fail")
@@ -255,14 +280,38 @@ struct ServerOutageMonitorTests {
 
     // MARK: - Classification
 
-    @Test("A 503 is the server booting; other 5xx carry their code; everything else is unreachable")
+    @Test("A 503 is the server booting; other 5xx carry their code; a transport failure is unreachable")
     func classification() {
         #expect(ServerOutage.classify(booting) == .starting)
         #expect(ServerOutage.classify(APIError.serverError(statusCode: 502)) == .serverError(statusCode: 502))
         #expect(ServerOutage.classify(refused) == .unreachable)
         #expect(ServerOutage.classify(timedOut) == .unreachable)
-        #expect(ServerOutage.classify(APIError.generic("boom")) == .unreachable)
-        #expect(ServerOutage.classify(CancellationError()) == .unreachable)
+    }
+
+    @Test("A failure that proves nothing about reachability raises no card")
+    func failuresThatProveNothingRaiseNoCard() {
+        // A revoked token, a missing item, or a malformed body are not
+        // fixed by waiting, and a card promising reconnection would stay up
+        // for the rest of the session
+        for error in [
+            APIError.unauthorized,
+            APIError.forbidden,
+            APIError.notFound,
+            APIError.decodingError("unexpected body"),
+            APIError.generic("boom"),
+        ] as [any Error] {
+            #expect(ServerOutage.classify(error) == nil)
+        }
+        #expect(ServerOutage.classify(CancellationError()) == nil)
+    }
+
+    @Test("A run of unclassifiable failures on a frozen playhead still raises nothing")
+    func unclassifiableFailuresNeverRaise() {
+        var h = Harness()
+        h.record(.failed(APIError.unauthorized), playhead: 30, transportStatus: .waitingToPlay)
+        let verdict = h.record(.failed(APIError.unauthorized), playhead: 30, transportStatus: .waitingToPlay)
+
+        #expect(verdict == nil)
     }
 
     @Test("The verdict follows the server as it comes back: unreachable, then booting")
@@ -274,22 +323,30 @@ struct ServerOutageMonitorTests {
         let down = h.record(.failed(refused), playhead: 124.2, transportStatus: .waitingToPlay)
         let up = h.record(.failed(booting), playhead: 124.2, transportStatus: .waitingToPlay)
         let ready = h.record(.ok, playhead: 124.2, transportStatus: .waitingToPlay)
+        let playing = h.record(.ok, playhead: 135.4, transportStatus: .playing)
 
         #expect(down == .unreachable)
         #expect(up == .starting)
-        #expect(ready == nil)
+        // Telemetry recovering is not the picture recovering
+        #expect(ready == .stalled)
+        #expect(playing == nil)
     }
 
     // MARK: - Copy
 
-    @Test("Every state names the exit and leads with a distinct title")
-    func copyNamesTheExit() {
-        let states: [ServerOutage] = [.unreachable, .starting, .serverError(statusCode: 500)]
+    @Test("Every state reads distinctly and instructs nobody")
+    func copyIsDistinctAndCarriesNoInstruction() {
+        let states: [ServerOutage] = [.unreachable, .starting, .serverError(statusCode: 500), .stalled]
 
+        // A card with no control must not read like one: the viewer's exit
+        // is the one they already know
         for state in states {
-            #expect(state.detail.hasSuffix(ServerOutage.exitInstruction))
+            #expect(!state.detail.isEmpty)
+            #expect(!state.detail.localizedCaseInsensitiveContains("press"))
+            #expect(!state.detail.localizedCaseInsensitiveContains("close the player"))
         }
         #expect(Set(states.map(\.title)).count == states.count)
+        #expect(Set(states.map(\.detail)).count == states.count)
         #expect(ServerOutage.serverError(statusCode: 502).title.contains("502"))
     }
 }

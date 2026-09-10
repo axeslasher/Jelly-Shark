@@ -237,11 +237,49 @@ struct PlaybackViewModelTests {
         await heartbeat(viewModel, engine)
         #expect(viewModel.outage == .unreachable)
 
+        // The picture has to move with the server for this to be a
+        // recovery — see `outageBecomesAStallWhenOnlyTheServerComesBack`
         client.progressReportError = nil
+        engine.observedPlayheadSeconds = 135.4
         await heartbeat(viewModel, engine)
 
         #expect(viewModel.outage == nil)
         #expect(viewModel.state == .playing)
+    }
+
+    @Test("A server that comes back over a frozen picture reads as a stall")
+    func outageBecomesAStallWhenOnlyTheServerComesBack() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        await viewModel.start()
+        engine.observedPlayheadSeconds = 124.2
+        client.progressReportError = APIError.networkError("Could not connect to the server.")
+        await heartbeat(viewModel, engine)
+        await heartbeat(viewModel, engine)
+        #expect(viewModel.outage == .unreachable)
+
+        // Device-verified on directPlay: every report lands again and the
+        // playhead never moves, because AVPlayer never re-requests
+        client.progressReportError = nil
+        await heartbeat(viewModel, engine)
+
+        #expect(viewModel.outage == .stalled)
+        #expect(viewModel.state == .playing)
+    }
+
+    @Test("A heartbeat before the playhead mirror ticks reports the resume position, not zero")
+    func heartbeatBeforeTheMirrorTicksReportsTheResumePosition() async {
+        // A stall in the first seconds of a resumed session: the mirror has
+        // no value yet, and a report of zero would overwrite the saved
+        // resume position on the server with the start of the item.
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie(resumeTicks: 600_000_000))
+        await viewModel.start()
+        engine.observedPlayheadSeconds = nil
+
+        await heartbeat(viewModel, engine)
+
+        #expect(client.progressReports.last?.positionTicks == 600_000_000)
     }
 
     @Test("A 503 while the server boots reads as starting")
