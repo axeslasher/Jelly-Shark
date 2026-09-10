@@ -40,18 +40,28 @@ struct HomeFocusReconcilerTests {
     @Test func aRemovedRowDoesNotLetTheRowBelowInheritItsIndex() {
         // "latest-movies" is gone entirely, so "genres" now sits at index
         // 1. Resolving by index would call that the same row and pick its
-        // index-1 card as a *sibling*; it is a different row, so the rule
-        // is "first card of the next row down" — which must agree for the
-        // right reason (by id), not by index.
+        // index-2 card as a *sibling*; it is a different row. The row above
+        // still exists and never moves, so focus goes there.
         let next = HomeFocusReconciler.nextFocus(
             before: rows([("continue", ["a"]), ("latest-movies", ["m1", "m2", "m3"]), ("genres", ["g1", "g2", "g3"])]),
             after: rows([("continue", ["a"]), ("genres", ["g1", "g2", "g3"])]),
             vanished: ShelfFocusID(row: "latest-movies", item: "m3"),
         )
-        // Index-based logic would have returned g2 (index 2 of the row
-        // that moved up). The row is gone, so focus goes to the first
-        // card of the next surviving row.
-        #expect(next == ShelfFocusID(row: "genres", item: "g1"))
+        // Index-based logic would have returned g3; next-row-down would
+        // have returned g1, a card still sliding up into the gap when the
+        // reveal scroll runs.
+        #expect(next == ShelfFocusID(row: "continue", item: "a"))
+    }
+
+    @Test func aMiddleRowVanishingLandsOnTheRowAboveNotBelow() {
+        // The row above is the one whose frame does not move during the
+        // collapse; landing below means revealing a moving target.
+        let next = HomeFocusReconciler.nextFocus(
+            before: rows([("continue", ["a", "b"]), ("latest", ["m1"]), ("genres", ["g1"])]),
+            after: rows([("continue", ["a", "b"]), ("genres", ["g1"])]),
+            vanished: ShelfFocusID(row: "latest", item: "m1"),
+        )
+        #expect(next == ShelfFocusID(row: "continue", item: "a"))
     }
 
     @Test func skipsAnEmptyRowOnTheWayDown() {

@@ -22,7 +22,8 @@ enum HomeShelfRowID {
 
 /// Decides where tvOS focus lands when the focused shelf card disappears
 /// under the viewer — a refresh removing a finished item, or a whole row
-/// emptying (#236 § 11.3).
+/// emptying (#236 § 11.3, with the row-above-first order decided on
+/// device).
 ///
 /// A pure function on purpose: focus behaviour itself is invisible to
 /// every suite in this repo, but *the rule* is not, and shipping the rule
@@ -73,19 +74,25 @@ enum HomeFocusReconciler {
             return -1
         }()
 
-        // Search forward from the anchor in the new layout.
-        for i in (anchorIndex + 1) ..< after.count {
-            if let first = after[i].itemIDs.first {
-                return ShelfFocusID(row: after[i].id, item: first)
-            }
-        }
-
-        // Search backward from the anchor.
+        // Above first. Rows above a collapsing row never move, so the focus
+        // engine's reveal scroll lands where the card actually is. Rows
+        // below are still sliding up into the gap when the reveal runs; on
+        // device it scrolled to the card's pre-collapse frame — past the end
+        // of the shortened page — and the viewer sat over blank space until
+        // the next press clamped it and threw focus to the hero (#236 device
+        // round, revising spec § 11.3's next-row-down order).
         if anchorIndex >= 0 {
             for i in (0 ... anchorIndex).reversed() {
                 if let first = after[i].itemIDs.first {
                     return ShelfFocusID(row: after[i].id, item: first)
                 }
+            }
+        }
+
+        // Nothing above: the first populated row below, in the new layout.
+        for i in (anchorIndex + 1) ..< after.count {
+            if let first = after[i].itemIDs.first {
+                return ShelfFocusID(row: after[i].id, item: first)
             }
         }
 
