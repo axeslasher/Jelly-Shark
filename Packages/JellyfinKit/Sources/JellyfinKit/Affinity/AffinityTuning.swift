@@ -65,6 +65,11 @@ public enum AffinityTuning {
     /// Items per affinity shelf.
     public static let shelfItemLimit = 20
 
+    /// Denominator probes in flight at once. The probes are independent, but
+    /// the artwork loads share the connection pool (#109), so the window is
+    /// kept narrow.
+    public static let probeConcurrency = 4
+
     // MARK: Freshness
 
     /// How long a probed `librarySize` is reused before re-probing.

@@ -284,6 +284,11 @@ public final class AffinityShelvesViewModel {
 
         guard enabled else {
             shelves = []
+            // `.empty`, not left as it was: a `.failed` status with no rows
+            // is exactly what the view renders as the Retry notice — and
+            // Retry cannot run while disabled, so it would sit there as a
+            // dead focus target until the toggle came back on.
+            status = .empty
             return
         }
 
@@ -316,6 +321,8 @@ public final class AffinityShelvesViewModel {
         }
         owe(strength)
 
+        // Booked even with no client: `attach` keeps the debt, so the first
+        // pass after a client arrives runs at the strength that was owed.
         guard isEnabled, let client else { return }
 
         let effective = owedStrength ?? strength
@@ -543,36 +550,70 @@ public final class AffinityShelvesViewModel {
         )
     }
 
-    /// Probes only buckets that already cleared the floor, and only when the
-    /// cached counts have expired or the universe moved.
+    /// Probes only buckets that already cleared the floor, and of those only
+    /// the ones the cache does not hold — one newly qualifying bucket must
+    /// not cost a re-probe of every other. A full re-probe happens only when
+    /// the counts have expired or the universe moved.
+    ///
+    /// Returns whether the whole map is fresh. A partial top-up keeps the
+    /// cached map's timestamp, so it still expires on the old schedule.
     private func denominators(
         client: any JellyfinClientProtocol,
         buckets: [AffinityBucket],
         invalidated: Bool,
         now: Date,
     ) async throws -> ([AffinityBucket: Int], Bool) {
-        if !invalidated, let probedAt = denominatorsProbedAt,
-           now.timeIntervalSince(probedAt) < AffinityTuning.denominatorTTL,
-           buckets.allSatisfy({ denominators[$0] != nil })
-        {
-            return (denominators, false)
-        }
+        let cacheIsUsable = !invalidated
+            && denominatorsProbedAt.map { now.timeIntervalSince($0) < AffinityTuning.denominatorTTL } == true
+        let cached = cacheIsUsable ? denominators : [:]
+        let missing = buckets.filter { cached[$0] == nil }
+        guard !missing.isEmpty else { return (cached, false) }
 
-        var fresh: [AffinityBucket: Int] = [:]
-        for bucket in buckets {
-            let count: Int? = switch bucket {
-            case let .genre(name):
-                try await client.affinityItemCount(genres: [name], decades: [], personID: nil)
-            case let .genreDecade(name, decade):
-                try await client.affinityItemCount(genres: [name], decades: [decade], personID: nil)
-            case let .person(id):
-                try await client.affinityItemCount(genres: [], decades: [], personID: id)
+        let probed = try await probeCounts(for: missing, client: client)
+        return (cached.merging(probed) { _, fresh in fresh }, !cacheIsUsable)
+    }
+
+    /// One count request per bucket, a few in flight at a time. The probes
+    /// are independent, so serializing them only adds latency; the window is
+    /// bounded so a wide candidate set cannot swamp the connection pool the
+    /// artwork loads share.
+    private func probeCounts(
+        for buckets: [AffinityBucket],
+        client: any JellyfinClientProtocol,
+    ) async throws -> [AffinityBucket: Int] {
+        try await withThrowingTaskGroup(of: (AffinityBucket, Int?).self) { group in
+            var counts: [AffinityBucket: Int] = [:]
+            var pending = buckets[...]
+
+            func enqueue(_ bucket: AffinityBucket) {
+                group.addTask {
+                    let count: Int? = switch bucket {
+                    case let .genre(name):
+                        try await client.affinityItemCount(genres: [name], decades: [], personID: nil)
+                    case let .genreDecade(name, decade):
+                        try await client.affinityItemCount(genres: [name], decades: [decade], personID: nil)
+                    case let .person(id):
+                        try await client.affinityItemCount(genres: [], decades: [], personID: id)
+                    }
+                    return (bucket, count)
+                }
             }
-            if let count {
-                fresh[bucket] = count
+
+            for bucket in pending.prefix(AffinityTuning.probeConcurrency) {
+                enqueue(bucket)
             }
+            pending = pending.dropFirst(AffinityTuning.probeConcurrency)
+
+            for try await (bucket, count) in group {
+                if let count {
+                    counts[bucket] = count
+                }
+                if let next = pending.popFirst() {
+                    enqueue(next)
+                }
+            }
+            return counts
         }
-        return (fresh, true)
     }
 
     private func items(
@@ -662,6 +703,10 @@ public final class AffinityShelvesViewModel {
     /// interleave with. Returns nil when there is nothing durable to
     /// rewrite.
     private func commitProbeOnly(_ probed: ProbedStamp, now: Date) -> CachedAffinityShelves? {
+        // The stamp is one of the fingerprint's inputs, so "unchanged" here
+        // implies the stamp did not move and `commitProbe` cannot be
+        // emptying the denominators on this path. If the fingerprint ever
+        // stops covering the stamp, that invariant goes with it.
         commitProbe(probed, now: now)
         status = builtShelves.isEmpty ? .empty : .loaded
 

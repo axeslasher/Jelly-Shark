@@ -275,10 +275,15 @@ public struct RootView: View {
             await affinityShelves.hydrate()
 
             genreShelves.attach(client: session.client, libraries: connectionViewModel.libraries)
-            // Concurrent: neither has anything to say to the other.
+            // Concurrent: neither has anything to say to the other. Only the
+            // genre load is awaited before the gate below — affinity is
+            // decoration that must be allowed to be absent, and that means
+            // not holding Home's drain for it either. Awaited last, after the
+            // gate, so the child stays structured; the no-client early return
+            // below cancels a pass that had nothing to fetch anyway.
             async let genres: Void = genreShelves.load()
             async let affinity: Void = affinityShelves.validate()
-            _ = await (genres, affinity)
+            await genres
 
             // Flipping this is what releases Home's drain — so only a pass
             // that had a client may flip it. This task runs once with
@@ -295,6 +300,7 @@ public struct RootView: View {
                 succeeded: homeViewModel.lastLoadOutcome == .succeeded,
                 now: .now,
             )
+            await affinity
         }
         // The hoisted page state now outlives a disconnect, so a signed-out
         // Home no longer gets torn down with it: without this, a sign-out

@@ -625,4 +625,39 @@ struct AffinityShelvesViewModelTests {
         #expect(model.shelves == first)
         #expect(model.recomputeCount == 1)
     }
+
+    /// A failed status with no rows is what the view renders as Retry — and
+    /// Retry cannot run while disabled, so it would be a dead focus target.
+    @Test func turningItOffAfterAFailureDoesNotLeaveTheFailedNoticeBehind() async {
+        let mock = configured()
+        let model = AffinityShelvesViewModel()
+        model.attach(client: mock, libraries: [moviesLibrary], cache: nil)
+        await model.validate(now: now)
+
+        mock.affinityFailure = MockError.boom
+        await model.validate(now: now.addingTimeInterval(86400))
+        #expect(model.status.isFailed)
+
+        await model.setEnabled(false)
+        #expect(model.shelves.isEmpty)
+        #expect(!model.status.isFailed)
+    }
+
+    /// One newly qualifying bucket must not re-probe every bucket the cache
+    /// already holds.
+    @Test func aRecomputeProbesOnlyTheBucketsTheCacheIsMissing() async {
+        let mock = configured()
+        let model = AffinityShelvesViewModel()
+        model.attach(client: mock, libraries: [moviesLibrary], cache: nil)
+        await model.validate(now: now)
+        // Horror and Horror|1980 cleared the floor: two filtered probes.
+        let before = mock.affinityCountRequests.filter { !$0.genres.isEmpty }.count
+        #expect(before == 2)
+
+        // Three more films in a new genre move the fingerprint and add two
+        // candidates; only those two are probed.
+        mock.affinityMoviesResult += (0 ..< 3).map { movie("c\($0)", genres: ["Comedy"]) }
+        await model.validate(now: now)
+        #expect(mock.affinityCountRequests.filter { !$0.genres.isEmpty }.count == before + 2)
+    }
 }
