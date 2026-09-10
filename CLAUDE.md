@@ -72,8 +72,9 @@ and code comments — follows the same shape. This binds subagents too.
 
 Code comments say *why*, not *what*, and match the density of the code around them.
 
-A PR body answers three things and stops: what changed, how it was verified, what needs a
-human eye. An issue body answers: the decision, the evidence, the acceptance criteria.
+A PR body answers three things and stops: what changed, how it was verified, and UAT
+Device Verification. An issue body answers: the decision, the evidence, the acceptance
+criteria.
 
 ### Working with agents
 
