@@ -17,6 +17,7 @@ public struct RootView: View {
     /// nor where the viewer was standing in it (#236 § 3).
     @State private var homeViewModel = HomeViewModel()
     @State private var genreShelves = GenreShelvesViewModel()
+    @State private var affinityShelves = AffinityShelvesViewModel()
     @State private var homeUI = HomeUIState()
 
     /// Collects the reasons Home's content has gone stale, so a mutation
@@ -259,8 +260,25 @@ public struct RootView: View {
             // it, anything posted while it ran is not (§ 8).
             let revisionAtStart = refreshCoordinator.revision
             let didLoad = await homeViewModel.load()
+
+            // Before any affinity fetch: a saved-off preference must not
+            // spend a request at launch. `HomeView`'s toggle task runs later.
+            await affinityShelves.setEnabled(homePreferences.showsDiscoveryShelves)
+            affinityShelves.attach(
+                client: session.client,
+                libraries: connectionViewModel.libraries,
+                cache: session.scopedCache,
+            )
+            // Cached rows first, with no fingerprint check and no network, so
+            // they are in the focus graph from the first frame they could be
+            // — and never queued behind the genre fetch below (#86 § 9.1).
+            await affinityShelves.hydrate()
+
             genreShelves.attach(client: session.client, libraries: connectionViewModel.libraries)
-            await genreShelves.load()
+            // Concurrent: neither has anything to say to the other.
+            async let genres: Void = genreShelves.load()
+            async let affinity: Void = affinityShelves.validate()
+            _ = await (genres, affinity)
 
             // Flipping this is what releases Home's drain — so only a pass
             // that had a client may flip it. This task runs once with
@@ -293,6 +311,7 @@ public struct RootView: View {
             guard !isConnected else { return }
             homeViewModel = HomeViewModel()
             genreShelves = GenreShelvesViewModel()
+            affinityShelves = AffinityShelvesViewModel()
             homeUI = HomeUIState()
             // The fresh page owes its own initial load, and the § 8.1 gate is
             // what keeps a drain from superseding it.
@@ -369,6 +388,7 @@ public struct RootView: View {
                 HomeView(
                     viewModel: homeViewModel,
                     genreShelves: genreShelves,
+                    affinityShelves: affinityShelves,
                     ui: homeUI,
                     isEligible: isHomeRefreshEligible,
                 )
