@@ -1,6 +1,8 @@
 import Foundation
 import JellyfinKit
 
+enum MockError: Error { case boom }
+
 /// The shared `JellyfinClientProtocol` stub for the Features test suites —
 /// Search, Home, Library, MediaDetail, PersonDetail, GenreShelves, GenreCard,
 /// ServerConnection and Playback. Every protocol method is stubbed here, with
