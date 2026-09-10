@@ -359,6 +359,26 @@ struct UserStateStoreTests {
         #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == nil)
     }
 
+    @Test func theExpiryTimerEndsTheLocalPlayheadWithoutAnIngest() async {
+        let store = UserStateStore()
+        await store.activate(cache: cache)
+        // A fresh stamp: the read-time check alone would keep the local value.
+        store.recordPosition(itemID: "m-1", ticks: 60_000_000_000)
+        #expect(store.resolve(item("m-1", position: 0)).userData?.playbackPositionTicks == 60_000_000_000)
+
+        // What the timer does at 30 s. Clearing only the stamp left the
+        // ticks in place, and the false Resume stood until the next ingest.
+        let before = store.mutationRevision
+        store.expirePositionGuard(for: "m-1")
+
+        #expect(store.mutationRevision > before)
+        #expect(store.resolve(item("m-1", position: 0)).userData?.playbackPositionTicks == 0)
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == nil)
+        // An ingest afterwards lifts the guard and the server value stands.
+        store.ingest(serverItems: [item("m-1", position: 5_000_000_000)])
+        #expect(store.resolve(item("m-1")).userData?.playbackPositionTicks == 5_000_000_000)
+    }
+
     @Test func aNewerPositionSurvivesAnOlderExpiry() async {
         let store = UserStateStore()
         await store.activate(cache: cache)

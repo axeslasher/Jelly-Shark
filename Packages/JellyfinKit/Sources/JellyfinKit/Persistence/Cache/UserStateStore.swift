@@ -64,6 +64,13 @@ public final class UserStateStore {
     /// expiry — nothing else re-renders merely because time passed.
     private var positionExpiries: [String: Task<Void, Never>] = [:]
 
+    /// Guards whose timer has fired. The stamp stays so `ingest` still
+    /// recognises the item, but reads treat it as past the TTL from here on:
+    /// clearing the stamp alone left the local ticks in `states` with
+    /// nothing to override them, so the false Resume stood until the next
+    /// ingest instead of ending at 30 s.
+    private var expiredPositionGuards: Set<String> = []
+
     /// How long a locally recorded playhead outranks a differing server
     /// value. Bounded so a server that legitimately stores nothing — an item
     /// under `MinResumeDurationSeconds` — cannot leave a false Resume
@@ -104,6 +111,7 @@ public final class UserStateStore {
         states = [:]
         pending = [:]
         positionRecordedAt.removeAll()
+        expiredPositionGuards.removeAll()
         for task in positionExpiries.values {
             task.cancel()
         }
@@ -133,9 +141,7 @@ public final class UserStateStore {
         // or never armed — leaves `value` alone: committed state already
         // reflects what `ingest`/`confirm` decided, including a played
         // toggle's deliberate nil.
-        if let recordedAt = positionRecordedAt[item.id],
-           Date.now.timeIntervalSince(recordedAt) >= Self.positionGuardTTL.timeIntervalValue
-        {
+        if let recordedAt = positionRecordedAt[item.id], positionGuardExpired(item.id, recordedAt: recordedAt) {
             value.playbackPositionTicks = item.userData?.playbackPositionTicks
         }
         if let played = itemPending?[.played]?.target {
@@ -214,7 +220,7 @@ public final class UserStateStore {
                     // The round trip closed: the server is reporting our own
                     // value back. Accept it and lift the guard.
                     liftPositionGuard(for: item.id)
-                } else if Date.now.timeIntervalSince(recordedAt) < Self.positionGuardTTL.timeIntervalValue {
+                } else if !positionGuardExpired(item.id, recordedAt: recordedAt) {
                     value.playbackPositionTicks = local
                 } else {
                     // Expired: stop shadowing a server that holds something
@@ -294,6 +300,7 @@ public final class UserStateStore {
         value.playbackPositionTicks = ticks
         states[itemID] = value
         positionRecordedAt[itemID] = now
+        expiredPositionGuards.remove(itemID)
         mutationRevision &+= 1
         persist(itemID: itemID, value: value)
         scheduleExpiry(for: itemID, recordedAt: now)
@@ -306,6 +313,7 @@ public final class UserStateStore {
     /// already resolved.
     private func liftPositionGuard(for itemID: String) {
         positionRecordedAt[itemID] = nil
+        expiredPositionGuards.remove(itemID)
         positionExpiries[itemID]?.cancel()
         positionExpiries[itemID] = nil
     }
@@ -320,9 +328,24 @@ public final class UserStateStore {
             // Only if this is still the stamp we scheduled for: a newer
             // `recordPosition` must not be cleared by an older expiry.
             guard positionRecordedAt[itemID] == recordedAt else { return }
-            positionRecordedAt[itemID] = nil
-            mutationRevision &+= 1
+            expirePositionGuard(for: itemID)
         }
+    }
+
+    /// What the timer does when it fires. Marks the guard expired rather
+    /// than clearing it, so every read falls back to the item's own value
+    /// until an ingest lifts the guard properly, and wakes observers so a
+    /// page sitting on the local playhead re-renders without it.
+    func expirePositionGuard(for itemID: String) {
+        guard positionRecordedAt[itemID] != nil else { return }
+        expiredPositionGuards.insert(itemID)
+        positionExpiries[itemID] = nil
+        mutationRevision &+= 1
+    }
+
+    private func positionGuardExpired(_ itemID: String, recordedAt: Date) -> Bool {
+        expiredPositionGuards.contains(itemID)
+            || Date.now.timeIntervalSince(recordedAt) >= Self.positionGuardTTL.timeIntervalValue
     }
 
     private func begin(itemID: String, field: Field, target: Bool) -> PendingToken {
