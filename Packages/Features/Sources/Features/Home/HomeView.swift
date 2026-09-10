@@ -268,13 +268,21 @@ struct HomeView: View {
             // refresh is left alone (§ 11.2); a card that vanished under them
             // lands where the rule says (§ 11.3), not where geometry happens
             // to put it.
-            guard let focused = focusedCard,
-                  !new.contains(where: { $0.id == focused.row && $0.itemIDs.contains(focused.item) })
-            else { return }
+            guard let focused = focusedCard else {
+                Self.logger.debug("rows changed \(old.count, privacy: .public)→\(new.count, privacy: .public); no focused card")
+                return
+            }
+            guard !new.contains(where: { $0.id == focused.row && $0.itemIDs.contains(focused.item) }) else {
+                Self.logger.debug("rows changed \(old.count, privacy: .public)→\(new.count, privacy: .public); focused \(focused.row, privacy: .public)/\(focused.item, privacy: .public) survives")
+                return
+            }
             let next = HomeFocusReconciler.nextFocus(before: old, after: new, vanished: focused)
-            land(next, deferred: next.map { target in !old.contains { $0.id == target.row } } ?? false)
+            let deferred = next.map { target in !old.contains { $0.id == target.row } } ?? false
+            Self.logger.debug("rows changed \(old.count, privacy: .public)→\(new.count, privacy: .public); focused \(focused.row, privacy: .public)/\(focused.item, privacy: .public) vanished → \(next.map { "\($0.row)/\($0.item)" } ?? "hero", privacy: .public) deferred \(deferred, privacy: .public)")
+            land(next, deferred: deferred)
         }
-        .onChange(of: focusedCard) { _, target in
+        .onChange(of: focusedCard) { old, target in
+            Self.logger.debug("focusedCard \(old.map { "\($0.row)/\($0.item)" } ?? "nil", privacy: .public) → \(target.map { "\($0.row)/\($0.item)" } ?? "nil", privacy: .public)")
             // Only a positive card focus updates the stored target.
             // `focusedCard` also goes nil when Home is torn down, when a
             // cover or the sidebar takes focus, and transiently mid-move —
@@ -437,7 +445,8 @@ struct HomeView: View {
             // need `scrollTargetLayout`, which hijacks Siri Remote pans). This is
             // the hero's "slide up": shelves take focus, the page animates to the
             // shelves anchor, and the backdrop rides along via `scrollOffset`.
-            .onChange(of: focusedRegion) { _, region in
+            .onChange(of: focusedRegion) { oldRegion, region in
+                Self.logger.debug("region \(String(describing: oldRegion), privacy: .public) → \(String(describing: region), privacy: .public); offset \(Int(scroll.offset), privacy: .public)")
                 viewModel.setPaused(region == .hero, reason: .focused)
                 regionSnapTask?.cancel()
                 guard let region else { return }
@@ -453,6 +462,7 @@ struct HomeView: View {
                     switch region {
                     case .hero:
                         guard scroll.offset > HomeHeroMotion.snapSlack else { return }
+                        Self.logger.debug("snap to top from offset \(Int(scroll.offset), privacy: .public)")
                         withAnimation(theme.animation) {
                             scrollPosition.scrollTo(edge: .top)
                         }
@@ -465,6 +475,7 @@ struct HomeView: View {
                         // to re-reveal it: the scroll-jack). Only ever pull
                         // the page *down* to the anchor, never back up.
                         guard scroll.offset < shelvesAnchor - HomeHeroMotion.snapSlack else { return }
+                        Self.logger.debug("snap to shelves anchor \(Int(shelvesAnchor), privacy: .public) from offset \(Int(scroll.offset), privacy: .public)")
                         withAnimation(theme.animation) {
                             scrollPosition.scrollTo(y: shelvesAnchor)
                         }
@@ -484,6 +495,9 @@ struct HomeView: View {
                 geometry.contentOffset.y + geometry.contentInsets.top
             } action: { _, offset in
                 if offset != scroll.offset {
+                    if abs(offset - scroll.offset) > 200 {
+                        Self.logger.debug("offset jump \(Int(scroll.offset), privacy: .public) → \(Int(offset), privacy: .public)")
+                    }
                     scroll.offset = offset
                 }
                 // Map the offset to exit progress (dead-banding the focus
@@ -582,6 +596,7 @@ struct HomeView: View {
     ///   its cards are not in the hierarchy yet and a write aimed at one is
     ///   dropped. One main-actor tick later they are.
     private func land(_ target: ShelfFocusID?, deferred: Bool) {
+        Self.logger.debug("land \(target.map { "\($0.row)/\($0.item)" } ?? "hero", privacy: .public) deferred \(deferred, privacy: .public); offset \(Int(scroll.offset), privacy: .public)")
         ui.focusedItem = target
         ui.focusIsOnHero = target == nil
         #if os(tvOS)
