@@ -491,14 +491,38 @@ final class AVFoundationPlayerEngine: PlayerEngine {
             }
             guard !Task.isCancelled, self.generation == generation else { return }
             legibleGroup = group
-            legibleOptions = group.options.enumerated().map { position, option in
-                LegibleOption(
-                    position: position,
-                    displayName: option.displayName,
-                    languageTag: option.extendedLanguageTag,
+
+            var options: [LegibleOption] = []
+            for (position, option) in group.options.enumerated() {
+                // The playlist's NAME, if AVFoundation kept it: displayName
+                // is formulated from language and loses it.
+                var title: String?
+                if let item = AVMetadataItem.metadataItems(
+                    from: option.commonMetadata,
+                    filteredByIdentifier: .commonIdentifierTitle,
+                ).first {
+                    title = try? await item.load(.stringValue)
+                }
+                options.append(
+                    LegibleOption(
+                        position: position,
+                        displayName: option.displayName,
+                        title: title,
+                        languageTag: option.extendedLanguageTag,
+                    ),
                 )
             }
-            Self.logger.debug("[subtitle] legible options loaded: \(self.legibleOptions.count)")
+            // The metadata loads above suspend, so the session may have moved
+            // on while they ran — the same check the group load makes.
+            guard !Task.isCancelled, self.generation == generation else { return }
+            legibleOptions = options
+
+            let summary = legibleOptions
+                .map { option in
+                    "\(option.position):display=\(option.displayName) title=\(option.title ?? "nil")"
+                }
+                .joined(separator: " | ")
+            Self.logger.debug("[subtitle] legible options loaded: \(self.legibleOptions.count) \(summary, privacy: .public)")
             // Deliberately no selection is applied. AVKit owns text
             // subtitles: its picker, the rendition's DEFAULT/AUTOSELECT
             // flags, and the viewer's system caption preference decide what

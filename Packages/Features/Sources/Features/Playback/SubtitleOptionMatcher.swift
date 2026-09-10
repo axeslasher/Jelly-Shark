@@ -8,12 +8,28 @@ struct LegibleOption: Equatable {
     /// Position within the AVMediaSelectionGroup's options
     let position: Int
 
-    /// The option's display name (Jellyfin sets the rendition NAME to the
-    /// stream's DisplayTitle, so this usually matches exactly)
+    /// AVFoundation's *formulated* label. Per its documentation it "takes
+    /// into account this option's common metadata, media characteristics,
+    /// and locale properties" — device-verified to come back as plain
+    /// "English" for both of two English tracks whose playlist NAMEs were
+    /// distinct, so it cannot identify a track on its own.
     let displayName: String
+
+    /// The playlist's own `NAME`, read from the option's common metadata
+    /// rather than its formulated display name. Jellyfin sets NAME to the
+    /// stream's DisplayTitle, so when this survives it identifies the track
+    /// exactly. Nil when the option carries no title metadata.
+    let title: String?
 
     /// BCP-47 or ISO-639 language tag, if the option declares one
     let languageTag: String?
+
+    init(position: Int, displayName: String, title: String? = nil, languageTag: String?) {
+        self.position = position
+        self.displayName = displayName
+        self.title = title
+        self.languageTag = languageTag
+    }
 }
 
 /// Correlates a Jellyfin subtitle stream with the HLS master playlist's
@@ -22,12 +38,19 @@ enum SubtitleOptionMatcher {
     /// The position of the option matching the target stream, or nil when
     /// no confident match exists (callers fall back to a stream rebuild).
     ///
-    /// Priority: exact display-name match (the server mirrors DisplayTitle
-    /// into the rendition NAME) → unambiguous language match → the sole
+    /// Priority: the playlist's own NAME (the server mirrors DisplayTitle
+    /// into it) → exact display-name match, for sessions whose options
+    /// carry no title metadata → unambiguous language match → the sole
     /// option when there is exactly one.
     static func match(_ target: MediaStreamInfo, in options: [LegibleOption]) -> Int? {
-        if let title = target.displayTitle,
-           let hit = options.first(where: { $0.displayName == title })
+        if let displayTitle = target.displayTitle,
+           let hit = options.first(where: { $0.title == displayTitle })
+        {
+            return hit.position
+        }
+
+        if let displayTitle = target.displayTitle,
+           let hit = options.first(where: { $0.displayName == displayTitle })
         {
             return hit.position
         }
