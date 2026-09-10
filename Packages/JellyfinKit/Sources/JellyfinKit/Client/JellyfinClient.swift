@@ -368,6 +368,42 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameter limit: Maximum number of episodes to return
     func getRecentlyPlayedEpisodes(limit: Int?) async throws -> [MediaItem]
 
+    // MARK: - Affinity
+
+    /// Recently played movies, with the fields affinity derivation needs.
+    ///
+    /// Separate from the episode window on purpose: the server applies its
+    /// limit to the raw response, so one mixed window filled by a binge
+    /// would exclude every film before the client could collapse anything.
+    func recentlyPlayedMoviesForAffinity(limit: Int) async throws -> [MediaItem]
+
+    /// Recently played episodes, ids and play dates only. Their own genres
+    /// and people are discarded — per-episode credits name that episode's
+    /// director, not the show's — so asking for them would fetch a cast list
+    /// per episode and throw it away.
+    func recentlyPlayedEpisodesForAffinity(limit: Int) async throws -> [MediaItem]
+
+    /// Series metadata for the ids an episode run collapsed to.
+    func itemsForAffinity(ids: [String]) async throws -> [MediaItem]
+
+    /// Favorited items, alphabetically. Jellyfin exposes no "date favorited"
+    /// field, so alphabetical is the only deterministic truncation available
+    /// — and the fingerprint needs a stable window, not an arbitrary one.
+    func favoritedItemsForAffinity(limit: Int) async throws -> [MediaItem]
+
+    /// Favorited people, as the existing `Person` model. Not `CastMember`:
+    /// `/Persons` returns standalone people with no credit kind, and
+    /// `CastMember` requires one.
+    func favoritedPeople() async throws -> [Person]
+
+    /// Count-only probe over the affinity universe: every `.movie` and
+    /// `.series` on the server, unscoped and recursive.
+    ///
+    /// Unscoped rather than per-library because `GetItemsParameters.parentID`
+    /// is singular, and because summing per-library counts would double-count
+    /// a film that also sits in a collection library.
+    func affinityItemCount(genres: Set<String>, decades: Set<Int>, personID: String?) async throws -> Int?
+
     // MARK: - User Data
 
     /// Mark an item as played for the current user
@@ -1563,6 +1599,166 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
 
             return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    // MARK: - Affinity
+
+    /// Fields every affinity fetch whose values reach a bucket must request.
+    /// One constant so they cannot drift apart — a ratio computed from two
+    /// differently-shaped fetches is nonsense. The episode window is
+    /// deliberately outside this: it only produces ids.
+    ///
+    /// Computed, not stored: the SDK's `ItemFields` is not `Sendable`, so a
+    /// stored static would be flagged as shared mutable state.
+    private static var affinityFields: [ItemFields] {
+        [.genres, .people]
+    }
+
+    public func recentlyPlayedMoviesForAffinity(limit: Int) async throws -> [MediaItem] {
+        try await playedItems(types: [.movie], limit: limit, fields: Self.affinityFields)
+    }
+
+    public func recentlyPlayedEpisodesForAffinity(limit: Int) async throws -> [MediaItem] {
+        try await playedItems(types: [.episode], limit: limit, fields: [])
+    }
+
+    private func playedItems(
+        types: [JellyfinAPI.BaseItemKind],
+        limit: Int,
+        fields: [ItemFields],
+    ) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.isRecursive = true
+            parameters.includeItemTypes = types
+            parameters.filters = [.isPlayed]
+            parameters.sortBy = [.datePlayed]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.descending]
+            parameters.fields = fields.isEmpty ? nil : fields
+            parameters.enableImages = false
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func itemsForAffinity(ids: [String]) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+        guard !ids.isEmpty else { return [] }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.ids = ids
+            parameters.fields = Self.affinityFields
+            parameters.enableImages = false
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func favoritedItemsForAffinity(limit: Int) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.isRecursive = true
+            parameters.includeItemTypes = [.movie, .series]
+            parameters.filters = [.isFavorite]
+            // No "date favorited" exists on the server, so the window is
+            // alphabetical: stable truncation beats arbitrary truncation.
+            parameters.sortBy = [.sortName]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.ascending]
+            parameters.fields = Self.affinityFields
+            parameters.enableImages = false
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func favoritedPeople() async throws -> [Person] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetPersonsParameters()
+            parameters.userID = userId
+            parameters.isFavorite = true
+
+            let response = try await sdkClient.send(Paths.getPersons(parameters: parameters))
+            return response.value.items?.compactMap { person in
+                guard let id = person.id, let name = person.name else { return nil }
+                return Person(id: id, name: name)
+            } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func affinityItemCount(
+        genres: Set<String>,
+        decades: Set<Int>,
+        personID: String?,
+    ) async throws -> Int? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = 0
+            parameters.isRecursive = true
+            parameters.includeItemTypes = [.movie, .series]
+            parameters.enableImages = false
+            parameters.enableUserData = false
+            parameters.enableTotalRecordCount = true
+            if !genres.isEmpty {
+                parameters.genres = Array(genres).sorted()
+            }
+            if !decades.isEmpty {
+                parameters.years = decades.sorted().flatMap { decade in (decade ..< decade + 10).map(\.self) }
+            }
+            if let personID {
+                parameters.personIDs = [personID]
+            }
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.totalRecordCount
         } catch let error as APIError {
             throw error
         } catch {

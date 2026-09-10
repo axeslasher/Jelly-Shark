@@ -203,4 +203,30 @@ struct CachingJellyfinClientTests {
         }
         #expect(await store.userStates(scope: scope, itemIDs: ["m-1"])["m-1"]?.played == false)
     }
+
+    // MARK: - Affinity pass-through
+
+    @Test func affinityItemFetchesIngestUserData() async throws {
+        let played = item("m1", userData: UserData(isFavorite: true))
+        stub.affinityMoviesResult = [played]
+        _ = try await client.recentlyPlayedMoviesForAffinity(limit: 60)
+        #expect(await store.userStates(scope: scope, itemIDs: ["m1"])["m1"]?.isFavorite == true)
+    }
+
+    @Test func affinityFetchesAreNeverPersistedAsSnapshots() async throws {
+        stub.affinityMoviesResult = [item("m1")]
+        _ = try await client.recentlyPlayedMoviesForAffinity(limit: 60)
+        #expect(await store.read(CachedHomeSnapshot.self, scope: scope, key: .homeSnapshot) == nil)
+    }
+
+    @Test func favoritedPeoplePassesStraightThrough() async throws {
+        stub.favoritedPeopleResult = [Person(id: "p1", name: "Ada")]
+        let people = try await client.favoritedPeople()
+        #expect(people == [Person(id: "p1", name: "Ada")])
+    }
+
+    @Test func affinityItemCountPassesStraightThrough() async throws {
+        stub.affinityCountResult = 42
+        #expect(try await client.affinityItemCount(genres: ["Horror"], decades: [], personID: nil) == 42)
+    }
 }

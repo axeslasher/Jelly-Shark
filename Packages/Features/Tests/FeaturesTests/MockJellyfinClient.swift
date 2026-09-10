@@ -587,4 +587,85 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     func unmarkFavorite(itemId: String) async throws {
         try await recordUserData("unfavorite", itemId)
     }
+
+    // MARK: - Affinity
+
+    /// Recorded affinity calls
+    var affinityCountRequests: [(genres: Set<String>, decades: Set<Int>, personID: String?)] = []
+    var affinityMovieLimits: [Int] = []
+    var affinityEpisodeLimits: [Int] = []
+    var affinityItemsRequests: [[String]] = []
+
+    /// Stubbed affinity responses
+    var affinityMoviesResult: [MediaItem] = []
+    var affinityEpisodesResult: [MediaItem] = []
+    var affinityItemsResult: [MediaItem] = []
+    var affinityFavoritesResult: [MediaItem] = []
+    var favoritedPeopleResult: [Person] = []
+
+    /// The unfiltered probe — `librarySize` and the library stamp.
+    var affinityLibrarySizeResult: Int? = 1000
+
+    /// Every filtered probe — a bucket's `libraryCount`. Separate from the
+    /// unfiltered one on purpose: one shared value makes every ratio exactly
+    /// 1.0, so nothing ever qualifies and a test asserting on real shelves
+    /// silently asserts on none.
+    var affinityBucketCountResult: Int? = 20
+
+    /// When set, every affinity fetch throws it.
+    var affinityFailure: Error?
+
+    /// When set, `recentlyPlayedMoviesForAffinity` parks on it, so a test
+    /// can hold a pass in flight and cancel it there.
+    var affinityGate: AsyncGate?
+
+    func recentlyPlayedMoviesForAffinity(limit: Int) async throws -> [MediaItem] {
+        lock.withLock { affinityMovieLimits.append(limit) }
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        // `try await`, not `try?`: the cancel must kill the request
+        // mid-flight and unwind, which is what the cancellation test asserts.
+        try await affinityGate?.wait()
+        return affinityMoviesResult
+    }
+
+    func recentlyPlayedEpisodesForAffinity(limit: Int) async throws -> [MediaItem] {
+        lock.withLock { affinityEpisodeLimits.append(limit) }
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        return affinityEpisodesResult
+    }
+
+    func itemsForAffinity(ids: [String]) async throws -> [MediaItem] {
+        lock.withLock { affinityItemsRequests.append(ids) }
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        return affinityItemsResult
+    }
+
+    func favoritedItemsForAffinity(limit _: Int) async throws -> [MediaItem] {
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        return affinityFavoritesResult
+    }
+
+    func favoritedPeople() async throws -> [Person] {
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        return favoritedPeopleResult
+    }
+
+    func affinityItemCount(genres: Set<String>, decades: Set<Int>, personID: String?) async throws -> Int? {
+        lock.withLock { affinityCountRequests.append((genres, decades, personID)) }
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        let isUnfiltered = genres.isEmpty && decades.isEmpty && personID == nil
+        return isUnfiltered ? affinityLibrarySizeResult : affinityBucketCountResult
+    }
 }
