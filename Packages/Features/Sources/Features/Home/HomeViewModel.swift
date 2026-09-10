@@ -527,7 +527,13 @@ public final class HomeViewModel {
             return await refreshUserState()
         case .libraries, .deep:
             forceReload()
+            // `load()` increments the generation first thing, so this is the
+            // pass we are about to run. A superseded or cancelled pass leaves
+            // `lastLoadOutcome` to the generation that won, and reporting that
+            // value here would let the drain retire a reason nothing served.
+            let generation = loadGeneration + 1
             await load()
+            guard generation == loadGeneration, !Task.isCancelled else { return .superseded }
             return lastLoadOutcome
         }
     }

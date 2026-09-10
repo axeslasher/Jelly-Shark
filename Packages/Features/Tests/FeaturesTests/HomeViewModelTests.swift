@@ -1327,6 +1327,28 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeItems[0].userData?.played == true)
     }
 
+    @Test func aSupersededLibraryRefreshReportsSupersededNotTheWinnersOutcome() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let first = Task { await viewModel.refresh(.libraries) }
+        try? await Task.sleep(for: .milliseconds(20))
+        // A Retry during the warm refresh starts a newer generation.
+        viewModel.forceReload()
+        let second = Task { await viewModel.load() }
+        try? await Task.sleep(for: .milliseconds(20))
+        await gate.open()
+        _ = await second.value
+
+        // The drain must put `.libraries` back, not retire it on the strength
+        // of a pass that never rebuilt Recently Added.
+        #expect(await first.value == .superseded)
+    }
+
     @Test func setPlayedDoesNotRefreshOnItsOwn() async {
         let client = MockJellyfinClient()
         let viewModel = HomeViewModel()
