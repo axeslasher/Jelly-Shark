@@ -8,16 +8,44 @@ struct SearchView: View {
     @Environment(AppSession.self) private var session
     @State private var viewModel = SearchViewModel()
 
+    #if os(visionOS)
+        /// Whether the system search presentation is up. Bound so a push can
+        /// take it down (#258): on visionOS the suggestion dropdown is a menu
+        /// platter in its own window, presented on the root hosting controller
+        /// rather than on the search controller. Left open across a push it
+        /// outlives its content, and after the round trip the empty platter is
+        /// still the key window and swallows every pinch.
+        ///
+        /// Two things follow from this flag as the view disappears: search is
+        /// closed, which takes the field, and the suggestions go empty, which
+        /// takes the dropdown — closing search alone leaves the dropdown over
+        /// the detail page until the next presentation displaces it. (Hiding
+        /// the `.menu` placement instead blanked the whole Search page on
+        /// device.) tvOS has no `isPresented` overload and no platter to
+        /// strand.
+        @State private var isSearchPresented = false
+    #endif
+
+    /// Whether the suggestion list has anything to offer the system UI.
+    private var isShowingSuggestions: Bool {
+        #if os(visionOS)
+            isSearchPresented
+        #else
+            true
+        #endif
+    }
+
     /// No NavigationStack here: RootView owns each tab's stack (with a path
     /// binding) so it can pop to root before a tab switch — see RootView's
     /// `tabSelection` for the tvOS bug this works around.
     var body: some View {
-        content
-            .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
+        searchableContent
             .searchSuggestions {
-                ForEach(viewModel.suggestions, id: \.self) { suggestion in
-                    Text(suggestion)
-                        .searchCompletion(suggestion)
+                if isShowingSuggestions {
+                    ForEach(viewModel.suggestions, id: \.self) { suggestion in
+                        Text(suggestion)
+                            .searchCompletion(suggestion)
+                    }
                 }
             }
             .onChange(of: viewModel.query) { _, newValue in
@@ -30,6 +58,23 @@ struct SearchView: View {
             // results, leaving the headroom RootView opens above the field as
             // bare system chrome rather than themed background (#148).
             .background(theme.background)
+    }
+
+    /// `content` under the system search field. Split by platform because
+    /// the `isPresented` overload does not exist on tvOS.
+    private var searchableContent: some View {
+        #if os(visionOS)
+            content
+                .searchable(
+                    text: $viewModel.query,
+                    isPresented: $isSearchPresented,
+                    prompt: "Search movies, shows…",
+                )
+                .onDisappear { isSearchPresented = false }
+        #else
+            content
+                .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
+        #endif
     }
 
     /// One `ScrollView` for every state, deliberately hoisted above the switch.
