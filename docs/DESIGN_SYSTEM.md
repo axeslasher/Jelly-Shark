@@ -10,7 +10,7 @@ The system has two layers:
 
 Users can switch themes globally while customizing individual components to their preference - all adhering to the chosen theme's design language.
 
-> **Implementation status**: This document is the design spec — most of it describes the intended system. **All five themes are implemented** (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`, plus `SciFiTheme`, which was added beyond the original four) and switchable at runtime, but the Horror/Action/Video Store palettes are first-pass placeholders pending hand curation. Colors are drawn from `BaseColors` — the full Tailwind CSS v4 palette, referenced by name (`BaseColors.zinc950`) rather than raw hex — defined as oklch values converted to extended linear sRGB by `Color(oklch:)` so wide-gamut shades survive on P3/HDR displays. `ThemeCatalogTests` enforces WCAG floors (4.5:1 text, 3:1 accents/focus rings) on every theme, which any future curation must keep green. The **component variant system is not yet built**: a reusable component set exists (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`), but these are fixed layouts — there is no configurable poster-dominant/landscape/minimal/… variant selection yet. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
+> **Implementation status**: This document is the design spec — most of it describes the intended system. **All five themes are implemented** (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`, plus `SciFiTheme`, which was added beyond the original four) and switchable at runtime with hand-curated palettes. Colors are drawn from `BaseColors` — the full Tailwind CSS v4 palette, referenced by name (`BaseColors.zinc950`) rather than raw hex — defined as oklch values converted to extended linear sRGB by `Color(oklch:)` so wide-gamut shades survive on P3/HDR displays. `ThemeCatalogTests` enforces WCAG floors (4.5:1 text, 3:1 accents/focus rings) on every theme, which any future curation must keep green. The **component variant system is not yet built**: a reusable component set exists (`ArtworkImage`, `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`), but these are fixed layouts — there is no configurable poster-dominant/landscape/minimal/… variant selection yet. Color palettes, typography scales, and motion values below marked "WIP" are targets, not all wired up.
 
 ---
 
@@ -465,7 +465,7 @@ All themes must maintain:
 4. ✅ Create theme switching UI (Settings → Appearance)
 
 ### Phase 2: Variants — ⏳ in progress
-5. ✅ Implement Horror theme (struct + fonts + motion wired; palette is a first-pass placeholder pending curation)
+5. ✅ Implement Horror theme (struct + fonts + motion wired; palette hand-curated)
 6. ✅ Implement Action theme (same)
 7. ✅ Implement Video Store theme (same)
 8. ⏳ Add component variant system (not started)

@@ -217,9 +217,11 @@ Themes are **genre-inspired visual languages** that evoke the mood of different 
 - **Video Store**: 90s nostalgia (rounded friendly typography, Blockbuster blue/gold, playful animations)
 - **Sci-Fi**: implemented alongside the four above
 
-The genre palettes (Horror / Action / Video Store) are deliberately first-pass `BaseColors`
-picks pending hand curation — not bugs to fix opportunistically. `ThemeCatalogTests` (identity,
-distinctness, WCAG contrast) is the guardrail while they're placeholders.
+The genre palettes (Horror / Action / Video Store / Sci-Fi) are hand-curated, not placeholder
+picks. Refining them further is deliberate design work Justin owns — never an opportunistic
+fix, and never a drive-by "correction" to a shade that looks off in isolation.
+`ThemeCatalogTests` (identity, distinctness, WCAG contrast) is the guardrail any future
+curation must keep green.
 
 **Component Variants** (structural flexibility, not yet built):
 - Media cards: poster-dominant, landscape, minimal, detailed, immersive
