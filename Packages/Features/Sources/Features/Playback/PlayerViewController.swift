@@ -300,30 +300,41 @@
         /// added to or removed from the player mid-session. AVKit creates the
         /// overlay view with its own view, so a `make` that runs before that
         /// finds nil and the first update pass installs the host instead.
+        ///
+        /// tvOS only. On visionOS AVKit re-hosts the player into a fullscreen
+        /// window of its own, and when SwiftUI re-inserts that subtree UIKit's
+        /// hierarchy check finds a child whose parent lives in the other
+        /// window and aborts every play with
+        /// `UIViewControllerHierarchyInconsistency` (#309). No child of the
+        /// player controller can live in `contentOverlayView` there, so the
+        /// card is not shown on visionOS; a passive overlay for that platform
+        /// needs a shape without view-controller containment.
         private func syncReconnectingBanner(for controller: AVPlayerViewController, coordinator: Coordinator) {
-            if let host = coordinator.reconnectingBannerHost {
-                guard coordinator.reconnectingBannerOutage != outage else { return }
-                coordinator.reconnectingBannerOutage = outage
-                host.rootView = Self.reconnectingBannerRoot(for: outage)
-                return
-            }
-            guard let overlay = controller.contentOverlayView else { return }
+            #if os(tvOS)
+                if let host = coordinator.reconnectingBannerHost {
+                    guard coordinator.reconnectingBannerOutage != outage else { return }
+                    coordinator.reconnectingBannerOutage = outage
+                    host.rootView = Self.reconnectingBannerRoot(for: outage)
+                    return
+                }
+                guard let overlay = controller.contentOverlayView else { return }
 
-            let host = UIHostingController(rootView: Self.reconnectingBannerRoot(for: outage))
-            host.view.backgroundColor = .clear
-            host.view.isUserInteractionEnabled = false
-            host.view.translatesAutoresizingMaskIntoConstraints = false
-            controller.addChild(host)
-            overlay.addSubview(host.view)
-            NSLayoutConstraint.activate([
-                host.view.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
-                host.view.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
-                host.view.topAnchor.constraint(equalTo: overlay.topAnchor),
-                host.view.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
-            ])
-            host.didMove(toParent: controller)
-            coordinator.reconnectingBannerHost = host
-            coordinator.reconnectingBannerOutage = outage
+                let host = UIHostingController(rootView: Self.reconnectingBannerRoot(for: outage))
+                host.view.backgroundColor = .clear
+                host.view.isUserInteractionEnabled = false
+                host.view.translatesAutoresizingMaskIntoConstraints = false
+                controller.addChild(host)
+                overlay.addSubview(host.view)
+                NSLayoutConstraint.activate([
+                    host.view.leadingAnchor.constraint(equalTo: overlay.leadingAnchor),
+                    host.view.trailingAnchor.constraint(equalTo: overlay.trailingAnchor),
+                    host.view.topAnchor.constraint(equalTo: overlay.topAnchor),
+                    host.view.bottomAnchor.constraint(equalTo: overlay.bottomAnchor),
+                ])
+                host.didMove(toParent: controller)
+                coordinator.reconnectingBannerHost = host
+                coordinator.reconnectingBannerOutage = outage
+            #endif
         }
 
         /// The hosted tree is detached from the app's, so the theme is
