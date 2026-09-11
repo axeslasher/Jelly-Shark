@@ -28,6 +28,20 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 
 **Platform support**: Fully shared (tvOS, visionOS)
 
+**Structure** (as implemented):
+```
+JellyfinKit/
+├── JellyfinKit.swift   (module stub)
+├── Adapters/           (SDK response → app model mapping, incl. playback/chapter/trickplay)
+├── Affinity/           (taste-signal extraction, scoring, and selection behind the affinity shelves)
+├── Client/             (JellyfinClient facade, caching wrapper, device profile, stream URL builder)
+├── Discovery/          (UDP-broadcast discovery of servers on the local network)
+├── Models/             (MediaItem, Library, Person, PlaybackSession, trickplay and subtitle types)
+├── Networking/         (APIError — HTTP status → error mapping)
+├── Persistence/        (KeychainStore and SessionStore; the SwiftData cache under Cache/)
+└── Remux/              (Matroska demux → fMP4 mux, HLS segment planning, audio selection)
+```
+
 #### SDK Integration Architecture
 
 JellyfinKit wraps the official `jellyfin-sdk-swift` package using a **Facade/Wrapper pattern**. This provides a clean, app-specific API while leveraging the official SDK for network requests and API compatibility.
@@ -107,9 +121,9 @@ This adapter pattern keeps mapping logic centralized and testable.
 **Key concepts**:
 - Themes as data via a `Theme` protocol, switched at runtime by `ThemeManager` (`@Observable` singleton, persisted to `UserDefaults`)
 - Design tokens: `BaseColors` (the Tailwind CSS v4 palette, oklch → extended linear sRGB via `Color(oklch:)`), `TypographyTokens`, `SpacingTokens`, `MotionTokens`
-- Base components: `ArtworkImage` (backed by `ArtworkLoader`, a bounded decoded-image cache — not `AsyncImage`), `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`. (A reusable component library exists; the configurable *variant* system in DESIGN_SYSTEM.md does not yet.)
+- Base components: `ArtworkImage` (backed by `ArtworkLoader`, a bounded decoded-image cache — not `AsyncImage`), `ContentShelf`, `ArtworkShelfItem`, `CastCard`, `CircleActionButton`, `MetadataLabelStyle`, `GenreShelfItem`, `ShelfCaption`, `Skeleton`, `FailedShelfNotice`, `CardButtonStyle`, `ShelfFocusID`, a `glassButtonStyle()` modifier, a `BlurHash` decoder, and `ComponentPlaceholder`. (A reusable component library exists; the configurable *variant* system in DESIGN_SYSTEM.md does not yet.)
 
-**Current state**: All five themes are implemented (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`, `SciFiTheme`) with per-theme fonts and motion; the three genre palettes are first-pass `BaseColors` picks pending hand curation, guarded by WCAG contrast tests. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
+**Current state**: All five themes are implemented (`StandardTheme`, `HorrorTheme`, `ActionTheme`, `VideoStoreTheme`, `SciFiTheme`) with per-theme fonts and motion; the four genre palettes are hand-curated `BaseColors` selections, guarded by WCAG contrast tests. Further refinement is design work, not cleanup. The component-variant system (poster-dominant, landscape, etc.) is documented in DESIGN_SYSTEM.md but not yet built.
 
 ---
 
@@ -131,8 +145,11 @@ This adapter pattern keeps mapping logic centralized and testable.
 Features/
 ├── RootView.swift          (.sidebarAdaptable TabView: Home, a tab per library, Search, Settings)
 ├── AppSession.swift        (app-level session/client state)
+├── ContentRefreshCoordinator.swift (fans a single refresh out to the screens that need it)
 ├── HomePreferences.swift   (persisted home-screen preferences)
+├── PlaybackPreferences.swift (persisted audio/subtitle preferences)
 ├── Features.swift          (module stub — imports only)
+├── Affinity/               (AffinityShelvesView + AffinityShelvesViewModel)
 ├── Artwork/                (MediaArtwork image-URL helpers, TrimmedLogoImage)
 ├── Genre/                  (GenreShelvesView + GenreShelvesViewModel, GenreCardView + GenreCardViewModel, GenreBackdropStore)
 ├── Home/                   (HomeView + HomeViewModel, hero backdrop/motion/section, shelves section, placeholders)
@@ -141,7 +158,8 @@ Features/
 ├── PersonDetail/           (PersonDetailView + PersonDetailViewModel, PersonDetailHeader, PersonDetailShelves)
 ├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, PlaybackLocalServer, UpNextOverlayView, audio/subtitle option matchers)
 ├── Search/                 (SearchView + SearchViewModel — debounced search UI)
-└── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)
+├── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)
+└── PreviewSupport/         (FeaturesPreview trait, PreviewData fixtures)
 ```
 Authentication is not a separate folder — server connection lives under `Settings/`.
 
@@ -324,7 +342,7 @@ Two venues, both run by `.github/workflows/tests.yml` on every PR. `make test-ho
 | 2026-07-25 | Min deployment visionOS **26.2** (tvOS stays 26.0) | `XROS_DEPLOYMENT_TARGET = 26.2` has been in the pbxproj since the initial commit, arriving as an Xcode default at project creation rather than as a choice anyone made, while every document and manifest said 26.0. Ratified at 26.2 rather than lowered: no shipping code uses a 26.1/26.2-only API, so this is not a technical requirement — it is a deliberate call that Vision Pro is a secondary platform with no spatial-specific work built yet, and that carrying a floor nobody has validated at 26.0 is not worth the compatibility surface. **This narrows the installable base: visionOS 26.0 and 26.1 devices are excluded.** Revisit if visionOS becomes a primary target. Manifests express it as `.visionOS("26.2")` — the string form — because `SupportedPlatform.VisionOSVersion` only offers major-version granularity (`.v26`). |
 | 2026-07-25 | **MIT license**, not Apache 2.0 | The repo asserted Apache 2.0 in four documents while carrying no `LICENSE` file at all, which meant the work was under exclusive copyright regardless of what the README said. Resolved toward MIT rather than the Apache the docs named. The goals are wide reuse — the packages are intended for SPM once they mature — with attribution as the only ask, and that ask is loosely held. MIT delivers exactly that in twenty lines. Apache 2.0's additions are an explicit patent grant, §4(b) change notices, and `NOTICE` propagation: real features, but they impose obligations on forkers in exchange for protections a solo project with no patent portfolio does not need. MIT also dominates the Swift ecosystem (including two of this project's own dependencies), so it is the lowest-friction choice for downstream adoption. Noted for the record: no permissive license compels *visible* credit — both MIT and Apache only require the notice ship with the source, so a fork may rebrand freely. Visible attribution is a README request, not a license term. |
 | 2026-07-25 | No per-file license headers | Apache projects conventionally carry them; MIT projects conventionally do not. Skipped deliberately rather than by omission — a header on all 150 Swift files is a large permanent diff and a standing chore for every new file, buying nothing MIT's root `LICENSE` does not already establish. Third-party terms live in `THIRD-PARTY-NOTICES.md`; the one file-level obligation this repo actually carries is OFL 1.1's requirement that the license travel with the bundled Atkinson fonts, satisfied by `Resources/Fonts/OFL.txt`. |
-| 2026-07-30 | **Binary dependencies live in their own `Packages/` sibling. `JellyfinKit` and `Features` may never declare a `binaryTarget`.** | Settled once for #176 (FFmpeg), #177 (libass) and #60 (VLCKit/mpv) rather than re-argued per dependency; there are zero binary dependencies today, so this is cheap now and expensive to retrofit. The shape #177 proposed was an *optional SPM product* inside `Features` — a second `.library` the app opts into and downstream clients decline. That works at **link** time but not at **resolve** time: SwiftPM reads the entire manifest and fetches `binaryTarget` `url:` artifacts before it knows which products will be built, and whether it prunes artifacts belonging to unselected products has varied across SwiftPM releases. It is not something a manifest can assert. A client wanting nothing to do with libass would still pay the download on every clean checkout and could not tell from reading the manifest. **Package-level separation is the only isolation SPM guarantees** — a consumer who never writes `.package(path: "../PlaybackASS")` never resolves it — and it keeps `grep binaryTarget Packages/*/Package.swift` an authoritative answer to "what am I obligated to?". Two repo-specific reinforcements: `JellyfinKit` declares `.macOS(.v13)` so its Keychain/session suites run host-side under `make test-host` (the ~5s inner-loop tier), and an xcframework with no macOS slice breaks that tier outright; and a binary inside `Features` would make an artifact download a precondition of the `FeaturesTests` simulator suite, which has nothing to do with playback. **Dependency direction is inverted:** `Features` declares the protocol (`SubtitleRenderer`, `RemuxEngine`, …), the binary-backed package depends on `Features` and conforms, and the app target is the only place the two meet. Precedent for the shape: `DesignSystem` already bundles git-ignored Fontshare `.ttf` files and degrades honestly to the system font when they are absent. **Verified 2026-07-30**, not assumed: a throwaway package built outside the repo — its own manifest, a two-slice (`tvos-arm64`, `tvos-arm64-simulator`) `.binaryTarget` xcframework, `.package(path:)` on `Features`, and a target calling into both — built clean for `generic/platform=tvOS` with zero errors under Xcode 26.6 (AppleTVOS26.5, matching CI) and Xcode 27 beta (AppleTVOS27.0). The scaffold was deleted rather than committed; the value was the measurement, not a permanent example package. **One prerequisite surfaced:** the engine seam such a package would conform to is module-internal. `PlayerEngine`, `PlayerEngineEvent`, `PlayerSessionMetadata`, `DeliveryProgress`, `PlaybackTransportStatus`, `AudibleOption` and `LegibleOption` are all `internal` to `Features`, so an external package can link `Features` today but cannot yet implement a playback extension point. `PlaybackCapabilities` is already `public` and already lives in `JellyfinKit`, so the capability-declaration half is done. Publishing the remainder is **#199**, and is a prerequisite for any binary-backed engine or renderer rather than a task of this policy. (First written as belonging to #85; that was wrong. #85's scope was "so `PlaybackViewModel` is engine-agnostic", which an internal protocol with an internal implementation satisfies completely — it closed correctly on 2026-07-29 via PR #180. Engine-agnostic *within the module* and conformable *from another package* are different properties, and only the first was ever in scope.) |
+| 2026-07-30 | **Binary dependencies live in their own `Packages/` sibling. `JellyfinKit` and `Features` may never declare a `binaryTarget`.** | SwiftPM fetches `binaryTarget` artifacts at resolve time, before it knows which products will be built, so an "optional product" inside `Features` cannot spare a consumer the download. Verified 2026-07-30. See [Binary dependency policy](#binary-dependency-policy). |
 | 2026-07-30 | License bar: permissive **plus LGPL with static linking permitted**. GPL and FFmpeg `--enable-nonfree` are excluded outright. | A permissive-only bar was considered and rejected as *stricter than the tree already is* — `jellyfin-sdk-swift` is MPL 2.0, a file-level copyleft this repo already reasons about correctly in `THIRD-PARTY-NOTICES.md`. Permissive-only would also exclude fribidi (LGPL-2.1+), which in practice excludes libass, deciding #177 by side effect rather than on merit. The usual reason projects refuse static LGPL is §6(a): you must supply whatever a user needs to relink the app against a modified library, which for a closed-source app means publishing object files. **Jelly Shark is MIT and public, so that obligation is already discharged by the repository existing** — anyone can clone, swap the library and rebuild. Static linking is therefore legally cheaper here than for almost any other App Store app, and avoids the launch-time cost of embedded dynamic frameworks on tvOS. Residual risk is not Apple's review but the historical VLC-on-the-App-Store dispute, where a *copyright holder* argued Apple's usage rules impose restrictions LGPL forbids; VideoLAN relicensed the core to LGPL to end exactly that, and Swiftfin ships VLCKit on the App Store today. GPL is excluded because it would relicense the whole application; `--enable-nonfree` FFmpeg builds are excluded because they are not redistributable at all. **Per-candidate terms are verified against the source at the pinned version, never assumed from convention** — the claims to check are libass (ISC), harfbuzz (Old MIT), freetype (dual FTL/GPLv2 — elect FTL, which adds a documentation-credit obligation), fribidi (LGPL-2.1+), FFmpeg (LGPL-2.1+ only while `--enable-gpl` stays off). |
 | 2026-07-30 | Binaries arrive as `.binaryTarget(url:checksum:)`. In-repo builds are permitted only where the configure flags *are* the license claim. An `.xcframework` is never committed to git. | A checksummed upstream artifact is reproducible, pinned in the manifest, verified by CI for free, and leaves nothing in git history. The exception exists because for FFmpeg the license is a build-time property: a demux/mux-only configuration with `--disable-gpl` is LGPL, and an off-the-shelf artifact built by someone else may not be. Where that is the case, the build script lives in-repo, the artifact is published to this project's own Releases, and **the configure flags are recorded in `THIRD-PARTY-NOTICES.md`, because they are what makes the license claim true**. #60 already flagged hand-built binaries as a standing maintenance burden, so this stays the exception rather than the default. Committing an xcframework is refused in all cases: tens of MB in history forever, no provenance trail, and it is the only one of the three that cannot be undone. CI note: a manifest that resolves locally under an Xcode beta is not evidence it resolves on CI's release Xcode — verify binary-target resolution with an explicit `DEVELOPER_DIR` before trusting a green local run. |
 | 2026-07-30 | Soft ceiling of **15 MB added arm64 binary weight**; exceeding it requires an exception logged here. | Turns #176's prose contrast — "a few MB" for a demux-only FFmpeg versus "tens of MB" for MPVKit's full stack — into a check rather than an argument. tvOS's 4 GB bundle cap is not the binding constraint; install time and the premium-client positioning are. The line is drawn where it admits a demux-only FFmpeg (~3–6 MB) and the libass stack (~2–4 MB) while excluding VLCKit and MPVKit. **This does not pre-decide #60.** An alternate playback engine is explicitly exception-eligible: the spike is expected to argue its weight against what it buys, and if adopted, the exception is recorded as a row here rather than treated as a policy violation. A ceiling set low enough to reject #60 silently would defeat the purpose of running the spike. |
@@ -332,3 +350,66 @@ Two venues, both run by `.github/workflows/tests.yml` on every PR. `make test-ho
 | 2026-07-30 | Attribution has two surfaces: `THIRD-PARTY-NOTICES.md` stays hand-written; a structured list feeds the in-app credits. | Mechanical generation was considered and rejected for the notices file. Its value is precisely the part no generator produces — prose reasoning about why MPL 2.0 §3.3 does not reach this app's files, or which FFmpeg configure flags keep a build LGPL. At five entries, hand-maintenance is not the cost. The in-app surface has the opposite requirement: #29's About destination is scoped as a themed credits roll, which wants uniform structured rows (name, copyright, license, URL) at a steady cadence. So a small structured list feeds that, and the two coexist. Adding a binary dependency therefore has exactly two defined touch points. File-level obligations are satisfied the way OFL 1.1 already is for the Atkinson fonts — the license text ships *beside the binary it covers*, not merely referenced from the notices file, which is what FTL and LGPL both require. |
 | 2026-07-30 | **SwiftData cache adopted (#24), scoped per user-on-server, with no migrations and every failure degrading to a miss.** Supersedes the 2025-01 "Keychain-only for now" row. | Three sub-decisions worth recording, because each had a plausible alternative. **(1) Scope is a privacy boundary, not a cache key.** Rows are keyed by normalized-server + user id, so sign-out purges exactly one scope and two profiles (#192) can never read each other's rows. Normalizing the URL (host case, default ports, trailing slash) prevents cosmetic address variants from fragmenting one user's cache into several. The alternative — a flat cache with a user column filtered at read time — makes correct purging a property of every call site instead of the storage layer. **(2) No migrations, ever.** `schemaVersion` covers `@Model` shapes, Codable payload encodings *and* key formats; any mismatch wipes the store. Migration machinery would be preserving data the server hands back for free, and a partial migration is a class of bug the wipe cannot have. The store lives under `Caches/` for the same reason: tvOS may evict it and that is semantically fine. **(3) Writes go through `CachingJellyfinClient`, a write-through decorator, not through view models.** One choke point means the "what is cached" list is a file you can read rather than a survey of a dozen call sites — and it is what keeps playback URLs, transcoding decisions and auth tokens out of the cache, which CLAUDE.md forbids. **Known cost, accepted:** every failure path degrades to a cache miss with no logging, so a persistently broken store disables caching silently. Correct user-facing posture, poor diagnostics. |
 | 2026-08-02 | **#176's Matroska demuxer is written in Swift, in-repo. No `binaryTarget`, so the binary-dependency policy above does not engage and #199 is not a prerequisite for it.** | The 2026-07-30 rows settled *how* a binary dependency would be structured; this settles that #176 does not need one. Spiked against real sources before choosing (`docs/spikes/176-mkv-demux/`, deleted when the real demuxer lands): a read-only EBML/Matroska parser covering VINT primitives, SeekHead, Info, Tracks, Cues, Clusters, SimpleBlock and BlockGroup is **~380 lines of dependency-free Swift**, and the muxing half already exists in-repo as `TrickplayIFrameMuxer`. Three measurements made the choice rather than taste. **(1) `CodecPrivate` for `V_MPEGH/ISO/HEVC` *is* the `hvcC` payload** — byte-identical to what an fMP4 `hvc1` sample entry needs, so the sample-entry tag Jellyfin's progressive path gets wrong (`hev1`, see docs/PLAYBACK_MATRIX.md) is a copy, not a synthesis. **(2) Matroska stores HEVC as length-prefixed NALUs, not Annex B**, verified on two real sources — so video remux is a byte copy with no bitstream conversion, no decode and no re-encode. **(3) The `dvcC` ffmpeg refuses to write** (`Not writing 'dvcC'/'dvvC' box. Requires -strict unofficial.`) **arrives in the file** as a 24-byte `DOVIDecoderConfigurationRecord` under a `BlockAdditionMapping`. Validated over HTTP `Range` against both extremes of a real library — a 25 GB / 6-track DV profile 8.1 source and a 65 GB / 37-track profile 7 one — indexing each in **five requests and under 4 MB**, with cue offsets landing exactly on Cluster elements at 12.9 GB and 29 GB depth. This is the same `static=true` endpoint verified to serve `206` + `Content-Range`. Choosing Swift removes an M-sized blocker (#199), the LGPL configure-flag obligation, the `THIRD-PARTY-NOTICES.md` touch point, and the 15 MB weight question from #176's critical path, and puts the demuxer in `make test-host`'s ~5s tier because it is pure logic. Cost is ~800–1200 lines once lacing (all three modes occur in the wild — `none`, `fixed` *and* `EBML`), per-track keyframe determination (subtitles arrive as `BlockGroup` and must not be counted as video keyframes), and a refusal path for `Cues`-less files are added. **The policy above is unchanged and still governs #177 (libass) and #60 (VLCKit/mpv)** — this row narrows what it applies to, it does not amend it. |
+
+---
+
+## Binary dependency policy
+
+Settled 2026-07-30, ahead of the three issues that would each drag a binary in: #176
+(FFmpeg), #177 (libass), #60 (VLCKit/mpv). There are zero `binaryTarget` declarations
+today — this is cheap to hold now and expensive to retrofit.
+
+**The rule:** a binary dependency gets its own package under `Packages/`. `JellyfinKit`
+and `Features` may never declare a `binaryTarget`.
+
+### Why not an optional product inside `Features`
+
+#177 proposed a second `.library` that the app opts into and other clients decline. That
+works at link time but not at resolve time: SwiftPM reads the whole manifest and fetches
+`binaryTarget` `url:` artifacts before it knows which products will be built. Whether it
+prunes artifacts belonging to unselected products has varied across SwiftPM releases, so a
+manifest cannot assert it.
+
+The consequence is concrete. A client wanting nothing to do with libass would still pay the
+download on every clean checkout, and could not tell from reading the manifest that it
+would. Package-level separation is the only isolation SPM guarantees — a consumer who never
+writes `.package(path: "../PlaybackASS")` never resolves it — and it keeps
+`grep binaryTarget Packages/*/Package.swift` an authoritative answer to "what am I
+obligated to?"
+
+### Two reasons specific to this repo
+
+1. **It would break the 5-second test tier.** `JellyfinKit` declares `.macOS(.v13)` so its
+   Keychain/session suites run host-side under `make test-host`. An xcframework with no
+   macOS slice kills that tier outright.
+2. **It would tax an unrelated suite.** A binary inside `Features` makes an artifact
+   download a precondition of the `FeaturesTests` simulator run, which has nothing to do
+   with playback.
+
+### Dependency direction
+
+`Features` declares the protocol (`SubtitleRenderer`, `RemuxEngine`, …). The binary-backed
+package depends on `Features` and conforms to it. The app target is the only place the two
+meet.
+
+Precedent for the shape: `DesignSystem` already bundles git-ignored Fontshare `.ttf` files
+and degrades honestly to the system font when they are absent.
+
+### Verification
+
+Measured, not assumed. A throwaway package built outside the repo — its own manifest, a
+two-slice (`tvos-arm64`, `tvos-arm64-simulator`) `binaryTarget` xcframework,
+`.package(path:)` on `Features`, and a target calling into both — built clean for
+`generic/platform=tvOS` with zero errors under Xcode 26.6 (AppleTVOS26.5, matching CI) and
+Xcode 27 beta (AppleTVOS27.0). The scaffold was deleted rather than committed; the value
+was the measurement.
+
+### Prerequisite: #199
+
+The seam such a package would conform to is module-internal. `PlayerEngine`,
+`PlayerEngineEvent`, `PlayerSessionMetadata`, `DeliveryProgress`, `PlaybackTransportStatus`,
+`AudibleOption` and `LegibleOption` are all `internal` to `Features`, so an external package
+can link `Features` today but cannot implement a playback extension point.
+`PlaybackCapabilities` is already `public` and lives in `JellyfinKit`, so the
+capability-declaration half is done. Publishing the remainder is **#199**, a prerequisite
+for any binary-backed engine or renderer rather than a task of this policy.

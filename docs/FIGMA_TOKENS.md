@@ -37,15 +37,30 @@ unavailable**: it requires an Organization/Enterprise plan and this file is on P
 on `ArtworkShelfItem`: artwork and caption lines are flat siblings of the button label —
 the tvOS borderless focus lockup breaks if they're wrapped in a stack.
 
+**Dev Mode annotations** are the second mapping channel, and unlike descriptions they attach
+to any node, not just components. `node.annotations` reads and writes them over MCP;
+`labelMarkdown` renders bold and code ticks in Dev Mode (verified 2026-09-11). Categories in
+this file: Development, Interaction, Accessibility, Content. Use them for per-node dev notes
+a component description can't hold — which variable a fill resolves through, why a frame
+carries an explicit `Theme` mode.
+
 ## Representation deviations from code
 
 - **Primitive values are gamut-clipped sRGB.** `BaseColors` is authored in OKLCH and renders
   extended-sRGB on device; high-chroma shades are more saturated than the Figma swatch.
-- **Alpha-baked theme values are raw RGBA**, not aliases (Figma can't alias-with-opacity).
-  Gradient stops bind to color variables but take their *alpha from the variable* — hence the
-  `color/artwork-scrim` / `color/artwork-scrim-clear` pair backing the playback-badge scrim.
-- **Standard `focusFill` is transparent** in Figma; in code it is `nil` (untinted system
-  Liquid Glass platter).
+- **Alpha values alias their primitive** through `COMPOSE_COLOR` expressions, mirroring
+  code's `BaseColors.x.opacity(n)`. 23 cells use it: `focusRing` (all modes), `focusFill`
+  (Horror/Action/Video Store), Horror + Video Store `secondary` and `tertiary`, Horror
+  `onFocusFillSecondary`, and the scrim pair. The scrim aliases `color/background` *inside*
+  `Theme` rather than a primitive, matching code's `theme.background.opacity(0.55)`.
+  Gradient stops still take their *alpha from the variable*, so `color/artwork-scrim` /
+  `color/artwork-scrim-clear` remain a pair.
+- **The `COMPOSE_COLOR` alpha argument is a percentage.** `COMPOSE_COLOR(alias, 80)` is 80%
+  opacity; passing `0.8` silently resolves to 0.8% — a near-invisible fill, no error raised.
+  Same percent convention as `caption-idle-opacity`.
+- **Standard `focusFill` is the one remaining raw RGBA**, at alpha 0; in code it is `nil`
+  (untinted system Liquid Glass platter). That is the absence of a color, not a primitive at
+  0%, so it must not be converted to an alias.
 - **Multiplied type sizes are tvOS points**; aliased size modes resolve through `Platform`
   and are platform-aware (theme × platform would need a 10-mode cross product).
 - **Durations are FLOAT seconds and easings are STRINGs** — TIMING/EASING variable types are
@@ -58,10 +73,13 @@ the tvOS borderless focus lockup breaks if they're wrapped in a stack.
 
 ## Working limitations
 
-- **Custom fonts are desktop-local.** The Fontshare families aren't loadable by Figma's
-  server-side scripting, so automated edits to any text node resolving to them fail
-  (characters, truncation, bindings, instance text props). Such edits are done by hand in
-  Figma; new text is authored in Inter with `fontFamily` bound last.
+- **All 16 code font families are uploaded to the Figma team and load server-side**
+  (verified 2026-09-11: `listAvailableFontsAsync` lists every `FontFamily` name and
+  `loadFontAsync` succeeds for each; a round-trip `characters` edit and a `Theme` mode
+  switch to Horror both ran clean). Automated text edits follow the load-first recipe:
+  load the node's *current* fonts from `getStyledTextSegments(['fontName'])` before
+  mutating, and load every mode's value of a `FONT_FAMILY` variable before binding it or
+  switching a frame's `Theme` mode.
 - Component text uses semantic strings ("Item Title", "Item Subtitle", "Time Left",
   "Episode Description"), never mock titles.
 - SF Symbols are hand-curated: export SVGs from the SF Symbols app into the repo, then
