@@ -27,8 +27,18 @@ struct PlaybackViewModelTests {
         item: MediaItem,
         progressInterval: Duration = .seconds(10),
         mediaSourceId: String? = nil,
+        displaySupportsHDR: Bool? = nil,
+        deliveries: DeliveryRecorder? = nil,
     ) -> (viewModel: PlaybackViewModel, engine: MockPlayerEngine) {
         let engine = MockPlayerEngine()
+        let defaultDelivery: StreamDeliveryFactory = { resolution, context, client, displaySupportsHDR in
+            StreamDeliverySelector.delivery(
+                for: resolution,
+                context: context,
+                client: client,
+                displaySupportsHDR: displaySupportsHDR,
+            )
+        }
         let viewModel = PlaybackViewModel(
             client: client,
             item: item,
@@ -38,8 +48,47 @@ struct PlaybackViewModelTests {
             // No sample spacing: these tests drive heartbeats back to back,
             // and the spacing rule has its own suite (ServerOutageMonitorTests)
             outageMonitor: ServerOutageMonitor(minimumSampleSpacing: .zero),
+            // Unset means the real display, which is what every test that
+            // predates #218 exercised — their sources are outside the remux
+            // population either way.
+            displaySupportsHDR: { displaySupportsHDR ?? StreamDeliverySelector.displaySupportsHDR },
+            makeDelivery: deliveries?.factory ?? defaultDelivery,
         )
         return (viewModel, engine)
+    }
+
+    /// Stands in for a real delivery so a test can drive the remux
+    /// population without an in-app remux session reaching for the network,
+    /// and can read back the display value the view model passed — the one
+    /// value that must drive both the delivery route and the subtitle menu.
+    @MainActor
+    final class DeliveryRecorder {
+        private(set) var displayValues: [Bool] = []
+        private(set) var contexts: [DeliveryContext] = []
+
+        var factory: StreamDeliveryFactory {
+            { [self] resolution, context, _, displaySupportsHDR in
+                contexts.append(context)
+                displayValues.append(displaySupportsHDR)
+                return PassthroughDelivery(resolution: resolution)
+            }
+        }
+    }
+
+    @MainActor
+    final class PassthroughDelivery: StreamDelivery {
+        var onPermanentFailure: (() -> Void)?
+        private let resolution: StreamResolution
+
+        init(resolution: StreamResolution) {
+            self.resolution = resolution
+        }
+
+        func prepare() async -> DeliveredStream {
+            DeliveredStream(url: resolution.url, playMethod: resolution.playMethod)
+        }
+
+        func stop() {}
     }
 
     @Test("start() transitions to playing and reports start")
@@ -1420,6 +1469,182 @@ struct PlaybackViewModelTests {
         #expect(engine.loadRequests.count == 2)
         #expect(engine.suspendCount == 1)
         #expect(engine.teardownCount == 0)
+    }
+
+    // MARK: - Subtitles the delivery cannot carry (#218)
+
+    /// The #218 population: an HDR MKV with image-based subtitle tracks, the
+    /// one shape the remux ladder exists for. `directPlay` decides whether
+    /// the session STARTS in that ladder or would only land there once a
+    /// burn-in pick turned it into an HLS request.
+    private func stubHDRMKVSource(
+        on client: MockJellyfinClient,
+        directPlay: Bool = true,
+        defaultSubtitleStreamIndex: Int? = nil,
+    ) {
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-1",
+                mediaSources: [
+                    MediaSource(
+                        id: "source-1",
+                        container: "mkv",
+                        videoCodec: "hevc",
+                        supportsDirectPlay: directPlay,
+                        supportsDirectStream: true,
+                        supportsTranscoding: true,
+                        defaultSubtitleStreamIndex: defaultSubtitleStreamIndex,
+                        videoStream: MediaStreamInfo(index: 0, type: .video, codec: "hevc", videoRange: "HDR"),
+                        subtitleStreams: [Self.englishSrt, Self.spanishSrt, Self.englishPgs],
+                    ),
+                ],
+            ),
+        )
+    }
+
+    @Test("A remux session offers no subtitle streams at all")
+    func remuxSessionOffersNoSubtitles() async throws {
+        let client = MockJellyfinClient()
+        stubHDRMKVSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 4)
+        let deliveries = DeliveryRecorder()
+        let (viewModel, _) = makePlayback(
+            client: client,
+            item: makeMovie(),
+            displaySupportsHDR: false,
+            deliveries: deliveries,
+        )
+
+        await viewModel.start()
+
+        // The source has them; the session cannot deliver them. Text and
+        // image alike — the remux carries neither, so the app offers neither.
+        #expect(viewModel.mediaSource?.subtitleStreams.count == 3)
+        #expect(viewModel.offeredSubtitleStreams.isEmpty)
+        // One display read drove both: the same value that hid the menu is
+        // the one that routed the delivery
+        #expect(deliveries.displayValues == [false])
+        let context = try #require(deliveries.contexts.first)
+        #expect(RemuxHLSDelivery.isEligible(context: context, displaySupportsHDR: false))
+    }
+
+    @Test("A direct-played source in the remux population offers no subtitles either")
+    func directPlayedRemuxPopulationOffersNoSubtitles() async {
+        // The gate is the population, not the current play method. This
+        // session direct-plays right now, but a burn-in pick would turn it
+        // into an HLS request and the remux ladder would discard the track —
+        // which is the exact shape #218 was filed for. Narrowing the gate to
+        // "the current resolution is not direct play" re-opens it.
+        let client = MockJellyfinClient()
+        stubHDRMKVSource(on: client, directPlay: true)
+        let deliveries = DeliveryRecorder()
+        let (viewModel, _) = makePlayback(
+            client: client,
+            item: makeMovie(),
+            displaySupportsHDR: false,
+            deliveries: deliveries,
+        )
+
+        await viewModel.start()
+
+        #expect(client.startReports[0].playMethod == .directPlay)
+        #expect(viewModel.offeredSubtitleStreams.isEmpty)
+    }
+
+    @Test("A refused subtitle pick commits nothing, rebuilds nothing, and reports nothing new")
+    func refusedSubtitlePickLeavesNoTrace() async {
+        let client = MockJellyfinClient()
+        stubHDRMKVSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 4)
+        let (viewModel, engine) = makePlayback(
+            client: client,
+            item: makeMovie(),
+            displaySupportsHDR: false,
+            deliveries: DeliveryRecorder(),
+        )
+
+        await viewModel.start()
+
+        await viewModel.selectSubtitleStream(index: 5)
+
+        // The seeded index stands; the pick left no trace on it
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.playbackInfoRequests.count == 1)
+        #expect(client.streamResolutions.count == 1)
+        #expect(client.startReports.count == 1)
+        #expect(engine.loadRequests.count == 1)
+        #expect(engine.suspendCount == 0)
+
+        // The heartbeat carries the committed index — the server's own
+        // remembered choice, which this session declines to act on but must
+        // not overwrite for the clients that can honor it
+        await heartbeat(viewModel, engine)
+        #expect(client.progressReports.last?.subtitleStreamIndex == 4)
+    }
+
+    @Test("A refused pick does not count as the viewer choosing — the server default still seeds")
+    func refusedPickDoesNotSuppressTheServerDefaultSeed() async {
+        // Behavioural proof that the refusal lands before BOTH mutations.
+        // `hasExplicitSubtitleSelection` is private and stays that way; its
+        // one observable effect is that an explicit choice suppresses the
+        // server default's seed for the rest of the session (#212). Had the
+        // refused "off" below set it, the second load would start with
+        // subtitles off instead of re-seeding the server's 4.
+        let client = MockJellyfinClient()
+        stubHDRMKVSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 4)
+        let (viewModel, _) = makePlayback(
+            client: client,
+            item: makeMovie(),
+            displaySupportsHDR: false,
+            deliveries: DeliveryRecorder(),
+        )
+
+        await viewModel.start()
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+
+        await viewModel.selectSubtitleStream(index: nil)
+        await viewModel.start()
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+    }
+
+    @Test("An HDR display keeps the same source's subtitles offered and selectable")
+    func hdrDisplayKeepsSubtitlesOffered() async {
+        let client = MockJellyfinClient()
+        stubHDRMKVSource(on: client, directPlay: false)
+        let (viewModel, _) = makePlayback(
+            client: client,
+            item: makeMovie(),
+            displaySupportsHDR: true,
+            deliveries: DeliveryRecorder(),
+        )
+
+        await viewModel.start()
+        #expect(viewModel.offeredSubtitleStreams.count == 3)
+
+        await viewModel.selectSubtitleStream(index: 4)
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.streamResolutions[1].parameters.subtitleStreamIndex == 4)
+    }
+
+    @Test("An SDR display leaves a non-MKV source untouched")
+    func sdrDisplayLeavesNonMKVSourceUntouched() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, _) = makePlayback(
+            client: client,
+            item: makeMovie(),
+            displaySupportsHDR: false,
+            deliveries: DeliveryRecorder(),
+        )
+
+        await viewModel.start()
+        #expect(viewModel.offeredSubtitleStreams.count == 3)
+
+        await viewModel.selectSubtitleStream(index: 4)
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.playbackInfoRequests.count == 2)
     }
 
     // MARK: - In-Place Audio Switching (#187)

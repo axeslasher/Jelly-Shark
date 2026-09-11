@@ -79,6 +79,15 @@ public final class PlaybackViewModel {
     private let engine: any PlayerEngine
     private let progressInterval: Duration
 
+    /// What the attached display can render, read per build rather than
+    /// captured at init: the scene may not have a screen yet when the player
+    /// cover is constructed.
+    private let displaySupportsHDR: @MainActor () -> Bool
+
+    /// Injected so a test can drive the remux population without a real
+    /// remux session — and observe the display value this model passed.
+    private let makeDelivery: StreamDeliveryFactory
+
     /// The shared user-state overlay. A private fallback keeps the toggle
     /// and resolve semantics identical when the container constructs the
     /// model without one (previews, tests) — one code path, not two.
@@ -156,6 +165,29 @@ public final class PlaybackViewModel {
     /// video, in which case no legible rendition exists to toggle
     private var sessionUsesBurnIn = false
 
+    /// Whether the player's own menus may offer this session's burn-in
+    /// subtitle tracks (#218).
+    ///
+    /// False for the HDR-on-SDR MKV population. `RemuxHLSDelivery` serves
+    /// video and audio only, and for that population it is permanent rather
+    /// than a gap waiting to be filled — #226 measured that AVFoundation
+    /// refuses PQ under every master playlist shape, and `EXT-X-MEDIA`
+    /// renditions need a master. A burn-in pick there is negotiated,
+    /// delivered past, and discarded with nothing on screen.
+    ///
+    /// The gate is the POPULATION, deliberately not this session's current
+    /// play method. Direct play short-circuits delivery selection, so an
+    /// eligible source can be direct-playing right now and still send every
+    /// burn-in pick down the remux ladder the moment the pick turns it into
+    /// an HLS request. Narrowing this to "the current resolution is not
+    /// direct play" re-opens exactly the case #218 was filed for.
+    ///
+    /// Accepted over-suppression: a session that descends to rung 3 (the
+    /// interposed fallback) does carry burn-in, and its menu stays hidden
+    /// anyway. Rung 3 is the degraded last resort, and making a menu appear
+    /// mid-session is its own churn.
+    private var canOfferSubtitleStreams = true
+
     /// Whether native-picker reconciliation may run. Disarmed on every new
     /// stream until the engine reports its selection options loaded — a
     /// change notification arriving before then could not be mapped to a
@@ -174,6 +206,11 @@ public final class PlaybackViewModel {
     ///   - outageMonitor: The stall detector behind `outage` (#188); tests
     ///     inject one with no sample spacing so they can drive heartbeats
     ///     back to back
+    ///   - displaySupportsHDR: What the attached display can render. Read
+    ///     once per build and used for both decisions it drives — which
+    ///     delivery serves the session, and whether its subtitle menu can
+    ///     offer anything (#218) — so the two can never disagree.
+    ///   - makeDelivery: How a resolved stream becomes a delivery
     init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
@@ -182,12 +219,18 @@ public final class PlaybackViewModel {
         userState: UserStateStore? = nil,
         mediaSourceId: String? = nil,
         outageMonitor: ServerOutageMonitor = ServerOutageMonitor(),
+        displaySupportsHDR: @escaping @MainActor () -> Bool = { StreamDeliverySelector.displaySupportsHDR },
+        makeDelivery: @escaping StreamDeliveryFactory = {
+            StreamDeliverySelector.delivery(for: $0, context: $1, client: $2, displaySupportsHDR: $3)
+        },
     ) {
         self.client = client
         self.item = item
         self.engine = engine
         self.progressInterval = progressInterval
         self.outageMonitor = outageMonitor
+        self.displaySupportsHDR = displaySupportsHDR
+        self.makeDelivery = makeDelivery
         self.userState = userState ?? UserStateStore()
         preferredMediaSourceId = mediaSourceId
         engine.onEvent = { [weak self] event in
@@ -523,6 +566,19 @@ public final class PlaybackViewModel {
         await applySelection(.audio)
     }
 
+    /// The subtitle streams the player's own menus may offer. Empty when
+    /// this session's delivery would discard a burn-in pick (#218), which
+    /// drops the tvOS "Image Subtitles" transport menu and the visionOS tab
+    /// through the same empty-array path a source with no image tracks
+    /// already takes. This does not reach AVKit's native captions picker,
+    /// which nothing here touches: on a remux delivery it has no legible
+    /// group to show, while a session still direct-playing the file may
+    /// expose the file's own embedded text tracks through it. The app must
+    /// never reach into that picker either way (#91).
+    public var offeredSubtitleStreams: [MediaStreamInfo] {
+        canOfferSubtitleStreams ? (mediaSource?.subtitleStreams ?? []) : []
+    }
+
     /// Switch subtitles to the given stream index, or nil to turn them off.
     ///
     /// This is the app-menu path, and post-#90 the app's menu carries only
@@ -539,6 +595,17 @@ public final class PlaybackViewModel {
     /// item, player, and player view controller (#91).
     public func selectSubtitleStream(index: Int?) async {
         guard !hasStopped else { return }
+        // Before either mutation: a refused pick must leave no trace. An
+        // index committed here would reach the next progress report and the
+        // next rebuild for a track this session cannot deliver, and setting
+        // the explicit flag would suppress the server default's seed for the
+        // rest of the session (#212's shape, #218's cause).
+        guard canOfferSubtitleStreams else {
+            Self.logger.info(
+                "[subtitle] refusing a selection this session's delivery would discard (index=\(index.map(String.init) ?? "off", privacy: .public))",
+            )
+            return
+        }
         guard index != selectedSubtitleStreamIndex else { return }
         selectedSubtitleStreamIndex = index
         hasExplicitSubtitleSelection = true
@@ -826,21 +893,37 @@ public final class PlaybackViewModel {
         delivery?.stop()
         delivery = nil
 
-        let delivery = StreamDeliverySelector.delivery(
-            for: resolution,
-            context: DeliveryContext(
-                itemId: item.id,
-                mediaSource: mediaSource,
-                playSessionId: playSessionId,
-                audioStreamIndex: selectedAudioStreamIndex,
-                subtitleStreamIndex: selectedSubtitleStreamIndex,
-                trickplayInfo: trickplayInfo,
-                capabilities: engine.capabilities,
-                avoidInAppRemux: avoidInAppRemuxDelivery,
-                userStreamingBitrateCap: engine.streamingBitrateCap,
-            ),
-            client: client,
+        let context = DeliveryContext(
+            itemId: item.id,
+            mediaSource: mediaSource,
+            playSessionId: playSessionId,
+            audioStreamIndex: selectedAudioStreamIndex,
+            subtitleStreamIndex: selectedSubtitleStreamIndex,
+            trickplayInfo: trickplayInfo,
+            capabilities: engine.capabilities,
+            avoidInAppRemux: avoidInAppRemuxDelivery,
+            userStreamingBitrateCap: engine.streamingBitrateCap,
         )
+        // One read, both decisions. The menu gate and the delivery route
+        // answer the same question about the same display, so they are
+        // driven by the same value rather than two independent reads that a
+        // test could pull apart (#218).
+        let displayTakesHDR = displaySupportsHDR()
+        canOfferSubtitleStreams = !RemuxHLSDelivery.isEligible(
+            context: context,
+            displaySupportsHDR: displayTakesHDR,
+        )
+        // Per build rather than per session: a rebuild can change the answer
+        // — a version switch to a non-MKV source, a display that changed
+        // under the session — and this line is how a device round reads
+        // which way each build went.
+        if !canOfferSubtitleStreams {
+            let count = mediaSource?.subtitleStreams.count ?? 0
+            Self.logger.info(
+                "[subtitle] the remux ladder carries no subtitle tracks; hiding the app's burn-in menu (\(count, privacy: .public) stream(s) on the source)",
+            )
+        }
+        let delivery = makeDelivery(resolution, context, client, displayTakesHDR)
         // Armed before `prepare`: the failure can only fire once the engine
         // is fetching segments, but the delivery that will fire it exists
         // now. A permanent mid-session failure (a remux that dies on the

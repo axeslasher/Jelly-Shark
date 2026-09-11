@@ -146,7 +146,7 @@ public struct PlaybackContainerView: View {
                 PlayerViewControllerRepresentable(
                     player: player,
                     audioStreams: viewModel.mediaSource?.audioStreams ?? [],
-                    subtitleStreams: viewModel.mediaSource?.subtitleStreams ?? [],
+                    subtitleStreams: viewModel.offeredSubtitleStreams,
                     selectedAudioIndex: viewModel.selectedAudioStreamIndex,
                     selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
                     people: viewModel.castMembers,

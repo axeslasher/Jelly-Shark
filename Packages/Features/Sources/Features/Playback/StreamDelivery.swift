@@ -61,6 +61,17 @@ struct DeliveryContext {
     var userStreamingBitrateCap: Int?
 }
 
+/// Builds the delivery for a resolved stream. Production is
+/// `StreamDeliverySelector.delivery`; a test injects a stub so a view-model
+/// test can drive the remux population without standing up a real remux
+/// session, and can read back the display value the view model passed.
+typealias StreamDeliveryFactory = @MainActor (
+    StreamResolution,
+    DeliveryContext,
+    any JellyfinClientProtocol,
+    Bool,
+) -> any StreamDelivery
+
 /// Picks the delivery for a resolved stream. The rule is the play method:
 /// direct play takes the original file untouched; every HLS session runs
 /// through the loopback interposer — except the one case server HLS
