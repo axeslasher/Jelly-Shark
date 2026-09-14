@@ -16,15 +16,25 @@ struct SearchView: View {
         /// outlives its content, and after the round trip the empty platter is
         /// still the key window and swallows every pinch.
         ///
-        /// Three things follow from this flag as the view disappears: search
-        /// is closed, which takes the field; the suggestions go empty, which
+        /// Two things follow from this flag as the view disappears: search is
+        /// closed, which takes the field, and the suggestions go empty, which
         /// takes the dropdown — closing search alone leaves it over the detail
         /// page until the next presentation displaces it (hiding the `.menu`
-        /// placement instead blanked the whole Search page on device); and the
-        /// query change that dismissal writes is ignored, so the results are
-        /// still there when the viewer comes back. tvOS has no `isPresented`
-        /// overload and no platter to strand.
+        /// placement instead blanked the whole Search page on device). tvOS
+        /// has no `isPresented` overload and no platter to strand.
         @State private var isSearchPresented = false
+
+        /// True from the root's `onDisappear` to its next `onAppear`.
+        ///
+        /// Dismissing search clears the field, and the query observer would
+        /// turn that into empty shelves and the idle prompt on return from an
+        /// item. That clear is ignored while this is set. It is keyed to
+        /// leaving rather than to `isSearchPresented` because the field's own
+        /// clear button flips the presentation in the same pass as it clears
+        /// the text; keyed to the presentation, the guard swallowed that too
+        /// and the shelves stayed after a deliberate cancel. Leaving is the
+        /// only case where the clear is not the viewer's choice.
+        @State private var isLeaving = false
     #endif
 
     /// No NavigationStack here: RootView owns each tab's stack (with a path
@@ -43,9 +53,7 @@ struct SearchView: View {
             }
             .onChange(of: viewModel.query) { _, newValue in
                 #if os(visionOS)
-                    // Dismissing search clears the field. On a push that is
-                    // not the viewer's choice, so it must not clear the shelves.
-                    guard isSearchPresented else { return }
+                    guard !isLeaving else { return }
                 #endif
                 viewModel.updateQuery(newValue)
             }
@@ -75,7 +83,11 @@ struct SearchView: View {
                     isPresented: $isSearchPresented,
                     prompt: "Search movies, shows…",
                 )
-                .onDisappear { isSearchPresented = false }
+                .onDisappear {
+                    isLeaving = true
+                    isSearchPresented = false
+                }
+                .onAppear { isLeaving = false }
         #else
             content
                 .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
