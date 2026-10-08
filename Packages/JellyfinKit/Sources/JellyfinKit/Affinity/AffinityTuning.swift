@@ -9,6 +9,12 @@ import Foundation
 /// `favoriteWeight` and `halfLifeDays`, lowered for #324's soak so recent
 /// plays move the rows.
 public enum AffinityTuning {
+    /// Raise whenever a tunable or a shelf query changes. Cached rows built
+    /// under another version are not shown, and their items are not reused:
+    /// otherwise a rebuild keeps every surviving row's old items, and the
+    /// change never reaches the screen (#324).
+    public static let rulesVersion = 1
+
     // MARK: Signal weights
 
     /// A favorite outweighs a play because it is an explicit, durable

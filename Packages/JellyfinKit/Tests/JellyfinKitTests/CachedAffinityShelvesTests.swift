@@ -47,6 +47,20 @@ struct CachedAffinityShelvesTests {
         #expect(read == payload())
     }
 
+    /// #324: a row written before `rulesVersion` existed must decode as out
+    /// of date, not fail to decode or pass as current.
+    @Test func aRowWithoutARulesVersionDecodesAsVersionZero() throws {
+        let encoded = try JSONEncoder().encode(payload())
+        var object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "rulesVersion")
+        let legacy = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(CachedAffinityShelves.self, from: legacy)
+        #expect(decoded.rulesVersion == 0)
+        #expect(decoded.shelves == payload().shelves)
+        #expect(payload().rulesVersion == AffinityTuning.rulesVersion)
+    }
+
     @Test func bucketKeyedDenominatorsSurviveTheRoundTrip() async {
         let store = MediaCacheStore.makeInMemory()
         await store.write(payload(), scope: scope, key: .affinityShelves)

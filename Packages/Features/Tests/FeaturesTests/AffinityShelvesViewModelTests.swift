@@ -518,6 +518,45 @@ struct AffinityShelvesViewModelTests {
         #expect(second.shelves == built)
     }
 
+    /// #324: rows cached under older rules would be kept by the next
+    /// rebuild, so a rules change would never reach the screen.
+    @Test func rowsCachedUnderOlderRulesAreNotShownAndAreRebuiltFresh() async {
+        let mock = configured()
+        let cache = ScopedCache(store: MediaCacheStore.makeInMemory(), scope: .init(
+            serverURL: URL(string: "https://example.com")!, userID: "u1",
+        ))
+        let first = AffinityShelvesViewModel()
+        first.attach(client: mock, libraries: [moviesLibrary], cache: cache)
+        await first.validate(now: now)
+        guard let written = await cache.read(CachedAffinityShelves.self, key: .affinityShelves) else {
+            Issue.record("expected a cached row")
+            return
+        }
+        await cache.write(
+            CachedAffinityShelves(
+                fingerprint: written.fingerprint,
+                stamp: written.stamp,
+                stampProbedAt: written.stampProbedAt,
+                denominators: written.denominators,
+                denominatorsProbedAt: written.denominatorsProbedAt,
+                shelves: written.shelves,
+                rulesVersion: AffinityTuning.rulesVersion - 1,
+            ),
+            key: .affinityShelves,
+        )
+
+        let second = AffinityShelvesViewModel()
+        second.attach(client: mock, libraries: [moviesLibrary], cache: cache)
+        await second.hydrate()
+        #expect(second.shelves.isEmpty)
+
+        // Same fingerprint as the stale row, but it was never adopted, so
+        // this pass rebuilds with nothing to keep.
+        await second.validate(now: now)
+        #expect(second.recomputeCount == 1)
+        #expect(!second.shelves.isEmpty)
+    }
+
     /// The library branch already knows the universe moved; reusing an
     /// hour-old stamp would keep the old librarySize and denominators.
     @Test func reloadForcesAStampProbeInsideTheTTL() async {

@@ -29,6 +29,8 @@ public struct CachedAffinityShelves: Sendable, Hashable, Codable {
     /// `AffinityTuning.denominatorTTL`.
     public let denominatorsProbedAt: Date
     public let shelves: [CachedAffinityShelf]
+    /// The `AffinityTuning.rulesVersion` these shelves were built under.
+    public let rulesVersion: Int
 
     public init(
         fingerprint: String,
@@ -37,6 +39,7 @@ public struct CachedAffinityShelves: Sendable, Hashable, Codable {
         denominators: [AffinityBucket: Int],
         denominatorsProbedAt: Date,
         shelves: [CachedAffinityShelf],
+        rulesVersion: Int = AffinityTuning.rulesVersion,
     ) {
         self.fingerprint = fingerprint
         self.stamp = stamp
@@ -44,5 +47,19 @@ public struct CachedAffinityShelves: Sendable, Hashable, Codable {
         self.denominators = denominators
         self.denominatorsProbedAt = denominatorsProbedAt
         self.shelves = shelves
+        self.rulesVersion = rulesVersion
+    }
+
+    /// Rows written before the field existed decode as version 0, so they
+    /// read as out of date rather than failing to decode.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fingerprint = try container.decode(String.self, forKey: .fingerprint)
+        stamp = try container.decode(AffinityLibraryStamp.self, forKey: .stamp)
+        stampProbedAt = try container.decode(Date.self, forKey: .stampProbedAt)
+        denominators = try container.decode([AffinityBucket: Int].self, forKey: .denominators)
+        denominatorsProbedAt = try container.decode(Date.self, forKey: .denominatorsProbedAt)
+        shelves = try container.decode([CachedAffinityShelf].self, forKey: .shelves)
+        rulesVersion = try container.decodeIfPresent(Int.self, forKey: .rulesVersion) ?? 0
     }
 }

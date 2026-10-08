@@ -232,6 +232,13 @@ public final class AffinityShelvesViewModel {
         // Both `setEnabled` and a meaningful `attach` advance it.
         guard isEnabled, token == currentPassToken else { return }
 
+        // Built under older rules: showing these would put them back in
+        // `builtShelves`, and the next rebuild would keep their items.
+        guard cached.rulesVersion == AffinityTuning.rulesVersion else {
+            Self.logger.debug("affinity cache from rules version \(cached.rulesVersion, privacy: .public); not hydrating")
+            return
+        }
+
         builtShelves = cached.shelves
         shelves = cached.shelves
         persistedFingerprint = cached.fingerprint
