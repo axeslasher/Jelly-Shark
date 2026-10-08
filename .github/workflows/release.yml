@@ -80,7 +80,8 @@ jobs:
   upload:
     name: Archive + upload (${{ matrix.platform }})
     needs: verify-version
-    runs-on: macos-26
+    # Same image as tests.yml, so an upload is built by the Xcode CI tested.
+    runs-on: xcode-27
     timeout-minutes: 60
     strategy:
       # One platform failing shouldn't strand the other's finished upload;

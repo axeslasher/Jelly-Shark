@@ -282,7 +282,7 @@ Two venues, both run by `.github/workflows/tests.yml` on every PR. `make test-ho
 
 **Development**: Xcode 27.0+  
 **CI**: GitHub Actions on every push and PR — `tests.yml` (`host`: JellyfinKit via `swift test`; `simulator`: tvOS build + DesignSystem/Features/app/UI suites; `visionos`: build only) and `swiftformat.yml` (`lint`: `swiftformat --lint`, SwiftFormat pinned to 0.62.1). The macOS jobs run on the `xcode-27` runner image, the same Xcode major version used locally.  
-**CD**: not set up.  
+**CD**: `release.yml` archives both platforms from a pushed `v*` tag on the `xcode-27` runner and uploads them to TestFlight; see docs/RELEASING.md.  
 **Distribution**: TestFlight, then App Store  
 **Open Source**: MIT license
 
