@@ -26,6 +26,18 @@ struct ContentRefreshCoordinatorTests {
         #expect(coordinator.revision > after)
     }
 
+    /// #323: a return from the background wakes the drain without owing
+    /// it anything, so the floor alone decides whether to re-check.
+    @Test func wakingChangesTheRevisionButOwesNothing() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.completeInitialLoad(revisionAtStart: coordinator.revision, succeeded: true, now: epoch)
+        let before = coordinator.revision
+        coordinator.wake()
+        #expect(coordinator.revision > before)
+        #expect(coordinator.beginDrain(now: epoch.addingTimeInterval(5)) == nil)
+        #expect(coordinator.beginDrain(now: epoch.addingTimeInterval(3600))?.isFloorCheck == true)
+    }
+
     // MARK: - Taking reasons
 
     @Test func takeReturnsTheDeepestPendingReason() {

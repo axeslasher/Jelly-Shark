@@ -11,6 +11,7 @@ public struct RootView: View {
     @State private var homePreferences = HomePreferences()
     @State private var playbackPreferences = PlaybackPreferences()
     @State private var selectedTab: AppTab = .home
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Home's view models and UI state, owned here (not in `HomeView`) so
     /// tvOS tearing the tab down on switch loses neither the fetched data
@@ -343,6 +344,13 @@ public struct RootView: View {
         }
         .onChange(of: session.userState.mutationRevision) { _, _ in
             refreshCoordinator.post(.watchState)
+        }
+        // Nothing else changes when the app comes back from the background,
+        // so Home's drain would sit on content from whenever it last ran —
+        // hours, overnight. The floor decides whether a wake is worth a check.
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            refreshCoordinator.wake()
         }
         // If the selected library tab disappears (disconnect clears the list,
         // or the server removed a library), fall back to Home rather than
