@@ -147,6 +147,9 @@ public final class AffinityShelvesViewModel {
         let client: any JellyfinClientProtocol
         let libraryIDs: [String]
         let cache: ScopedCache?
+        /// Rows whose items a rebuild may keep. Empty on a `.reload`: the
+        /// library moved, so every row re-fetches to let new titles in.
+        let reusableShelves: [CachedAffinityShelf]
     }
 
     private func owe(_ strength: PassStrength) {
@@ -333,7 +336,12 @@ public final class AffinityShelvesViewModel {
 
         // Captured now, never read from the model again: `attach` may
         // replace all three while this pass is suspended.
-        let context = PassContext(client: client, libraryIDs: eligibleLibraryIDs, cache: cache)
+        let context = PassContext(
+            client: client,
+            libraryIDs: eligibleLibraryIDs,
+            cache: cache,
+            reusableShelves: effective == .reload ? [] : builtShelves,
+        )
         let task = Task {
             await pass(token: token, strength: effective, context: context, now: now)
         }
@@ -393,6 +401,7 @@ public final class AffinityShelvesViewModel {
 
             let result = try await build(
                 client: client,
+                reusableShelves: context.reusableShelves,
                 signals: signals,
                 probed: probed,
                 fingerprint: fingerprint,
@@ -506,6 +515,7 @@ public final class AffinityShelvesViewModel {
 
     private func build(
         client: any JellyfinClientProtocol,
+        reusableShelves: [CachedAffinityShelf],
         signals: Signals,
         probed: ProbedStamp,
         fingerprint: String,
@@ -533,8 +543,13 @@ public final class AffinityShelvesViewModel {
             qualifying: qualifying,
         )
 
+        let playedIDs = Set(signals.normalized.filter { $0.lastPlayed != nil }.map(\.sourceID))
         var built: [(AffinityShelfDescriptor, [MediaItem])] = []
         for descriptor in descriptors {
+            if let kept = Self.keptItems(for: descriptor, in: reusableShelves, playedIDs: playedIDs) {
+                built.append((descriptor, kept))
+                continue
+            }
             let items = try await items(for: descriptor, client: client)
             try Task.checkCancellation()
             built.append((descriptor, items))
@@ -616,6 +631,24 @@ public final class AffinityShelvesViewModel {
         }
     }
 
+    /// What a surviving row showed last time, or nil to re-fetch.
+    ///
+    /// Every play moves the fingerprint and rebuilds, and genre rows fetch in
+    /// random order, so re-fetching an unchanged row would reshuffle it after
+    /// every play (#324). A row changes when its genre, person, or seed does
+    /// — or when the viewer finished something in it, so it never keeps
+    /// offering a watched title.
+    static func keptItems(
+        for descriptor: AffinityShelfDescriptor,
+        in shelves: [CachedAffinityShelf],
+        playedIDs: Set<String>,
+    ) -> [MediaItem]? {
+        guard let previous = shelves.first(where: { $0.descriptor.kind == descriptor.kind }),
+              !previous.items.contains(where: { playedIDs.contains($0.id) })
+        else { return nil }
+        return previous.items
+    }
+
     private func items(
         for descriptor: AffinityShelfDescriptor,
         client: any JellyfinClientProtocol,
@@ -633,23 +666,18 @@ public final class AffinityShelvesViewModel {
                 limit: AffinityTuning.shelfItemLimit,
             )
         case let .bucket(.genre(name)):
-            try await shelfItems(query: LibraryQuery(genres: [name]), client: client)
+            try await client.unplayedItemsForAffinity(
+                genres: [name],
+                decades: [],
+                limit: AffinityTuning.shelfItemLimit,
+            )
         case let .bucket(.genreDecade(name, decade)):
-            try await shelfItems(query: LibraryQuery(genres: [name], decades: [decade]), client: client)
+            try await client.unplayedItemsForAffinity(
+                genres: [name],
+                decades: [decade],
+                limit: AffinityTuning.shelfItemLimit,
+            )
         }
-    }
-
-    private func shelfItems(
-        query: LibraryQuery,
-        client: any JellyfinClientProtocol,
-    ) async throws -> [MediaItem] {
-        try await client.getLibraryItems(
-            libraryId: nil,
-            itemTypes: [.movie, .series],
-            query: query,
-            limit: AffinityTuning.shelfItemLimit,
-            startIndex: 0,
-        ).items
     }
 
     // MARK: - Publishing

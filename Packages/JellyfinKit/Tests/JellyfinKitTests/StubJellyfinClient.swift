@@ -318,4 +318,10 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     func affinityItemCount(genres _: Set<String>, decades _: Set<Int>, personID _: String?) async throws -> Int? {
         affinityCountResult
     }
+
+    var unplayedAffinityItemsResult: [MediaItem] = []
+
+    func unplayedItemsForAffinity(genres _: Set<String>, decades _: Set<Int>, limit _: Int) async throws -> [MediaItem] {
+        unplayedAffinityItemsResult
+    }
 }

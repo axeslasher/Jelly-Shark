@@ -20,15 +20,7 @@ struct AffinityShelvesViewModelTests {
         mock.affinityMoviesResult = (0 ..< 5).map { movie("m\($0)") }
         mock.affinityLibrarySizeResult = 1000
         mock.affinityBucketCountResult = 20
-        // `libraryItemsHandler`, not `libraryItemsPages`: affinity can make
-        // up to three shelf fetches and the array form is consumed per call.
-        mock.libraryItemsHandler = { _ in
-            .success(MediaItemPage(
-                items: (0 ..< 10).map { MediaItem(id: "shelf\($0)", name: "Shelf \($0)", type: .movie) },
-                startIndex: 0,
-                totalRecordCount: 10,
-            ))
-        }
+        mock.unplayedAffinityItemsResult = (0 ..< 10).map { MediaItem(id: "shelf\($0)", name: "Shelf \($0)", type: .movie) }
         mock.similarItemsResult = .success(
             (0 ..< 10).map { MediaItem(id: "sim\($0)", name: "Sim \($0)", type: .movie) },
         )
@@ -659,5 +651,72 @@ struct AffinityShelvesViewModelTests {
         mock.affinityMoviesResult += (0 ..< 3).map { movie("c\($0)", genres: ["Comedy"]) }
         await model.validate(now: now)
         #expect(mock.affinityCountRequests.filter { !$0.genres.isEmpty }.count == before + 2)
+    }
+
+    // MARK: - Keeping a row's items (#324)
+
+    private func genreShelfItemIDs(_ model: AffinityShelvesViewModel) -> [[String]] {
+        model.shelves.filter {
+            if case .bucket(.genre) = $0.descriptor.kind {
+                true
+            } else {
+                false
+            }
+        }.map { $0.items.map(\.id) }
+    }
+
+    /// Genre rows fetch in random order, so a rebuild that re-fetched an
+    /// unchanged row would reshuffle it after every play.
+    @Test func aRebuildKeepsTheItemsOfARowWhoseGenreSurvived() async {
+        let mock = configured()
+        let model = AffinityShelvesViewModel()
+        model.attach(client: mock, libraries: [moviesLibrary], cache: nil)
+        await model.validate(now: now)
+        let first = model.shelves
+        #expect(!first.isEmpty)
+
+        mock.unplayedAffinityItemsResult = (0 ..< 10).map { MediaItem(id: "new\($0)", name: "New \($0)", type: .movie) }
+        mock.similarItemsResult = .success((0 ..< 10).map { MediaItem(id: "newsim\($0)", name: "New \($0)", type: .movie) })
+        mock.affinityMoviesResult.append(movie("m5"))
+        await model.validate(now: now)
+
+        // Every row that survived shows what it showed before. A row the
+        // first build dropped as an overlap may come back with new items.
+        #expect(model.recomputeCount == 2)
+        for shelf in first {
+            let again = model.shelves.first { $0.descriptor.kind == shelf.descriptor.kind }
+            #expect(again?.items == shelf.items)
+        }
+    }
+
+    @Test func aRowHoldingANewlyWatchedTitleIsRefetched() async {
+        let mock = configured()
+        let model = AffinityShelvesViewModel()
+        model.attach(client: mock, libraries: [moviesLibrary], cache: nil)
+        await model.validate(now: now)
+        let fetches = mock.unplayedAffinityRequests.count
+        #expect(fetches > 0)
+
+        // shelf0 sits in the Horror row; finishing it must take it out.
+        mock.unplayedAffinityItemsResult = (0 ..< 10).map { MediaItem(id: "new\($0)", name: "New \($0)", type: .movie) }
+        mock.affinityMoviesResult.append(movie("shelf0"))
+        await model.validate(now: now)
+
+        #expect(mock.unplayedAffinityRequests.count > fetches)
+        #expect(!genreShelfItemIDs(model).joined().contains("shelf0"))
+    }
+
+    @Test func aReloadRefetchesEveryRowSoNewTitlesCanAppear() async {
+        let mock = configured()
+        let model = AffinityShelvesViewModel()
+        model.attach(client: mock, libraries: [moviesLibrary], cache: nil)
+        await model.validate(now: now)
+        let fetches = mock.unplayedAffinityRequests.count
+
+        mock.unplayedAffinityItemsResult = (0 ..< 10).map { MediaItem(id: "new\($0)", name: "New \($0)", type: .movie) }
+        await model.reload(now: now)
+
+        #expect(mock.unplayedAffinityRequests.count == fetches * 2)
+        #expect(genreShelfItemIDs(model).allSatisfy { $0.allSatisfy { $0.hasPrefix("new") } })
     }
 }

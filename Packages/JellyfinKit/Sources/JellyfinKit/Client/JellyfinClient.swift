@@ -404,6 +404,12 @@ public protocol JellyfinClientProtocol: Sendable {
     /// a film that also sits in a collection library.
     func affinityItemCount(genres: Set<String>, decades: Set<Int>, personID: String?) async throws -> Int?
 
+    /// A genre shelf's contents: unwatched `.movie` and `.series` in random
+    /// order. Random because a sorted window shows the same head of the
+    /// alphabet on every rebuild (#324); unwatched because a shelf is for
+    /// what to watch next.
+    func unplayedItemsForAffinity(genres: Set<String>, decades: Set<Int>, limit: Int) async throws -> [MediaItem]
+
     // MARK: - User Data
 
     /// Mark an item as played for the current user
@@ -1759,6 +1765,38 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
             let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
             return response.value.totalRecordCount
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func unplayedItemsForAffinity(
+        genres: Set<String>,
+        decades: Set<Int>,
+        limit: Int,
+    ) async throws -> [MediaItem] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = limit
+            parameters.isRecursive = true
+            parameters.includeItemTypes = [.movie, .series]
+            // The card fields `getLibraryItems` asks for, so a shelf card
+            // renders the same as it did from that fetch.
+            parameters.fields = [.overview, .genres, .dateCreated, .mediaSources, .recursiveItemCount]
+            // Filters go through the grid's own translation so a shelf's
+            // contents match the population its ratio was measured against.
+            Self.apply(LibraryQuery(genres: genres, decades: decades, watched: .unplayed), to: &parameters)
+            parameters.sortBy = [.random]
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.items?.compactMap { MediaItem(from: $0) } ?? []
         } catch let error as APIError {
             throw error
         } catch {
