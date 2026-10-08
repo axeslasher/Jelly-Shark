@@ -14,8 +14,8 @@ jobs:
   # The two venues run as separate jobs so the fast one reports in ~a minute
   # instead of waiting behind a tvOS simulator boot. All three use `xcode-27`:
   # GitHub names macOS images by Xcode major version, so the label carries the
-  # same Xcode developers run locally, plus the tvOS "Apple TV" simulator that
-  # SIM_DEST in the Makefile expects.
+  # same Xcode developers run locally, plus the "Apple TV 4K (3rd generation)"
+  # simulator that SIM_DEST in the Makefile expects.
   host:
     name: JellyfinKit (host)
     runs-on: xcode-27

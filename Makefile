@@ -35,7 +35,10 @@ SCHEME   = Jelly Shark
 # because the runner image had no simulator named "Apple Vision Pro" that day.
 # The same commit had built fine on the PR branch minutes earlier. A build target
 # pinned to a device name fails on runner-image drift for no benefit.
-SIM_DEST    = platform=tvOS Simulator,name=Apple TV
+#
+# SIM_DEST names the 4K model because Xcode 27 ships no plain "Apple TV"
+# simulator, locally or on the xcode-27 runner image.
+SIM_DEST    = platform=tvOS Simulator,name=Apple TV 4K (3rd generation)
 BUILD_DEST  = generic/platform=tvOS Simulator
 VISION_DEST = generic/platform=visionOS Simulator
 
