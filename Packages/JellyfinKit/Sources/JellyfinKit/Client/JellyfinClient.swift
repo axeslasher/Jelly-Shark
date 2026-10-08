@@ -1130,8 +1130,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             // `/Latest` groups episodes under their series, so a new episode
             // of a show already at the top would not change its answer.
             parameters.includeItemTypes = [.movie, .episode]
-            parameters.sortBy = [.dateCreated]
-            parameters.sortOrder = [JellyfinAPI.SortOrder.descending]
+            // The name breaks ties: a bulk copy can stamp many files with one
+            // date, and an unstable top row would read as new on every check.
+            parameters.sortBy = [.dateCreated, .sortName]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.descending, JellyfinAPI.SortOrder.descending]
             parameters.enableImages = false
             parameters.enableUserData = false
 

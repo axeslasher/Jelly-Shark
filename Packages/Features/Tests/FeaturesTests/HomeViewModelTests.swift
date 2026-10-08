@@ -1477,6 +1477,19 @@ struct HomeViewModelTests {
         #expect(await viewModel.checkForNewContent() == false)
     }
 
+    @Test func aReloadWhoseSeedFailsDoesNotReadItsOwnContentAsNew() async {
+        let client = MockJellyfinClient()
+        client.newestAddedResult = .success("m1")
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        client.newestAddedResult = .failure(APIError.networkError("offline"))
+        _ = await viewModel.refresh(.libraries)
+        client.newestAddedResult = .success("m2")
+        #expect(await viewModel.checkForNewContent() == false)
+        #expect(await viewModel.checkForNewContent() == false)
+    }
+
     @Test func aHeroRefreshDropsAFinishedTitleAndAddsANewOne() async {
         let client = MockJellyfinClient()
         client.latestItemsHandler = { [self] libraryId in

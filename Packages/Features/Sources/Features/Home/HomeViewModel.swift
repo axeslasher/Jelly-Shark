@@ -270,6 +270,9 @@ public final class HomeViewModel {
     /// whose newest id is nil.
     private var newestAddedID: String?
     private var hasNewestAddedSeed = false
+    /// The idle loop and a drain can both ask on a foreground return; two
+    /// hits would post two reloads, and the second supersedes the first.
+    private var isCheckingForNewContent = false
 
     private var advanceTask: Task<Void, Never>?
     private var pauseReasons: Set<PauseReason> = []
@@ -453,7 +456,9 @@ public final class HomeViewModel {
     /// The seed is left alone on a hit: the rebuild that follows re-seeds,
     /// and a rebuild that is held or fails gets the same answer next time.
     public func checkForNewContent() async -> Bool {
-        guard let client else { return false }
+        guard let client, !isCheckingForNewContent else { return false }
+        isCheckingForNewContent = true
+        defer { isCheckingForNewContent = false }
         let newest: String?
         do {
             newest = try await client.newestAddedItemID()
@@ -478,6 +483,12 @@ public final class HomeViewModel {
         do {
             newest = try await client.newestAddedItemID()
         } catch {
+            // The old seed predates what this load fetched, so comparing
+            // against it would read the load's own content as new and
+            // reload again. Unseeded, the next check seeds instead.
+            if generation == loadGeneration {
+                hasNewestAddedSeed = false
+            }
             return
         }
         guard generation == loadGeneration else { return }

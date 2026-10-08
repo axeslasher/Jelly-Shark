@@ -245,8 +245,9 @@ struct HomeView: View {
                     viewModel.isNewContentWaiting = false
                 }
             } else if outcome == .succeeded {
-                await checkForNewContent()
-                guard !Task.isCancelled else { return }
+                // A rebuild already re-read the library list.
+                let rebuilt = await checkForNewContent()
+                guard !rebuilt, !Task.isCancelled else { return }
             }
 
             // An idle return is the one moment to ask whether the server's
@@ -654,15 +655,23 @@ struct HomeView: View {
     /// rebuild if so — unless the viewer is on the hero, where the rebuild
     /// waits until focus moves to the shelves (#323). visionOS has no hero
     /// focus region, so it never waits.
-    private func checkForNewContent() async {
-        guard await viewModel.checkForNewContent() else { return }
+    ///
+    /// - Returns: whether it rebuilt, so a floor drain can skip its own
+    ///   library-list request.
+    @discardableResult
+    private func checkForNewContent() async -> Bool {
+        guard await viewModel.checkForNewContent() else { return false }
         #if os(tvOS)
-            if ui.focusIsOnHero {
+            // The live focus, not `ui.focusIsOnHero`: that flag defaults to
+            // true, and the empty state has no hero to leave — a hold there
+            // would never release.
+            if focusedRegion == .hero {
                 viewModel.isNewContentWaiting = true
-                return
+                return false
             }
         #endif
         await rebuildForNewContent()
+        return true
     }
 
     /// The library list first, so a reload attaches a library that arrived
