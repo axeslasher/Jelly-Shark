@@ -12,12 +12,13 @@ concurrency:
 
 jobs:
   # The two venues run as separate jobs so the fast one reports in ~a minute
-  # instead of waiting behind a tvOS simulator boot. Both use `macos-26`: the
-  # image pins Xcode to a 26.x and ships the tvOS "Apple TV" simulator that
-  # SIM_DEST in the Makefile expects.
+  # instead of waiting behind a tvOS simulator boot. All three use `xcode-27`:
+  # GitHub names macOS images by Xcode major version, so the label carries the
+  # same Xcode developers run locally, plus the "Apple TV 4K (3rd generation)"
+  # simulator that SIM_DEST in the Makefile expects.
   host:
     name: JellyfinKit (host)
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -30,7 +31,7 @@ jobs:
 
   simulator:
     name: App + DesignSystem + Features (tvOS simulator)
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,7 +52,7 @@ jobs:
   # compiling is where the value is.
   visionos:
     name: App (visionOS build)
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

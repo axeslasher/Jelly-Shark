@@ -46,7 +46,7 @@ body:
     id: os-version
     attributes:
       label: tvOS / visionOS version
-      placeholder: tvOS 26.1
+      placeholder: tvOS 27.0
     validations:
       required: true
 

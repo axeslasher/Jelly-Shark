@@ -85,7 +85,7 @@ Not built yet (listed here so nothing above reads as a promise):
 
 ## Building & Testing
 
-Requires Xcode 26+. Everything runs through the `Makefile`:
+Requires Xcode 27+. Everything runs through the `Makefile`:
 
 ```bash
 make build            # build for the tvOS simulator

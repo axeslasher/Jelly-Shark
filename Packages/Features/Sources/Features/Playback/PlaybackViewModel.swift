@@ -1667,8 +1667,7 @@ public final class PlaybackViewModel {
         // wrong, and a run that fails with both flat is the real thing.
         // `String(format:)`, not os_log's `format: .fixed(precision:)`: that
         // spelling is `OSLogMessage` interpolation and does not exist on
-        // `String`. Xcode 27 beta compiled it anyway; release Xcode and CI do
-        // not.
+        // `String`, and the compiler rejects it there.
         let previousSample = previousProgress.map {
             String(format: "%.1fs / %lld", $0.bufferedSeconds, $0.bytesTransferred)
         } ?? "no prior sample"
