@@ -4,9 +4,9 @@ How Jelly Shark is versioned, named, and tagged. The decisions here were settled
 
 ## Versioning
 
-**Semantic versioning. The app stays on `0.y.z` until the first build reaches an external tester.**
+**Semantic versioning. The app stays on `0.y.z` through public TestFlight; `1.0.0` is the App Store release.**
 
-That follows semver §4 — *"Major version zero (0.y.z) is for initial development. Anything MAY change at any time"* — and §5's guidance that `1.0.0` is for software in production. Nothing here is in production: no releases, no users, no external installs. So `1.0.0` is the version that ships to the first tester, not a reward for accumulated work. Staying in `0.x` is an accurate statement about the project, not modesty.
+That follows semver §4 — *"Major version zero (0.y.z) is for initial development. Anything MAY change at any time"* — and §5's guidance that `1.0.0` is for software in production. Public TestFlight testers are beta testers who expect things to change, so their builds stay in `0.x`; `v0.13.0` is the first public TestFlight build. The App Store release is production, so it takes `1.0.0`: a statement that the app is ready for anyone, not a reward for accumulated work.
 
 Within `0.x`:
 
