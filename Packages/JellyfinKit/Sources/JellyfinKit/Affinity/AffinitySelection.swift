@@ -68,15 +68,23 @@ public enum AffinitySelection {
         )
     }
 
-    /// Combined source weight descending, then most recent play, then
-    /// provenance, then id. "Highest-weighted signal" is not a total order
-    /// on its own — every favorite carries exactly `favoriteWeight` — and
-    /// server response order must never decide which seed wins.
+    /// Most recent play first, then combined source weight, then id. The
+    /// row follows what the viewer is watching now (#324): ranking on weight
+    /// first let a never-decaying favorite or a long binge hold the seed for
+    /// weeks. A favorite that was never played sorts after every played
+    /// source, and server response order must never decide which seed wins.
     private static func seedOrder(
         _ a: AffinitySignal,
         _ b: AffinitySignal,
         weights: [String: Double],
     ) -> Bool {
+        switch (a.lastPlayed, b.lastPlayed) {
+        case let (x?, y?) where x != y: return x > y
+        case (_?, nil): return true
+        case (nil, _?): return false
+        default: break
+        }
+
         // Weights come from `AffinityScores`, never recomputed here: a fresh
         // `Date()` would make the seed depend on wall-clock at call time and
         // disagree with the `now` the bucket scores used.
@@ -84,17 +92,6 @@ public enum AffinitySelection {
         let bWeight = weights[b.sourceID] ?? 0
         if aWeight != bWeight {
             return aWeight > bWeight
-        }
-
-        // Rule 2 (most recent play, played-before-unplayed) subsumes the
-        // spec's rule 3: a source with any play provenance already sorts
-        // above one without. Rule 3 survives as the title rule below, not as
-        // a comparison — writing it here as well would be dead code.
-        switch (a.lastPlayed, b.lastPlayed) {
-        case let (x?, y?) where x != y: return x > y
-        case (_?, nil): return true
-        case (nil, _?): return false
-        default: break
         }
 
         return a.sourceID < b.sourceID

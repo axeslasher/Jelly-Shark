@@ -60,6 +60,26 @@ struct AffinitySelectionTests {
         #expect(similar?.title == "Because you watched Title z-both")
     }
 
+    /// #324: the seed follows what was watched last, not what weighs most.
+    @Test func theMostRecentPlayOutranksAHeavierOlderSourceAsSeed() {
+        let signals = [
+            signal("a-older-favorite", buckets: [.genre("Horror")], played: now.addingTimeInterval(-86400), favorite: true),
+            signal("z-latest", buckets: [.genre("Horror")], played: now),
+        ]
+        let scores = AffinityScoring.score(signals: signals, favoritedPeople: [], now: now)
+        #expect(scores.sourceWeights["a-older-favorite"] ?? 0 > scores.sourceWeights["z-latest"] ?? 0)
+
+        let shelves = AffinitySelection.select(signals: signals, scores: scores, qualifying: [.genre("Horror")])
+        let similar = shelves.first {
+            if case .similar = $0.kind {
+                true
+            } else {
+                false
+            }
+        }
+        #expect(similar?.title == "Because you watched Title z-latest")
+    }
+
     @Test func tiedFavoriteSeedsResolveByIdRegardlessOfInputOrder() {
         let a = signal("aaa", buckets: [.genre("Horror")], favorite: true)
         let b = signal("bbb", buckets: [.genre("Horror")], favorite: true)
