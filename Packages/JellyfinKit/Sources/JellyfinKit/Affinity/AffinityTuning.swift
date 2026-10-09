@@ -5,18 +5,26 @@ import Foundation
 /// These are feel values, not derived constants. Appearance and ranking are
 /// invisible to every suite here, so the way they get tuned is bisection:
 /// flip one, build, read pass/fail on device (CLAUDE.md § What tests cannot
-/// verify). Starting values come from the design doc's § 5 and § 8.
+/// verify). Starting values come from the design doc's § 5 and § 8, except
+/// `favoriteWeight` and `halfLifeDays`, lowered for #324's soak so recent
+/// plays move the rows.
 public enum AffinityTuning {
+    /// Raise whenever a tunable or a shelf query changes. Cached rows built
+    /// under another version are not shown, and their items are not reused:
+    /// otherwise a rebuild keeps every surviving row's old items, and the
+    /// change never reaches the screen (#324).
+    public static let rulesVersion = 1
+
     // MARK: Signal weights
 
     /// A favorite outweighs a play because it is an explicit, durable
     /// statement rather than an implicit one — and unlike a play it never
     /// decays.
-    public static let favoriteWeight = 3.0
+    public static let favoriteWeight = 1.5
 
     /// How long it takes a play's weight to halve. A run of films last week
     /// should outrank an equal run from eight months ago.
-    public static let halfLifeDays = 30.0
+    public static let halfLifeDays = 10.0
 
     // MARK: Qualification
 

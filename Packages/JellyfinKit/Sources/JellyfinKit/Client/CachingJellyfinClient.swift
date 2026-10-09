@@ -432,6 +432,14 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         try await inner.affinityItemCount(genres: genres, decades: decades, personID: personID)
     }
 
+    public func unplayedItemsForAffinity(
+        genres: Set<String>,
+        decades: Set<Int>,
+        limit: Int,
+    ) async throws -> [MediaItem] {
+        try await ingesting(inner.unplayedItemsForAffinity(genres: genres, decades: decades, limit: limit))
+    }
+
     // MARK: - User data
 
     // With a live overlay, mark* acknowledgments are committed (and

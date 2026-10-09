@@ -679,4 +679,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         let isUnfiltered = genres.isEmpty && decades.isEmpty && personID == nil
         return isUnfiltered ? affinityLibrarySizeResult : affinityBucketCountResult
     }
+
+    /// Genre shelf fetches, and what they return.
+    var unplayedAffinityRequests: [(genres: Set<String>, decades: Set<Int>)] = []
+    var unplayedAffinityItemsResult: [MediaItem] = []
+
+    func unplayedItemsForAffinity(genres: Set<String>, decades: Set<Int>, limit _: Int) async throws -> [MediaItem] {
+        lock.withLock { unplayedAffinityRequests.append((genres, decades)) }
+        if let affinityFailure {
+            throw affinityFailure
+        }
+        return unplayedAffinityItemsResult
+    }
 }
