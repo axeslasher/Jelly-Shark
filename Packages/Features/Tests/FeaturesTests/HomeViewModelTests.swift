@@ -1416,4 +1416,109 @@ struct HomeViewModelTests {
         await viewModel.setFavorite(false, for: viewModel.resumeItems[0])
         #expect(viewModel.resumeItems[0].userData?.isFavorite == true)
     }
+
+    // MARK: - New content (#323)
+
+    @Test func theFirstCheckAfterAFailedSeedSeedsInsteadOfReportingNew() async {
+        let client = MockJellyfinClient()
+        client.newestAddedResult = .failure(APIError.networkError("offline"))
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        client.newestAddedResult = .success("m1")
+        #expect(await viewModel.checkForNewContent() == false)
+        #expect(await viewModel.checkForNewContent() == false)
+    }
+
+    @Test func aCheckReportsNewOnlyWhenTheNewestItemChanged() async {
+        let client = MockJellyfinClient()
+        client.newestAddedResult = .success("m1")
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+        let requestsAfterLoad = client.newestAddedRequestCount
+
+        #expect(await viewModel.checkForNewContent() == false)
+        #expect(client.newestAddedRequestCount == requestsAfterLoad + 1)
+
+        client.newestAddedResult = .success("m2")
+        #expect(await viewModel.checkForNewContent() == true)
+        // Unchanged until a reload re-seeds, so a held rebuild is found again.
+        #expect(await viewModel.checkForNewContent() == true)
+    }
+
+    @Test func anEmptyServerGainingItsFirstItemIsNew() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        #expect(await viewModel.checkForNewContent() == false)
+        client.newestAddedResult = .success("m1")
+        #expect(await viewModel.checkForNewContent() == true)
+    }
+
+    @Test func aFailedCheckReportsNothingNew() async {
+        let client = MockJellyfinClient()
+        client.newestAddedResult = .success("m1")
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        client.newestAddedResult = .failure(APIError.networkError("offline"))
+        #expect(await viewModel.checkForNewContent() == false)
+    }
+
+    @Test func aReloadReseedsSoTheSameItemIsNotNewTwice() async {
+        let client = MockJellyfinClient()
+        client.newestAddedResult = .success("m1")
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        client.newestAddedResult = .success("m2")
+        _ = await viewModel.refresh(.libraries)
+        #expect(await viewModel.checkForNewContent() == false)
+    }
+
+    @Test func aReloadWhoseSeedFailsDoesNotReadItsOwnContentAsNew() async {
+        let client = MockJellyfinClient()
+        client.newestAddedResult = .success("m1")
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client)
+
+        client.newestAddedResult = .failure(APIError.networkError("offline"))
+        _ = await viewModel.refresh(.libraries)
+        client.newestAddedResult = .success("m2")
+        #expect(await viewModel.checkForNewContent() == false)
+        #expect(await viewModel.checkForNewContent() == false)
+    }
+
+    @Test func aHeroRefreshDropsAFinishedTitleAndAddsANewOne() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([movie("h1"), movie("h2")]) : .success([])
+        }
+        let viewModel = HomeViewModel(autoAdvanceInterval: .seconds(3600))
+        await load(viewModel, client: client)
+        #expect(viewModel.heroItems.map(\.id) == ["h1", "h2"])
+
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([movie("h3"), movie("h2")]) : .success([])
+        }
+        #expect(await viewModel.refreshHero() == .succeeded)
+        #expect(viewModel.heroItems.map(\.id) == ["h3", "h2"])
+        #expect(viewModel.heroIndex == 0)
+    }
+
+    @Test func aHeroRefreshWithAnUnchangedSetKeepsTheMarqueeWhereItWas() async {
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == nil ? .success([movie("h1"), movie("h2")]) : .success([])
+        }
+        let viewModel = HomeViewModel(autoAdvanceInterval: .seconds(3600))
+        await load(viewModel, client: client)
+        viewModel.advanceHero()
+        let index = viewModel.heroIndex
+
+        #expect(await viewModel.refreshHero() == .succeeded)
+        #expect(viewModel.heroIndex == index)
+        #expect(index != 0)
+    }
 }

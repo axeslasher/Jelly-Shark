@@ -328,6 +328,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
+    /// What the new-content check sees; a failure makes it throw
+    var newestAddedResult: Result<String?, Error> = .success(nil)
+    var newestAddedRequestCount = 0
+
+    func newestAddedItemID() async throws -> String? {
+        let result = lock.withLock {
+            newestAddedRequestCount += 1
+            return newestAddedResult
+        }
+        return try result.get()
+    }
+
     /// id batches requested by media-sources second passes, in arrival order
     var mediaItemsRequests: [[String]] = []
     /// nil handler serves [] — items keep whatever sources they came with

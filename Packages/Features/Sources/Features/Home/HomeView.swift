@@ -133,11 +133,10 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(theme.animation, value: viewModel.isInitialLoading)
         .background(theme.background)
-        // A library added on the server while the viewer sits on Home has
-        // no producer at all: nothing on the client changes. Poll the list at
-        // the floor's cadence — one cheap request — while the page is on
-        // screen and idle; a changed set posts `.libraries` through RootView
-        // and the drain reloads (#236 device row 5).
+        // Content added on the server while the viewer sits on Home has no
+        // producer at all: nothing on the client changes. Ask the server at
+        // the floor's cadence — one tiny request — while the page is on
+        // screen and idle (#323).
         .task(id: isEligible) {
             guard isEligible else { return }
             while !Task.isCancelled {
@@ -147,7 +146,7 @@ struct HomeView: View {
                       refreshCoordinator.isInitialLoadSettled,
                       !refreshCoordinator.hasPlayingSession
                 else { continue }
-                await connection.refreshLibraries()
+                await checkForNewContent()
             }
         }
         .task(id: DrainKey(
@@ -197,6 +196,13 @@ struct HomeView: View {
             // drain forever (#86 § 11.2).
             if token.reason == .watchState {
                 outcome = await viewModel.refresh(token.reason)
+                // A post, not the floor: something the viewer did — usually
+                // finishing playback — so the hero drops a finished title and
+                // picks up what arrived meanwhile. The floor leaves it alone so
+                // an idle re-check never moves the marquee (#323).
+                if !token.isFloorCheck {
+                    outcome = await HomeViewModel.LoadOutcome.combine([outcome, viewModel.refreshHero()])
+                }
                 await affinityShelves.validate()
             } else {
                 // `load()` reads the library list `attach` last wrote, and
@@ -230,6 +236,19 @@ struct HomeView: View {
             }
 
             refreshCoordinator.endDrain(token, outcome: outcome.drainOutcome, now: .now)
+
+            // A reload just re-read everything the check would compare, and
+            // re-seeded it; anything shallower asks whether the server has
+            // something new.
+            if token.reason >= .libraries {
+                if outcome == .succeeded {
+                    viewModel.isNewContentWaiting = false
+                }
+            } else if outcome == .succeeded {
+                // A rebuild already re-read the library list.
+                let rebuilt = await checkForNewContent()
+                guard !rebuilt, !Task.isCancelled else { return }
+            }
 
             // An idle return is the one moment to ask whether the server's
             // library set changed, because no producer can see it. A changed
@@ -475,6 +494,9 @@ struct HomeView: View {
                 // by the page's own focus sections, not by a card
                 // disappearing.
                 ui.focusIsOnHero = region == .hero
+                if region == .shelves, viewModel.isNewContentWaiting {
+                    Task { await rebuildForNewContent() }
+                }
                 regionSnapTask = Task {
                     // Let the focus engine finish its own reveal scroll first,
                     // then assert the page anchor over it.
@@ -627,6 +649,37 @@ struct HomeView: View {
               let first = row.itemIDs.first
         else { return nil }
         return row.itemIDs.contains(stored.item) ? stored : ShelfFocusID(row: row.id, item: first)
+    }
+
+    /// Ask the server whether anything was added since Home loaded, and
+    /// rebuild if so — unless the viewer is on the hero, where the rebuild
+    /// waits until focus moves to the shelves (#323). visionOS has no hero
+    /// focus region, so it never waits.
+    ///
+    /// - Returns: whether it rebuilt, so a floor drain can skip its own
+    ///   library-list request.
+    @discardableResult
+    private func checkForNewContent() async -> Bool {
+        guard await viewModel.checkForNewContent() else { return false }
+        #if os(tvOS)
+            // The live focus, not `ui.focusIsOnHero`: that flag defaults to
+            // true, and the empty state has no hero to leave — a hold there
+            // would never release.
+            if focusedRegion == .hero {
+                viewModel.isNewContentWaiting = true
+                return false
+            }
+        #endif
+        await rebuildForNewContent()
+        return true
+    }
+
+    /// The library list first, so a reload attaches a library that arrived
+    /// with the new content; then the reload itself.
+    private func rebuildForNewContent() async {
+        viewModel.isNewContentWaiting = false
+        await connection.refreshLibraries()
+        refreshCoordinator.post(.libraries)
     }
 
     /// Put focus on `target` — nil meaning the hero — and record where it

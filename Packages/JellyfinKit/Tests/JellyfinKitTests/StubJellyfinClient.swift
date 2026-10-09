@@ -188,6 +188,10 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         fatalError("unstubbed getLatestItems")
     }
 
+    func newestAddedItemID() async throws -> String? {
+        fatalError("unstubbed newestAddedItemID")
+    }
+
     func getMediaItems(ids _: [String]) async throws -> [MediaItem] {
         fatalError("unstubbed getMediaItems")
     }

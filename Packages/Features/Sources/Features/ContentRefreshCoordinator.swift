@@ -104,6 +104,15 @@ public final class ContentRefreshCoordinator {
         Self.logger.debug("post \(String(describing: reason), privacy: .public) → revision \(self.revision, privacy: .public)")
     }
 
+    /// Re-run the page's drain without owing it anything. The drain then
+    /// does what the floor says: nothing if it refreshed in the last 30 s,
+    /// an idle-return check if not. For a return from the background, which
+    /// changes no state a producer could post (#323).
+    public func wake() {
+        revision &+= 1
+        Self.logger.debug("wake → revision \(self.revision, privacy: .public)")
+    }
+
     // MARK: - Playback ordering
 
     /// Call when a player is presented, not when it tears down.

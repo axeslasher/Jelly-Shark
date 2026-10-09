@@ -232,6 +232,11 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         try await ingesting(inner.getLatestItems(libraryId: libraryId, limit: limit))
     }
 
+    /// Never cached: a stale answer is exactly what this call exists to rule out.
+    public func newestAddedItemID() async throws -> String? {
+        try await inner.newestAddedItemID()
+    }
+
     public func getMediaItems(ids: [String]) async throws -> [MediaItem] {
         try await ingesting(inner.getMediaItems(ids: ids))
     }

@@ -147,6 +147,11 @@ public final class HomeViewModel {
 
     public private(set) var heroIndex = 0
 
+    /// Set by `HomeView` when the new-content check found something while
+    /// the viewer was on the hero; the rebuild waits until focus leaves it,
+    /// so the marquee never changes under someone reading it (#323).
+    public var isNewContentWaiting = false
+
     /// What the hero Play button should start for the current hero item:
     /// the item itself for movies and episodes, the next-up (or first)
     /// episode for series, nil while resolving or for unplayable items
@@ -260,6 +265,15 @@ public final class HomeViewModel {
     private var hasCompletedInitialLoad = false
     private var loadGeneration = 0
 
+    /// The newest movie or episode on the server when the page last loaded.
+    /// `hasNewestAddedSeed` separates "not known yet" from an empty server,
+    /// whose newest id is nil.
+    private var newestAddedID: String?
+    private var hasNewestAddedSeed = false
+    /// The idle loop and a drain can both ask on a foreground return; two
+    /// hits would post two reloads, and the second supersedes the first.
+    private var isCheckingForNewContent = false
+
     private var advanceTask: Task<Void, Never>?
     private var pauseReasons: Set<PauseReason> = []
     private var playTargetTask: Task<Void, Never>?
@@ -292,6 +306,7 @@ public final class HomeViewModel {
         }
         if clientChanged {
             hasCompletedInitialLoad = false
+            hasNewestAddedSeed = false
         }
         if clientChanged || librariesChanged {
             needsLoad = true
@@ -380,7 +395,12 @@ public final class HomeViewModel {
         async let nextUpOutcome = loadNextUp(client: client, generation: generation)
         async let latestOutcome = loadLatest(client: client, generation: generation)
         async let watchDatesOutcome = loadWatchDates(client: client, generation: generation)
+        // Read alongside the content it stands for, so an item added mid-load
+        // is caught by the next check. Not an outcome: a missed seed only
+        // means the next check seeds instead of comparing.
+        async let newestSeed: Void = seedNewestAdded(client: client, generation: generation)
         let outcomes = await [resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome]
+        await newestSeed
         let outcome = LoadOutcome.combine(outcomes)
         Self.logger.debug("load generation \(generation, privacy: .public) outcomes resume/nextUp/latest/watchDates \(outcomes.map { String(describing: $0) }.joined(separator: "/"), privacy: .public); current generation \(self.loadGeneration, privacy: .public), cancelled \(Task.isCancelled, privacy: .public)")
 
@@ -427,6 +447,82 @@ public final class HomeViewModel {
     /// — a refresh often has neither.
     public func forceReload() {
         needsLoad = true
+    }
+
+    /// Whether the server has a movie or episode newer than the one this page
+    /// loaded with. One request. A first answer only seeds; a failure reads
+    /// as "nothing new", so a dropped network never triggers a rebuild.
+    ///
+    /// The seed is left alone on a hit: the rebuild that follows re-seeds,
+    /// and a rebuild that is held or fails gets the same answer next time.
+    public func checkForNewContent() async -> Bool {
+        guard let client, !isCheckingForNewContent else { return false }
+        isCheckingForNewContent = true
+        defer { isCheckingForNewContent = false }
+        let newest: String?
+        do {
+            newest = try await client.newestAddedItemID()
+        } catch {
+            Self.logger.debug("new-content check failed: \(PlaybackLog.error(error), privacy: .public)")
+            return false
+        }
+        guard hasNewestAddedSeed else {
+            newestAddedID = newest
+            hasNewestAddedSeed = true
+            return false
+        }
+        let isNew = newest != newestAddedID
+        Self.logger.debug("new-content check: \(isNew ? "new" : "unchanged", privacy: .public)")
+        return isNew
+    }
+
+    private func seedNewestAdded(client: any JellyfinClientProtocol, generation: Int) async {
+        // Not `try?`: it flattens to `String?`, and an empty server's nil
+        // would read as a failure.
+        let newest: String?
+        do {
+            newest = try await client.newestAddedItemID()
+        } catch {
+            // The old seed predates what this load fetched, so comparing
+            // against it would read the load's own content as new and
+            // reload again. Unseeded, the next check seeds instead.
+            if generation == loadGeneration {
+                hasNewestAddedSeed = false
+            }
+            return
+        }
+        guard generation == loadGeneration else { return }
+        newestAddedID = newest
+        hasNewestAddedSeed = true
+    }
+
+    /// Re-curate the hero alone, for a return from playback: the server
+    /// drops a finished title from `/Latest`, and anything added while the
+    /// viewer watched belongs in the marquee they come back to (#323). An
+    /// unchanged set keeps the marquee where it was.
+    @discardableResult
+    public func refreshHero() async -> LoadOutcome {
+        guard let client else { return .failed }
+        loadGeneration += 1
+        let generation = loadGeneration
+        let heroIdsBefore = rawHeroItems.map(\.id)
+        do {
+            let source = try await client.getLatestItems(libraryId: nil, limit: Self.heroSourceLimit)
+            let (curated, primaryIds) = await curateHero(from: source, client: client)
+            guard generation == loadGeneration else { return .superseded }
+            var heroTransaction = Transaction()
+            heroTransaction.disablesAnimations = true
+            withTransaction(heroTransaction) {
+                episodePrimaryHeroIds = primaryIds
+                rawHeroItems = curated
+            }
+            settleHero(client: client, previousHeroIds: heroIdsBefore)
+            return .succeeded
+        } catch {
+            guard generation == loadGeneration, !Task.isCancelled, !Self.isCancellation(error) else { return .superseded }
+            Self.logger.debug("refreshHero failed: \(PlaybackLog.error(error), privacy: .public)")
+            return .failed
+        }
     }
 
     /// Re-run only the sections currently marked `.failed` — the action
@@ -717,21 +813,7 @@ public final class HomeViewModel {
         )
 
         do {
-            let latest = try await heroSource
-            var curated = Self.curateHeroItems(
-                from: latest,
-                hasBackdrop: { client.backdropURL(for: $0) != nil },
-                limit: heroLimit,
-            )
-            let primaryIds = await Self.resolveEpisodePrimaryHeroIds(
-                in: curated,
-                minWidth: Self.heroEpisodePrimaryMinWidth,
-                imageInfo: client.getImageInfo(itemId:),
-            )
-            // An episode whose still failed the width check needs the series
-            // backdrop behind it; with neither it can't carry the hero.
-            curated.removeAll { $0.type == .episode && !primaryIds.contains($0.id) && !Self.hasSeriesBackdrop($0) }
-            curated = await Self.resolvingHeroMediaSources(in: curated, client: client)
+            let (curated, primaryIds) = try await curateHero(from: heroSource, client: client)
 
             guard generation == loadGeneration else { return .superseded }
             animatingMembership {
@@ -793,6 +875,29 @@ public final class HomeViewModel {
             // superseded (the guard above already routed that case out).
             return .failed
         }
+    }
+
+    /// Curate the marquee from a `/Latest` window: pick, check episode
+    /// stills, drop what can't carry a backdrop, then fill media sources.
+    private func curateHero(
+        from source: [MediaItem],
+        client: any JellyfinClientProtocol,
+    ) async -> (items: [MediaItem], episodePrimaryIds: Set<String>) {
+        var curated = Self.curateHeroItems(
+            from: source,
+            hasBackdrop: { client.backdropURL(for: $0) != nil },
+            limit: heroLimit,
+        )
+        let primaryIds = await Self.resolveEpisodePrimaryHeroIds(
+            in: curated,
+            minWidth: Self.heroEpisodePrimaryMinWidth,
+            imageInfo: client.getImageInfo(itemId:),
+        )
+        // An episode whose still failed the width check needs the series
+        // backdrop behind it; with neither it can't carry the hero.
+        curated.removeAll { $0.type == .episode && !primaryIds.contains($0.id) && !Self.hasSeriesBackdrop($0) }
+        curated = await Self.resolvingHeroMediaSources(in: curated, client: client)
+        return (curated, primaryIds)
     }
 
     /// A cancelled request is a cancellation, not a failure: the task was

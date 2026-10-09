@@ -189,6 +189,11 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Returns: Array of recently added media items
     func getLatestItems(libraryId: String?, limit: Int?) async throws -> [MediaItem]
 
+    /// The id of the movie or episode most recently added to the server, or
+    /// nil for an empty server. One tiny request, so Home can ask "is
+    /// anything new?" often without re-fetching what it shows (#323).
+    func newestAddedItemID() async throws -> String?
+
     /// Fetch full items — MediaSources included — by id, in one batch
     /// request. The dependable way to get sources for a known small set:
     /// bulk list fields are unreliable for MediaSources (#220), and the
@@ -1105,6 +1110,35 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             return response.value.compactMap { MediaItem(from: $0) }
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func newestAddedItemID() async throws -> String? {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetItemsParameters()
+            parameters.userID = userId
+            parameters.limit = 1
+            parameters.isRecursive = true
+            // `/Latest` groups episodes under their series, so a new episode
+            // of a show already at the top would not change its answer.
+            parameters.includeItemTypes = [.movie, .episode]
+            // The name breaks ties: a bulk copy can stamp many files with one
+            // date, and an unstable top row would read as new on every check.
+            parameters.sortBy = [.dateCreated, .sortName]
+            parameters.sortOrder = [JellyfinAPI.SortOrder.descending, JellyfinAPI.SortOrder.descending]
+            parameters.enableImages = false
+            parameters.enableUserData = false
+
+            let response = try await sdkClient.send(Paths.getItems(parameters: parameters))
+            return response.value.items?.first?.id
         } catch let error as APIError {
             throw error
         } catch {
