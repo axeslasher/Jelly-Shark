@@ -58,6 +58,17 @@ struct PlaybackLogTests {
         #expect(redacted.contains("static%3Dtrue"))
     }
 
+    @Test("Both the current ApiKey and legacy api_key spellings redact, plain and encoded")
+    func redactsBothApiKeySpellings() {
+        let plain = PlaybackLog.redacting("GET /Videos/1/master.m3u8?ApiKey=secret&api_key=secret&DeviceId=tv")
+        let encoded = PlaybackLog.redacting("url=https%3A%2F%2Fexample.test%2Fmaster.m3u8%3FApiKey%3Dsecret%26static%3Dtrue")
+
+        #expect(plain == "GET /Videos/1/master.m3u8?ApiKey=REDACTED&api_key=REDACTED&DeviceId=tv")
+        #expect(!encoded.contains("secret"))
+        #expect(encoded.contains("ApiKey%3DREDACTED"))
+        #expect(encoded.contains("static%3Dtrue"))
+    }
+
     @Test("Unfamiliar credential parameter names redact by default")
     func redactsUnfamiliarCredentialNames() {
         let redacted = PlaybackLog.redacting("GET /Videos/1/stream?X-Emby-Token=abc&DeviceId=tv")

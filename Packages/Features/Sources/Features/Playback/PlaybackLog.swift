@@ -7,7 +7,7 @@ import JellyfinKit
 /// goes through `redacting(_:)`, and `error(_:)` layers the `NSError` guard on
 /// top of it. Interpolating an `Error` directly asks `NSError` for its full
 /// description including `userInfo`, and URL loading errors put the failing
-/// URL — `api_key` and all — there (#244).
+/// URL — access token and all — there (#244).
 enum PlaybackLog {
     /// Credential-bearing query parameters, plain or percent-encoded.
     ///
