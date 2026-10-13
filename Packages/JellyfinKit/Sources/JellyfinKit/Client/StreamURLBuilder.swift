@@ -190,7 +190,7 @@ enum StreamURLBuilder {
     ///
     /// - Parameters:
     ///   - serverURL: The server base URL (path prefixes are preserved)
-    ///   - accessToken: The authentication token, sent as `api_key`
+    ///   - accessToken: The authentication token, sent as `ApiKey`
     ///   - deviceId: The device identifier reported to the server
     ///   - parameters: Item and stream selection parameters
     ///   - subtitleMethod: How the selected subtitle should be delivered
@@ -272,7 +272,7 @@ enum StreamURLBuilder {
         let budget = bitrateSplit(forTotal: maxStreamingBitrate)
 
         var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "api_key", value: accessToken),
+            URLQueryItem(name: "ApiKey", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
             URLQueryItem(name: "VideoCodec", value: videoCodec),
             URLQueryItem(name: "AudioCodec", value: "aac,ac3,eac3"),
@@ -335,7 +335,7 @@ enum StreamURLBuilder {
     ///
     /// - Parameters:
     ///   - serverURL: The server base URL (path prefixes are preserved)
-    ///   - accessToken: The authentication token, sent as `api_key`
+    ///   - accessToken: The authentication token, sent as `ApiKey`
     ///   - deviceId: The device identifier reported to the server
     ///   - parameters: Item and session parameters (stream indices ignored)
     ///   - container: The source container, appended as the path extension so
@@ -367,7 +367,7 @@ enum StreamURLBuilder {
 
         var queryItems: [URLQueryItem] = [
             URLQueryItem(name: "static", value: "true"),
-            URLQueryItem(name: "api_key", value: accessToken),
+            URLQueryItem(name: "ApiKey", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
         ]
 
@@ -389,12 +389,12 @@ enum StreamURLBuilder {
     /// `/Videos/{itemId}/Trickplay/{width}/{index}.jpg`
     ///
     /// Tile sheets require authentication, so this follows the stream-URL
-    /// pattern (`api_key` + `DeviceId`) rather than the tag-based,
+    /// pattern (`ApiKey` + `DeviceId`) rather than the tag-based,
     /// unauthenticated artwork pattern.
     ///
     /// - Parameters:
     ///   - serverURL: The server base URL (path prefixes are preserved)
-    ///   - accessToken: The authentication token, sent as `api_key`
+    ///   - accessToken: The authentication token, sent as `ApiKey`
     ///   - deviceId: The device identifier reported to the server
     ///   - itemId: The item the trickplay data belongs to
     ///   - width: The resolution key (`TrickplayInfo.widthKey`)
@@ -422,7 +422,7 @@ enum StreamURLBuilder {
         }
 
         var queryItems: [URLQueryItem] = [
-            URLQueryItem(name: "api_key", value: accessToken),
+            URLQueryItem(name: "ApiKey", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
         ]
 
@@ -462,7 +462,7 @@ enum StreamURLBuilder {
             URLQueryItem(name: "audioCodec", value: "aac"),
             URLQueryItem(name: "audioBitRate", value: String(audioBitrate)),
             URLQueryItem(name: "segmentContainer", value: "aac"),
-            URLQueryItem(name: "api_key", value: accessToken),
+            URLQueryItem(name: "ApiKey", value: accessToken),
             URLQueryItem(name: "DeviceId", value: deviceId),
         ]
         if let audioStreamIndex {

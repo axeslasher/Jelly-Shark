@@ -120,7 +120,8 @@ struct StreamURLBuilderTests {
         ))
 
         let query = queryItems(of: url)
-        #expect(query["api_key"] == "token-123")
+        #expect(query["ApiKey"] == "token-123")
+        #expect(query["api_key"] == nil)
         #expect(query["DeviceId"] == "device-abc")
         #expect(query["MediaSourceId"] == "source-1")
         #expect(query["PlaySessionId"] == "session-1")
@@ -288,7 +289,8 @@ struct StreamURLBuilderTests {
 
         #expect(url.path == "/Videos/item-1/Trickplay/320/2.jpg")
         let query = queryItems(of: url)
-        #expect(query["api_key"] == "token-123")
+        #expect(query["ApiKey"] == "token-123")
+        #expect(query["api_key"] == nil)
         #expect(query["DeviceId"] == "device-abc")
         #expect(query["MediaSourceId"] == "source-1")
     }
@@ -449,7 +451,8 @@ struct StreamURLBuilderTests {
         #expect(url.path == "/Videos/item-1/stream.mp4")
         let query = queryItems(of: url)
         #expect(query["static"] == "true")
-        #expect(query["api_key"] == "token-123")
+        #expect(query["ApiKey"] == "token-123")
+        #expect(query["api_key"] == nil)
         #expect(query["DeviceId"] == "device-abc")
         #expect(query["MediaSourceId"] == "source-1")
         #expect(query["PlaySessionId"] == "session-1")
@@ -509,6 +512,54 @@ struct StreamURLBuilderTests {
         ))
 
         #expect(url.path == "/jellyfin/Videos/item-1/stream.mp4")
+    }
+
+    // MARK: - Audio HLS
+
+    private func audioStream() throws -> AudioHLSStream {
+        try #require(StreamURLBuilder.audioHLSStream(
+            serverURL: URL(string: "https://example.com/jellyfin")!,
+            accessToken: "token-123",
+            deviceId: "device-abc",
+            parameters: StreamParameters(
+                itemId: "item-1",
+                mediaSourceId: "source-1",
+                playSessionId: "session-1",
+            ),
+            audioStreamIndex: 2,
+            audioBitrate: 256_000,
+        ))
+    }
+
+    @Test("Audio HLS playlist URL targets main.m3u8 with auth")
+    func audioHLSPlaylistURL() throws {
+        let url = try audioStream().playlistURL
+
+        #expect(url.path == "/jellyfin/Audio/item-1/main.m3u8")
+        let query = queryItems(of: url)
+        #expect(query["ApiKey"] == "token-123")
+        #expect(query["api_key"] == nil)
+        #expect(query["DeviceId"] == "device-abc")
+        #expect(query["AudioStreamIndex"] == "2")
+        #expect(query["MediaSourceId"] == "source-1")
+        #expect(query["PlaySessionId"] == "session-1")
+    }
+
+    @Test("Audio HLS segment URL carries the playlist's auth and its seek position")
+    func audioHLSSegmentURL() throws {
+        let url = try #require(audioStream().segmentURL(
+            index: 4,
+            runtimeTicks: 120_000_000,
+            segmentLengthTicks: 30_000_000,
+        ))
+
+        #expect(url.path == "/jellyfin/Audio/item-1/hls1/main/4.aac")
+        let query = queryItems(of: url)
+        #expect(query["ApiKey"] == "token-123")
+        #expect(query["api_key"] == nil)
+        #expect(query["DeviceId"] == "device-abc")
+        #expect(query["runtimeTicks"] == "120000000")
+        #expect(query["actualSegmentLengthTicks"] == "30000000")
     }
 }
 
