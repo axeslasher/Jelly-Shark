@@ -168,7 +168,7 @@ struct ContentRefreshCoordinatorTests {
         #expect(reported)
     }
 
-    @Test func cancellingTheWaitReturnsAndKeepsTheSessionRegistered() async {
+    @Test(.timeLimit(.minutes(1))) func cancellingTheWaitReturnsAndKeepsTheSessionRegistered() async {
         let coordinator = ContentRefreshCoordinator()
         _ = coordinator.registerPlayback() // still playing: no stop task yet
 
@@ -186,7 +186,7 @@ struct ContentRefreshCoordinatorTests {
         #expect(coordinator.hasPlaybackInFlight)
     }
 
-    @Test func awaitingDoesNotDiscardASessionRegisteredWhileItWaits() async {
+    @Test(.timeLimit(.minutes(1))) func awaitingDoesNotDiscardASessionRegisteredWhileItWaits() async {
         let coordinator = ContentRefreshCoordinator()
         let first = coordinator.registerPlayback()
         let gate = AsyncGate()
