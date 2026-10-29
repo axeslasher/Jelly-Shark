@@ -177,7 +177,9 @@ struct ContentRefreshCoordinatorTests {
         // main actor and block the very teardown that supplies the stop
         // task.
         let waiter = Task { await coordinator.awaitPlaybackReporting() }
-        try? await Task.sleep(for: .milliseconds(20))
+        // Both tasks share the main actor, so one yield runs the waiter up to
+        // its poll sleep — the cancel then lands mid-wait, not before it.
+        await Task.yield()
         waiter.cancel()
         await waiter.value // must return promptly, not hang
 
@@ -191,7 +193,9 @@ struct ContentRefreshCoordinatorTests {
         coordinator.finishPlayback(first, stop: Task { try? await gate.wait() })
 
         let waiter = Task { await coordinator.awaitPlaybackReporting() }
-        try? await Task.sleep(for: .milliseconds(10))
+        // Both tasks share the main actor, so one yield runs the waiter up to
+        // its await on the first stop task, with its snapshot already taken.
+        await Task.yield()
         // A second player opened while the first was still reporting.
         _ = coordinator.registerPlayback()
         await gate.open()
@@ -278,6 +282,20 @@ struct ContentRefreshCoordinatorTests {
         let revision = coordinator.revision
         coordinator.completeInitialLoad(revisionAtStart: revision, succeeded: true, now: epoch)
         #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == nil)
+    }
+
+    @Test func aFailedInitialLoadNeitherStartsTheFloorNorRetiresReasons() {
+        let coordinator = ContentRefreshCoordinator()
+        coordinator.post(.libraries)
+        let revision = coordinator.revision
+        coordinator.completeInitialLoad(revisionAtStart: revision, succeeded: false, now: epoch)
+        // The load confirmed nothing, so what it would have covered is still
+        // owed.
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(1)) == .libraries)
+        // And no floor was stamped: long past it, an idle return still has
+        // nothing to re-check against. A stamped floor would answer
+        // `.watchState` here.
+        #expect(coordinator.takeReasons(now: epoch.addingTimeInterval(3600)) == nil)
     }
 
     @Test func completingTheInitialLoadRetiresOnlyThePreLoadReason() {
