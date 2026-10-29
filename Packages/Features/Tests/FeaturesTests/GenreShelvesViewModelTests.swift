@@ -91,6 +91,18 @@ struct GenreShelvesViewModelTests {
         #expect(viewModel.status == .loading)
     }
 
+    @Test("A nil-client reload reports .failed")
+    func nilClientReloadFails() async {
+        // `reload()` reads "no client" off `status == .loading`, so this pins
+        // that proxy: a nil-client pass built nothing and must not report
+        // success to the drain.
+        let viewModel = GenreShelvesViewModel()
+        viewModel.attach(client: nil, libraries: [Self.movies])
+
+        #expect(await viewModel.reload() == .failed)
+        #expect(viewModel.status == .loading)
+    }
+
     // MARK: - Failure
 
     @Test("Every library failing reports .failed and re-arms the next load")
