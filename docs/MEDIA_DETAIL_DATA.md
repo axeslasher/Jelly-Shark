@@ -29,16 +29,21 @@ deciding which fields to incorporate into `MediaDetailView`.
 | `officialRating` | yes (certificate badge) |
 | `genres` | yes (genre line under metadata row) |
 | `imageTags` (primary/backdrop/banner/thumb/logo) | backdrop + logo in hero |
-| `userData` (position, played, favorite, playCount, lastPlayedDate) | played/favorite toggles, resume label |
+| `userData` (position, played, favorite, playCount, lastPlayedDate, unplayedItemCount) | played/favorite toggles, resume label; `unplayedItemCount` badges series cards on Home |
 | `seriesId/Name`, `seasonId/Name`, `indexNumber`, `parentIndexNumber` | shelf captions, not on detail |
 | `people` | yes (Cast & Crew shelf, credits column) |
 | `criticRating` | yes (metadata row, percent) |
+| `dateCreated` | not shown; orders Home's Next Up when a series is being actively watched |
 | `premiereDate`, `endDate`, `status` | series year spans ("2008–2013"); released / first-aired + status in the info section |
 | `studios` | yes (info section, Information column) |
 | `childCount`, `recursiveItemCount` | childCount → "N Seasons" (series metadata row) |
 | `technicalInfo` (distilled from the default media source) | metadata row (resolution / video range / audio) + info section (Languages and File columns) |
 | `parentArtwork` (ancestor backdrop/logo/series-poster tags + owning ids) | artwork fallbacks: episode heroes inherit the series backdrop/logo, poster cards the series poster |
 | `imageBlurHashes` → `ImageTags.*BlurHash` (primary/backdrop/thumb) | loading placeholders: `ArtworkImage` decodes and shows the blurhash while artwork loads (shelf cards, home hero, detail backdrop) |
+| `mediaSources` (only when the fetch asks for the field) | the detail hero's version choice for multi-version items |
+
+Chapters are not on `MediaItem`: `getPlaybackExtras(itemId:)` fetches them with
+the trickplay manifest, and they fill the player's Chapters panel.
 
 `technicalInfo` intentionally does **not** expose raw `MediaStream`s or
 `MediaSourceInfo`. The adapter reduces the default media source to
@@ -64,16 +69,15 @@ Worth considering, roughly by payoff:
 | Field(s) | Potential use |
 |---|---|
 | `remoteTrailers`, `trailerCount`, `localTrailerCount` | Trailer button beside Play (URLs are usually YouTube — needs a tvOS playability check) |
-| `chapters` (name, `startPositionTicks`, image tag) | Scene-selection shelf / playback entry points |
+| `chapters` on the detail page | Scene-selection shelf (chapters are already fetched for the player) |
 | `parentThumbItemID`, `parentThumbImageTag` | Remaining ancestor-art fallback (thumb); backdrop/logo/series-poster are mapped via `parentArtwork` |
 | people `imageBlurHashes` | Blurhash placeholders for cast headshots (`CastCard`) — item images are done; people not yet |
 | `indexNumberEnd` | Correct "S01E01–02" labels for multi-episode files |
 | `cumulativeRunTimeTicks` | Total runtime for series/box sets |
-| `dateCreated` | "Added on …" secondary metadata |
 | `tags`, `productionLocations` | Freeform tags; low priority |
 | `externalURLs`, `providerIDs` | IMDb/TMDb identifiers — little use on tvOS (no browser) |
 | `primaryImageAspectRatio` | Layout stability before artwork loads |
-| `specialFeatureCount`, `partCount`, `mediaSourceCount` | Extras/multi-version affordances |
+| `specialFeatureCount`, `partCount` | Extras affordances |
 | `customRating`, `airDays`, `airTime` | Niche metadata |
 
 ## Not worth mapping
@@ -98,7 +102,8 @@ Worth considering, roughly by payoff:
    - blurhash placeholders — **done** for item artwork (`BlurHash` decoder in
      DesignSystem, `ArtworkImage` placeholder, shelf cards + heroes); cast
      headshots not yet
-   - chapter shelf — not started
+   - chapter shelf on the detail page — not started (the player's Chapters
+     panel is done)
    - trailer button — descoped: `remoteTrailers` are YouTube URLs, which
      tvOS can't play; only viable for local trailers, which most libraries
      lack

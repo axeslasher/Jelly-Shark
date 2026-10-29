@@ -173,6 +173,8 @@ Exposed as `searchItems(query:itemTypes:limit:)` on `JellyfinClientProtocol`. It
 
 These are the domain types defined in `JellyfinKit/Models/`. They are plain `struct`s (`Sendable`, `Equatable`, `Hashable`) mapped from SDK DTOs in `Adapters/SDKAdapters.swift`. The access token is never a model field — it lives only in the Keychain.
 
+For which item fields are mapped, which the detail page shows, and which are still unmapped, see [MEDIA_DETAIL_DATA.md](MEDIA_DETAIL_DATA.md).
+
 **User** (`Models/User.swift`)
 ```swift
 struct User: Identifiable {

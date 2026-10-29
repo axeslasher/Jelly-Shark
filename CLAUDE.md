@@ -281,6 +281,7 @@ Full documentation is available in the `/docs` directory:
 - **PLAYBACK_MATRIX.md**: what each delivery path does to a given source — codec tags, HDR/DV signalling, audio passthrough, subtitles — measured against a live server, with verification markers and re-verification method
 - **RELEASING.md**: Versioning scheme, release naming, how to cut and tag a release
 - **FIGMA_TOKENS.md**: The Figma design file — variable collections mirroring the tokens, component↔code mapping, representation deviations, re-sync procedure
+- **MEDIA_DETAIL_DATA.md**: Which `BaseItemDto` fields are mapped onto `MediaItem`, where the UI uses them, and which are still unmapped
 - **spikes/issue-template.md**: Ledger template for a root-cause investigation — copy to `docs/spikes/<issue-number>.md` when one starts
 
 API Documentation: https://api.jellyfin.org
