@@ -101,7 +101,7 @@ Pick the cheapest tier that can fail on your change (timings are warm; cold, any
 
 ```bash
 make test-host                        # ~5s:  JellyfinKit only, no simulator
-make test-only ONLY=DesignSystemTests # ~23s: one simulator suite (also: FeaturesTests, "Jelly SharkTests")
+make test-only ONLY=DesignSystemTests # ~23s: one simulator suite (also: FeaturesTests, "Jelly SharkUITests")
 make test-sim                         #        the simulator venue on its own
 make test                             # ~43s: both venues; a pre-merge check, not an iteration step
 ```

@@ -35,17 +35,6 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "6DBADA9C2F0E2C2E00380536"
-               BuildableName = "Jelly SharkTests.xctest"
-               BlueprintName = "Jelly SharkTests"
-               ReferencedContainer = "container:Jelly Shark.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
                BlueprintIdentifier = "6DBADAA62F0E2C2E00380536"
                BuildableName = "Jelly SharkUITests.xctest"
                BlueprintName = "Jelly SharkUITests"
