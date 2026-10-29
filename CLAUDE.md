@@ -196,7 +196,7 @@ docs/ARCHITECTURE.md — read the source or that doc rather than a summary here,
 
 ## Jellyfin Integration
 
-- Minimum supported Jellyfin server: **10.8.0+**.
+- Minimum supported Jellyfin server: **10.11.11+**, enforced at sign-in (`ServerInfo.minimumVersion`).
 - The server is the source of truth for all media, metadata, and user state. Local storage is
   cache and performance only — never authoritative.
 - The access token, server URL, and user ID are persisted to the **Keychain** as a `SavedSession`

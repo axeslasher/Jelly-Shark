@@ -58,7 +58,7 @@ extension APIError: LocalizedError {
         case let .decodingError(message):
             "Failed to parse response: \(message)"
         case let .unsupportedServerVersion(version):
-            "Server version \(version) is not supported. Minimum required: 10.8.0"
+            "Server version \(version) is not supported. Minimum required: \(ServerInfo.minimumVersion)"
         case .notAuthenticated:
             "Not authenticated. Please sign in."
         case let .generic(message):

@@ -19,6 +19,11 @@ public protocol JellyfinClientProtocol: Sendable {
 
     // MARK: - Authentication
 
+    /// Fetch the server's public system info (GET /System/Info/Public),
+    /// which needs no authentication — read before sign-in to check the
+    /// server version
+    func fetchPublicServerInfo() async throws -> ServerInfo
+
     /// Authenticate with the Jellyfin server
     /// - Parameters:
     ///   - username: The username
@@ -588,6 +593,15 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     // MARK: - Authentication
+
+    public func fetchPublicServerInfo() async throws -> ServerInfo {
+        do {
+            let response = try await sdkClient.send(Paths.getPublicSystemInfo)
+            return ServerInfo(from: response.value)
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
 
     public func authenticate(username: String, password: String) async throws -> User {
         do {

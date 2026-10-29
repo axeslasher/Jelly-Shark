@@ -99,6 +99,10 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     // MARK: - Authentication
 
+    public func fetchPublicServerInfo() async throws -> ServerInfo {
+        try await inner.fetchPublicServerInfo()
+    }
+
     public func authenticate(username: String, password: String) async throws -> User {
         let user = try await inner.authenticate(username: username, password: password)
         await cache.write(user, scope: CacheScope(serverURL: inner.serverURL, userID: user.id), key: .currentUser)

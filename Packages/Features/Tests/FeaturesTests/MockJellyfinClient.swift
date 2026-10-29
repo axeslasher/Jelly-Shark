@@ -91,7 +91,19 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Per-scan-query results; falls back to narrowedOptionsResult when nil
     var narrowedOptionsHandler: ((LibraryQuery) -> Result<LibraryFilterOptions?, Error>)?
 
+    /// Served to `fetchPublicServerInfo`; defaults to the minimum supported
+    /// version so connect tests that don't care about it pass the check
+    var serverInfoResult: Result<ServerInfo, Error> = .success(
+        ServerInfo(serverName: "Mock", version: ServerInfo.minimumVersion, id: "server-1"),
+    )
+    var authenticateCallCount = 0
+
+    func fetchPublicServerInfo() async throws -> ServerInfo {
+        try serverInfoResult.get()
+    }
+
     func authenticate(username: String, password _: String) async throws -> User {
+        authenticateCallCount += 1
         let user = User(id: "user-1", name: username)
         currentUser = user
         accessToken = "token-1"
