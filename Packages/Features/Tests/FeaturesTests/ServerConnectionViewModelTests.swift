@@ -231,6 +231,52 @@ struct ServerConnectionViewModelTests {
         ))
     }
 
+    @Test("connect() refuses a server older than the minimum and saves no session")
+    func connectRejectsTooOldServer() async {
+        let store = InMemorySessionStore()
+        let client = MockJellyfinClient()
+        client.serverInfoResult = .success(ServerInfo(serverName: "Old", version: "10.11.10", id: "server-1"))
+        let appSession = AppSession()
+        let viewModel = makeViewModel(store: store, client: client, recorder: FactoryRecorder())
+        viewModel.attach(session: appSession)
+
+        await viewModel.connect()
+
+        #expect(viewModel.state == .disconnected)
+        #expect(viewModel.errorMessage == APIError.unsupportedServerVersion("10.11.10").localizedDescription)
+        #expect(store.session == nil)
+        #expect(client.authenticateCallCount == 0)
+        #expect(appSession.client == nil)
+    }
+
+    @Test("connect() signs in to supported servers", arguments: ["10.11.11", "10.12.0", "12.4.0"])
+    func connectAcceptsSupportedServer(version: String) async {
+        let store = InMemorySessionStore()
+        let client = MockJellyfinClient()
+        client.serverInfoResult = .success(ServerInfo(serverName: "New", version: version, id: "server-1"))
+        let viewModel = makeViewModel(store: store, client: client, recorder: FactoryRecorder())
+
+        await viewModel.connect()
+
+        #expect(viewModel.state == .connected)
+        #expect(store.session != nil)
+    }
+
+    @Test("connect() surfaces a failed version check and does not sign in")
+    func connectStopsWhenServerInfoFails() async {
+        let store = InMemorySessionStore()
+        let client = MockJellyfinClient()
+        client.serverInfoResult = .failure(APIError.networkError("offline"))
+        let viewModel = makeViewModel(store: store, client: client, recorder: FactoryRecorder())
+
+        await viewModel.connect()
+
+        #expect(viewModel.state == .disconnected)
+        #expect(viewModel.errorMessage?.contains("offline") == true)
+        #expect(store.session == nil)
+        #expect(client.authenticateCallCount == 0)
+    }
+
     @Test("disconnect() clears the session but not the device ID")
     func disconnectClearsSessionOnly() async {
         let store = InMemorySessionStore()

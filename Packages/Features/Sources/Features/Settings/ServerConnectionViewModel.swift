@@ -139,6 +139,12 @@ public final class ServerConnectionViewModel {
         state = .authenticating
 
         do {
+            // Refuse a too-old server before sending credentials, so it
+            // never gets a session to save
+            let serverInfo = try await newClient.fetchPublicServerInfo()
+            guard serverInfo.isSupported else {
+                throw APIError.unsupportedServerVersion(serverInfo.version)
+            }
             let user = try await newClient.authenticate(username: username, password: password)
             try await completeConnection(client: newClient, user: user)
             persistSession(for: newClient, serverURL: url, user: user)
