@@ -636,26 +636,32 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    /// Map SDK/transport errors to APIError, surfacing HTTP status codes
-    private static func mapTransportError(_ error: Error) -> APIError {
+    /// Map SDK/transport errors to APIError, surfacing HTTP status codes.
+    /// Cancellations pass through unchanged so callers can tell them from
+    /// failures (#300).
+    static func mapTransportError(_ error: Error) -> any Error {
+        if error is CancellationError || (error as? URLError)?.code == .cancelled {
+            return error
+        }
+
         if let apiError = error as? Get.APIError,
            case let .unacceptableStatusCode(statusCode) = apiError
         {
             switch statusCode {
             case 401:
-                return .unauthorized
+                return APIError.unauthorized
             case 403:
-                return .forbidden
+                return APIError.forbidden
             case 404:
-                return .notFound
+                return APIError.notFound
             case 500...:
-                return .serverError(statusCode: statusCode)
+                return APIError.serverError(statusCode: statusCode)
             default:
-                return .httpError(statusCode: statusCode)
+                return APIError.httpError(statusCode: statusCode)
             }
         }
 
-        return .networkError(error.localizedDescription)
+        return APIError.networkError(error.localizedDescription)
     }
 
     // MARK: - Libraries
