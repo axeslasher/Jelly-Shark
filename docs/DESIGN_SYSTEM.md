@@ -265,6 +265,16 @@ and `DesignSystem.swift` (a typealias). Conventions:
   the `BlurHash` decoder grid, raw color/spacing/motion token sheets, and the
   per-theme `ThemeSpecimen` files — deliberately keep a single preview.
 
+Sample renders, captured when the preview setup landed (#231):
+
+| Preview | Image |
+| --- | --- |
+| Horror theme specimen | ![Horror theme specimen](images/previews/theme-specimen-horror.png) |
+| Video Store theme specimen | ![Video Store theme specimen](images/previews/theme-specimen-video-store.png) |
+| Base color tokens | ![Base color tokens](images/previews/tokens-base-colors.png) |
+| Media detail, Standard | ![Media detail in the Standard theme](images/previews/media-detail-standard.png) |
+| Media detail, Sci-Fi | ![Media detail in the Sci-Fi theme](images/previews/media-detail-sci-fi.png) |
+
 ---
 
 ## Component Variants (⏳ not yet implemented — design spec)

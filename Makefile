@@ -62,10 +62,10 @@ test-host:
 	cd Packages/JellyfinKit && swift test
 
 # One simulator suite, e.g. `make test-only ONLY=DesignSystemTests`. Targets are
-# quoted because the app suite's name contains a space ("Jelly SharkTests").
+# quoted because the UI suite's name contains a space ("Jelly SharkUITests").
 test-only:
 	@[ -n "$(ONLY)" ] || \
-		{ echo "usage: make test-only ONLY=<test target>   (Jelly SharkTests | DesignSystemTests | FeaturesTests)"; exit 1; }
+		{ echo "usage: make test-only ONLY=<test target>   (DesignSystemTests | FeaturesTests | 'Jelly SharkUITests')"; exit 1; }
 	xcodebuild test -scheme "$(SCHEME)" -destination "$(SIM_DEST)" -only-testing:"$(ONLY)"
 
 # Build the app for the two shipping platforms. Generic destinations — see the

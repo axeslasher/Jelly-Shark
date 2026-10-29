@@ -101,7 +101,7 @@ without anyone noticing.
 
 ```bash
 make test-host                        # ~5s  — JellyfinKit only, no simulator. The inner-loop tier.
-make test-only ONLY=DesignSystemTests # ~23s — one simulator suite (also: FeaturesTests, "Jelly SharkTests")
+make test-only ONLY=DesignSystemTests # ~23s — one simulator suite (also: FeaturesTests, "Jelly SharkUITests")
 make test                             # ~43s — both venues, everything. Pre-merge / CI only.
 make test-sim                         # the simulator venue on its own
 ```
@@ -281,5 +281,6 @@ Full documentation is available in the `/docs` directory:
 - **PLAYBACK_MATRIX.md**: what each delivery path does to a given source — codec tags, HDR/DV signalling, audio passthrough, subtitles — measured against a live server, with verification markers and re-verification method
 - **RELEASING.md**: Versioning scheme, release naming, how to cut and tag a release
 - **FIGMA_TOKENS.md**: The Figma design file — variable collections mirroring the tokens, component↔code mapping, representation deviations, re-sync procedure
+- **spikes/issue-template.md**: Ledger template for a root-cause investigation — copy to `docs/spikes/<issue-number>.md` when one starts
 
 API Documentation: https://api.jellyfin.org

@@ -1,10 +1,3 @@
-//
-//  Jelly_SharkApp.swift
-//  Jelly Shark
-//
-//  Created by Justin Lascelle on 1/6/26.
-//
-
 import DesignSystem
 import Features
 import JellyfinKit
