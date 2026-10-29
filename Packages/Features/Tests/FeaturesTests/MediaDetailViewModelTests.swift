@@ -1,6 +1,7 @@
 @testable import Features
 import Foundation
 import JellyfinKit
+import Synchronization
 import Testing
 
 @Suite("MediaDetailViewModel")
@@ -465,12 +466,9 @@ struct MediaDetailViewModelTests {
 
         // Arm the probe only AFTER the initial load, or the load's own fetch
         // trips it and the test passes or fails for the wrong reason.
-        var reportLanded = false
-        var fetchedBeforeReport = false
+        let probe = ReportProbe()
         client.mediaItemHandler = { _ in
-            if !reportLanded {
-                fetchedBeforeReport = true
-            }
+            probe.recordFetch()
             return MediaItem(id: "m-1", name: "m-1", type: .movie)
         }
 
@@ -484,18 +482,19 @@ struct MediaDetailViewModelTests {
             // sleep guarantees the report lands well after the gate opens,
             // so a regression is always observed as an early fetch.
             try? await Task.sleep(for: .milliseconds(50))
-            reportLanded = true
+            probe.recordReport()
         })
 
         let refresh = Task { await viewModel.refreshAfterPlayback(waitingFor: coordinator) }
         await gate.open()
         await refresh.value
 
-        #expect(fetchedBeforeReport == false)
+        let state = probe.snapshot()
+        #expect(state.fetchedBeforeReport == false)
         // Positive control: a refresh that returned early (e.g. the `guard
         // let client, let item` short-circuiting) would trivially satisfy
         // the above without ever calling the client.
-        #expect(reportLanded == true)
+        #expect(state.reportLanded == true)
         #expect(client.mediaItemRequests.count > requestsBeforeRefresh)
     }
 
@@ -672,5 +671,31 @@ struct MediaDetailViewModelTests {
         await load(viewModel, client: client, item: movie("m2"))
         #expect(viewModel.heroIsPlayed == false)
         #expect(viewModel.heroIsFavorite == false)
+    }
+}
+
+/// The stop task writes from the main actor and the mock's handler reads off
+/// it, so the two flags share a lock rather than racing as bare captures.
+///
+/// Methods, not `withLock` closures at the call site: a closure written in
+/// the suite inherits its @MainActor isolation and traps when the mock's
+/// handler runs it off the main actor.
+private final class ReportProbe: Sendable {
+    private let state = Mutex((reportLanded: false, fetchedBeforeReport: false))
+
+    func recordFetch() {
+        state.withLock { state in
+            if !state.reportLanded {
+                state.fetchedBeforeReport = true
+            }
+        }
+    }
+
+    func recordReport() {
+        state.withLock { $0.reportLanded = true }
+    }
+
+    func snapshot() -> (reportLanded: Bool, fetchedBeforeReport: Bool) {
+        state.withLock { $0 }
     }
 }

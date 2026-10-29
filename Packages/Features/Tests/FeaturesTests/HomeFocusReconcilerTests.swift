@@ -75,6 +75,26 @@ struct HomeFocusReconcilerTests {
         #expect(next == ShelfFocusID(row: "genres", item: "g"))
     }
 
+    @Test func aVanishedRowLandsOnTheNearestRowAboveNotTheTopmost() {
+        // Two populated rows above: the nearest one is where the viewer's
+        // eye already is. Walking upward in page order would pick "continue".
+        let next = HomeFocusReconciler.nextFocus(
+            before: rows([("continue", ["a"]), ("latest", ["m1"]), ("genres", ["g1"])]),
+            after: rows([("continue", ["a"]), ("latest", ["m1"])]),
+            vanished: ShelfFocusID(row: "genres", item: "g1"),
+        )
+        #expect(next == ShelfFocusID(row: "latest", item: "m1"))
+    }
+
+    @Test func anEmptiedRowAboveIsSkippedForTheNextPopulatedOneUp() {
+        let next = HomeFocusReconciler.nextFocus(
+            before: rows([("continue", ["a"]), ("latest", ["m1"]), ("genres", ["g1"])]),
+            after: rows([("continue", ["a"]), ("latest", []), ("genres", [])]),
+            vanished: ShelfFocusID(row: "genres", item: "g1"),
+        )
+        #expect(next == ShelfFocusID(row: "continue", item: "a"))
+    }
+
     @Test func movesToTheRowAboveWhenNoRowRemainsBelow() {
         let next = HomeFocusReconciler.nextFocus(
             before: rows([("continue", ["a", "b"]), ("latest", ["d"])]),

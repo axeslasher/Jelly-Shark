@@ -540,7 +540,10 @@ struct HomeViewModelTests {
         client.resumeItemsDelay = { try? await gate.wait() }
         viewModel.forceReload()
         let second = Task { await viewModel.load() }
-        try? await Task.sleep(for: .milliseconds(20))
+        // The resume request is issued after the status parking, so seeing it
+        // means the reload is past the point that could show the skeleton.
+        await waitUntil { client.resumeItemsRequests.count == 2 }
+        #expect(client.resumeItemsRequests.count == 2)
         // Content is rendered; a reload must reconcile in place. Parking at
         // `.loading` here is what put the skeleton back over a warm page.
         #expect(viewModel.isInitialLoading == false)
@@ -562,7 +565,8 @@ struct HomeViewModelTests {
         client.resumeItemsDelay = { try? await gate.wait() }
         viewModel.forceReload()
         let second = Task { await viewModel.load() }
-        try? await Task.sleep(for: .milliseconds(20))
+        await waitUntil { client.resumeItemsRequests.count == 2 }
+        #expect(client.resumeItemsRequests.count == 2)
         #expect(viewModel.isInitialLoading == false)
         await gate.open()
         await second.value
@@ -584,7 +588,10 @@ struct HomeViewModelTests {
         clientB.resumeItemsDelay = { try? await gate.wait() }
         viewModel.attach(client: clientB, libraries: [Self.movies])
         let second = Task { await viewModel.load() }
-        await waitUntil { viewModel.isInitialLoading }
+        // Wait on the gated request, not on the skeleton itself: polling for
+        // the asserted state would pass on a transient flash.
+        await waitUntil { clientB.resumeItemsRequests.count == 1 }
+        #expect(clientB.resumeItemsRequests.count == 1)
         #expect(viewModel.isInitialLoading)
         await gate.open()
         await second.value
@@ -1264,6 +1271,80 @@ struct HomeViewModelTests {
         // Neither outcome the drain acts on: a cancelled refresh must not
         // start the floor, and re-posting for it would spin.
         #expect(await viewModel.refreshUserState() == .superseded)
+    }
+
+    @Test func aFailureThatLandsAfterTheTaskWasCancelledIsSuperseded() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        // An ordinary error, not a cancellation-shaped one: only
+        // `Task.isCancelled` can tell this apart from a real failure.
+        client.resumeItemsHandler = { _ in .failure(MockError.boom) }
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let refresh = Task { await viewModel.refreshUserState() }
+        await waitUntil { client.resumeItemsRequests.count == 2 }
+        #expect(client.resumeItemsRequests.count == 2)
+        refresh.cancel()
+        await gate.open()
+
+        // `.failed` would leave the reason owed with no drain to retry it.
+        #expect(await refresh.value == .superseded)
+    }
+
+    @Test func aRefreshOvertakenByANewerGenerationIsSuperseded() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let first = Task { await viewModel.refreshUserState() }
+        await waitUntil { client.resumeItemsRequests.count == 2 }
+        #expect(client.resumeItemsRequests.count == 2)
+        // A second refresh bumps the generation while the first is in flight.
+        let second = Task { await viewModel.refreshUserState() }
+        await waitUntil { client.resumeItemsRequests.count == 3 }
+        #expect(client.resumeItemsRequests.count == 3)
+        await gate.open()
+
+        // The first pass's items landed, but a newer pass owns the page.
+        #expect(await first.value == .superseded)
+        #expect(await second.value == .succeeded)
+    }
+
+    @Test func aCancelledLibrariesRefreshIsSupersededNotThePreviousOutcome() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        viewModel.attach(client: client, libraries: [Self.movies])
+        await viewModel.load()
+        #expect(viewModel.lastLoadOutcome == .succeeded)
+
+        let gate = AsyncGate()
+        client.resumeItemsDelay = { try? await gate.wait() }
+        let refresh = Task { await viewModel.refresh(.libraries) }
+        await waitUntil { client.resumeItemsRequests.count == 2 }
+        #expect(client.resumeItemsRequests.count == 2)
+        refresh.cancel()
+        await gate.open()
+
+        // A cancelled load records no outcome, so `lastLoadOutcome` is still
+        // the initial load's `.succeeded` — reporting it would retire
+        // `.libraries` on a pass that never finished.
+        #expect(await refresh.value == .superseded)
+    }
+
+    @Test func combineLetsAFailureBeatSupersession() {
+        typealias Outcome = HomeViewModel.LoadOutcome
+        // A real failure must re-post its reason; letting `.superseded` win
+        // would hide it behind a sibling that merely lost a race.
+        #expect(Outcome.combine([.superseded, .failed]) == .failed)
+        #expect(Outcome.combine([.failed, .superseded]) == .failed)
+        #expect(Outcome.combine([.succeeded, .superseded]) == .superseded)
+        #expect(Outcome.combine([.succeeded, .succeeded]) == .succeeded)
     }
 
     @Test("Task cancellation leaves no failure in any lane")
