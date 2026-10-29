@@ -1,5 +1,8 @@
+import CoreGraphics
+import DesignSystem
 @testable import Features
 import Foundation
+import ImageIO
 import JellyfinKit
 import Testing
 
@@ -244,6 +247,68 @@ struct ServerConnectionViewModelTests {
         #expect(store.session == nil)
         #expect(store.deviceID() == deviceID)
         #expect(viewModel.state == .disconnected)
+    }
+
+    @Test("disconnect() empties the encoded and decoded artwork caches")
+    func disconnectClearsArtworkCaches() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        // Encoded tier: a cached image response, as an artwork fetch leaves it
+        let urlCache = URLCache(memoryCapacity: 1024 * 1024, diskCapacity: 1024 * 1024, directory: directory)
+        let request = URLRequest(url: URL(string: "https://demo.jellyfin.org/stable/Items/1/Images/Primary")!)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+        urlCache.storeCachedResponse(CachedURLResponse(response: response, data: Data([1, 2, 3])), for: request)
+        #expect(urlCache.cachedResponse(for: request) != nil)
+
+        // Decoded tier: load once, then delete the source so only the cache
+        // can answer a second request
+        let artworkLoader = ArtworkLoader()
+        let imageURL = directory.appending(path: "poster.png")
+        try #require(Self.pngData()).write(to: imageURL)
+        _ = try await artworkLoader.image(at: imageURL, slotPixelSize: nil, contentMode: .fit)
+        try FileManager.default.removeItem(at: imageURL)
+        _ = try await artworkLoader.image(at: imageURL, slotPixelSize: nil, contentMode: .fit)
+
+        let store = InMemorySessionStore()
+        let client = MockJellyfinClient()
+        let viewModel = ServerConnectionViewModel(
+            sessionStore: store,
+            makeClient: { _, _ in client },
+            urlCache: urlCache,
+            artworkLoader: artworkLoader,
+        )
+        await viewModel.connect()
+        await viewModel.disconnect()
+
+        #expect(urlCache.cachedResponse(for: request) == nil)
+        await #expect(throws: (any Error).self) {
+            try await artworkLoader.image(at: imageURL, slotPixelSize: nil, contentMode: .fit)
+        }
+    }
+
+    /// A 4×4 solid-color PNG
+    private static func pngData() -> Data? {
+        guard let context = CGContext(
+            data: nil,
+            width: 4,
+            height: 4,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue,
+        ) else { return nil }
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        guard let image = context.makeImage() else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImage(destination, image, nil)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return data as Data
     }
 
     @Test("Device ID is stable across connects")
