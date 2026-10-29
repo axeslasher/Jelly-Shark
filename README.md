@@ -116,7 +116,7 @@ make install-hooks # one-time opt-in: a lint-only pre-commit hook
 
 CI runs the host suite, the tvOS simulator suite, and a visionOS build on every pull request (`.github/workflows/tests.yml`), plus `swiftformat --lint` with the same pinned version (`.github/workflows/swiftformat.yml`).
 
-One gotcha for a fresh clone: most of the themes' typefaces are licensed from Fontshare, whose EULA forbids redistributing the files, so the `.ttf`s are git-ignored. The app still builds and runs; every text style falls back to San Francisco. `Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/FONTS.md` lists what to download and where to put it.
+One gotcha for a fresh clone: most of the themes' typefaces are licensed from Fontshare, whose EULA forbids redistributing the files, so the `.ttf`s are git-ignored. The app still builds and runs; every text style falls back to San Francisco. Run `make fonts` to download them; `Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/FONTS.md` has the details.
 
 ## Contributing
 
