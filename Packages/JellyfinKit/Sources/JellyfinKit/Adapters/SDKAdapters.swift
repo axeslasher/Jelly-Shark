@@ -28,6 +28,22 @@ extension User {
     }
 }
 
+// MARK: - ServerInfo Adapter
+
+extension ServerInfo {
+    /// Create a ServerInfo from the SDK's PublicSystemInfo. A missing version
+    /// becomes "unknown", which parses as no version and fails `isSupported`.
+    init(from info: JellyfinAPI.PublicSystemInfo) {
+        self.init(
+            serverName: info.serverName ?? "",
+            version: info.version ?? "unknown",
+            id: info.id ?? "",
+            operatingSystem: info.operatingSystem,
+            startupWizardCompleted: info.isStartupWizardCompleted,
+        )
+    }
+}
+
 // MARK: - MediaItem Adapter
 
 extension MediaItem {

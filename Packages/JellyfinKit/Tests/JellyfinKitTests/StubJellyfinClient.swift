@@ -47,6 +47,10 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     // MARK: - Stubbed methods
 
+    func fetchPublicServerInfo() async throws -> ServerInfo {
+        fatalError("unstubbed fetchPublicServerInfo")
+    }
+
     func authenticate(username _: String, password _: String) async throws -> User {
         guard let userResult else { throw StubError() }
         currentUser = userResult
