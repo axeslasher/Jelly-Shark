@@ -167,7 +167,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 ## Technical Constraints
 
 **Must work with**:
-- Any standard Jellyfin server (10.8+)
+- Any standard Jellyfin server (10.11.11+)
 - Apple TV 4K (all generations with tvOS 26+)
 - Apple Vision Pro (visionOS 26.2+)
 

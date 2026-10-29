@@ -10,8 +10,8 @@ Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk
 
 ## Server Requirements
 
-**Minimum Jellyfin Version**: 10.8.0+  
-**Recommended**: 10.9.0+ (latest stable)
+**Minimum Jellyfin Version**: 10.11.11+, the release the app was built and measured against. Sign-in rejects older servers with the `unsupportedServerVersion` error.  
+**Recommended**: latest stable
 
 **Required Server Features**:
 - User authentication
@@ -60,6 +60,9 @@ All endpoints are accessed through `jellyfin-sdk-swift` (`Paths.*`) rather than 
 
 ### Authentication — ✅ implemented
 ```
+GET /System/Info/Public         (fetchPublicServerInfo)
+- No auth; read before sign-in to check the server version
+
 authenticate(username:password:) — facade method; wraps the SDK's
   signIn(username:password:) (authenticate-by-name)
 - Returns: AccessToken, User object
@@ -297,10 +300,10 @@ struct ServerInfo {
     let serverName, version, id: String
     let operatingSystem: String?
     let startupWizardCompleted: Bool?
-    static let minimumVersion = "10.8.0"   // computed isSupported
+    static let minimumVersion = "10.11.11"   // computed isSupported
 }
 ```
-(Defined for version-compatibility checks; no client fetch method wired up yet.)
+`connect()` reads it from `fetchPublicServerInfo()` before sending credentials and refuses a server below the minimum. A restored session is not re-checked.
 
 **PlaybackSessionInfo / MediaSource / MediaStreamInfo** (`Models/PlaybackSession.swift`)
 Describe the playable media sources returned by `PlaybackInfo`, including audio/subtitle stream lists (`MediaStreamInfo`) used for in-player track switching. `PlaybackTicks` provides ticks↔seconds conversion helpers.
