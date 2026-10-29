@@ -345,7 +345,7 @@ An unauthenticated client has no scope and therefore never writes.
 - **Schema version mismatch**: `MediaCacheStore.schemaVersion` covers `@Model` shapes, payload encodings, *and* key formats. Any mismatch deletes the store files and starts empty. There are **no SwiftData migrations** — the server rebuilds everything for free.
 - **Unopenable store**: destroyed and retried once; if the directory itself is unusable the store falls back to in-memory and the cache goes inert.
 - **Undecodable row**: deleted on read so it cannot fail twice.
-- **Sign-out / forget profile**: `purge(scope:)` — the privacy boundary.
+- **Sign-out / forget profile**: `purge(scope:)` — the privacy boundary. Sign-out also empties `URLCache.shared` (memory and disk) and `ArtworkLoader`'s decoded images, because artwork is not scoped per user.
 - **Unbounded growth**: `purgeStaleDetails(scope:keepingNewest:)` keeps the newest 500 `.mediaDetail` rows. Every other key family is a fixed, small set.
 - **Everything else**: refresh-on-read. There is no TTL, no background refresh, and no pull-to-refresh.
 

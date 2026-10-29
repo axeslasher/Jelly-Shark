@@ -20,6 +20,10 @@ import SwiftUI
 public actor ArtworkLoader {
     public static let shared = ArtworkLoader()
 
+    /// Public so tests outside this module can build an isolated loader;
+    /// the app uses `shared`.
+    public init() {}
+
     /// Decoded card-sized images (posters, landscape cells, headshots), keyed
     /// by URL + slot. Cost is decoded bytes; the limit bounds the tier well
     /// under the app's overall memory target, and NSCache additionally evicts
@@ -104,6 +108,13 @@ public actor ArtworkLoader {
         let tier = cost >= Self.screenClassCost ? screenCache : cardCache
         tier.setObject(image, forKey: key, cost: cost)
         return image
+    }
+
+    /// Empties both decoded-image tiers. Sign-out calls this so the next
+    /// account on the device never sees the previous account's artwork.
+    public func removeAllImages() {
+        cardCache.removeAllObjects()
+        screenCache.removeAllObjects()
     }
 
     private static func fetchAndDecode(

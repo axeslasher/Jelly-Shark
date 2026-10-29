@@ -1,3 +1,4 @@
+import DesignSystem
 import Foundation
 import JellyfinKit
 import Observation
@@ -87,6 +88,11 @@ public final class ServerConnectionViewModel {
         JellyfinClientConfiguration, _ restoredSession: SavedSession?,
     ) -> any JellyfinClientProtocol
 
+    /// Encoded artwork bytes and decoded images, emptied on sign-out;
+    /// injectable so a test can observe the purge
+    private let urlCache: URLCache
+    private let artworkLoader: ArtworkLoader
+
     // MARK: - Initialization
 
     public init(
@@ -101,10 +107,14 @@ public final class ServerConnectionViewModel {
             )
         },
         cache: MediaCacheStore? = nil,
+        urlCache: URLCache = .shared,
+        artworkLoader: ArtworkLoader = .shared,
     ) {
         self.sessionStore = sessionStore
         self.makeClient = makeClient
         self.cache = cache
+        self.urlCache = urlCache
+        self.artworkLoader = artworkLoader
     }
 
     /// Attach the shared session so the connected client can be published app-wide
@@ -294,6 +304,10 @@ public final class ServerConnectionViewModel {
         if let cache, let scopeToPurge {
             await cache.purge(scope: scopeToPurge)
         }
+        // Artwork (posters, logos, chapter images, trickplay tiles) is shared
+        // across accounts, so it goes whole: encoded bytes and decoded images
+        urlCache.removeAllCachedResponses()
+        await artworkLoader.removeAllImages()
 
         client = nil
         connectedUser = nil
