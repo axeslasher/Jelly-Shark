@@ -48,7 +48,7 @@ VISION_DEST = generic/platform=visionOS Simulator
 SWIFTFORMAT_VERSION = 0.62.1
 
 .PHONY: test test-sim test-host test-only build build-visionos clean \
-	format lint check-swiftformat install-hooks
+	format lint check-swiftformat install-hooks fonts
 
 # Full suite across both venues.
 test: test-sim test-host
@@ -98,3 +98,8 @@ check-swiftformat:
 install-hooks:
 	git config core.hooksPath .githooks
 	@echo "Pre-commit format check enabled (core.hooksPath -> .githooks)."
+
+# Download the theme typefaces (git-ignored; see Resources/Fonts/FONTS.md).
+# FORCE=1 re-downloads files that are already present.
+fonts:
+	./scripts/fetch-fonts.sh

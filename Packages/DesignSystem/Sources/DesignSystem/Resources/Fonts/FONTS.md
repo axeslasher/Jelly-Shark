@@ -17,6 +17,12 @@ back to the system font (San Francisco). See `FontScheme.swift`.
 
 ## Download
 
+Run `make fonts` from the repo root. It fetches every file below from Fontshare
+and the google/fonts repo, skips files already present, and re-downloads
+everything with `make fonts FORCE=1`. The script is `scripts/fetch-fonts.sh`.
+
+To download by hand instead:
+
 1. Get each family:
    - General Sans — https://www.fontshare.com/fonts/general-sans
    - Zodiak — https://www.fontshare.com/fonts/zodiak
@@ -29,7 +35,9 @@ back to the system font (San Francisco). See `FontScheme.swift`.
    - Supreme — https://www.fontshare.com/fonts/supreme
    - Switzer — https://www.fontshare.com/fonts/switzer
    - Technor — https://www.fontshare.com/fonts/technor
-   - Space Grotesk — https://fonts.google.com/specimen/Space+Grotesk (Google Fonts; OFL)
+   - Space Grotesk — https://www.fontshare.com/fonts/space-grotesk (OFL; use
+     Fontshare's build, which registers as "Space Grotesk Variable" — Google
+     Fonts' registers as "Space Grotesk" and won't match `FontFamily`)
    - Oswald — https://fonts.google.com/specimen/Oswald (Google Fonts; OFL)
    - Grenze — https://fonts.google.com/specimen/Grenze (Google Fonts; OFL)
    - Grenze Gotisch — https://fonts.google.com/specimen/Grenze+Gotisch (Google Fonts; OFL)
