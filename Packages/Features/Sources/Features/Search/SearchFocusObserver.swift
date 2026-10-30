@@ -25,18 +25,18 @@
 
         let onMove: (_ from: Zone, _ to: Zone) -> Void
 
-        func makeUIView(context _: Context) -> ProbeView {
-            let view = ProbeView()
+        func makeUIView(context _: Context) -> FocusZoneView {
+            let view = FocusZoneView()
             view.isUserInteractionEnabled = false
             view.onMove = onMove
             return view
         }
 
-        func updateUIView(_ view: ProbeView, context _: Context) {
+        func updateUIView(_ view: FocusZoneView, context _: Context) {
             view.onMove = onMove
         }
 
-        final class ProbeView: UIView {
+        final class FocusZoneView: UIView {
             private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Search")
 
             var onMove: ((Zone, Zone) -> Void)?
