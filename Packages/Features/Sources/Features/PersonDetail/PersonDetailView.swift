@@ -25,8 +25,8 @@ public struct PersonDetailView: View {
     /// The episode currently being played, driving the player cover.
     @State private var playbackItem: PlaybackRequest?
 
-    /// The open player's refresh ticket, unregistered when the cover
-    /// dismisses.
+    /// The open player's refresh ticket. Dismissal schedules its deferred
+    /// unregister; the player clears it once it has reported.
     @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
 
     /// Whether the full biography is presented in its reading overlay.
@@ -101,12 +101,11 @@ public struct PersonDetailView: View {
             await viewModel.load()
         }
         .fullScreenCover(item: $playbackItem, onDismiss: {
-            // Backup to the player's own teardown: a ticket that never got a
-            // stop task would stall every drain until relaunch (#301).
+            // Backup to the player's own teardown, deferred because this can run
+            // before it: an orphaned ticket would stall every drain (#301).
             if let playbackTicket {
-                refreshCoordinator.unregister(playbackTicket)
+                refreshCoordinator.unregisterAfterGrace(playbackTicket)
             }
-            playbackTicket = nil
             refreshCoordinator.post(.watchState)
         }) { target in
             if let client = session.client {
