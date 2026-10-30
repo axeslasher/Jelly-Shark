@@ -22,6 +22,9 @@ the element, tap it".
   - The value lags the typing. Read at once, it can still be the placeholder,
     so `type` waits up to 3s for it to match.
 - Episodes read "0m, S1E1, Episode 1, Fixture episode 1.".
+- **Settings rows** read "Theme, Standard" and "Server, Connected as test".
+  The Theme picker stays open after a pick, and the chosen option carries the
+  Selected trait (`isSelected`); go `back()` to see the row's new value.
 - A `shot` shows only what is on screen. Content below the fold is in the tree,
   so the label match is the evidence for it, not the screenshot.
 

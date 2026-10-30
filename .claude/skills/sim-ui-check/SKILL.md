@@ -37,9 +37,9 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 
 1. **Start the server.** `.claude/skills/sim-ui-check/server.sh up` starts
    Jellyfin 10.11.11 on `localhost:8096` with user `test` and password `test`.
-   The library has three movies (Harbor Lights, The Long Field, Static Season)
-   and one series (Night Shift Radio, three episodes), in two libraries named
-   "Movies" and "Shows". Metadata comes from NFO
+   The library has three movies (Harbor Lights 2019, The Long Field 2021,
+   Static Season 2023) and one series (Night Shift Radio 2022, three
+   episodes), in two libraries named "Movies" and "Shows". Metadata comes from NFO
    files, so it is identical on every run. Options: `server.sh up <version> <port>`.
    Versions on different ports run side by side (Jellyfin 12 tags are two-part:
    `12.4`). The check reads its server from run.sh's `UI_CHECK_SERVER`, so one
@@ -48,7 +48,13 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    second server outran the 90s wait once, then started in 7s warm. Checks
    that run at the same time each get their own port: a check that revokes
    the app's devices would sign the other one out. **On any port but 8096,
-   set `UI_CHECK_SERVER` in step 3,** or the check signs in to 8096.
+   set `UI_CHECK_SERVER` in step 3,** or the check signs in to 8096. The
+   version comes before the port:
+
+   ```bash
+   .claude/skills/sim-ui-check/server.sh up 10.11.11 8097
+   UI_CHECK_SERVER=http://localhost:8097 .claude/skills/sim-ui-check/run.sh UICheck<Name> visionos
+   ```
 2. **Write the check.** Copy the platform's template to
    `Jelly SharkUITests/UICheck<Name>.swift` and rename the class. Keep
    `writeVerdictOnTeardown()` as the first line. Write the steps, and follow
@@ -69,6 +75,11 @@ Screenshots are evidence for the user to look at, not proof of appearance.
      scenarios.
    - `UI_CHECK_OUT` sets the output folder; the default is a new temp folder
      each run. Use a temp folder: screenshots can't be saved under `/Volumes/SSD`.
+     The folder holds `xcodebuild.log`, and `screenshots/` with every `shot`,
+     every `explore` tree (`.txt`), `zz-failure.png` and `verdict.txt`. Its
+     `result.xcresult` is often unfinished; nothing reads it.
+   - run.sh prints "testing" once the build is done; it is otherwise quiet
+     until the verdict.
    - A warm run takes about 35–90s, build included.
    - run.sh builds the checkout it is run from, so it works from a worktree.
    - A failed check also leaves `zz-failure.png`, the screen it failed on.
@@ -112,14 +123,17 @@ from the test, on a device of its own.
 
 | To get | Do this |
 |---|---|
-| A revoked token | `api("DELETE", "/Devices?id=<id>")` for each `GET /Devices` item whose `AppName` is "Jelly Shark", then relaunch. Verified on 10.11.11 and 12.4: the token then gets 401. `DELETE /Auth/Keys/{token}` answers 204 but leaves a session token valid |
+| A revoked token | `revokeAppDevices()`, which calls `api("DELETE", "/Devices?id=<id>")` for each `GET /Devices` item whose `AppName` is "Jelly Shark", then relaunch. Verified on 10.11.11 and 12.4: the token then gets 401. `DELETE /Auth/Keys/{token}` answers 204 but leaves a session token valid |
 | A token the server never issued | Leave the app signed in, run `server.sh up` again on the same port (a fresh container), relaunch |
 | A too-old server behind the saved URL | Sign in on 10.11.11, `server.sh up 10.11.10` on the same port, relaunch |
 | A server that's down | Leave the app signed in, `server.sh down <port>`, relaunch |
 | Proof that sign-out revoked the token | `GET /Devices` has no "Jelly Shark" item afterwards |
 
-The form shows a failed restore's message under Settings → Server. On tvOS a
-down server also blocks navigation; see tvos.md.
+The form shows a failed restore's message under Settings → Server, above
+Connect, with the URL and username kept. For a revoked token it reads "Your
+session has expired. Please sign in again." Home shows only "Welcome to Jelly
+Shark" and "Connect in Settings" (both seen on visionOS). On tvOS a down server
+also blocks navigation; see tvos.md.
 
 ## Checking the server side
 

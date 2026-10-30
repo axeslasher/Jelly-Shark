@@ -54,8 +54,17 @@
             // search("Static")
             // XCTAssertTrue(labelled("Static Season").waitForExistence(timeout: 20), dump("No search result"))
             // shot("05-search")
+            // To prove something went away, such as the other titles once the
+            // search narrows, wait for its absence; it can take a moment:
+            // XCTAssertTrue(waitUntil(timeout: 5) { !labelled("The Long Field").exists }, dump("Still listed"))
+            //
+            // A scenario switch from outside: `TEST_RUNNER_MODE=revoked run.sh …`
+            // reaches the check as MODE.
+            // let mode = ProcessInfo.processInfo.environment["MODE"] ?? "default"
 
-            // Leave the simulator signed out for the next check.
+            // Leave the simulator signed out for the next check. Keep this the
+            // last line: a bare `return` on the line above it would still run
+            // it, because Swift reads `return` and the next line as one statement.
             signOut()
         }
 
@@ -69,8 +78,7 @@
             let form = app.textFields.firstMatch
             let disconnect = app.buttons["Disconnect"].firstMatch
             if !form.exists, !disconnect.exists {
-                open(tab: "Settings")
-                open(row: "Server")
+                openServerScreen()
             }
             // Wait for either screen: waiting on the form alone costs its whole
             // timeout whenever the simulator starts signed in.
@@ -132,8 +140,7 @@
         private func signOut() {
             let disconnect = app.buttons["Disconnect"].firstMatch
             if !disconnect.exists {
-                open(tab: "Settings")
-                open(row: "Server")
+                openServerScreen()
             }
             XCTAssertTrue(disconnect.waitForExistence(timeout: 20), dump("No Disconnect button"))
             disconnect.tap()
@@ -150,6 +157,20 @@
         }
 
         // MARK: - Server
+
+        /// Revokes the app's session on the server: deletes every device whose
+        /// AppName is "Jelly Shark". After a relaunch the app's token gets 401.
+        /// Returns how many devices it deleted.
+        @discardableResult
+        private func revokeAppDevices() -> Int {
+            let body = api("GET", "/Devices").body
+            let items = (try? JSONSerialization.jsonObject(with: body) as? [String: Any])?["Items"] as? [[String: Any]] ?? []
+            let ids = items.filter { $0["AppName"] as? String == "Jelly Shark" }.compactMap { $0["Id"] as? String }
+            for id in ids {
+                api("DELETE", "/Devices?id=\(id)")
+            }
+            return ids.count
+        }
 
         /// One call to the server as its admin (test/test, on a device of its
         /// own, so the app's session is untouched), for server-side steps such
@@ -186,6 +207,16 @@
 
         // MARK: - Navigation
 
+        /// Settings → Server, from wherever the app is, unless the sign-in
+        /// form or Disconnect is already showing.
+        private func openServerScreen() {
+            if app.textFields.firstMatch.exists || app.buttons["Disconnect"].firstMatch.exists {
+                return
+            }
+            open(tab: "Settings")
+            open(row: "Server")
+        }
+
         /// Taps a tab in the tab bar ornament. The ornament is a window of its
         /// own, and its tabs are Buttons labelled with the tab's name.
         private func open(tab label: String) {
@@ -213,10 +244,15 @@
 
         /// Taps a list row: the cell whose label starts with `label`, or failing
         /// that any element that does.
+        /// Re-selecting a tab doesn't pop its stack, so from a pushed screen
+        /// (Server after `signIn`, a picker) it goes back until the row shows.
         private func open(row label: String) {
             let starts = NSPredicate(format: "label BEGINSWITH %@", label)
             let cell = app.cells.containing(starts).firstMatch
             let any = app.descendants(matching: .any).matching(starts).firstMatch
+            for _ in 0 ..< 4 where firstToExist([cell, any], timeout: 2) == nil && app.buttons["BackButton"].exists {
+                back()
+            }
             let row = firstToExist([cell, any], timeout: 20)
             XCTAssertNotNil(row, dump("No row '\(label)'"))
             row?.tap()

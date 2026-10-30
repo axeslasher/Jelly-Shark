@@ -157,6 +157,7 @@ while [[ ! -f $shots/verdict.txt ]]; do
     # about 4s (seen on visionOS), so only a new launchd pid tells them apart.
     if ((testing == 0)) && grep -q "Test suite .* started\|Test Suite .* started" "$log"; then
         testing=1
+        say "testing"
         sim_pid=$(pgrep -f "launchd_sim.*$udid" | head -1)
     fi
 

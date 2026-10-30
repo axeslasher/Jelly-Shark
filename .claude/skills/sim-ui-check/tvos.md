@@ -17,6 +17,8 @@ target has focus, then press select.
   there and assert `isHittable` before the `shot`.
 - A selected option shows an image labelled "Selected" (identifier
   `checkmark.circle.fill`), so "is selected" can be asserted directly.
+- Settings → Streaming Quality is `open(row: "Streaming Quality")`. Its
+  options read "Maximum", "40 Mbps" and so on down to "2 Mbps".
 - `shot` uses XCUITest's own screenshot, which shows the whole screen on tvOS.
 - To show the sidebar in a screenshot, focus one of its cells first; it
   collapses whenever focus is in the content.
