@@ -1104,6 +1104,119 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeStatus == .loaded)
     }
 
+    // MARK: - Only content failures block the floor (#299)
+
+    /// Runs one `.watchState` drain through a real coordinator, closing it
+    /// with the outcome `refreshUserState` reports, and returns what a drain
+    /// one second later would claim: nil when the floor started.
+    private func drainOneSecondLater(_ viewModel: HomeViewModel) async -> ContentRefreshCoordinator.DrainToken? {
+        let coordinator = ContentRefreshCoordinator()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        coordinator.post(.watchState)
+        guard let token = coordinator.beginDrain(now: start) else { return nil }
+        let outcome = await viewModel.refreshUserState()
+        coordinator.endDrain(token, outcome: outcome.drainOutcome, now: start)
+        return coordinator.beginDrain(now: start.addingTimeInterval(1))
+    }
+
+    @Test func aFailedWatchDatesFetchStillStartsTheFloor() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("enrichment down"))
+
+        // An always-failing enrichment endpoint must not refetch Home on
+        // every return: content succeeded, so the page counts as fresh.
+        #expect(await viewModel.refreshUserState() == .succeeded)
+        #expect(await drainOneSecondLater(viewModel) == nil)
+    }
+
+    @Test func aFailedContainerCountsFetchStillStartsTheFloor() async {
+        let tv = Library(id: "tv", name: "TV", collectionType: .tvshows)
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == "tv" ? .success([series("show-1", episodes: 10, unplayed: 6)]) : .success([])
+        }
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [tv])
+
+        client.mediaItemsHandler = { _ in .failure(APIError.networkError("enrichment down")) }
+        let before = client.mediaItemsRequests.count
+
+        #expect(await drainOneSecondLater(viewModel) == nil)
+        // The counts fetch was attempted and failed, not skipped.
+        #expect(client.mediaItemsRequests.count == before + 1)
+    }
+
+    @Test func aFailedContentFetchStillBlocksTheFloor() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.nextUpItemsResult = .failure(APIError.networkError("offline"))
+
+        // The reason goes back as owed, so the very next drain retries it
+        // rather than waiting out the floor.
+        let next = await drainOneSecondLater(viewModel)
+        #expect(next?.reason == .watchState)
+        #expect(next?.isFloorCheck == false)
+    }
+
+    /// Seeds a real coordinator from a finished cold load the way `RootView`
+    /// does, and returns what a drain past the floor would claim: a floor
+    /// check when the load seeded the floor, nil when it didn't.
+    private func drainPastTheFloorAfterInitialLoad(_ viewModel: HomeViewModel) -> ContentRefreshCoordinator.DrainToken? {
+        let coordinator = ContentRefreshCoordinator()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        coordinator.completeInitialLoad(
+            revisionAtStart: coordinator.revision,
+            succeeded: viewModel.lastLoadOutcome == .succeeded,
+            now: start,
+        )
+        return coordinator.beginDrain(now: start.addingTimeInterval(ContentRefreshCoordinator.floor.timeIntervalValue + 1))
+    }
+
+    @Test func aColdLoadWhoseWatchDatesFailStillSeedsTheFloor() async {
+        let client = MockJellyfinClient()
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("enrichment down"))
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        #expect(viewModel.lastLoadOutcome == .succeeded)
+        #expect(drainPastTheFloorAfterInitialLoad(viewModel)?.isFloorCheck == true)
+    }
+
+    @Test func aColdLoadWhoseContentFailsDoesNotSeedTheFloor() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .failure(APIError.networkError("offline"))
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        #expect(viewModel.lastLoadOutcome == .failed)
+        #expect(drainPastTheFloorAfterInitialLoad(viewModel) == nil)
+    }
+
+    @Test func aLibrariesRefreshWhoseWatchDatesFailReportsSuccess() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("enrichment down"))
+
+        #expect(await viewModel.refresh(.libraries) == .succeeded)
+    }
+
+    @Test func aLibrariesRefreshWhoseContentFailsReportsFailure() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.nextUpItemsResult = .failure(APIError.networkError("offline"))
+
+        #expect(await viewModel.refresh(.libraries) == .failed)
+    }
+
     // MARK: - Merged Continue Watching lane
 
     @Test("The merged lane orders a full load by last engagement")
@@ -1345,6 +1458,17 @@ struct HomeViewModelTests {
         #expect(Outcome.combine([.failed, .superseded]) == .failed)
         #expect(Outcome.combine([.succeeded, .superseded]) == .superseded)
         #expect(Outcome.combine([.succeeded, .succeeded]) == .succeeded)
+    }
+
+    @Test func combineDropsEnrichmentFailuresButNotEnrichmentSupersession() {
+        typealias Outcome = HomeViewModel.LoadOutcome
+        // A pass whose enrichment didn't finish must not start the floor.
+        #expect(Outcome.combine(content: [.succeeded], enrichment: [.superseded]) == .superseded)
+        #expect(Outcome.combine(content: [.superseded], enrichment: [.failed]) == .superseded)
+        // A content failure still beats any enrichment outcome.
+        #expect(Outcome.combine(content: [.failed], enrichment: [.superseded]) == .failed)
+        // An enrichment failure alone is not a failed pass (#299).
+        #expect(Outcome.combine(content: [.succeeded], enrichment: [.failed]) == .succeeded)
     }
 
     @Test("Task cancellation leaves no failure in any lane")
