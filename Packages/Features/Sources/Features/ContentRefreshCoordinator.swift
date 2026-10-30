@@ -135,6 +135,26 @@ public final class ContentRefreshCoordinator {
         post(.watchState)
     }
 
+    /// Call from the presenter's dismiss path, as a backup to the player's
+    /// own teardown.
+    ///
+    /// Drops the ticket only while it has no stop task: one that never got
+    /// a stop task by dismissal never will, and left registered it keeps
+    /// `hasPlayingSession` true and returns every future drain early (#301).
+    /// A ticket already reporting is left alone, so a drain still waits for
+    /// its stopped report. Repeat calls and unknown tickets do nothing.
+    ///
+    /// SwiftUI does not order this against the player's `onDisappear`, so
+    /// the presenter must also forget the ticket here. A teardown that runs
+    /// second then finds no ticket and registers a fresh one to finish,
+    /// rather than handing a dropped ticket to `finishPlayback`, which would
+    /// ignore it.
+    public func unregister(_ ticket: PlaybackTicket) {
+        guard let entry = sessions[ticket], entry == nil else { return }
+        sessions[ticket] = nil
+        Self.logger.debug("playback unregistered with no stop task, sessions \(self.sessions.count, privacy: .public)")
+    }
+
     /// Drop every registered session.
     ///
     /// A session disconnect tears down whatever player is presented without

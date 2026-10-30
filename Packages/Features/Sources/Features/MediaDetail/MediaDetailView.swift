@@ -114,6 +114,10 @@ public struct MediaDetailView: View {
     /// which play immediately on click.
     @State private var playbackItem: PlaybackRequest?
 
+    /// The open player's refresh ticket, unregistered when the cover
+    /// dismisses.
+    @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
+
     @State private var isPresentingOverview = false
 
     let item: MediaItem
@@ -407,6 +411,7 @@ public struct MediaDetailView: View {
                         userState: session.userState,
                         mediaSourceId: target.mediaSourceId,
                         streamingBitrateCap: playbackPreferences.streamingQuality.bitsPerSecond,
+                        playbackTicket: $playbackTicket,
                     )
                 }
             }
@@ -560,6 +565,12 @@ public struct MediaDetailView: View {
     /// Watch state moves during playback; hand the in-place refresh to the
     /// view model once the player dismisses.
     private func refreshAfterPlayback() {
+        // Backup to the player's own teardown: a ticket that never got a
+        // stop task would hold the wait below open forever (#301).
+        if let playbackTicket {
+            refreshCoordinator.unregister(playbackTicket)
+        }
+        playbackTicket = nil
         Task {
             await viewModel.refreshAfterPlayback(waitingFor: refreshCoordinator)
             refreshCoordinator.post(.watchState)

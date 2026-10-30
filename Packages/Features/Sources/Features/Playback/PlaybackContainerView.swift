@@ -14,8 +14,11 @@ public struct PlaybackContainerView: View {
     @State private var viewModel: PlaybackViewModel
 
     /// Set by `.task` at presentation; `onDisappear` reads it to hand the
-    /// same session to `finishPlayback`. Nil only if `.task` never ran.
-    @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
+    /// same session to `finishPlayback`. Owned by the presenter, which
+    /// unregisters it from its dismiss path in case `onDisappear` never
+    /// runs (#301). Nil if `.task` never ran or the presenter has already
+    /// unregistered it.
+    @Binding private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
 
     /// The concrete engine, held alongside the view model: the AVKit
     /// hosting below needs the typed `player` the `PlayerEngine` protocol
@@ -37,13 +40,17 @@ public struct PlaybackContainerView: View {
     ///     plays the server default
     ///   - streamingBitrateCap: the viewer's streaming ceiling in bits per
     ///     second (#168); nil leaves the engine's declared ceiling
+    ///   - playbackTicket: the presenter's slot for this session's refresh
+    ///     ticket, which it passes to `unregister` when the cover dismisses
     public init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
         userState: UserStateStore? = nil,
         mediaSourceId: String? = nil,
         streamingBitrateCap: Int?,
+        playbackTicket: Binding<ContentRefreshCoordinator.PlaybackTicket?>,
     ) {
+        _playbackTicket = playbackTicket
         let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)
         _viewModel = State(initialValue: PlaybackViewModel(
@@ -103,10 +110,10 @@ public struct PlaybackContainerView: View {
             // cooperative — an early dismiss can still resume this body after
             // `onDisappear` already ran its own fallback-ticket teardown. A
             // cancelled body must not register a session nothing will ever
-            // finish: the coordinator has no unregister, so that ticket would
-            // sit in `awaitPlaybackReporting`'s loop forever and wedge every
-            // future drain. `onDisappear`'s `stop()` already covers teardown
-            // for this case, idempotently.
+            // finish: that ticket would sit in `awaitPlaybackReporting`'s loop
+            // and wedge every drain, and the presenter's dismiss may already
+            // have run its unregister. `onDisappear`'s `stop()` already covers
+            // teardown for this case, idempotently.
             guard !Task.isCancelled else { return }
             // Registered before the player even starts, so no dismissal can
             // observe "nothing in flight" — SwiftUI guarantees no ordering

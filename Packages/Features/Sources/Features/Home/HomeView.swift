@@ -39,6 +39,10 @@ struct HomeView: View {
     /// immediately on click).
     @State private var playbackItem: PlaybackRequest?
 
+    /// The open player's refresh ticket, unregistered when the cover
+    /// dismisses.
+    @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
+
     /// The live scroll values, on an @Observable object instead of @State:
     /// per-tick writes then invalidate only the views whose bodies read the
     /// written property, and this body reads none of them. As @State, every
@@ -376,7 +380,15 @@ struct HomeView: View {
                 }
             #endif
         }
-        .fullScreenCover(item: $playbackItem, onDismiss: { refreshCoordinator.post(.watchState) }) { target in
+        .fullScreenCover(item: $playbackItem, onDismiss: {
+            // Backup to the player's own teardown: a ticket that never got a
+            // stop task would stall every drain until relaunch (#301).
+            if let playbackTicket {
+                refreshCoordinator.unregister(playbackTicket)
+            }
+            playbackTicket = nil
+            refreshCoordinator.post(.watchState)
+        }) { target in
             if let client = session.client {
                 PlaybackContainerView(
                     client: client,
@@ -384,6 +396,7 @@ struct HomeView: View {
                     userState: session.userState,
                     mediaSourceId: target.mediaSourceId,
                     streamingBitrateCap: playbackPreferences.streamingQuality.bitsPerSecond,
+                    playbackTicket: $playbackTicket,
                 )
             }
         }
