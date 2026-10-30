@@ -31,8 +31,12 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    Jellyfin 10.11.11 on `localhost:8096` with user `test` and password `test`.
    The library has three movies (Harbor Lights, The Long Field, Static Season)
    and one series (Night Shift Radio, three episodes). Metadata comes from NFO
-   files, so it is identical on every run. Options: `server.sh up <version> <port>`;
-   on another port, change `server` at the top of your check to match.
+   files, so it is identical on every run. Options: `server.sh up <version> <port>`.
+   Versions on different ports run side by side (Jellyfin 12 tags are two-part:
+   `12.4`). The check reads its server from run.sh's `UI_CHECK_SERVER`, so one
+   check runs against every port unedited. Pull a new image with its own
+   `server.sh up` before starting others: a first start of `12.4` beside a
+   second server outran the 90s wait once, then started in 7s warm.
 2. **Write the check.** Copy `UICheckTemplate.swift` to
    `Jelly SharkUITests/UICheck<Name>.swift` and rename the class. Keep
    `writeVerdictOnTeardown()` as the first line. Write the steps, and follow
@@ -44,7 +48,10 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    `UI_CHECK_SERVER=http://localhost:8096 .claude/skills/tvos-ui-check/run.sh UICheck<Name> [simulator-udid]`
    - It prints PASS or FAIL, the failure messages and the screenshots folder.
      Exit codes: 0 pass, 1 test failure, 2 stalled or broke.
-   - `UI_CHECK_SERVER` makes it check the server answers before building.
+   - `UI_CHECK_SERVER` makes it check the server answers before building, and
+     reaches the check as `server`. Any other `TEST_RUNNER_<NAME>` you export
+     reaches it as `<NAME>`, such as a mode switch for one check with several
+     scenarios.
    - `UI_CHECK_OUT` sets the output folder; the default is a new temp folder
      each run. Use a temp folder: screenshots can't be saved under `/Volumes/SSD`.
 4. **Hand over the screenshots.** Send the relevant PNGs to the user with
@@ -113,6 +120,44 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    saved server's logout call. A refused server is quick, but one that
    accepts connections and never answers holds the screen past the 20s wait.
    Navigation isn't restored, so `app.launch()` always starts at the root.
+
+## Checking a saved session
+
+A restore check signs in, then relaunches: `relaunch()` keeps the Keychain,
+so the app restores its session. `api(_:_:)` calls the server as its admin
+from the test, on a device of its own.
+
+| To get | Do this |
+|---|---|
+| A revoked token | `api("DELETE", "/Devices?id=<id>")` for each `GET /Devices` item whose `AppName` is "Jelly Shark", then relaunch. Verified on 10.11.11 and 12.4: the token then gets 401. `DELETE /Auth/Keys/{token}` answers 204 but leaves a session token valid |
+| A token the server never issued | Leave the app signed in, run `server.sh up` again on the same port (a fresh container), relaunch |
+| A too-old server behind the saved URL | Sign in on 10.11.11, `server.sh up 10.11.10` on the same port, relaunch |
+| A server that's down | Leave the app signed in, `server.sh down <port>`, relaunch |
+| Proof that sign-out revoked the token | `GET /Devices` has no "Jelly Shark" item afterwards |
+
+The form shows a failed restore's message under Settings → Server. With the
+server down, Home stays on its loading skeleton, which has nothing focusable,
+so Settings can't be reached; the sidebar's library entries show the session
+is still standing. Load Home once before taking the server down if the check
+needs its content.
+
+## Checking the server side
+
+To show what the server recorded, such as a device appearing or going away,
+or the version the app reports, screenshot the Jellyfin web dashboard with
+`dashboard.py`. It signs in through the API, so no login form is driven.
+
+1. **Set up once,** in a temp folder, not the repo:
+   `python3 -m venv <dir>/pw && <dir>/pw/bin/pip install playwright && <dir>/pw/bin/playwright install chromium`.
+   Chromium lands in `~/Library/Caches/ms-playwright` (about 100 MB).
+2. **Run it from outside the repo:**
+   `<dir>/pw/bin/python -I .claude/skills/tvos-ui-check/dashboard.py http://localhost:8097 <out>.png [page]`.
+   The page defaults to `dashboard/devices`; `dashboard/activity` also works.
+3. **Read the rows.** The app is "Apple TV · Jelly Shark <version>". "Chrome ·
+   Jellyfin Web" is the script's own session and "ui-check" is server.sh's.
+
+For an assertion inside the check itself, use `api("GET", "/Devices")`
+instead: the dashboard shows the same data, and the screenshot is for people.
 
 ## Hang modes, and how run.sh fails fast on them
 

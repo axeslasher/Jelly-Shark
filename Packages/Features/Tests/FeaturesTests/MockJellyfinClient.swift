@@ -96,10 +96,14 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     var serverInfoResult: Result<ServerInfo, Error> = .success(
         ServerInfo(serverName: "Mock", version: ServerInfo.minimumVersion, id: "server-1"),
     )
+    /// Optional gate awaited before serving the server info, so restore tests
+    /// can show the instant connect doesn't wait on the version check
+    var serverInfoDelay: (() async -> Void)?
     var authenticateCallCount = 0
 
     func fetchPublicServerInfo() async throws -> ServerInfo {
-        try serverInfoResult.get()
+        await serverInfoDelay?()
+        return try serverInfoResult.get()
     }
 
     func authenticate(username: String, password _: String) async throws -> User {

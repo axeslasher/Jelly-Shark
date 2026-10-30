@@ -133,17 +133,8 @@ public struct SettingsView: View {
         }
     }
 
-    /// Read from the bundle so the displayed version can't drift from
-    /// `MARKETING_VERSION` (#157). Local builds carry the default build number
-    /// `1` (CI overrides it per release, see docs/RELEASING.md), which says
-    /// nothing, so it's omitted.
     private var versionText: String {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
-        guard let build = info?["CFBundleVersion"] as? String, build != "1" else {
-            return "Version \(version)"
-        }
-        return "Version \(version) (\(build))"
+        "Version \(AppVersion.text() ?? "unknown")"
     }
 
     private var serverSubtitle: String {

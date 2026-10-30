@@ -34,14 +34,15 @@ Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk
 3. The SDK authenticates (authenticate-by-name) and returns an access token + user
 4. The client fetches the user's libraries to confirm the connection
 5. The access token, server URL, and user ID are saved as a `SavedSession` in the Keychain
-6. On next launch, `restoreSession()` reloads the session and validates the token via `fetchCurrentUser()`
+6. On next launch, `restoreSession()` reloads the session and validates the token via `fetchCurrentUser()`, and the server version via `fetchPublicServerInfo()` alongside it
 
-_(planned)_ Auto-detect via mDNS/Bonjour on the local network; explicit server version-compatibility gating before login.
+_(planned)_ Auto-detect via mDNS/Bonjour on the local network.
 
 ### Session Management
 - **Persistence**: `SavedSession` (server URL + user ID + token) in Keychain; restored and re-validated on launch
 - **Token refresh**: Not required (Jellyfin tokens don't expire by default)
-- **Re-authentication**: On explicit logout, or automatically cleared if the saved token returns 401 during restore (kept on transient network errors)
+- **Re-authentication**: On explicit logout, or automatically cleared during restore if the saved token returns 401 or the server reports a version below the minimum (kept on transient network errors, including a version that can't be read)
+- **Authorization**: The token travels in the `Authorization: MediaBrowser …, Token="…"` header, which Jellyfin 12 accepts with its default `EnableLegacyAuthorization=false`. Stream URLs carry it as `ApiKey`, also accepted on 12.4; the legacy `api_key` query parameter is refused on API endpoints
 - **Device ID**: A stable per-install UUID is generated and stored in the Keychain, surviving logout
 - **Multiple servers**: Support for multiple server profiles _(future)_
 - **Quick user switching**: Multiple users on same server _(future)_
@@ -303,7 +304,7 @@ struct ServerInfo {
     static let minimumVersion = "10.11.11"   // computed isSupported
 }
 ```
-`connect()` reads it from `fetchPublicServerInfo()` before sending credentials and refuses a server below the minimum. A restored session is not re-checked.
+`connect()` reads it from `fetchPublicServerInfo()` before sending credentials and refuses a server below the minimum. A restored session is re-checked alongside its token: a version below the minimum ends it with the same message, and a fetch that fails keeps it. A cache-restored session runs the check in its background validation, so the instant connect stays instant.
 
 **PlaybackSessionInfo / MediaSource / MediaStreamInfo** (`Models/PlaybackSession.swift`)
 Describe the playable media sources returned by `PlaybackInfo`, including audio/subtitle stream lists (`MediaStreamInfo`) used for in-player track switching. `PlaybackTicks` provides ticks↔seconds conversion helpers.

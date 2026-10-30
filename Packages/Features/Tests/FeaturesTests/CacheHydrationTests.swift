@@ -148,6 +148,120 @@ struct InstantConnectTests {
         #expect(rig.appSession.scopedCache != nil)
     }
 
+    // MARK: Server version on restore (#335)
+
+    private static let tooOld = ServerInfo(serverName: "Old", version: "10.11.10", id: "server-1")
+
+    @Test("A server below the minimum ends a cache-restored session in the background")
+    func tooOldServerTearsDownInstantConnect() async {
+        let rig = Rig()
+        await rig.seedCache()
+        let gate = AsyncGate()
+        rig.client.serverInfoDelay = { try? await gate.wait() }
+        rig.client.serverInfoResult = .success(Self.tooOld)
+
+        await rig.viewModel.restoreSession()
+        // Still instant: published from cache before the version answers
+        #expect(rig.viewModel.state == .connected)
+
+        await gate.open()
+        await rig.viewModel.awaitValidation()
+
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.viewModel.errorMessage == APIError.unsupportedServerVersion("10.11.10").localizedDescription)
+        #expect(rig.viewModel.isValidating == false)
+        #expect(rig.viewModel.libraries.isEmpty)
+        #expect(rig.store.session == nil)
+        #expect(rig.appSession.client == nil)
+        #expect(await rig.cache.read([Library].self, scope: rig.scope, key: .libraries) == nil)
+    }
+
+    @Test("A server below the minimum ends a cache-miss restore")
+    func tooOldServerEndsBlockingRestore() async {
+        let rig = Rig()
+        // No libraries, so a cache miss; the user entry shows the purge ran
+        await rig.cache.write(User(id: "user-1", name: "demo"), scope: rig.scope, key: .currentUser)
+        rig.client.serverInfoResult = .success(Self.tooOld)
+
+        await rig.viewModel.restoreSession()
+
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.viewModel.errorMessage == APIError.unsupportedServerVersion("10.11.10").localizedDescription)
+        #expect(rig.viewModel.hasAttemptedRestore)
+        #expect(rig.store.session == nil)
+        #expect(rig.appSession.client == nil)
+        #expect(await rig.cache.read(User.self, scope: rig.scope, key: .currentUser) == nil)
+    }
+
+    @Test("A too-old server's message wins over a revoked token", arguments: [true, false])
+    func tooOldServerWinsOverUnauthorized(cached: Bool) async {
+        let rig = Rig()
+        if cached {
+            await rig.seedCache()
+        }
+        rig.client.serverInfoResult = .success(Self.tooOld)
+        rig.client.fetchCurrentUserResult = .failure(APIError.unauthorized)
+
+        await rig.viewModel.restoreSession()
+        await rig.viewModel.awaitValidation()
+
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.viewModel.errorMessage == APIError.unsupportedServerVersion("10.11.10").localizedDescription)
+        #expect(rig.store.session == nil)
+    }
+
+    @Test("A supported server restores as before, instantly from cache", arguments: ["10.11.11", "12.4.0"])
+    func supportedServerKeepsInstantConnect(version: String) async {
+        let rig = Rig()
+        await rig.seedCache()
+        let gate = AsyncGate()
+        rig.client.serverInfoDelay = { try? await gate.wait() }
+        rig.client.serverInfoResult = .success(ServerInfo(serverName: "New", version: version, id: "server-1"))
+
+        await rig.viewModel.restoreSession()
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.viewModel.isValidating)
+
+        await gate.open()
+        await rig.viewModel.awaitValidation()
+
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.viewModel.isValidating == false)
+        #expect(rig.viewModel.errorMessage == nil)
+        #expect(rig.store.session != nil)
+    }
+
+    @Test("A supported server passes a cache-miss restore", arguments: ["10.11.11", "12.4.0"])
+    func supportedServerPassesBlockingRestore(version: String) async {
+        let rig = Rig()
+        rig.client.serverInfoResult = .success(ServerInfo(serverName: "New", version: version, id: "server-1"))
+
+        await rig.viewModel.restoreSession()
+
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.viewModel.errorMessage == nil)
+        #expect(rig.store.session != nil)
+    }
+
+    @Test("A version fetch that fails keeps the saved session", arguments: [true, false])
+    func unreadableVersionKeepsSession(cached: Bool) async {
+        let rig = Rig()
+        if cached {
+            await rig.seedCache()
+        }
+        rig.client.serverInfoResult = .failure(APIError.networkError("offline"))
+
+        await rig.viewModel.restoreSession()
+        await rig.viewModel.awaitValidation()
+
+        // The token check passed, so the session is live either way
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.viewModel.isValidating == false)
+        #expect(rig.viewModel.errorMessage == nil)
+        #expect(rig.store.session != nil)
+        #expect(rig.appSession.client != nil)
+    }
+
     @Test("disconnect() purges the active scope and only that scope")
     func disconnectPurgesOnlyActiveScope() async {
         let rig = Rig()

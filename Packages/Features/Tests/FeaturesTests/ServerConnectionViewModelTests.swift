@@ -234,6 +234,38 @@ struct ServerConnectionViewModelTests {
         ))
     }
 
+    @Test("The client reports the app's version, not the JellyfinKit placeholder")
+    func clientReportsAppVersion() async {
+        let recorder = FactoryRecorder()
+        let store = InMemorySessionStore()
+        let viewModel = makeViewModel(store: store, client: MockJellyfinClient(), recorder: recorder)
+
+        await viewModel.connect()
+        await viewModel.disconnect()
+        store.session = makeSavedSession()
+        await viewModel.restoreSession()
+
+        // Sign-in and restore both build a client; both carry the version
+        #expect(recorder.configurations.count == 2)
+        #expect(recorder.configurations.allSatisfy { $0.clientVersion == AppVersion.text() ?? "unknown" })
+        #expect(recorder.configurations.allSatisfy { $0.clientVersion != "0.0.1" })
+    }
+
+    @Test("AppVersion omits the local build number and keeps a release one", arguments: [
+        (["CFBundleShortVersionString": "0.11.0", "CFBundleVersion": "1"], "0.11.0"),
+        (["CFBundleShortVersionString": "0.11.0", "CFBundleVersion": "42.1"], "0.11.0 (42.1)"),
+        (["CFBundleShortVersionString": "0.11.0"], "0.11.0"),
+    ])
+    func appVersionText(info: [String: String], expected: String) {
+        #expect(AppVersion.text(from: info) == expected)
+    }
+
+    @Test("AppVersion is nil without a marketing version")
+    func appVersionMissing() {
+        #expect(AppVersion.text(from: ["CFBundleVersion": "42.1"]) == nil)
+        #expect(AppVersion.text(from: nil) == nil)
+    }
+
     @Test("connect() refuses a server older than the minimum and saves no session")
     func connectRejectsTooOldServer() async {
         let store = InMemorySessionStore()

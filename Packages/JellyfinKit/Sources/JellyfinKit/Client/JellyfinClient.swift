@@ -625,7 +625,12 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     }
 
     public func signOut() async {
-        try? await sdkClient.signOut()
+        // Not the SDK's `signOut()`: it sends `DELETE /Auth/Keys/{token}`,
+        // which answers 204 on 10.11.11 and 12.4 yet leaves a session token
+        // valid. Ending the session is what revokes it and drops the device.
+        // The SDK client keeps its now-dead copy (it has no public setter);
+        // this client is discarded on sign-out.
+        _ = try? await sdkClient.send(Paths.reportSessionEnded)
         _currentUser = nil
         _userId = nil
         _accessToken = nil
