@@ -33,7 +33,6 @@
             // rejected sign-in instead, pass `expectError: true`; it returns the
             // form's error text.
             signIn(url: server, username: "test", password: "test")
-            XCTAssertTrue(app.buttons["Disconnect"].firstMatch.waitForExistence(timeout: 30), dump("Sign-in failed"))
             shot("02-signed-in")
 
             // ... the steps for this check, each followed by a wait and a shot.
@@ -127,11 +126,13 @@
             return message
         }
 
-        /// Settings → Server → Disconnect. The app must be signed in. Re-selecting
-        /// the current tab does not pop its stack, so when the Server screen is
-        /// already showing, use it as is.
+        /// Settings → Server → Disconnect. Returns at once when the sign-in form
+        /// is already showing, as after `signIn(expectError: true)`.
         private func signOut() {
             let disconnect = app.buttons["Disconnect"].firstMatch
+            if app.textFields.firstMatch.exists, !disconnect.exists {
+                return
+            }
             if !disconnect.exists {
                 openServerScreen()
             }
@@ -244,11 +245,15 @@
         /// Focuses a list row (a cell whose label starts with `label`) and selects it.
         /// Re-selecting a tab doesn't pop its stack, so from a pushed screen
         /// (Server after `signIn`, a picker) it backs out with Menu until the
-        /// row shows.
+        /// row shows. It waits 8s first, so a slow screen isn't backed out of,
+        /// and Menu at most 3 times: Menu at the top level leaves the app.
         private func open(row label: String) {
             let row = cell(label)
-            for _ in 0 ..< 4 where !row.waitForExistence(timeout: 2) {
-                pressMenu()
+            if !row.waitForExistence(timeout: 8) {
+                for _ in 0 ..< 3 where !row.exists {
+                    pressMenu(lookingFor: "row '\(label)'")
+                    _ = row.waitForExistence(timeout: 2)
+                }
             }
             XCTAssertTrue(row.waitForExistence(timeout: 20), dump("No row '\(label)'"))
             focus(row, trying: [.right, .down, .up])
@@ -332,10 +337,11 @@
         /// match a backgrounded app's last tree, so later steps would go on
         /// pressing buttons on the tvOS home screen.
         /// The state flips a moment after the press, hence the short wait.
-        private func pressMenu() {
+        private func pressMenu(lookingFor target: String? = nil) {
             remote.press(.menu)
             XCTAssertFalse(app.wait(for: .runningBackground, timeout: 1.5),
-                           "Menu left the app: the screen had no back stack")
+                           target.map { "Menu left the app while backing out to \($0): is the label right?" }
+                               ?? "Menu left the app: the screen had no back stack")
         }
 
         /// The first of `elements` to exist within `timeout`, or nil.

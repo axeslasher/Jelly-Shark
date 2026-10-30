@@ -33,16 +33,23 @@ fail() {
     [[ -n ${pid:-} ]] && kill "$pid" 2>/dev/null
     exit 2
 }
+# A simulator screenshot at <path>, capped at 5s: on a wedged simulator the
+# screenshot itself can hang. Writes to a temp name first, so <path> exists
+# only when complete. Fails if no screenshot landed.
+screenshot() {
+    local tmp
+    tmp="$(dirname "$1")/.$(basename "$1")"
+    xcrun simctl io "$udid" screenshot "$tmp" >/dev/null 2>&1 &
+    local shot=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 $shot 2>/dev/null || break; sleep 0.5; done
+    kill $shot 2>/dev/null
+    wait $shot 2>/dev/null && [[ -s $tmp ]] && mv "$tmp" "$1"
+}
 die() {
     say "$*"
     # What the screen showed when we gave up, and the step that never returned.
-    # Capped at 5s: on a wedged simulator the screenshot itself can hang.
-    if [[ -n ${udid:-} && -n ${shots:-} ]]; then
-        xcrun simctl io "$udid" screenshot "$shots/stalled.png" >/dev/null 2>&1 &
-        local shot=$!
-        for _ in 1 2 3 4 5; do kill -0 $shot 2>/dev/null || break; sleep 1; done
-        kill $shot 2>/dev/null
-        [[ -f $shots/stalled.png ]] && say "screen at stall: $shots/stalled.png"
+    if [[ -n ${udid:-} && -n ${shots:-} ]] && screenshot "$shots/stalled.png"; then
+        say "screen at stall: $shots/stalled.png"
     fi
     [[ -f ${log:-} ]] && grep -E "^ +t = " "$log" | tail -1 | sed 's/^ */ui-check: last step: /'
     [[ -n ${pid:-} ]] && kill "$pid" 2>/dev/null
@@ -118,7 +125,7 @@ fi
 rm -rf "$bundle"
 shots="$out/screenshots"
 mkdir -p "$shots"
-rm -rf "$shots"/*.png "$shots/verdict.txt" "$shots/requests"
+rm -rf "$shots"/*.png "$shots"/*.failed "$shots/verdict.txt" "$shots/requests"
 start=$(date +%s)
 TEST_RUNNER_UI_CHECK_OUT="$shots" TEST_RUNNER_UI_CHECK_SERVER="${UI_CHECK_SERVER:-}" xcodebuild test -scheme "Jelly Shark" -destination "id=$udid" \
     -derivedDataPath "$derived" -resultBundlePath "$bundle" \
@@ -135,13 +142,12 @@ mkdir -p "$requests"
 while [[ ! -f $shots/verdict.txt ]]; do
     sleep 0.5
     # Screenshot requests from the check (visionOS: XCUITest's own screenshot
-    # crops the window). The PNG lands before the request is removed, which
-    # is what the check waits for.
+    # crops the window). The PNG, or <name>.failed, lands before the request
+    # is removed, which is what the check waits for.
     for request in "$requests"/*; do
         [[ -f $request ]] || continue
         name=$(basename "$request")
-        xcrun simctl io "$udid" screenshot "$shots/.$name.png" >/dev/null 2>&1 &&
-            mv "$shots/.$name.png" "$shots/$name.png"
+        screenshot "$shots/$name.png" || echo "simctl io screenshot failed or took over 5s" >"$shots/$name.failed"
         rm -f "$request"
     done
     now=$(date +%s)

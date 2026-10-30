@@ -52,6 +52,9 @@
             //
             // open(tab: "Search")
             // search("Static")
+            // The idle screen already lists every title, so the proof is that
+            // the others go away; then that the match is there.
+            // XCTAssertTrue(waitUntil(timeout: 10) { !labelled("The Long Field").exists }, dump("Search did not narrow"))
             // XCTAssertTrue(labelled("Static Season").waitForExistence(timeout: 20), dump("No search result"))
             // shot("05-search")
             // To prove something went away, such as the other titles once the
@@ -136,9 +139,13 @@
             _ = notNow.waitForNonExistence(timeout: 3)
         }
 
-        /// Settings → Server → Disconnect. The app must be signed in.
+        /// Settings → Server → Disconnect. Returns at once when the sign-in form
+        /// is already showing, as after `signIn(expectError: true)`.
         private func signOut() {
             let disconnect = app.buttons["Disconnect"].firstMatch
+            if app.textFields.firstMatch.exists, !disconnect.exists {
+                return
+            }
             if !disconnect.exists {
                 openServerScreen()
             }
@@ -243,17 +250,18 @@
         }
 
         /// Taps a list row: the cell whose label starts with `label`, or failing
-        /// that any element that does.
-        /// Re-selecting a tab doesn't pop its stack, so from a pushed screen
-        /// (Server after `signIn`, a picker) it goes back until the row shows.
+        /// that a button that does. Not any element: a pushed screen's own title
+        /// can start with the same word. Re-selecting a tab doesn't pop its
+        /// stack, so from a pushed screen (Server after `signIn`, a picker) it
+        /// goes back until the row shows.
         private func open(row label: String) {
             let starts = NSPredicate(format: "label BEGINSWITH %@", label)
             let cell = app.cells.containing(starts).firstMatch
-            let any = app.descendants(matching: .any).matching(starts).firstMatch
-            for _ in 0 ..< 4 where firstToExist([cell, any], timeout: 2) == nil && app.buttons["BackButton"].exists {
+            let button = app.buttons.matching(starts).firstMatch
+            for _ in 0 ..< 4 where firstToExist([cell, button], timeout: 2) == nil && app.buttons["BackButton"].exists {
                 back()
             }
-            let row = firstToExist([cell, any], timeout: 20)
+            let row = firstToExist([cell, button], timeout: 20)
             XCTAssertNotNil(row, dump("No row '\(label)'"))
             row?.tap()
         }
@@ -347,7 +355,10 @@
             try? FileManager.default.createDirectory(at: requests, withIntermediateDirectories: true)
             FileManager.default.createFile(atPath: request.path(), contents: nil)
             let answered = waitUntil(timeout: 10) { !FileManager.default.fileExists(atPath: request.path()) }
-            XCTAssertTrue(answered, "run.sh never answered the screenshot request '\(name)' — is the check running under run.sh?")
+            XCTAssertTrue(answered, "run.sh never answered the screenshot request '\(name)': it is blocked, or the simulator is wedged")
+            let failed = try? String(contentsOf: out.appending(path: "\(name).failed"), encoding: .utf8)
+            XCTAssertTrue(!answered || FileManager.default.fileExists(atPath: out.appending(path: "\(name).png").path()),
+                          "No screenshot '\(name)': \(failed ?? "run.sh answered without one")")
         }
 
         /// Prints the element tree to the log and saves it as `<name>.txt`

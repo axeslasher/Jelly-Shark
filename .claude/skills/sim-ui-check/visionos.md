@@ -47,8 +47,9 @@ screenshot`. The result is the whole simulated room at 3840×2160, with the app
 window, its ornaments and any system sheet in it.
 
 Without run.sh (no `UI_CHECK_OUT`), `shot` falls back to the cropped
-screenshot as an attachment. With `UI_CHECK_OUT` set but nothing answering,
-it fails after 10s.
+screenshot as an attachment. Under run.sh, `shot` fails when the screenshot
+didn't land (`<name>.failed` gives the reason), or when run.sh doesn't answer
+within 10s.
 
 On a failure, the template asks for `zz-failure.png` before writing the
 verdict: once the verdict is written, run.sh stops and the app closes.
