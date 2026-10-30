@@ -1460,6 +1460,17 @@ struct HomeViewModelTests {
         #expect(Outcome.combine([.succeeded, .succeeded]) == .succeeded)
     }
 
+    @Test func combineDropsEnrichmentFailuresButNotEnrichmentSupersession() {
+        typealias Outcome = HomeViewModel.LoadOutcome
+        // A pass whose enrichment didn't finish must not start the floor.
+        #expect(Outcome.combine(content: [.succeeded], enrichment: [.superseded]) == .superseded)
+        #expect(Outcome.combine(content: [.superseded], enrichment: [.failed]) == .superseded)
+        // A content failure still beats any enrichment outcome.
+        #expect(Outcome.combine(content: [.failed], enrichment: [.superseded]) == .failed)
+        // An enrichment failure alone is not a failed pass (#299).
+        #expect(Outcome.combine(content: [.succeeded], enrichment: [.failed]) == .succeeded)
+    }
+
     @Test("Task cancellation leaves no failure in any lane")
     func taskCancellationLeavesNoFailure() async {
         // Real clients emit APIError.networkError(URLError(.cancelled).localizedDescription),

@@ -158,7 +158,8 @@ public final class HomeViewModel {
     public private(set) var latestStatus: SectionStatus = .loading
 
     /// What the last `load()`'s network fan-out did. `load()` returns whether
-    /// it *ran*; this says how it went.
+    /// it *ran*; this says how it went. Only a content failure counts as
+    /// `.failed` — see `LoadOutcome.combine(content:enrichment:)`.
     public private(set) var lastLoadOutcome: LoadOutcome = .succeeded
 
     public private(set) var heroIndex = 0
