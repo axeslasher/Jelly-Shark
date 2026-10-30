@@ -20,6 +20,8 @@ base="http://localhost:$port"
 auth='MediaBrowser Client="ui-check", Device="ui-check", DeviceId="ui-check", Version="1"'
 
 fail() { echo "server.sh: $*" >&2; exit 1; }
+# set -e alone exits on any later failed curl without saying which step.
+trap 'fail "failed at line $LINENO: $BASH_COMMAND"' ERR
 
 # No text burned in: Homebrew's ffmpeg ships without drawtext. Titles come
 # from the NFO files; artwork is told apart by colour.

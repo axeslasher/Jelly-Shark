@@ -18,12 +18,28 @@ derived=${UI_CHECK_DERIVED:-$HOME/Library/Caches/jelly-shark-ui-check/derived/$(
 bundle="$out/result.xcresult"
 log="$out/xcodebuild.log"
 build_limit=${UI_CHECK_BUILD_LIMIT:-600} # seconds from start to the first "Test Suite … started"
-quiet_limit=${UI_CHECK_QUIET_LIMIT:-90}  # seconds with no log output once testing runs
+# A healthy check logs an activity line at least every ~2.5s; an app whose
+# main thread is stuck goes silent ~31s per UI query (SKILL.md § Hang modes).
+quiet_limit=${UI_CHECK_QUIET_LIMIT:-20} # seconds with no log output once testing runs
 
 mkdir -p "$out"
 
 say() { echo "ui-check: $*"; }
-die() { say "$*"; [[ -n ${pid:-} ]] && kill "$pid" 2>/dev/null; exit 2; }
+die() {
+    say "$*"
+    # What the screen showed when we gave up, and the step that never returned.
+    # Capped at 5s: on a wedged simulator the screenshot itself can hang.
+    if [[ -n ${udid:-} && -n ${shots:-} ]]; then
+        xcrun simctl io "$udid" screenshot "$shots/stalled.png" >/dev/null 2>&1 &
+        local shot=$!
+        for _ in 1 2 3 4 5; do kill -0 $shot 2>/dev/null || break; sleep 1; done
+        kill $shot 2>/dev/null
+        [[ -f $shots/stalled.png ]] && say "screen at stall: $shots/stalled.png"
+    fi
+    [[ -f ${log:-} ]] && grep -E "^ +t = " "$log" | tail -1 | sed 's/^ */ui-check: last step: /'
+    [[ -n ${pid:-} ]] && kill "$pid" 2>/dev/null
+    exit 2
+}
 
 # 1. Simulator: default to the Apple TV the Makefile tests on. Boot it here,
 #    with a deadline, rather than letting xcodebuild boot it silently.
@@ -59,6 +75,14 @@ xcrun simctl boot "$udid" 2>/dev/null
 ( xcrun simctl bootstatus "$udid" >/dev/null 2>&1 ) & boot=$!
 for _ in $(seq 1 120); do kill -0 $boot 2>/dev/null || break; sleep 1; done
 kill -0 $boot 2>/dev/null && { kill $boot; die "simulator $udid did not finish booting in 120s"; }
+
+# Server preflight, before the build: a dead server otherwise surfaces only
+# as a sign-in failure, a minute or more into the run. A paused (frozen)
+# container accepts the connection and never answers, hence -m.
+if [[ -n ${UI_CHECK_SERVER:-} ]]; then
+    curl -sf -m 3 "$UI_CHECK_SERVER/System/Info/Public" >/dev/null ||
+        die "server $UI_CHECK_SERVER is not answering — run server.sh up first"
+fi
 
 # 2. The run. No parallel testing: it clones the simulator, and a clone has
 #    been seen sitting on the home screen without ever launching the app.

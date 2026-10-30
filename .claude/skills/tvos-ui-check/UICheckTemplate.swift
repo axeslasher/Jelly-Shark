@@ -44,21 +44,34 @@ final class UICheckTemplate: XCTestCase {
         open(row: "Server")
         let form = app.textFields.firstMatch
         let disconnect = app.buttons["Disconnect"].firstMatch
-        XCTAssertTrue(form.waitForExistence(timeout: 20) || disconnect.exists, dump("No server screen"))
+        // Wait for either screen: waiting on the form alone costs its whole
+        // timeout whenever the simulator starts signed in.
+        XCTAssertNotNil(firstToExist([form, disconnect], timeout: 20), dump("No server screen"))
         if disconnect.exists {
             focus(disconnect, trying: [.down, .up])
             remote.press(.select)
-            XCTAssertTrue(form.waitForExistence(timeout: 20), dump("Sign-out did not return to the form"))
+            // Sign-out awaits the server's logout call, so a server that
+            // accepts connections but never answers holds this screen.
+            XCTAssertTrue(form.waitForExistence(timeout: 20),
+                          dump("Sign-out did not return to the form — is the saved server answering?"))
         }
 
         let fields = app.textFields.allElementsBoundByIndex
         XCTAssertGreaterThanOrEqual(fields.count, 2, dump("Expected URL and username fields"))
         type(url, into: fields[0])
         type(username, into: fields[1])
-        type(password, into: app.secureTextFields.firstMatch)
+        type(password, into: app.secureTextFields.firstMatch, secure: true)
 
         focus(app.buttons["Connect"].firstMatch, trying: [.down, .up])
         remote.press(.select)
+        // The form shows a refused or rejected sign-in within a second or so;
+        // fail on it then rather than waiting out the caller's Disconnect wait.
+        let error = app.staticTexts.matching(NSPredicate(
+            format: "label CONTAINS[c] 'error' OR label CONTAINS[c] 'invalid' OR label CONTAINS[c] 'could not' OR label CONTAINS[c] 'expired' OR label CONTAINS[c] 'not supported'",
+        )).firstMatch
+        if firstToExist([disconnect, error], timeout: 30) == error {
+            XCTFail(dump("Sign-in failed: \(error.label)"))
+        }
     }
 
     /// Settings → Server → Disconnect. The app must be signed in. Re-selecting
@@ -84,7 +97,7 @@ final class UICheckTemplate: XCTestCase {
     private func open(tab label: String) {
         let tab = cell(label)
         for _ in 0 ..< 4 where !tab.exists {
-            remote.press(.menu)
+            pressMenu()
         }
         XCTAssertTrue(tab.waitForExistence(timeout: 20), dump("No sidebar tab '\(label)'"))
         // Left on an open sidebar collapses it to a pill, after which its
@@ -92,6 +105,13 @@ final class UICheckTemplate: XCTestCase {
         // it is open; one Left only to bring a collapsed sidebar back.
         if tab.frame.isEmpty {
             remote.press(.left)
+            // Left only reopens it when focus sits in the content. A screen
+            // with nothing focusable (a loading skeleton) leaves it shut.
+            if !waitUntil(timeout: 3, { !tab.frame.isEmpty }) {
+                shot("sidebar-stuck")
+                XCTFail(dump("Sidebar did not reopen for '\(label)': is the screen behind it still loading?"))
+                return
+            }
         }
         focus(tab, trying: [.down, .up])
         remote.press(.select)
@@ -105,15 +125,57 @@ final class UICheckTemplate: XCTestCase {
         remote.press(.select)
     }
 
-    /// Selects a text field, clears it, types `text` and closes the keyboard.
-    private func type(_ text: String, into field: XCUIElement) {
+    /// Selects a text field, clears it, types `text`, closes the keyboard and
+    /// checks the field now holds exactly `text` (secure fields can't be read).
+    private func type(_ text: String, into field: XCUIElement, secure: Bool = false) {
+        let existing = (field.value as? String)?.count ?? 0
         focus(field, trying: [.up, .down])
         remote.press(.select)
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), dump("Keyboard never appeared"))
-        let clear = String(repeating: XCUIKeyboardKey.delete.rawValue, count: 60)
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 10), dump("Keyboard never appeared"))
+        // Delete at least what is there; a fixed count leaves the tail of a long value.
+        let clear = String(repeating: XCUIKeyboardKey.delete.rawValue, count: max(60, existing + 10))
         app.typeText(clear + text)
+        // Menu with no keyboard up pops the screen, or leaves the app.
+        if keyboard.exists {
+            remote.press(.menu)
+        }
+        XCTAssertTrue(field.waitForExistence(timeout: 5), dump("Field gone after typing"))
+        if !secure {
+            XCTAssertEqual(field.value as? String, text, dump("Field holds the wrong text"))
+        }
+    }
+
+    /// Menu, then fail at once if it took the app off screen: queries still
+    /// match a backgrounded app's last tree, so later steps would go on
+    /// pressing buttons on the tvOS home screen.
+    /// The state flips a moment after the press, hence the short wait.
+    private func pressMenu() {
         remote.press(.menu)
-        _ = field.waitForExistence(timeout: 5)
+        XCTAssertFalse(app.wait(for: .runningBackground, timeout: 1.5),
+                       "Menu left the app: the screen had no back stack")
+    }
+
+    /// The first of `elements` to exist within `timeout`, or nil.
+    private func firstToExist(_ elements: [XCUIElement], timeout: TimeInterval) -> XCUIElement? {
+        var hit: XCUIElement?
+        _ = waitUntil(timeout: timeout) {
+            hit = elements.first(where: \.exists)
+            return hit != nil
+        }
+        return hit
+    }
+
+    /// Polls `condition` every quarter second until it holds or `timeout` passes.
+    private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date.now.addingTimeInterval(timeout)
+        repeat {
+            if condition() {
+                return true
+            }
+            RunLoop.current.run(until: .now.addingTimeInterval(0.25))
+        } while Date.now < deadline
+        return condition()
     }
 
     // MARK: - Primitives
@@ -170,7 +232,18 @@ final class UICheckTemplate: XCTestCase {
         ProcessInfo.processInfo.environment["UI_CHECK_OUT"].map { URL(filePath: $0) }
     }
 
+    /// Failure text: the message, then what had focus and which headings were
+    /// on screen (enough to act on at a glance), then the full element tree.
     private func dump(_ message: String) -> String {
-        "\(message)\n\(app.debugDescription)"
+        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        let focusedText = focused.exists ? "\(focused.elementType) '\(focused.label)'" : "nothing"
+        let headings = app.staticTexts.allElementsBoundByIndex.prefix(40)
+            .filter { $0.frame.height >= 40 && !$0.label.isEmpty }
+            .map(\.label).prefix(4).joined(separator: ", ")
+        return """
+        \(message)
+        Focused: \(focusedText) · Screen: \(headings.isEmpty ? "no headings" : headings) · App: \(app.state == .runningForeground ? "foreground" : "NOT foreground")
+        \(app.debugDescription)
+        """
     }
 }

@@ -36,7 +36,8 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    `Jelly SharkUITests/UICheck<Name>.swift` and rename the class. Keep
    `writeVerdictOnTeardown()` as the first line. Write the steps, and follow
    each one with a `waitForExistence` and a `shot("NN-name")`.
-3. **Run it.** `.claude/skills/tvos-ui-check/run.sh UICheck<Name>`. It prints
+3. **Run it.** `UI_CHECK_SERVER=http://localhost:8096 .claude/skills/tvos-ui-check/run.sh UICheck<Name>`.
+   `UI_CHECK_SERVER` makes run.sh check the server answers before it builds. It prints
    PASS or FAIL with the failure messages and the screenshots folder. Exit
    codes: 0 pass, 1 test failure, 2 stalled or broke.
 4. **Hand over the screenshots.** Send the relevant PNGs to the user with
@@ -49,8 +50,11 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 - Every wait has a deadline. Use `waitForExistence(timeout:)` and assert on it.
   A missing element should fail within seconds, with a screenshot and the
   element tree, not sit there.
-- Avoid `sleep` and fixed delays. Wait for the thing that proves the step
-  worked instead.
+- Never `sleep` or block the test. Wait for the thing that proves the step
+  worked instead. run.sh treats 20s of silence in the log as a stall.
+- To wait for one of several outcomes, such as success or an on-screen error,
+  use `firstToExist`. A `waitForExistence` on the success element alone sits
+  out its whole timeout when the app has already shown the error.
 - Select a control only after `hasFocus` is true. `focus(_:trying:)` presses
   directions until it is, then fails with `focus-failed.png`.
 - Assert on labels and text, never on positions. The UI is redesigned often.
@@ -63,16 +67,24 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 2. **Left on an open sidebar collapses it** into a pill. Its cells then have
    an empty frame and Up/Down can't reach them. `open(tab:)` uses Up/Down
    while the sidebar is open, and Left only to bring a collapsed one back.
+   Left does nothing while the screen behind has nothing focusable, such as
+   Home's loading skeleton; `open(tab:)` then fails with `sidebar-stuck.png`.
 3. **Re-selecting the current tab doesn't pop its stack.** If the target
    screen is already showing, use it as it is.
-4. **Menu at the top level leaves the app.** Press Menu only while what you
-   need is missing, and with a cap on presses.
+4. **Menu at the top level leaves the app,** and so does Menu on a screen with
+   nothing focusable. Queries still match the backgrounded app's last tree,
+   so `exists` stays true and later presses land on the tvOS home screen.
+   Use `pressMenu()`, which fails as soon as the app leaves the foreground.
 5. **Text entry:** focus the field, press select, wait for `app.keyboards`,
-   type the text, then press Menu. Clear the field first with
-   `XCUIKeyboardKey.delete` repeated.
+   type the text, then press Menu only if the keyboard is still up. Menu with
+   no keyboard pops the screen. `type(_:into:)` deletes the field's whole
+   current value and then asserts the field holds exactly the new text.
 6. **The simulator keeps state between runs.** It may still be signed in to a
    server that no longer exists. Start each check from a known state; the
-   template's `signIn` signs out first if it needs to.
+   template's `signIn` signs out first if it needs to. Sign-out waits for the
+   saved server's logout call. A refused server is quick, but one that
+   accepts connections and never answers holds the screen past the 20s wait.
+   Navigation isn't restored, so `app.launch()` always starts at the root.
 
 ## Hang modes, and how run.sh fails fast on them
 
@@ -83,12 +95,20 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 | A parallel-testing clone never launches the app | The cloned simulator sits on the tvOS home screen | `-parallel-testing-enabled NO` |
 | Simulator doesn't boot | `simctl bootstatus` never returns | run.sh boots it itself and gives it 120s |
 | Build never gets to testing | No "Test suite started" line | 600s limit (`UI_CHECK_BUILD_LIMIT`) |
-| Test stalls mid-run | The log stops growing | 90s with no output (`UI_CHECK_QUIET_LIMIT`) |
+| Test stalls mid-run | The log stops growing | 20s with no output (`UI_CHECK_QUIET_LIMIT`); run.sh saves `stalled.png` and prints the last step |
+| App's main thread stuck (process alive, so the crash watch can't see it) | One UI query takes ~107s: three snapshot attempts ~31s apart, then "Timed out while evaluating UI query" | The 20s quiet limit. A healthy check logs a step at least every 2.5s |
+| Server down or frozen before the run | Sign-in fails a minute or more in | `UI_CHECK_SERVER` preflight: `curl -m 3` before the build |
+| Server refuses mid-check | "Network error: Could not connect to the server." on the form | `signIn` waits for Disconnect *or* an error text, and fails on the error |
+| Server frozen mid-check | "Signing in..." with a spinner until the request times out | The caller's 30s Disconnect wait. Nothing faster is possible from outside |
 | The app crashes or is killed mid-test | XCTest keeps logging `Checking existence of …` against the dead app until the wait times out, so the log never goes quiet | run.sh watches the app process (its path contains the simulator's UDID) and fails 15s after it disappears. Before this guard, a crash took 160s to report; now it takes 24s. |
 | The test runner dies (simulator shut down, or a second run) | `Restarting after unexpected exit, crash, or test timeout` or `Early unexpected exit`, then `Executed 0 tests` | run.sh fails on that line |
 | Two runs on one simulator | Each kills the other's runner | A lock per simulator in `~/Library/Caches/jelly-shark-ui-check/locks/<UDID>`, shared across worktrees; a lock left by a dead process is taken over |
 | Class name typo | `Executed 0 tests`, while xcodebuild reports `TEST SUCCEEDED` | run.sh fails on `Executed 0 tests` |
 | UDID typo | xcodebuild searches for about 60s, then `Unable to find a device matching …` | run.sh checks the UDID before doing anything else |
+
+Not hang modes, though they were suspected: on tvOS 27 a fresh simulator shows
+no Local Network prompt, and Home's skeleton pulse doesn't stall XCUITest's idle
+wait (each wait took 0.02–1.3s with the skeleton on screen).
 
 The "never exits" mode was not reproduced on 2026-10-29. With a stored or a
 computed `app`, xcodebuild exited within 10s after a failing test, in 3 of 3
@@ -96,3 +116,14 @@ runs each, so the Apple forums theory (thread 818688) isn't supported. The
 guard stays because the hang has been seen.
 
 When you hit a new hang, add a row here and a guard in `run.sh`, in the same PR.
+
+## Exploring a screen you don't know yet (optional)
+
+To learn a new screen's labels and focus order before you write steps,
+[agent-device](https://github.com/callstack/agent-device) is faster than
+rebuilding a test. Pin it to `0.21.35`, install it in a scratch folder (it needs
+Node), and use `--platform ios --target tv`. Its snapshot marks the focused
+element. Use it only to explore, never as evidence. It silently relaunches a
+crashed app, its `fill` appends to existing text, and it throws occasional
+errors mid-animation. Stop its daemon afterwards with `agent-device daemon stop`.
+Its screenshots can't be saved under `/Volumes/SSD`; use a temp folder.
