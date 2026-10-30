@@ -233,7 +233,7 @@ public final class UserStateStore {
         guard let cache else { return }
         let items = serverItems
         Task {
-            await cache.store.ingestServerUserData(scope: cache.scope, items: items)
+            await cache.store.ingestServerUserData(scope: cache.scope, items: items, since: cache.mark)
         }
     }
 
@@ -368,7 +368,7 @@ public final class UserStateStore {
     private func persist(itemID: String, value: CachedUserStateValue) {
         guard let cache else { return }
         Task {
-            await cache.store.setUserState(scope: cache.scope, itemID: itemID) { $0 = value }
+            await cache.store.setUserState(scope: cache.scope, itemID: itemID, since: cache.mark) { $0 = value }
         }
     }
 }

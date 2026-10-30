@@ -283,10 +283,6 @@ public final class ServerConnectionViewModel {
                 libraries = fresh
                 refreshLibraryCounts(client: client)
                 isValidating = false
-                // The client authenticated itself inside `fetchCurrentUser`,
-                // where Observation can't see it — tell the session so the
-                // screens gated on `isConnected` actually start loading.
-                session?.refreshConnectionState()
                 await cache.purgeStaleDetails(scope: scope)
             } catch {
                 guard let self, !Task.isCancelled else { return }
@@ -295,16 +291,20 @@ public final class ServerConnectionViewModel {
                     return
                 }
                 guard state == .connected else { return }
+                // Unpublish first so no screen starts work on the scope, and
+                // re-enable Connect last: a client made before the purge
+                // has its cache writes dropped, for its whole session.
+                session?.clearClient()
+                self.client = nil
                 try? sessionStore.clearSession()
                 await cache.purge(scope: scope)
+                await clearArtworkCaches()
                 errorMessage = message
                 state = .disconnected
-                self.client = nil
                 connectedUser = nil
                 libraries = []
                 libraryCounts = [:]
                 isValidating = false
-                session?.clearClient()
             }
         }
     }
@@ -342,10 +342,7 @@ public final class ServerConnectionViewModel {
         if let cache, let scopeToPurge {
             await cache.purge(scope: scopeToPurge)
         }
-        // Artwork (posters, logos, chapter images, trickplay tiles) is shared
-        // across accounts, so it goes whole: encoded bytes and decoded images
-        urlCache.removeAllCachedResponses()
-        await artworkLoader.removeAllImages()
+        await clearArtworkCaches()
 
         client = nil
         connectedUser = nil
@@ -357,6 +354,14 @@ public final class ServerConnectionViewModel {
     }
 
     // MARK: - Helpers
+
+    /// Artwork (posters, logos, chapter images, trickplay tiles) is shared
+    /// across accounts, so an ended session's goes whole: encoded bytes and
+    /// decoded images
+    private func clearArtworkCaches() async {
+        urlCache.removeAllCachedResponses()
+        await artworkLoader.removeAllImages()
+    }
 
     /// Parse and validate the server URL
     private func parseServerURL(_ urlString: String) -> URL? {
