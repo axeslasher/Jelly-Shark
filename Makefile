@@ -47,6 +47,13 @@ VISION_DEST = generic/platform=visionOS Simulator
 # .github/workflows/swiftformat.yml together.
 SWIFTFORMAT_VERSION = 0.62.1
 
+# Simulator test runs go through scripts/xcodebuild-test.sh, which stops
+# xcodebuild if it stalls (#339). Diagnostics collection is off because after a
+# failing test it waited out its own 600s timeout in 5 of 6 runs, with parallel
+# testing on or off, so a red run looked like a hung one. The failure itself is
+# still in the log and the result bundle.
+SIM_TEST = scripts/xcodebuild-test.sh -collect-test-diagnostics never
+
 .PHONY: test test-sim test-host test-only build build-visionos clean \
 	format lint check-swiftformat install-hooks fonts
 
@@ -55,7 +62,7 @@ test: test-sim test-host
 
 # App + DesignSystemTests + FeaturesTests on the tvOS simulator.
 test-sim:
-	xcodebuild test -scheme "$(SCHEME)" -destination "$(SIM_DEST)"
+	$(SIM_TEST) -scheme "$(SCHEME)" -destination "$(SIM_DEST)"
 
 # JellyfinKit on the Mac host.
 test-host:
@@ -66,7 +73,7 @@ test-host:
 test-only:
 	@[ -n "$(ONLY)" ] || \
 		{ echo "usage: make test-only ONLY=<test target>   (DesignSystemTests | FeaturesTests | 'Jelly SharkUITests')"; exit 1; }
-	xcodebuild test -scheme "$(SCHEME)" -destination "$(SIM_DEST)" -only-testing:"$(ONLY)"
+	$(SIM_TEST) -scheme "$(SCHEME)" -destination "$(SIM_DEST)" -only-testing:"$(ONLY)"
 
 # Build the app for the two shipping platforms. Generic destinations — see the
 # note above SIM_DEST for why these deliberately don't name a device.

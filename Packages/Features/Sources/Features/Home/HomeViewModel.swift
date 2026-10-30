@@ -36,6 +36,22 @@ public final class HomeViewModel {
             }
             return .succeeded
         }
+
+        /// Merge a pass's loaders into the outcome the refresh floor acts on.
+        ///
+        /// Only a content failure (resume, next-up, Recently Added) reports
+        /// `.failed`. A failed enrichment fetch (watch dates, container
+        /// counts) is dropped, so the floor starts anyway: counting it would
+        /// make a server whose enrichment endpoint always fails refetch Home
+        /// on every tab return, and never seed the floor on a cold load
+        /// (#299). The cost is that a stale sort key or count badge waits
+        /// for the floor to expire, not for the next return.
+        ///
+        /// Enrichment supersession still counts: it means the pass didn't
+        /// finish, and a pass that didn't finish must not start the floor.
+        static func combine(content: [LoadOutcome], enrichment: [LoadOutcome]) -> LoadOutcome {
+            combine(content + enrichment.filter { $0 != .failed })
+        }
     }
 
     /// Lifecycle of one Home section, independent of its siblings.
@@ -142,7 +158,8 @@ public final class HomeViewModel {
     public private(set) var latestStatus: SectionStatus = .loading
 
     /// What the last `load()`'s network fan-out did. `load()` returns whether
-    /// it *ran*; this says how it went.
+    /// it *ran*; this says how it went. Only a content failure counts as
+    /// `.failed` — see `LoadOutcome.combine(content:enrichment:)`.
     public private(set) var lastLoadOutcome: LoadOutcome = .succeeded
 
     public private(set) var heroIndex = 0
@@ -399,9 +416,11 @@ public final class HomeViewModel {
         // is caught by the next check. Not an outcome: a missed seed only
         // means the next check seeds instead of comparing.
         async let newestSeed: Void = seedNewestAdded(client: client, generation: generation)
-        let outcomes = await [resumeOutcome, nextUpOutcome, latestOutcome, watchDatesOutcome]
+        let content = await [resumeOutcome, nextUpOutcome, latestOutcome]
+        let enrichment = await [watchDatesOutcome]
         await newestSeed
-        let outcome = LoadOutcome.combine(outcomes)
+        let outcomes = content + enrichment
+        let outcome = LoadOutcome.combine(content: content, enrichment: enrichment)
         Self.logger.debug("load generation \(generation, privacy: .public) outcomes resume/nextUp/latest/watchDates \(outcomes.map { String(describing: $0) }.joined(separator: "/"), privacy: .public); current generation \(self.loadGeneration, privacy: .public), cancelled \(Task.isCancelled, privacy: .public)")
 
         guard generation == loadGeneration else { return true }
@@ -597,7 +616,8 @@ public final class HomeViewModel {
     ///
     /// - Returns: what the network actually did. The coordinator needs this,
     ///   not the UI's status: a warm-refresh failure keeps the lane
-    ///   `.loaded` on purpose (#236 § 8.3).
+    ///   `.loaded` on purpose (#236 § 8.3). Only a content failure counts;
+    ///   see `LoadOutcome.combine(content:enrichment:)` (#299).
     @discardableResult
     public func refreshUserState() async -> LoadOutcome {
         guard let client else { return .failed }
@@ -608,7 +628,7 @@ public final class HomeViewModel {
         async let nextUp = loadNextUp(client: client, generation: generation)
         async let watchDates = loadWatchDates(client: client, generation: generation)
         async let counts = refreshContainerCounts(client: client, generation: generation)
-        return await LoadOutcome.combine([resume, nextUp, watchDates, counts])
+        return await LoadOutcome.combine(content: [resume, nextUp], enrichment: [watchDates, counts])
     }
 
     /// Refresh at the given depth, reporting what the network actually did.
