@@ -64,8 +64,8 @@ robots to verify visual or focus-feel behavior. None of them work on this
 codebase and each one has cost a session. To measure a threshold, bisect the
 constant and read pass/fail.
 
-For a tvOS change whose result is a flow or on-screen text, run the
-`tvos-ui-check` skill first and hand the screenshots over. Ask for device
+For a tvOS or visionOS change whose result is a flow or on-screen text, run
+the `sim-ui-check` skill first and hand the screenshots over. Ask for device
 time only for appearance, focus feel, or what the check couldn't reach.
 
 ### Focus-engine check
@@ -93,7 +93,7 @@ before writing the message if there's any ambiguity about what's included.
 gh pr create --fill   # link the issue in the body: "Closes #N"
 ```
 
-Then **stop and hand over for review**: the `tvos-ui-check` screenshots if
+Then **stop and hand over for review**: the `sim-ui-check` screenshots if
 step 5 ran one, plus exactly what still needs a device check, if anything.
 Do not start the next thing,
 chase a tangent, or open follow-up investigations before the PR exists.

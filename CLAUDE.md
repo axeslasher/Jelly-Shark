@@ -124,10 +124,11 @@ threshold, bisect the constant and read pass/fail. To verify appearance, build
 and ask for a device check.
 
 **Flows and on-screen text are checkable on the simulator.** Before asking for
-device time on a small tvOS change — a flow completing, a label or error showing,
-where focus lands — use the `tvos-ui-check` skill: a throwaway XCUITest driven by
-`XCUIRemote`, run by a fail-fast script, with screenshots handed to the user. The
-Xcode MCP device-interaction tools cannot drive tvOS; don't use them for this.
+device time on a small tvOS or visionOS change — a flow completing, a label or
+error showing, where focus lands — use the `sim-ui-check` skill: a throwaway
+XCUITest (`XCUIRemote` on tvOS, taps on visionOS), run by a fail-fast script, with
+screenshots handed to the user. The Xcode MCP device-interaction tools can't drive
+either platform; don't use them for this.
 
 Any change to scrolling, opacity/fades, snapping, layout offsets, `.disabled`,
 or navigation state must state which elements remain focusable and where default
