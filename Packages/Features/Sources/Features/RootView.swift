@@ -21,10 +21,6 @@ public struct RootView: View {
     @State private var affinityShelves = AffinityShelvesViewModel()
     @State private var homeUI = HomeUIState()
 
-    /// Where focus was on each library tab, owned here for the same reason
-    /// as `homeUI`: a tab return puts focus back (#340).
-    @State private var libraryFocus = LibraryFocusMemory()
-
     /// Collects the reasons Home's content has gone stale, so a mutation
     /// made anywhere in the app is not lost while Home is off screen.
     @State private var refreshCoordinator = ContentRefreshCoordinator()
@@ -324,7 +320,6 @@ public struct RootView: View {
             genreShelves = GenreShelvesViewModel()
             affinityShelves = AffinityShelvesViewModel()
             homeUI = HomeUIState()
-            libraryFocus = LibraryFocusMemory()
             // The fresh page owes its own initial load, and the § 8.1 gate is
             // what keeps a drain from superseding it.
             refreshCoordinator.isInitialLoadSettled = false
@@ -441,7 +436,7 @@ public struct RootView: View {
                         // No `libraryOptions`: a tab is scoped to its own
                         // library for good, so it gets no Library pill and its
                         // label stays true.
-                        LibraryItemsView(initialQuery: LibraryQuery(library: library), focusMemory: libraryFocus)
+                        LibraryItemsView(initialQuery: LibraryQuery(library: library))
                     }
                 }
             }
