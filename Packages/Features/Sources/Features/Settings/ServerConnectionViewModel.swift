@@ -395,11 +395,13 @@ public final class ServerConnectionViewModel {
         sessionStore.deviceID()
     }
 
-    /// Build a client configuration for this device; client name and version
-    /// come from JellyfinClientConfiguration's defaults
+    /// Build a client configuration for this device. The version is the one
+    /// Settings shows, so the server's device list and activity log name the
+    /// build; the client name comes from JellyfinClientConfiguration's default.
     private func makeConfiguration(serverURL: URL) -> JellyfinClientConfiguration {
         JellyfinClientConfiguration(
             serverURL: serverURL,
+            clientVersion: AppVersion.text() ?? "unknown",
             deviceName: deviceName,
             deviceID: deviceID,
         )
