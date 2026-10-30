@@ -85,7 +85,15 @@ up() {
     done
     curl -sf "$base/System/Info/Public" >/dev/null || fail "server did not come up on $base"
 
-    api POST /Startup/Configuration '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' >/dev/null
+    # On a cold start /System/Info/Public answers before the wizard endpoints
+    # do, and a bare call here exited silently under `set -e`. Retry it.
+    local configured=0
+    for i in $(seq 1 60); do
+        api POST /Startup/Configuration '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}' >/dev/null &&
+            { configured=1; break; }
+        sleep 1
+    done
+    ((configured)) || fail "setup wizard never accepted its first step on $base"
     api GET /Startup/User >/dev/null
     api POST /Startup/User '{"Name":"test","Password":"test"}' >/dev/null
     api POST /Startup/RemoteAccess '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}' >/dev/null
