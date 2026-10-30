@@ -291,20 +291,20 @@ public final class ServerConnectionViewModel {
                     return
                 }
                 guard state == .connected else { return }
-                // Unpublish before the purge, so no screen starts new work
-                // against the scope being purged. Writes already in flight
-                // are dropped by the store: their handles predate the purge.
+                // Unpublish first so no screen starts work on the scope, and
+                // re-enable Connect last: a client made before the purge
+                // has its cache writes dropped, for its whole session.
+                session?.clearClient()
+                self.client = nil
+                try? sessionStore.clearSession()
+                await cache.purge(scope: scope)
+                await clearArtworkCaches()
                 errorMessage = message
                 state = .disconnected
-                self.client = nil
                 connectedUser = nil
                 libraries = []
                 libraryCounts = [:]
                 isValidating = false
-                session?.clearClient()
-                try? sessionStore.clearSession()
-                await cache.purge(scope: scope)
-                await clearArtworkCaches()
             }
         }
     }

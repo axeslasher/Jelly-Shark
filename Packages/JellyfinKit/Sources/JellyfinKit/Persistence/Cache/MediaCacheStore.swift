@@ -497,8 +497,8 @@ public actor MediaCacheStore {
     /// boundary, and the eventual "forget profile" (#192).
     public func purge(scope: CacheScope) {
         let scopeKey = scope.storageKey
-        // First, so a write queued behind this purge from an older handle
-        // is dropped rather than landing after it
+        // Every handle made before this point carries the old count, so its
+        // writes are dropped from now on, including any still in flight
         purgeCounts.withLock { $0.scopes[scopeKey, default: 0] += 1 }
         // A purge that silently fails leaves one user's rows readable to the
         // next sign-in, so this is the one failure here that is a privacy

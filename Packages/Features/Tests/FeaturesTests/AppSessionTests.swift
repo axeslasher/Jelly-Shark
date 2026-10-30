@@ -176,6 +176,39 @@ struct AppSessionTests {
         #expect(await rig.cache.read([Library].self, scope: rig.scope, key: .libraries) == nil)
     }
 
+    /// The purge stops every cache handle made before it. A sign-in after the
+    /// teardown, to the same server and user, must get a fresh handle and
+    /// cache normally, not have its whole session's writes dropped.
+    @Test("A sign-in after a validation teardown caches into the purged scope again")
+    func signInAfterTeardownCaches() async {
+        // The mock's own URL, so the restored and the new session share a scope
+        let client = MockJellyfinClient()
+        let scope = CacheScope(serverURL: client.serverURL, userID: "user-1")
+        let store = InMemorySessionStore()
+        store.session = SavedSession(serverURL: client.serverURL, userID: "user-1", accessToken: "token-1")
+        let cache = MediaCacheStore.makeInMemory()
+        await cache.write([Library(id: "lib-1", name: "Movies", collectionType: .movies)], scope: scope, key: .libraries)
+        client.serverInfoResult = .success(ServerInfo(serverName: "Old", version: "10.11.10", id: "server-1"))
+        client.librariesResult = .success([Library(id: "lib-2", name: "Shows", collectionType: .tvshows)])
+        let viewModel = ServerConnectionViewModel(sessionStore: store, makeClient: { _, _ in client }, cache: cache)
+        viewModel.attach(session: AppSession())
+
+        await viewModel.restoreSession()
+        await viewModel.awaitValidation()
+        #expect(viewModel.state == .disconnected)
+        #expect(await cache.read([Library].self, scope: scope, key: .libraries) == nil)
+
+        // The server is upgraded and the same user signs in again
+        client.serverInfoResult = .success(ServerInfo(serverName: "New", version: "10.11.11", id: "server-1"))
+        viewModel.serverURL = client.serverURL.absoluteString
+        viewModel.username = "demo"
+        viewModel.password = "pw"
+        await viewModel.connect()
+
+        #expect(viewModel.state == .connected)
+        #expect(await cache.read([Library].self, scope: scope, key: .libraries)?.map(\.id) == ["lib-2"])
+    }
+
     @Test("A session ended by validation clears the artwork caches, as sign-out does")
     func validationTeardownClearsArtwork() async throws {
         let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
