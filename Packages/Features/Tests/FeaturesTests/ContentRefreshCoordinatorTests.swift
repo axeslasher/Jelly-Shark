@@ -219,6 +219,66 @@ struct ContentRefreshCoordinatorTests {
         #expect(coordinator.hasPlayingSession == false)
     }
 
+    @Test(.timeLimit(.minutes(1))) func unregisteringAnOrphanedTicketLetsADrainProceed() async throws {
+        // #301: the player went away without `onDisappear`, so no stop task
+        // will ever arrive. The presenter's dismiss is the backup.
+        let coordinator = ContentRefreshCoordinator()
+        let ticket = coordinator.registerPlayback()
+        coordinator.post(.watchState)
+
+        coordinator.unregister(ticket)
+
+        #expect(coordinator.hasPlayingSession == false)
+        // `#require` stops here on a regression: the wait below would
+        // otherwise poll for a stop task that is not coming and hang the run.
+        try #require(coordinator.hasPlaybackInFlight == false)
+        await coordinator.awaitPlaybackReporting()
+        #expect(coordinator.beginDrain(now: epoch)?.reason == .watchState)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func unregisteringAfterTheStopTaskKeepsTheWaitForIt() async {
+        // The usual order: `onDisappear` handed over its stop task before the
+        // presenter's dismiss ran. Dropping that ticket would let a drain
+        // read server state before the stopped report lands.
+        let coordinator = ContentRefreshCoordinator()
+        let ticket = coordinator.registerPlayback()
+        let gate = AsyncGate()
+        var reported = false
+        coordinator.finishPlayback(ticket, stop: Task {
+            try? await gate.wait()
+            reported = true
+        })
+
+        coordinator.unregister(ticket)
+        #expect(coordinator.hasPlaybackInFlight)
+
+        let waiter = Task { await coordinator.awaitPlaybackReporting() }
+        await gate.open()
+        await waiter.value
+        #expect(reported)
+
+        // Once the stop task has run and the drain has retired the ticket, a
+        // late dismiss is a no-op.
+        coordinator.unregister(ticket)
+        #expect(coordinator.hasPlaybackInFlight == false)
+    }
+
+    @Test func unregisteringTwiceIsIdempotent() {
+        let coordinator = ContentRefreshCoordinator()
+        let ticket = coordinator.registerPlayback()
+        let other = coordinator.registerPlayback()
+        let before = coordinator.revision
+
+        coordinator.unregister(ticket)
+        coordinator.unregister(ticket)
+
+        // The second call must not touch another live player's session.
+        #expect(coordinator.hasPlayingSession)
+        #expect(coordinator.revision == before)
+        coordinator.unregister(other)
+        #expect(coordinator.hasPlaybackInFlight == false)
+    }
+
     // MARK: - Drain transaction (§ 8)
 
     @Test func aFloorDrainIsMarkedAndAPostedOneIsNot() {
