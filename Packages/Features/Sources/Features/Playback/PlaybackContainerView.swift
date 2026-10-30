@@ -14,10 +14,14 @@ public struct PlaybackContainerView: View {
     @State private var viewModel: PlaybackViewModel
 
     /// Set by `.task` at presentation; `onDisappear` reads it to hand the
-    /// same session to `finishPlayback`, then clears it. Owned by the
-    /// presenter, whose dismiss schedules a deferred unregister in case
-    /// `onDisappear` never runs (#301). Nil if `.task` never ran.
-    @Binding private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
+    /// same session to `finishPlayback`. Nil only if `.task` never ran.
+    /// This player's own copy: the presenter's slot below may already hold
+    /// the next player's ticket by the time this one tears down.
+    @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
+
+    /// The presenter's copy, which its dismiss hands to a deferred
+    /// unregister in case `onDisappear` never runs (#301).
+    @Binding private var presenterTicket: ContentRefreshCoordinator.PlaybackTicket?
 
     /// The concrete engine, held alongside the view model: the AVKit
     /// hosting below needs the typed `player` the `PlayerEngine` protocol
@@ -49,7 +53,7 @@ public struct PlaybackContainerView: View {
         streamingBitrateCap: Int?,
         playbackTicket: Binding<ContentRefreshCoordinator.PlaybackTicket?>,
     ) {
-        _playbackTicket = playbackTicket
+        _presenterTicket = playbackTicket
         let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)
         _viewModel = State(initialValue: PlaybackViewModel(
@@ -117,7 +121,9 @@ public struct PlaybackContainerView: View {
             // Registered before the player even starts, so no dismissal can
             // observe "nothing in flight" — SwiftUI guarantees no ordering
             // between `onDisappear` and a presenter's `onDismiss` (#236 § 6).
-            playbackTicket = refreshCoordinator.registerPlayback()
+            let ticket = refreshCoordinator.registerPlayback()
+            playbackTicket = ticket
+            presenterTicket = ticket
             await viewModel.start()
         }
         .onChange(of: viewModel.state) { _, newState in
@@ -135,15 +141,18 @@ public struct PlaybackContainerView: View {
             // server state while this stop report was still landing — the exact
             // race this sequencing exists to remove.
             //
-            // A ticket the coordinator no longer holds — left over from a
-            // player whose teardown never ran — takes the same fallback.
+            // So does a ticket the coordinator already dropped, which only
+            // happens when this runs later than the orphan grace.
             let stop = Task { await viewModel.stop() }
             if let playbackTicket, refreshCoordinator.finishPlayback(playbackTicket, stop: stop) {
-                // Reported on the presentation's own ticket.
+                // Reported on this player's own ticket.
             } else {
                 refreshCoordinator.finishPlayback(refreshCoordinator.registerPlayback(), stop: stop)
             }
-            playbackTicket = nil
+            // A newer player from the same page may own the slot by now.
+            if presenterTicket == playbackTicket {
+                presenterTicket = nil
+            }
         }
     }
 
