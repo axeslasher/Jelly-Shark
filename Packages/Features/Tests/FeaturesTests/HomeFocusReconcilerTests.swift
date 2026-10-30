@@ -182,3 +182,60 @@ struct HomeFocusReconcilerTests {
         #expect(landed?.row == HomeShelfRowID.affinity("genre|Horror"))
     }
 }
+
+@Suite("SidebarFocusReturn")
+struct SidebarFocusReturnTests {
+    private typealias Return = SidebarFocusReturn<String>
+    private typealias Snapshot = Return.Snapshot
+
+    @Test func sendsFocusBackToWhatItLeft() {
+        var rule = Return()
+        rule.leave(from: "deep")
+        #expect(rule.reenter(landedOn: "top") == "deep")
+    }
+
+    @Test func leavesAnAccurateLandingAlone() {
+        // A pop from a pushed detail already restores the card itself.
+        var rule = Return()
+        rule.leave(from: "deep")
+        #expect(rule.reenter(landedOn: "deep") == nil)
+    }
+
+    @Test func leavesFocusAloneWhenNothingWasSaved() {
+        var rule = Return()
+        rule.leave(from: nil)
+        #expect(rule.reenter(landedOn: "top") == nil)
+    }
+
+    @Test func answersOncePerDeparture() {
+        var rule = Return()
+        rule.leave(from: "deep")
+        _ = rule.reenter(landedOn: "top")
+        #expect(rule.reenter(landedOn: "top") == nil)
+    }
+
+    @Test func firstEntryIsNotAReturn() {
+        var rule = Return()
+        #expect(rule.reenter(landedOn: "top") == nil)
+    }
+
+    @Test func movesWithinThePageAreNeverRedirected() {
+        var rule = Return()
+        #expect(rule.move(from: Snapshot("a"), to: Snapshot("b")) == nil)
+        #expect(rule.move(from: Snapshot("b"), to: Snapshot(nil, isOnPage: true)) == nil)
+        #expect(rule.move(from: Snapshot(nil, isOnPage: true), to: Snapshot("c")) == nil)
+    }
+
+    @Test func aReturnThroughSnapshotsRedirects() {
+        var rule = Return()
+        #expect(rule.move(from: Snapshot("deep"), to: Snapshot(nil)) == nil)
+        // The engine lands on the filter bar, which tracks no target.
+        #expect(rule.move(from: Snapshot(nil), to: Snapshot(nil, isOnPage: true)) == "deep")
+    }
+
+    @Test func leavingFromAnUntrackedFocusableRestoresNothing() {
+        var rule = Return()
+        #expect(rule.move(from: Snapshot(nil, isOnPage: true), to: Snapshot(nil)) == nil)
+        #expect(rule.move(from: Snapshot(nil), to: Snapshot("top")) == nil)
+    }
+}

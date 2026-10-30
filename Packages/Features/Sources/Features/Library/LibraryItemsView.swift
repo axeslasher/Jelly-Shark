@@ -1,11 +1,14 @@
 import DesignSystem
 import JellyfinKit
+import os
 import SwiftUI
 
 /// Grid of media items, with sort/filter controls and infinite scrolling.
 /// The library is one of those filters: the grid is scoped to whichever
 /// library `initialQuery` names, or to none at all.
 struct LibraryItemsView: View {
+    private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Library")
+
     @Environment(\.theme) private var theme
     @Environment(AppSession.self) private var session
 
@@ -22,6 +25,13 @@ struct LibraryItemsView: View {
     @State private var viewModel = LibraryItemsViewModel()
     @State private var gridWidth: CGFloat = 0
 
+    /// Which grid card has focus, so a return from the tvOS sidebar can put
+    /// it back (#340). The filter bar is tracked apart: focus there is
+    /// already where the sidebar return lands, so it needs no restoring.
+    @FocusState private var focusedCard: ShelfFocusID?
+    @FocusState private var isFilterBarFocused: Bool
+    @State private var sidebarReturn = SidebarFocusReturn<ShelfFocusID>()
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
@@ -34,6 +44,7 @@ struct LibraryItemsView: View {
                     isLoadingOptions: viewModel.isLoadingFilterOptions,
                     onChange: { viewModel.update(query: $0) },
                 )
+                .focused($isFilterBarFocused)
 
                 content
             }
@@ -54,6 +65,16 @@ struct LibraryItemsView: View {
         } action: { width in
             gridWidth = width
         }
+        #if os(tvOS)
+        // One handler over both focus states, so it sees each focus move
+        // once, with both halves of the before and after together.
+        .onChange(of: SidebarFocusReturn.Snapshot(focusedCard, isOnPage: isFilterBarFocused)) { old, new in
+            Self.logger.debug("focus \(String(describing: old), privacy: .public) → \(String(describing: new), privacy: .public)")
+            if let saved = sidebarReturn.move(from: old, to: new) {
+                focusedCard = saved
+            }
+        }
+        #endif
         .task(id: session.isConnected) {
             viewModel.attach(
                 client: session.client,
@@ -117,6 +138,7 @@ struct LibraryItemsView: View {
                     viewModel: viewModel,
                     columnCount: columnLayout.count,
                     cardWidth: columnLayout.width,
+                    focusBinding: $focusedCard,
                 )
 
                 // Outside the grid on purpose: as a cell inside `LazyVGrid`'s
@@ -195,6 +217,7 @@ private struct LibraryItemGrid: View {
     let viewModel: LibraryItemsViewModel
     let columnCount: Int
     let cardWidth: CGFloat
+    let focusBinding: FocusState<ShelfFocusID?>.Binding
 
     var body: some View {
         LazyVGrid(
@@ -216,6 +239,8 @@ private struct LibraryItemGrid: View {
                             Task { await viewModel.setFavorite(favorite, for: item) }
                         },
                     ),
+                    focusBinding: focusBinding,
+                    focusID: ShelfFocusID(row: "grid", item: item.id),
                 )
                 .onAppear {
                     viewModel.loadMoreIfNeeded(currentItem: item)

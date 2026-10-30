@@ -68,6 +68,7 @@ struct HomeView: View {
     @State private var snapMetrics = ScrollSnapMetrics(containerHeight: 0, topInset: 0)
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var regionSnapTask: Task<Void, Never>?
+    @State private var sidebarReturn = SidebarFocusReturn<ShelfFocusID>()
 
     /// `RootView`'s pop-settle plus margin, derived rather than restated: if
     /// the settle moves, this must move with it.
@@ -489,7 +490,18 @@ struct HomeView: View {
                 Self.logger.debug("region \(String(describing: oldRegion), privacy: .public) → \(String(describing: region), privacy: .public); offset \(Int(scroll.offset), privacy: .public)")
                 viewModel.setPaused(region == .hero, reason: .focused)
                 regionSnapTask?.cancel()
-                guard let region else { return }
+                // Focus coming back from off the page, such as the sidebar,
+                // lands wherever the engine puts it (#340). Put it back on the
+                // card it left, before the hero snap below scrolls to the top.
+                guard let region else {
+                    sidebarReturn.leave(from: oldRegion == .shelves ? ui.focusedItem : nil)
+                    return
+                }
+                if oldRegion == nil, let saved = sidebarReturn.reenter(landedOn: focusedCard) {
+                    Self.logger.debug("sidebar return: landed \(String(describing: region), privacy: .public), back to \(saved.row, privacy: .public)/\(saved.item, privacy: .public)")
+                    land(restoredTarget(for: saved), deferred: false)
+                    return
+                }
                 // The region is the honest hero-vs-shelves signal: it is set
                 // by the page's own focus sections, not by a card
                 // disappearing.
