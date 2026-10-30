@@ -31,17 +31,23 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    Jellyfin 10.11.11 on `localhost:8096` with user `test` and password `test`.
    The library has three movies (Harbor Lights, The Long Field, Static Season)
    and one series (Night Shift Radio, three episodes). Metadata comes from NFO
-   files, so it is identical on every run. Options: `server.sh up <version> <port>`.
+   files, so it is identical on every run. Options: `server.sh up <version> <port>`;
+   on another port, change `server` at the top of your check to match.
 2. **Write the check.** Copy `UICheckTemplate.swift` to
    `Jelly SharkUITests/UICheck<Name>.swift` and rename the class. Keep
    `writeVerdictOnTeardown()` as the first line. Write the steps, and follow
-   each one with a `waitForExistence` and a `shot("NN-name")`.
-3. **Run it.** `UI_CHECK_SERVER=http://localhost:8096 .claude/skills/tvos-ui-check/run.sh UICheck<Name>`.
-   `UI_CHECK_SERVER` makes run.sh check the server answers before it builds. It prints
-   PASS or FAIL with the failure messages and the screenshots folder. Exit
-   codes: 0 pass, 1 test failure, 2 stalled or broke.
+   each one with a `waitForExistence` and a `shot("NN-name")`. The template's
+   commented example checks Home and Search; uncomment and adapt it.
+3. **Run it.**
+   `UI_CHECK_SERVER=http://localhost:8096 .claude/skills/tvos-ui-check/run.sh UICheck<Name> [simulator-udid]`
+   - It prints PASS or FAIL, the failure messages and the screenshots folder.
+     Exit codes: 0 pass, 1 test failure, 2 stalled or broke.
+   - `UI_CHECK_SERVER` makes it check the server answers before building.
+   - `UI_CHECK_OUT` sets the output folder; the default is a new temp folder
+     each run. Use a temp folder: screenshots can't be saved under `/Volumes/SSD`.
 4. **Hand over the screenshots.** Send the relevant PNGs to the user with
-   SendUserFile, one caption line each. Don't commit them or the check.
+   SendUserFile, one caption line each. A subagent without SendUserFile lists
+   the absolute PNG paths with a caption each instead. Don't commit them or the check.
 5. **Clean up.** Delete `Jelly SharkUITests/UICheck<Name>.swift`, then run
    `server.sh down`.
 
@@ -58,6 +64,12 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 - Select a control only after `hasFocus` is true. `focus(_:trying:)` presses
   directions until it is, then fails with `focus-failed.png`.
 - Assert on labels and text, never on positions. The UI is redesigned often.
+- Assert the target is absent before the action that should produce it.
+  Search's idle screen already lists every title as a suggestion, so a wait
+  for "Static Season" passes before anything is typed.
+- Find content with `labelled(_:)`. Cards are Buttons labelled "Title, Year",
+  not cells. The fixture's posters are plain colour, so a screenshot often
+  can't show which title is which; the label match is the evidence.
 
 ## Focus rules learned the hard way
 
@@ -67,7 +79,8 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 2. **Left on an open sidebar collapses it** into a pill. Its cells then have
    an empty frame and Up/Down can't reach them. `open(tab:)` uses Up/Down
    while the sidebar is open, and Left only to bring a collapsed one back.
-   Left does nothing while the screen behind has nothing focusable, such as
+   Left moves through the content first (Home's hero has three buttons), so
+   it can take several presses; `open(tab:)` allows six. Left does nothing while the screen behind has nothing focusable, such as
    Home's loading skeleton; `open(tab:)` then fails with `sidebar-stuck.png`.
 3. **Re-selecting the current tab doesn't pop its stack.** If the target
    screen is already showing, use it as it is.
@@ -79,6 +92,8 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    type the text, then press Menu only if the keyboard is still up. Menu with
    no keyboard pops the screen. `type(_:into:)` deletes the field's whole
    current value and then asserts the field holds exactly the new text.
+   The Search tab is different: its system search field already has the
+   keyboard up when the tab opens. Use `search(_:)`, which only types.
 6. **The simulator keeps state between runs.** It may still be signed in to a
    server that no longer exists. Start each check from a known state; the
    template's `signIn` signs out first if it needs to. Sign-out waits for the

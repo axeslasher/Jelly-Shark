@@ -6,9 +6,11 @@ import XCTest
 
 @MainActor
 final class UICheckTemplate: XCTestCase {
-    /// Not a stored property: an Apple forums report (thread 818688) ties a
-    /// stored XCUIApplication plus continueAfterFailure = false to xcodebuild
-    /// hanging after a failure. XCUIApplication() is a cheap proxy to the same app.
+    /// The server from server.sh. On another port (`server.sh up <version> <port>`),
+    /// change it here and pass the same URL to run.sh as UI_CHECK_SERVER.
+    private let server = "http://localhost:8096"
+
+    /// A cheap proxy to the same app, so there is nothing to store.
     private var app: XCUIApplication {
         XCUIApplication()
     }
@@ -25,11 +27,23 @@ final class UICheckTemplate: XCTestCase {
         shot("01-launch")
 
         // Example: sign in to the local server from server.sh.
-        signIn(url: "http://localhost:8096", username: "test", password: "test")
+        signIn(url: server, username: "test", password: "test")
         XCTAssertTrue(app.buttons["Disconnect"].firstMatch.waitForExistence(timeout: 30), dump("Sign-in failed"))
         shot("02-signed-in")
 
         // ... the steps for this check, each followed by a wait and a shot.
+        // Example: a seeded title on Home, then a search that finds another.
+        // Cards are labelled "Title, Year", and Search's idle screen already
+        // lists every title as a suggestion, so match the card's year too.
+        //
+        // open(tab: "Home")
+        // XCTAssertTrue(labelled("Harbor Lights, 2019").waitForExistence(timeout: 20), dump("Not on Home"))
+        // shot("03-home")
+        // open(tab: "Search")
+        // XCTAssertFalse(labelled("Static Season, 2023").exists, dump("Result showing before the search"))
+        // search("Static")
+        // XCTAssertTrue(labelled("Static Season, 2023").waitForExistence(timeout: 20), dump("No search result"))
+        // shot("04-search")
 
         // Leave the simulator signed out for the next check.
         signOut()
@@ -102,16 +116,20 @@ final class UICheckTemplate: XCTestCase {
         XCTAssertTrue(tab.waitForExistence(timeout: 20), dump("No sidebar tab '\(label)'"))
         // Left on an open sidebar collapses it to a pill, after which its
         // cells have no frame and Up/Down never reach them. So: Up/Down while
-        // it is open; one Left only to bring a collapsed sidebar back.
-        if tab.frame.isEmpty {
+        // it is open; Left only to bring a collapsed sidebar back. Left moves
+        // through the content first (Home's hero has three buttons), so it can
+        // take several presses. A screen with nothing focusable, such as a
+        // loading skeleton, never lets it reopen.
+        var presses = 0
+        while tab.frame.isEmpty, presses < 6 {
             remote.press(.left)
-            // Left only reopens it when focus sits in the content. A screen
-            // with nothing focusable (a loading skeleton) leaves it shut.
-            if !waitUntil(timeout: 3, { !tab.frame.isEmpty }) {
-                shot("sidebar-stuck")
-                XCTFail(dump("Sidebar did not reopen for '\(label)': is the screen behind it still loading?"))
-                return
-            }
+            presses += 1
+            _ = waitUntil(timeout: 1) { !tab.frame.isEmpty }
+        }
+        if tab.frame.isEmpty {
+            shot("sidebar-stuck")
+            XCTFail(dump("Sidebar did not reopen for '\(label)' after \(presses) Left presses: is the screen still loading?"))
+            return
         }
         focus(tab, trying: [.down, .up])
         remote.press(.select)
@@ -144,6 +162,15 @@ final class UICheckTemplate: XCTestCase {
         if !secure {
             XCTAssertEqual(field.value as? String, text, dump("Field holds the wrong text"))
         }
+    }
+
+    /// Types into the Search tab's field. It is the system `.searchable` field,
+    /// and its keyboard is already up when the tab opens, so no select, no
+    /// clearing and no Menu, unlike `type(_:into:)`.
+    private func search(_ text: String) {
+        XCTAssertTrue(app.searchFields.firstMatch.waitForExistence(timeout: 10), dump("No search field"))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10), dump("Search keyboard not up"))
+        app.typeText(text)
     }
 
     /// Menu, then fail at once if it took the app off screen: queries still
@@ -179,6 +206,12 @@ final class UICheckTemplate: XCTestCase {
     }
 
     // MARK: - Primitives
+
+    /// Any element whose label contains `text`. Content cards are Buttons
+    /// labelled "Title, Year", not cells.
+    private func labelled(_ text: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
+    }
 
     /// Sidebar tabs and list rows take focus as the *cell*, not the button,
     /// image or text inside it — query the cell or `hasFocus` never turns true.
@@ -236,7 +269,7 @@ final class UICheckTemplate: XCTestCase {
     /// on screen (enough to act on at a glance), then the full element tree.
     private func dump(_ message: String) -> String {
         let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
-        let focusedText = focused.exists ? "\(focused.elementType) '\(focused.label)'" : "nothing"
+        let focusedText = focused.exists ? "'\(focused.label)'" : "nothing"
         let headings = app.staticTexts.allElementsBoundByIndex.prefix(40)
             .filter { $0.frame.height >= 40 && !$0.label.isEmpty }
             .map(\.label).prefix(4).joined(separator: ", ")

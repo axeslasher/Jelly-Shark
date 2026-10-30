@@ -90,6 +90,9 @@ fi
 #    (TEST_RUNNER_ vars reach the test runner with the prefix stripped), so
 #    nothing waits on xcodebuild saving its result bundle — it has been seen
 #    stuck with the bundle still in staging long after the test ended.
+# xcodebuild refuses to overwrite a result bundle, so reusing an output
+# folder would otherwise end the run before it starts.
+rm -rf "$bundle"
 shots="$out/screenshots"
 mkdir -p "$shots"
 rm -f "$shots"/*.png "$shots/verdict.txt"
@@ -138,7 +141,8 @@ while [[ ! -f $shots/verdict.txt ]]; do
         grep -q "Executed [0-9]* test" "$log" && { sleep 3; [[ -f $shots/verdict.txt ]] ||
             die "test ended without a verdict — does the class call writeVerdictOnTeardown()?"; }
     fi
-    kill -0 $pid 2>/dev/null || { sleep 1; [[ -f $shots/verdict.txt ]] || die "xcodebuild exited without a verdict"; }
+    kill -0 $pid 2>/dev/null || { sleep 1; [[ -f $shots/verdict.txt ]] ||
+        { grep -E "xcodebuild: error:" "$log" | head -3; die "xcodebuild exited without a verdict"; }; }
 done
 
 # 4. Done: stop xcodebuild rather than wait for it to wind down.
