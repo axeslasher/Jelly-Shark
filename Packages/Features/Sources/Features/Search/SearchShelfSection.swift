@@ -25,18 +25,32 @@ struct SearchShelfSection: View {
     let icon: String
     let items: [MediaItem]
     let style: Style
+    /// Reports which card has focus, so Search can put it back after a trip
+    /// to the tvOS sidebar (#340). Each card's row is this shelf's title.
+    var focusBinding: FocusState<ShelfFocusID?>.Binding?
 
     var body: some View {
         if !items.isEmpty {
             ContentShelf(title, icon: icon) {
                 ForEach(items) { item in
-                    switch style {
-                    case .poster:
-                        item.posterShelfItem(client: session.client)
-                    case .landscape:
-                        item.landscapeShelfItem(client: session.client)
-                    }
+                    card(for: item)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func card(for item: MediaItem) -> some View {
+        let id = ShelfFocusID(row: title, item: item.id)
+        switch style {
+        case .poster:
+            item.posterShelfItem(client: session.client, focusBinding: focusBinding, focusID: id)
+        case .landscape:
+            if let focusBinding {
+                item.landscapeShelfItem(client: session.client)
+                    .focused(focusBinding, equals: id)
+            } else {
+                item.landscapeShelfItem(client: session.client)
             }
         }
     }
