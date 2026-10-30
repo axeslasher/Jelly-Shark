@@ -137,7 +137,7 @@ When you hit a new hang, add a row here and a guard in `run.sh`, in the same PR.
 To learn a new screen's labels and focus order before you write steps,
 [agent-device](https://github.com/callstack/agent-device) is faster than
 rebuilding a test. Pin it to `0.21.35`, install it in a scratch folder (it needs
-Node), and use `--platform ios --target tv`. Its snapshot marks the focused
+Node, installed through nvm, not Homebrew), and use `--platform ios --target tv`. Its snapshot marks the focused
 element. Use it only to explore, never as evidence. It silently relaunches a
 crashed app, its `fill` appends to existing text, and it throws occasional
 errors mid-animation. Stop its daemon afterwards with `agent-device daemon stop`.
