@@ -283,10 +283,6 @@ public final class ServerConnectionViewModel {
                 libraries = fresh
                 refreshLibraryCounts(client: client)
                 isValidating = false
-                // The client authenticated itself inside `fetchCurrentUser`,
-                // where Observation can't see it — tell the session so the
-                // screens gated on `isConnected` actually start loading.
-                session?.refreshConnectionState()
                 await cache.purgeStaleDetails(scope: scope)
             } catch {
                 guard let self, !Task.isCancelled else { return }

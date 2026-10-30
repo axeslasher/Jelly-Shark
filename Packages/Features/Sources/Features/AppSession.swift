@@ -77,13 +77,6 @@ public final class AppSession {
         }
     }
 
-    /// Re-publish the connection state after background validation succeeds.
-    /// A published client already counts as connected, so this only keeps
-    /// the state in step with `client`.
-    public func refreshConnectionState() {
-        isConnected = client != nil
-    }
-
     /// Clear the client on disconnect. Also drops all resolved user state and
     /// every remembered genre backdrop — the same privacy boundary as the
     /// cache scope purge.
