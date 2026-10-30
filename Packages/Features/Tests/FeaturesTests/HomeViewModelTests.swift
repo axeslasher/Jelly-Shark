@@ -1163,6 +1163,60 @@ struct HomeViewModelTests {
         #expect(next?.isFloorCheck == false)
     }
 
+    /// Seeds a real coordinator from a finished cold load the way `RootView`
+    /// does, and returns what a drain past the floor would claim: a floor
+    /// check when the load seeded the floor, nil when it didn't.
+    private func drainPastTheFloorAfterInitialLoad(_ viewModel: HomeViewModel) -> ContentRefreshCoordinator.DrainToken? {
+        let coordinator = ContentRefreshCoordinator()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        coordinator.completeInitialLoad(
+            revisionAtStart: coordinator.revision,
+            succeeded: viewModel.lastLoadOutcome == .succeeded,
+            now: start,
+        )
+        return coordinator.beginDrain(now: start.addingTimeInterval(ContentRefreshCoordinator.floor.timeIntervalValue + 1))
+    }
+
+    @Test func aColdLoadWhoseWatchDatesFailStillSeedsTheFloor() async {
+        let client = MockJellyfinClient()
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("enrichment down"))
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        #expect(viewModel.lastLoadOutcome == .succeeded)
+        #expect(drainPastTheFloorAfterInitialLoad(viewModel)?.isFloorCheck == true)
+    }
+
+    @Test func aColdLoadWhoseContentFailsDoesNotSeedTheFloor() async {
+        let client = MockJellyfinClient()
+        client.resumeItemsResult = .failure(APIError.networkError("offline"))
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        #expect(viewModel.lastLoadOutcome == .failed)
+        #expect(drainPastTheFloorAfterInitialLoad(viewModel) == nil)
+    }
+
+    @Test func aLibrariesRefreshWhoseWatchDatesFailReportsSuccess() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("enrichment down"))
+
+        #expect(await viewModel.refresh(.libraries) == .succeeded)
+    }
+
+    @Test func aLibrariesRefreshWhoseContentFailsReportsFailure() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.nextUpItemsResult = .failure(APIError.networkError("offline"))
+
+        #expect(await viewModel.refresh(.libraries) == .failed)
+    }
+
     // MARK: - Merged Continue Watching lane
 
     @Test("The merged lane orders a full load by last engagement")
