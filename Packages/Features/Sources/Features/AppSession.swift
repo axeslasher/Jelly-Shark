@@ -29,17 +29,19 @@ public final class AppSession {
     /// `userState`. Internal on purpose: only `Features` renders genre cards.
     let genreBackdrops = GenreBackdropStore()
 
-    /// Whether there is an authenticated connection to a server
+    /// Whether a session is published for screens to load against
     ///
-    /// Stored, not computed through `client.isAuthenticated`: `JellyfinClient`
-    /// is a plain class, so nothing it does is visible to Observation. The
-    /// instant-connect path publishes a client whose token has not been
-    /// validated yet (`isAuthenticated` is false until `fetchCurrentUser()`
-    /// returns), so the flip to true happened inside that non-observable
-    /// object and no reader was ever invalidated — every
-    /// `.task(id: session.isConnected)` in the app missed the transition and
-    /// its screen sat on the skeleton. Kept in step by `setClient`,
-    /// `clearClient`, and `refreshConnectionState`.
+    /// True from the moment a client is published, including a restored
+    /// client whose saved token has not been validated yet (#338). Gating on
+    /// validation instead left a restore that couldn't reach the server
+    /// disconnected for good: validation only reports success, so Home sat on
+    /// its skeleton, which has nothing focusable, and the remote was dead. A
+    /// revoked token or a too-old server still ends the session through
+    /// `clearClient`.
+    ///
+    /// Stored, not computed from the client: `JellyfinClient` is a plain
+    /// class, so nothing it does is visible to Observation, and every
+    /// `.task(id: session.isConnected)` in the app would miss the flip.
     public private(set) var isConnected = false
 
     public init() {}
@@ -54,7 +56,7 @@ public final class AppSession {
     public func setClient(_ client: any JellyfinClientProtocol, scopedCache: ScopedCache? = nil) {
         self.client = client
         self.scopedCache = scopedCache
-        isConnected = client.isAuthenticated
+        isConnected = true
         activationTask?.cancel()
         activationTask = nil
         if let scopedCache {
@@ -75,12 +77,11 @@ public final class AppSession {
         }
     }
 
-    /// Re-read the client's authentication state after something outside this
-    /// object changed it — specifically the background token validation on the
-    /// instant-connect path, which authenticates a client that was already
-    /// published. Without this call that transition is invisible to readers.
+    /// Re-publish the connection state after background validation succeeds.
+    /// A published client already counts as connected, so this only keeps
+    /// the state in step with `client`.
     public func refreshConnectionState() {
-        isConnected = client?.isAuthenticated ?? false
+        isConnected = client != nil
     }
 
     /// Clear the client on disconnect. Also drops all resolved user state and
