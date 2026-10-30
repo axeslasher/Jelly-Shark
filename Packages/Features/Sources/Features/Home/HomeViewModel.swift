@@ -598,6 +598,14 @@ public final class HomeViewModel {
     /// - Returns: what the network actually did. The coordinator needs this,
     ///   not the UI's status: a warm-refresh failure keeps the lane
     ///   `.loaded` on purpose (#236 § 8.3).
+    ///
+    /// Only a content failure (resume, next-up) reports `.failed`. A failed
+    /// enrichment fetch (watch dates, container counts) is dropped from the
+    /// outcome, so the drain starts its floor anyway: counting it would make
+    /// a server whose enrichment endpoint always fails refetch Home on every
+    /// tab return (#299). The cost is that a stale sort key or count badge
+    /// waits for the floor to expire, not for the next return. Supersession
+    /// still counts from every loader, since it means the pass didn't finish.
     @discardableResult
     public func refreshUserState() async -> LoadOutcome {
         guard let client else { return .failed }
@@ -608,7 +616,8 @@ public final class HomeViewModel {
         async let nextUp = loadNextUp(client: client, generation: generation)
         async let watchDates = loadWatchDates(client: client, generation: generation)
         async let counts = refreshContainerCounts(client: client, generation: generation)
-        return await LoadOutcome.combine([resume, nextUp, watchDates, counts])
+        let enrichment = await [watchDates, counts].filter { $0 != .failed }
+        return await LoadOutcome.combine([resume, nextUp] + enrichment)
     }
 
     /// Refresh at the given depth, reporting what the network actually did.

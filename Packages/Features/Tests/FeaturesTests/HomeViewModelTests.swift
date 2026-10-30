@@ -1104,6 +1104,65 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeStatus == .loaded)
     }
 
+    // MARK: - Only content failures block the floor (#299)
+
+    /// Runs one `.watchState` drain through a real coordinator, closing it
+    /// with the outcome `refreshUserState` reports, and returns what a drain
+    /// one second later would claim: nil when the floor started.
+    private func drainOneSecondLater(_ viewModel: HomeViewModel) async -> ContentRefreshCoordinator.DrainToken? {
+        let coordinator = ContentRefreshCoordinator()
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        coordinator.post(.watchState)
+        guard let token = coordinator.beginDrain(now: start) else { return nil }
+        let outcome = await viewModel.refreshUserState()
+        coordinator.endDrain(token, outcome: outcome.drainOutcome, now: start)
+        return coordinator.beginDrain(now: start.addingTimeInterval(1))
+    }
+
+    @Test func aFailedWatchDatesFetchStillStartsTheFloor() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.recentlyPlayedEpisodesResult = .failure(APIError.networkError("enrichment down"))
+
+        // An always-failing enrichment endpoint must not refetch Home on
+        // every return: content succeeded, so the page counts as fresh.
+        #expect(await viewModel.refreshUserState() == .succeeded)
+        #expect(await drainOneSecondLater(viewModel) == nil)
+    }
+
+    @Test func aFailedContainerCountsFetchStillStartsTheFloor() async {
+        let tv = Library(id: "tv", name: "TV", collectionType: .tvshows)
+        let client = MockJellyfinClient()
+        client.latestItemsHandler = { [self] libraryId in
+            libraryId == "tv" ? .success([series("show-1", episodes: 10, unplayed: 6)]) : .success([])
+        }
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [tv])
+
+        client.mediaItemsHandler = { _ in .failure(APIError.networkError("enrichment down")) }
+        let before = client.mediaItemsRequests.count
+
+        #expect(await drainOneSecondLater(viewModel) == nil)
+        // The counts fetch was attempted and failed, not skipped.
+        #expect(client.mediaItemsRequests.count == before + 1)
+    }
+
+    @Test func aFailedContentFetchStillBlocksTheFloor() async {
+        let client = MockJellyfinClient()
+        let viewModel = HomeViewModel()
+        await load(viewModel, client: client, libraries: [Self.movies])
+
+        client.nextUpItemsResult = .failure(APIError.networkError("offline"))
+
+        // The reason goes back as owed, so the very next drain retries it
+        // rather than waiting out the floor.
+        let next = await drainOneSecondLater(viewModel)
+        #expect(next?.reason == .watchState)
+        #expect(next?.isFloorCheck == false)
+    }
+
     // MARK: - Merged Continue Watching lane
 
     @Test("The merged lane orders a full load by last engagement")
