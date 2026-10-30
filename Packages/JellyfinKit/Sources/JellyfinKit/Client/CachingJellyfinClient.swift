@@ -38,6 +38,12 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     /// table directly, so screens see server truth the moment it arrives
     private let userState: UserStateStore?
 
+    /// The purges seen when this client was made. A session that ends
+    /// purges its scope; a request still in flight then must not write the
+    /// ended session's rows back. A client made for a new sign-in takes a
+    /// fresh mark and writes normally.
+    private let mark: CacheWriteMark
+
     public init(
         wrapping inner: any JellyfinClientProtocol,
         cache: MediaCacheStore,
@@ -48,6 +54,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         self.cache = cache
         fallbackScope = scope
         self.userState = userState
+        mark = cache.writeMark()
     }
 
     // MARK: - Identity (pass-through)
@@ -84,7 +91,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         if let userState {
             await userState.ingest(serverItems: items)
         } else if let scope {
-            await cache.ingestServerUserData(scope: scope, items: items)
+            await cache.ingestServerUserData(scope: scope, items: items, since: mark)
         }
         return items
     }
@@ -105,7 +112,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     public func authenticate(username: String, password: String) async throws -> User {
         let user = try await inner.authenticate(username: username, password: password)
-        await cache.write(user, scope: CacheScope(serverURL: inner.serverURL, userID: user.id), key: .currentUser)
+        await cache.write(user, scope: CacheScope(serverURL: inner.serverURL, userID: user.id), key: .currentUser, since: mark)
         return user
     }
 
@@ -115,7 +122,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     public func fetchCurrentUser() async throws -> User {
         let user = try await inner.fetchCurrentUser()
-        await cache.write(user, scope: CacheScope(serverURL: inner.serverURL, userID: user.id), key: .currentUser)
+        await cache.write(user, scope: CacheScope(serverURL: inner.serverURL, userID: user.id), key: .currentUser, since: mark)
         return user
     }
 
@@ -124,7 +131,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     public func getLibraries() async throws -> [Library] {
         let libraries = try await inner.getLibraries()
         if let scope {
-            await cache.write(libraries, scope: scope, key: .libraries)
+            await cache.write(libraries, scope: scope, key: .libraries, since: mark)
         }
         return libraries
     }
@@ -149,7 +156,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         )
         await ingesting(page.items)
         if let scope, startIndex == 0, query.isDefaultBrowse {
-            await cache.write(page, scope: scope, key: .libraryFirstPage(libraryID: libraryId))
+            await cache.write(page, scope: scope, key: .libraryFirstPage(libraryID: libraryId), since: mark)
         }
         return page
     }
@@ -179,7 +186,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         let item = try await inner.getMediaItem(itemId: itemId)
         await ingesting([item])
         if let scope {
-            await cache.write(item, scope: scope, key: .mediaDetail(itemID: itemId))
+            await cache.write(item, scope: scope, key: .mediaDetail(itemID: itemId), since: mark)
         }
         return item
     }
@@ -460,7 +467,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     public func markPlayed(itemId: String) async throws {
         try await inner.markPlayed(itemId: itemId)
         guard userState == nil, let scope else { return }
-        await cache.setUserState(scope: scope, itemID: itemId) { state in
+        await cache.setUserState(scope: scope, itemID: itemId, since: mark) { state in
             // Mirrors MediaItem.settingPlayed: the server clears resume
             // progress on both transitions
             state.played = true
@@ -471,7 +478,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     public func markUnplayed(itemId: String) async throws {
         try await inner.markUnplayed(itemId: itemId)
         guard userState == nil, let scope else { return }
-        await cache.setUserState(scope: scope, itemID: itemId) { state in
+        await cache.setUserState(scope: scope, itemID: itemId, since: mark) { state in
             state.played = false
             state.playbackPositionTicks = nil
         }
@@ -480,7 +487,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     public func markFavorite(itemId: String) async throws {
         try await inner.markFavorite(itemId: itemId)
         guard userState == nil, let scope else { return }
-        await cache.setUserState(scope: scope, itemID: itemId) { state in
+        await cache.setUserState(scope: scope, itemID: itemId, since: mark) { state in
             state.isFavorite = true
         }
     }
@@ -488,7 +495,7 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
     public func unmarkFavorite(itemId: String) async throws {
         try await inner.unmarkFavorite(itemId: itemId)
         guard userState == nil, let scope else { return }
-        await cache.setUserState(scope: scope, itemID: itemId) { state in
+        await cache.setUserState(scope: scope, itemID: itemId, since: mark) { state in
             state.isFavorite = false
         }
     }
