@@ -233,6 +233,14 @@ struct SidebarFocusReturnTests {
         #expect(rule.move(from: Snapshot(nil), to: Snapshot(nil, isOnPage: true)) == "deep")
     }
 
+    @Test func leavingFromARetryButtonAfterACardRestoresNothing() {
+        // Home's Retry shares the shelves region with the cards.
+        var rule = Return()
+        #expect(rule.move(from: Snapshot("card"), to: Snapshot(nil, isOnPage: true)) == nil)
+        #expect(rule.move(from: Snapshot(nil, isOnPage: true), to: Snapshot(nil)) == nil)
+        #expect(rule.move(from: Snapshot(nil), to: Snapshot(nil, isOnPage: true)) == nil)
+    }
+
     @Test func leavingFromAnUntrackedFocusableRestoresNothing() {
         var rule = Return()
         #expect(rule.move(from: Snapshot(nil, isOnPage: true), to: Snapshot(nil)) == nil)

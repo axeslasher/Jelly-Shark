@@ -69,6 +69,10 @@ struct HomeView: View {
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var regionSnapTask: Task<Void, Never>?
     @State private var sidebarReturn = SidebarFocusReturn<ShelfFocusID>()
+    /// Whether the page's focus is on a card, as of the last move within the
+    /// page. A shelf's Retry button shares the shelves region without being
+    /// a card, and `ui.focusedItem` keeps naming the last card meanwhile.
+    @State private var isCardFocused = false
 
     /// `RootView`'s pop-settle plus margin, derived rather than restated: if
     /// the settle moves, this must move with it.
@@ -329,6 +333,11 @@ struct HomeView: View {
             // treating any of those as "the hero has focus" overwrites the
             // saved card and recreates the tab-return focus loss this task
             // exists to fix.
+            // Read only within the page: on the way off it the region is
+            // already nil, so the departure keeps the last in-page answer.
+            if focusedRegion != nil {
+                isCardFocused = target != nil
+            }
             guard let target else { return }
             ui.focusedItem = target
         }
@@ -494,7 +503,7 @@ struct HomeView: View {
                 // lands wherever the engine puts it (#340). Put it back on the
                 // card it left, before the hero snap below scrolls to the top.
                 guard let region else {
-                    sidebarReturn.leave(from: oldRegion == .shelves ? ui.focusedItem : nil)
+                    sidebarReturn.leave(from: oldRegion == .shelves && isCardFocused ? ui.focusedItem : nil)
                     return
                 }
                 if oldRegion == nil, let saved = sidebarReturn.reenter(landedOn: focusedCard) {
