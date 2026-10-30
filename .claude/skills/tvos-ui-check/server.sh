@@ -73,7 +73,9 @@ up() {
     docker info >/dev/null 2>&1 || fail "docker is not running"
     seed_media
     docker rm -f "$name" >/dev/null 2>&1 || true
-    docker run -d --rm --name "$name" -p "$port:8096" -v "$media:/media:ro" \
+    # Loopback only: the admin is test/test, so it must not be reachable from
+    # the LAN. The simulator shares the Mac's localhost, which is all it needs.
+    docker run -d --rm --name "$name" -p "127.0.0.1:$port:8096" -v "$media:/media:ro" \
         "jellyfin/jellyfin:$version" >/dev/null
 
     local i
