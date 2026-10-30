@@ -14,17 +14,22 @@ the element, tap it".
   They are Buttons labelled "Home", "Search", "Libraries" (signed in only) and
   "Settings". `open(tab:)` taps one.
 - **Text fields need no keyboard handling.** Tap, then `typeText`.
-  `type(_:into:)` clears the field by its value's length and checks the result.
-  Keep the clearing tight: 60-plus deletes into the username field swallowed
-  the text typed after them. An empty field reports its placeholder as its
-  value, and the server form may also prefill the same text, so the value
-  alone can't tell you whether the field is empty.
+  `type(_:into:)` clears the field and checks the result.
+  - An empty field reports its placeholder as its value, and the server form
+    prefills the URL field with that same text, so the value alone can't say
+    whether a field is empty. Only an empty secure field is treated as empty:
+    deleting its placeholder's length lost the password typed after it.
+  - The value lags the typing. Read at once, it can still be the placeholder,
+    so `type` waits up to 3s for it to match.
+- Episodes read "0m, S1E1, Episode 1, Fixture episode 1.".
+- A `shot` shows only what is on screen. Content below the fold is in the tree,
+  so the label match is the evidence for it, not the screenshot.
 
 ## System sheets and hidden elements
 
 | What happens | Effect | What the template does |
 |---|---|---|
-| A "Save Password?" sheet follows every sign-in, a moment after Disconnect shows | It hides the tab bar from queries until it goes | `signIn` waits up to 3s for it and taps "Not Now". Every `waitUntil` also taps a late one. |
+| A "Save Password?" sheet follows every sign-in, failed ones too, a moment after the outcome shows | It hides the tab bar and the form from queries until it goes. It stays in the tree while it animates away, so a second tap fails. | `signIn` waits up to 3s for it, taps "Not Now" and waits for it to go. Every `waitUntil` also dismisses a late one. |
 | Typing in Search opens a suggestion dropdown | The tree then holds only the suggestions ("Static Season", no year). The tab bar, the search field and the result cards all drop out, though they stay on screen. Return and a tap outside leave it open. | `open(tab:)` taps a suggestion that matches the last `search(_:)`, which closes the dropdown |
 
 To assert on search results, match the suggestion text. A wait for a card
@@ -38,13 +43,17 @@ a 1×1 image. So `shot` asks run.sh for one instead: it writes
 screenshot`. The result is the whole simulated room at 3840×2160, with the app
 window, its ornaments and any system sheet in it.
 
-A `shot` fails after 10s if nothing answers, which means the check isn't
-running under run.sh.
+Without run.sh (no `UI_CHECK_OUT`), `shot` falls back to the cropped
+screenshot as an attachment. With `UI_CHECK_OUT` set but nothing answering,
+it fails after 10s.
+
+On a failure, the template asks for `zz-failure.png` before writing the
+verdict: once the verdict is written, run.sh stops and the app closes.
 
 ## Exploring a screen you don't know yet
 
 The Xcode MCP tools refuse visionOS (see SKILL.md), and agent-device has only
-been tried on tvOS. Explore by adding a step that fails on purpose,
-`XCTFail(dump("explore"))`, where you want to look: the failure prints the
-whole element tree with every label and identifier. Each look costs a run,
-about 50s warm.
+been tried on tvOS. Explore with `explore("name")` wherever you want to look:
+it saves the whole element tree, every label and identifier, as `name.txt` and
+carries on, so one run can look at several screens. A run costs about 35–70s
+warm.

@@ -29,7 +29,9 @@
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "App never reached the foreground")
             shot("01-launch")
 
-            // Example: sign in to the local server from server.sh.
+            // Example: sign in to the local server from server.sh. To check a
+            // rejected sign-in instead, pass `expectError: true`; it returns the
+            // form's error text.
             signIn(url: server, username: "test", password: "test")
             XCTAssertTrue(app.buttons["Disconnect"].firstMatch.waitForExistence(timeout: 30), dump("Sign-in failed"))
             shot("02-signed-in")
@@ -47,6 +49,11 @@
             // search("Static")
             // XCTAssertTrue(labelled("Static Season, 2023").waitForExistence(timeout: 20), dump("No search result"))
             // shot("04-search")
+            //
+            // Libraries: "Libraries" in the sidebar is a section header, not a
+            // tab. Each library ("Movies", "Shows") is a tab of its own.
+            // open(tab: "Shows")
+            // XCTAssertTrue(labelled("Night Shift Radio").waitForExistence(timeout: 20), dump("Shows library empty"))
 
             // Leave the simulator signed out for the next check.
             signOut()
@@ -57,8 +64,10 @@
         /// Settings → Server → fill the form → Connect. Signs out first if the
         /// simulator kept a session from an earlier run. When the Server screen
         /// is already showing, it is used as is: re-selecting the tab doesn't
-        /// pop back to the row.
-        private func signIn(url: String, username: String, password: String) {
+        /// pop back to the row. With `expectError`, the sign-in must fail, and
+        /// the form's error text is returned.
+        @discardableResult
+        private func signIn(url: String, username: String, password: String, expectError: Bool = false) -> String? {
             let form = app.textFields.firstMatch
             let disconnect = app.buttons["Disconnect"].firstMatch
             if !form.exists, !disconnect.exists {
@@ -80,8 +89,10 @@
             let fields = app.textFields.allElementsBoundByIndex
             XCTAssertGreaterThanOrEqual(fields.count, 2, dump("Expected URL and username fields"))
             type(url, into: fields[0])
-            type(username, into: fields[1])
-            type(password, into: app.secureTextFields.firstMatch, secure: true)
+            // Each field sits below the last, so try Down first: Up first costs
+            // a dozen wasted presses (about 8s) per field.
+            type(username, into: fields[1], trying: [.down, .up])
+            type(password, into: app.secureTextFields.firstMatch, secure: true, trying: [.down, .up])
 
             // The form shows a refused or rejected sign-in within a second or so;
             // fail on it then rather than waiting out the caller's Disconnect wait.
@@ -97,9 +108,15 @@
             if let stale {
                 _ = waitUntil(timeout: 5) { !error.exists || error.label != stale }
             }
-            if firstToExist([disconnect, error], timeout: 30) == error {
-                XCTFail(dump("Sign-in failed: \(error.label)"))
+            let outcome = firstToExist([disconnect, error], timeout: 30)
+            XCTAssertNotNil(outcome, dump("Still signing in after 30s — is the server answering?"))
+            let message = outcome == error ? error.label : nil
+            if expectError {
+                XCTAssertNotNil(message, dump("Sign-in was expected to fail, but it succeeded"))
+            } else if let message {
+                XCTFail(dump("Sign-in failed: \(message)"))
             }
+            return message
         }
 
         /// Settings → Server → Disconnect. The app must be signed in. Re-selecting
@@ -203,9 +220,11 @@
 
         /// Selects a text field, clears it, types `text`, closes the keyboard and
         /// checks the field now holds exactly `text` (secure fields can't be read).
-        private func type(_ text: String, into field: XCUIElement, secure: Bool = false) {
+        private func type(_ text: String, into field: XCUIElement, secure: Bool = false,
+                          trying directions: [XCUIRemote.Button] = [.up, .down])
+        {
             let existing = (field.value as? String)?.count ?? 0
-            focus(field, trying: [.up, .down])
+            focus(field, trying: directions)
             remote.press(.select)
             let keyboard = app.keyboards.firstMatch
             XCTAssertTrue(keyboard.waitForExistence(timeout: 10), dump("Keyboard never appeared"))
@@ -350,13 +369,28 @@
             add(attachment)
         }
 
+        /// Prints the element tree to the log and saves it as `<name>.txt`
+        /// beside the screenshots, then carries on: for learning a screen's
+        /// labels, several screens in one run.
+        private func explore(_ name: String) {
+            let tree = app.debugDescription
+            print("explore \(name):\n\(tree)")
+            if let out = Self.outputFolder {
+                try? tree.write(to: out.appending(path: "\(name).txt"), atomically: true, encoding: .utf8)
+            }
+        }
+
         /// Writes the verdict run.sh waits for. Registered first thing in the
-        /// test, so it runs even when an assertion stops the test early.
+        /// test, so it runs even when an assertion stops the test early. A
+        /// failure first gets a `zz-failure` screenshot of the screen it left.
         private func writeVerdictOnTeardown() {
             addTeardownBlock { @MainActor [weak self] in
                 guard let out = Self.outputFolder, let run = self?.testRun else { return }
                 // Count failures: hasSucceeded is still false while the run is open.
                 let verdict = run.failureCount + run.unexpectedExceptionCount == 0 ? "PASS" : "FAIL"
+                if verdict == "FAIL" {
+                    self?.shot("zz-failure")
+                }
                 try? verdict.write(to: out.appending(path: "verdict.txt"), atomically: true, encoding: .utf8)
             }
         }
@@ -370,7 +404,11 @@
         /// on screen (enough to act on at a glance), then the full element tree.
         private func dump(_ message: String) -> String {
             let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
-            let focusedText = focused.exists ? "'\(focused.label)'" : "nothing"
+            // A focused cell has no label of its own; name it by its first labelled child.
+            let focusedLabel = focused.exists && focused.label.isEmpty
+                ? focused.descendants(matching: .any).matching(NSPredicate(format: "label != ''")).firstMatch.label
+                : focused.label
+            let focusedText = focused.exists ? "'\(focusedLabel)'" : "nothing"
             let headings = app.staticTexts.allElementsBoundByIndex.prefix(40)
                 .filter { $0.frame.height >= 40 && !$0.label.isEmpty }
                 .map(\.label).prefix(4).joined(separator: ", ")

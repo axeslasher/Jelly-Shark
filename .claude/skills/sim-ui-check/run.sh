@@ -26,6 +26,13 @@ quiet_limit=${UI_CHECK_QUIET_LIMIT:-20} # seconds with no log output once testin
 mkdir -p "$out"
 
 say() { echo "ui-check: $*"; }
+# For failures the screen can't explain (bad arguments, a build error, a
+# class typo): no stall screenshot or last step, which would only be noise.
+fail() {
+    say "$*"
+    [[ -n ${pid:-} ]] && kill "$pid" 2>/dev/null
+    exit 2
+}
 die() {
     say "$*"
     # What the screen showed when we gave up, and the step that never returned.
@@ -57,12 +64,12 @@ visionos) default="Apple Vision Pro" ;;
 esac
 if [[ -n ${default:-} ]]; then
     udid=$(awk -F'\t' -v p="$target" -v n="$default" '$1 == p && $4 == n { print $2; exit }' <<<"$sims")
-    [[ -n $udid ]] || die "no '$default' simulator; pass a UDID (xcrun simctl list devices available)"
+    [[ -n $udid ]] || fail "no '$default' simulator; pass a UDID (xcrun simctl list devices available)"
 else
     udid=$target
 fi
 platform=$(awk -F'\t' -v u="$udid" '$2 == u { print $1 }' <<<"$sims")
-[[ -n $platform ]] || die "$udid is not an available tvOS or visionOS simulator (xcrun simctl list devices available)"
+[[ -n $platform ]] || fail "$udid is not an available tvOS or visionOS simulator (xcrun simctl list devices available)"
 # One folder per platform: a tvOS and a visionOS run building at once in a
 # shared folder would fight over its build database lock.
 derived=${UI_CHECK_DERIVED:-$HOME/Library/Caches/jelly-shark-ui-check/derived/$(basename "$repo")-$platform}
@@ -73,7 +80,7 @@ lock="$HOME/Library/Caches/jelly-shark-ui-check/locks/$udid"
 mkdir -p "$(dirname "$lock")"
 if ! mkdir "$lock" 2>/dev/null; then
     owner=$(cat "$lock/pid" 2>/dev/null)
-    [[ -n $owner ]] && kill -0 "$owner" 2>/dev/null && die "simulator $udid is in use by another ui-check run (pid $owner)"
+    [[ -n $owner ]] && kill -0 "$owner" 2>/dev/null && fail "simulator $udid is in use by another ui-check run (pid $owner)"
     rm -rf "$lock" && mkdir "$lock" || die "could not take the lock at $lock"
 fi
 echo $$ >"$lock/pid"
@@ -143,9 +150,15 @@ while [[ ! -f $shots/verdict.txt ]]; do
 
     if grep -q "BUILD FAILED\|Testing cancelled because the build failed" "$log"; then
         grep -E "error:" "$log" | head -5
-        die "build failed"
+        fail "build failed"
     fi
-    ((testing == 0)) && grep -q "Test suite .* started\|Test Suite .* started" "$log" && testing=1
+    # The simulator's launchd, recorded when testing starts: a shutdown mid-run
+    # looks like an app crash, because the test runner boots it again within
+    # about 4s (seen on visionOS), so only a new launchd pid tells them apart.
+    if ((testing == 0)) && grep -q "Test suite .* started\|Test Suite .* started" "$log"; then
+        testing=1
+        sim_pid=$(pgrep -f "launchd_sim.*$udid" | head -1)
+    fi
 
     # The runner died: simulator shut down, or a second run on the same one.
     if grep -q "Restarting after unexpected exit\|Early unexpected exit" "$log"; then
@@ -156,7 +169,7 @@ while [[ ! -f $shots/verdict.txt ]]; do
     if ((testing == 0)); then
         ((now - start > build_limit)) && die "testing never started within ${build_limit}s"
     else
-        grep -q "Executed 0 tests" "$log" && die "no test matched '$class' — check the class name"
+        grep -q "Executed 0 tests" "$log" && fail "no test matched '$class' — check the class name"
         ((now - last_change > quiet_limit)) && die "no output for ${quiet_limit}s mid-test: the run stalled"
         # A dead app doesn't fail a wait: XCTest polls it until the timeout.
         # Once the test has launched the app, give it 15s to come back.
@@ -164,6 +177,8 @@ while [[ ! -f $shots/verdict.txt ]]; do
         if pgrep -qf "$app_proc" || ((launches != ${last_launches:-0})); then
             app_seen=$now last_launches=$launches
         elif ((launches > 0 && now - app_seen > 15)); then
+            [[ $(pgrep -f "launchd_sim.*$udid" | head -1) != "${sim_pid:-}" ]] &&
+                die "the simulator shut down or restarted mid-run: was it shut down, or used by another run?"
             die "the app has not been running for 15s mid-test: it crashed or was killed (crash logs: ~/Library/Logs/DiagnosticReports)"
         fi
         grep -q "Executed [0-9]* test" "$log" && { sleep 3; [[ -f $shots/verdict.txt ]] ||

@@ -18,6 +18,8 @@ target has focus, then press select.
 - A selected option shows an image labelled "Selected" (identifier
   `checkmark.circle.fill`), so "is selected" can be asserted directly.
 - `shot` uses XCUITest's own screenshot, which shows the whole screen on tvOS.
+- To show the sidebar in a screenshot, focus one of its cells first; it
+  collapses whenever focus is in the content.
 
 ## Focus rules learned the hard way
 
@@ -25,7 +27,9 @@ target has focus, then press select.
    button, image or text inside them. Query `app.cells` (the `cell(_:)`
    helper), or `hasFocus` never turns true. **Picker rows are the exception:**
    in Theme and Streaming Quality each row is a Button inside a List, and the
-   Button takes focus. Use `select(option:)`.
+   Button takes focus. Use `select(option:)`. **"Libraries" is a section
+   header, not a tab:** it can't take focus. Each library ("Movies", "Shows")
+   is a sidebar tab of its own; open it with `open(tab: "Shows")`.
 2. **Left on an open sidebar collapses it** into a pill. Its cells then have
    an empty frame and Up/Down can't reach them. `open(tab:)` uses Up/Down
    while the sidebar is open, and Left only to bring a collapsed one back.

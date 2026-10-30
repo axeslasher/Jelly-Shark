@@ -24,7 +24,9 @@
             XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "App never reached the foreground")
             shot("01-launch")
 
-            // Example: sign in to the local server from server.sh.
+            // Example: sign in to the local server from server.sh. To check a
+            // rejected sign-in instead, pass `expectError: true`; it returns the
+            // form's error text.
             signIn(url: server, username: "test", password: "test")
             shot("02-signed-in")
 
@@ -45,6 +47,9 @@
             //
             // While Search's suggestion dropdown is open, only its suggestions
             // ("Static Season", no year) can be queried; the cards behind it can't.
+            // The libraries are "Movies" and "Shows". Episodes read
+            // "0m, S1E1, Episode 1, Fixture episode 1.".
+            //
             // open(tab: "Search")
             // search("Static")
             // XCTAssertTrue(labelled("Static Season").waitForExistence(timeout: 20), dump("No search result"))
@@ -57,8 +62,10 @@
         // MARK: - Flows
 
         /// Settings → Server → fill the form → Connect. Signs out first if the
-        /// simulator kept a session from an earlier run.
-        private func signIn(url: String, username: String, password: String) {
+        /// simulator kept a session from an earlier run. With `expectError`, the
+        /// sign-in must fail, and the form's error text is returned.
+        @discardableResult
+        private func signIn(url: String, username: String, password: String, expectError: Bool = false) -> String? {
             let form = app.textFields.firstMatch
             let disconnect = app.buttons["Disconnect"].firstMatch
             if !form.exists, !disconnect.exists {
@@ -94,15 +101,31 @@
             if let stale {
                 _ = waitUntil(timeout: 5) { !error.exists || error.label != stale }
             }
-            if firstToExist([disconnect, error], timeout: 30) == error {
-                XCTFail(dump("Sign-in failed: \(error.label)"))
+            // Keep the outcome: re-reading `disconnect.exists` afterwards can
+            // land while the Save Password sheet has emptied the tree.
+            let outcome = firstToExist([disconnect, error], timeout: 30)
+            XCTAssertNotNil(outcome, dump("Still signing in after 30s — is the server answering?"))
+            let message = outcome == error ? error.label : nil
+            if expectError {
+                XCTAssertNotNil(message, dump("Sign-in was expected to fail, but it succeeded"))
+            } else if let message {
+                XCTFail(dump("Sign-in failed: \(message)"))
             }
-            XCTAssertTrue(disconnect.exists, dump("Sign-in never finished"))
-            // The system Save Password sheet arrives a moment after Disconnect
-            // shows, and hides the tab bar until it is dismissed.
+            // The system Save Password sheet arrives a moment after either
+            // outcome, and hides the tab bar and the form until it goes.
             if app.alerts["Save Password?"].waitForExistence(timeout: 3) {
-                app.buttons["Not Now"].firstMatch.tap()
+                dismissSavePassword()
             }
+            return message
+        }
+
+        /// Taps "Not Now" on the Save Password sheet and waits for it to go:
+        /// it stays in the tree while it animates away, and a second tap then
+        /// fails with "No matches found".
+        private func dismissSavePassword() {
+            let notNow = app.buttons["Not Now"].firstMatch
+            notNow.tap()
+            _ = notNow.waitForNonExistence(timeout: 3)
         }
 
         /// Settings → Server → Disconnect. The app must be signed in.
@@ -203,16 +226,21 @@
         /// holds exactly `text` (secure fields can't be read). There is no
         /// keyboard to dismiss.
         private func type(_ text: String, into field: XCUIElement, secure: Bool = false) {
-            XCTAssertTrue(field.waitForExistence(timeout: 10), dump("No field to type into"))
-            // An empty field reports its placeholder as its value, and the
-            // app may also prefill a field with that same text, so delete the
-            // value's length either way. Keep the count tight: 60-plus deletes
-            // into the username field swallowed the text typed after them.
-            let existing = (field.value as? String)?.count ?? 0
+            // firstToExist, not waitForExistence: it dismisses a late Save
+            // Password sheet that would otherwise hide the form.
+            XCTAssertNotNil(firstToExist([field], timeout: 10), dump("No field to type into"))
+            // An empty field reports its placeholder as its value. The server
+            // form prefills the URL field with that same text, so only an empty
+            // secure field is known to be empty. Deleting a secure field's
+            // placeholder length lost the password typed after it.
+            let value = field.value as? String
+            let existing = secure && value == field.placeholderValue ? 0 : value?.count ?? 0
             field.tap()
-            let clear = String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing + 5)
+            let clear = String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing == 0 ? 0 : existing + 5)
             field.typeText(clear + text)
+            // The value lags the typing: read at once, it can still be the placeholder.
             if !secure {
+                _ = waitUntil(timeout: 3) { field.value as? String == text }
                 XCTAssertEqual(field.value as? String, text, dump("Field holds the wrong text"))
             }
         }
@@ -249,7 +277,7 @@
             let deadline = Date.now.addingTimeInterval(timeout)
             repeat {
                 if notNow.exists {
-                    notNow.tap()
+                    dismissSavePassword()
                 }
                 if condition() {
                     return true
@@ -286,13 +314,35 @@
             XCTAssertTrue(answered, "run.sh never answered the screenshot request '\(name)' — is the check running under run.sh?")
         }
 
+        /// Prints the element tree to the log and saves it as `<name>.txt`
+        /// beside the screenshots, then carries on: for learning a screen's
+        /// labels, several screens in one run.
+        private func explore(_ name: String) {
+            let tree = app.debugDescription
+            print("explore \(name):\n\(tree)")
+            if let out = Self.outputFolder {
+                try? tree.write(to: out.appending(path: "\(name).txt"), atomically: true, encoding: .utf8)
+            }
+        }
+
         /// Writes the verdict run.sh waits for. Registered first thing in the
-        /// test, so it runs even when an assertion stops the test early.
+        /// test, so it runs even when an assertion stops the test early. A
+        /// failure first gets a `zz-failure` screenshot: once the verdict is
+        /// written, run.sh stops and the app closes.
         private func writeVerdictOnTeardown() {
             addTeardownBlock { @MainActor [weak self] in
                 guard let out = Self.outputFolder, let run = self?.testRun else { return }
                 // Count failures: hasSucceeded is still false while the run is open.
                 let verdict = run.failureCount + run.unexpectedExceptionCount == 0 ? "PASS" : "FAIL"
+                if verdict == "FAIL" {
+                    let request = out.appending(path: "requests/zz-failure")
+                    try? FileManager.default.createDirectory(at: request.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    FileManager.default.createFile(atPath: request.path(), contents: nil)
+                    let deadline = Date.now.addingTimeInterval(10)
+                    while FileManager.default.fileExists(atPath: request.path()), Date.now < deadline {
+                        RunLoop.current.run(until: .now.addingTimeInterval(0.25))
+                    }
+                }
                 try? verdict.write(to: out.appending(path: "verdict.txt"), atomically: true, encoding: .utf8)
             }
         }

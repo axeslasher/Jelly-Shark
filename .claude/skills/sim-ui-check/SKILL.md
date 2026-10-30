@@ -38,7 +38,8 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 1. **Start the server.** `.claude/skills/sim-ui-check/server.sh up` starts
    Jellyfin 10.11.11 on `localhost:8096` with user `test` and password `test`.
    The library has three movies (Harbor Lights, The Long Field, Static Season)
-   and one series (Night Shift Radio, three episodes). Metadata comes from NFO
+   and one series (Night Shift Radio, three episodes), in two libraries named
+   "Movies" and "Shows". Metadata comes from NFO
    files, so it is identical on every run. Options: `server.sh up <version> <port>`.
    Versions on different ports run side by side (Jellyfin 12 tags are two-part:
    `12.4`). The check reads its server from run.sh's `UI_CHECK_SERVER`, so one
@@ -46,7 +47,8 @@ Screenshots are evidence for the user to look at, not proof of appearance.
    `server.sh up` before starting others: a first start of `12.4` beside a
    second server outran the 90s wait once, then started in 7s warm. Checks
    that run at the same time each get their own port: a check that revokes
-   the app's devices would sign the other one out.
+   the app's devices would sign the other one out. **On any port but 8096,
+   set `UI_CHECK_SERVER` in step 3,** or the check signs in to 8096.
 2. **Write the check.** Copy the platform's template to
    `Jelly SharkUITests/UICheck<Name>.swift` and rename the class. Keep
    `writeVerdictOnTeardown()` as the first line. Write the steps, and follow
@@ -67,7 +69,11 @@ Screenshots are evidence for the user to look at, not proof of appearance.
      scenarios.
    - `UI_CHECK_OUT` sets the output folder; the default is a new temp folder
      each run. Use a temp folder: screenshots can't be saved under `/Volumes/SSD`.
-   - A warm run takes about 50–90s, build included.
+   - A warm run takes about 35–90s, build included.
+   - run.sh builds the checkout it is run from, so it works from a worktree.
+   - A failed check also leaves `zz-failure.png`, the screen it failed on.
+   - To learn a screen's labels, call `explore("name")`: it saves the element
+     tree as `name.txt` and carries on.
 4. **Hand over the screenshots.** Send the relevant PNGs to the user with
    SendUserFile, one caption line each. A subagent without SendUserFile lists
    the absolute PNG paths with a caption each instead. Don't commit them or the check.
@@ -149,8 +155,9 @@ instead: the dashboard shows the same data, and the screenshot is for people.
 | Server refuses mid-check | "Network error: Could not connect to the server." on the form | `signIn` waits for Disconnect *or* an error text, and fails on the error |
 | Server frozen mid-check | "Signing in..." with a spinner until the request times out | The caller's 30s Disconnect wait. Nothing faster is possible from outside |
 | Simulator wedged: reports Booted, but launches nothing (seen on visionOS) | `simctl bootstatus` and `simctl launch` print nothing and never return; the test runner fails with "The system shell probably crashed" | The 120s boot limit, then a message naming the fix: `xcrun simctl shutdown <udid>` and run again. A clean boot took 14s. |
+| Simulator shut down mid-run (visionOS) | The test runner boots it again within about 4s, so it looks like an app crash and the "runner died" line never appears | run.sh records the simulator's launchd pid when testing starts; a new pid means "the simulator shut down or restarted mid-run" (15s) |
 | A visionOS `shot` gets no answer | The check waits on `screenshots/requests/<name>` | `shot` fails after 10s: the check isn't running under run.sh |
-| The app crashes or is killed mid-test | XCTest keeps logging `Checking existence of …` against the dead app until the wait times out, so the log never goes quiet | run.sh watches the app process (its path contains the simulator's UDID) and fails 15s after it disappears. Before this guard, a crash took 160s to report; now it takes 24s. |
+| The app crashes or is killed mid-test | XCTest keeps logging `Checking existence of …` against the dead app until the wait times out, so the log never goes quiet | run.sh watches the app process (its path contains the simulator's UDID) and fails 15s after it disappears. Before this guard, a crash took 160s to report; now it takes 24s on tvOS and 18s on visionOS. |
 | The test runner dies (simulator shut down, or a second run) | `Restarting after unexpected exit, crash, or test timeout` or `Early unexpected exit`, then `Executed 0 tests` | run.sh fails on that line |
 | Two runs on one simulator | Each kills the other's runner | A lock per simulator in `~/Library/Caches/jelly-shark-ui-check/locks/<UDID>`, shared across worktrees; a lock left by a dead process is taken over |
 | Class name typo | `Executed 0 tests`, while xcodebuild reports `TEST SUCCEEDED` | run.sh fails on `Executed 0 tests` |
