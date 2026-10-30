@@ -141,6 +141,24 @@ so Settings can't be reached; the sidebar's library entries show the session
 is still standing. Load Home once before taking the server down if the check
 needs its content.
 
+## Checking the server side
+
+To show what the server recorded, such as a device appearing or going away,
+or the version the app reports, screenshot the Jellyfin web dashboard with
+`dashboard.py`. It signs in through the API, so no login form is driven.
+
+1. **Set up once,** in a temp folder, not the repo:
+   `python3 -m venv <dir>/pw && <dir>/pw/bin/pip install playwright && <dir>/pw/bin/playwright install chromium`.
+   Chromium lands in `~/Library/Caches/ms-playwright` (about 100 MB).
+2. **Run it from outside the repo:**
+   `<dir>/pw/bin/python -I .claude/skills/tvos-ui-check/dashboard.py http://localhost:8097 <out>.png [page]`.
+   The page defaults to `dashboard/devices`; `dashboard/activity` also works.
+3. **Read the rows.** The app is "Apple TV · Jelly Shark <version>". "Chrome ·
+   Jellyfin Web" is the script's own session and "ui-check" is server.sh's.
+
+For an assertion inside the check itself, use `api("GET", "/Devices")`
+instead: the dashboard shows the same data, and the screenshot is for people.
+
 ## Hang modes, and how run.sh fails fast on them
 
 | Mode | Signature | Guard |
