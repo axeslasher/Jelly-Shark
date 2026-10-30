@@ -117,11 +117,17 @@ a host-less simulator test bundle), so it runs on the host via `swift test`.
 
 ### What tests cannot verify
 
-Visual appearance and tvOS focus behavior are invisible to every suite in this
-repo. Do not write probe tests, print-based measurement harnesses, key-event
-robots, or simulator UI automation to check them — each has cost a session and
-none has worked. To measure a threshold, bisect the constant and read pass/fail.
-To verify appearance or focus, build and ask for a device check.
+Visual appearance and how tvOS focus *feels* are invisible to every suite in this
+repo. Do not write probe tests, print-based measurement harnesses, or key-event
+robots to check them — each has cost a session and none has worked. To measure a
+threshold, bisect the constant and read pass/fail. To verify appearance, build
+and ask for a device check.
+
+**Flows and on-screen text are checkable on the simulator.** Before asking for
+device time on a small tvOS change — a flow completing, a label or error showing,
+where focus lands — use the `tvos-ui-check` skill: a throwaway XCUITest driven by
+`XCUIRemote`, run by a fail-fast script, with screenshots handed to the user. The
+Xcode MCP device-interaction tools cannot drive tvOS; don't use them for this.
 
 Any change to scrolling, opacity/fades, snapping, layout offsets, `.disabled`,
 or navigation state must state which elements remain focusable and where default

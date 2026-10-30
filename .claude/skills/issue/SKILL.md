@@ -59,11 +59,14 @@ See the tier table at the top of the `Makefile`.
 **Never run `make test` mid-iteration.** CI runs both venues on every PR
 (`.github/workflows/tests.yml`); the full local suite is a pre-merge check only.
 
-**Do not** write probe tests, print-based measurement harnesses, key-event
-robots, or simulator UI automation to verify visual or focus behavior. None of
-them work on this codebase and each one has cost a session. To measure a
-threshold, bisect the constant and read pass/fail. To verify appearance or
-focus, build and ask the user to look on device.
+**Do not** write probe tests, print-based measurement harnesses, or key-event
+robots to verify visual or focus-feel behavior. None of them work on this
+codebase and each one has cost a session. To measure a threshold, bisect the
+constant and read pass/fail.
+
+For a tvOS change whose result is a flow or on-screen text, run the
+`tvos-ui-check` skill first and hand the screenshots over. Ask for device
+time only for appearance, focus feel, or what the check couldn't reach.
 
 ### Focus-engine check
 
@@ -90,7 +93,9 @@ before writing the message if there's any ambiguity about what's included.
 gh pr create --fill   # link the issue in the body: "Closes #N"
 ```
 
-Then **stop and ask the user to verify on device.** Do not start the next thing,
+Then **stop and hand over for review**: the `tvos-ui-check` screenshots if
+step 5 ran one, plus exactly what still needs a device check, if anything.
+Do not start the next thing,
 chase a tangent, or open follow-up investigations before the PR exists.
 
 ## 8. After merge
