@@ -31,6 +31,16 @@ struct LibraryItemsView: View {
     @FocusState private var focusedCard: ShelfFocusID?
     @FocusState private var isFilterBarFocused: Bool
     @State private var sidebarReturn = SidebarFocusReturn<ShelfFocusID>()
+    @State private var pendingRestore: ShelfFocusID?
+
+    /// Where focus was on each library tab, owned by `RootView` so it
+    /// outlives this view across a tab switch. Nil for grids pushed from
+    /// elsewhere, which a tab switch pops anyway.
+    var focusMemory: LibraryFocusMemory?
+
+    private var memoryKey: String? {
+        initialQuery.library?.id
+    }
 
     var body: some View {
         ScrollView {
@@ -70,8 +80,40 @@ struct LibraryItemsView: View {
         // once, with both halves of the before and after together.
         .onChange(of: SidebarFocusReturn.Snapshot(focusedCard, isOnPage: isFilterBarFocused)) { old, new in
             Self.logger.debug("focus \(String(describing: old), privacy: .public) → \(String(describing: new), privacy: .public)")
+            if new.isOnPage, let key = memoryKey {
+                focusMemory?[key] = new.target
+            }
             if let saved = sidebarReturn.move(from: old, to: new) {
-                focusedCard = saved
+                // On a tab return the grid is still loading, so the card
+                // isn't there yet; it is restored when the grid lands.
+                if viewModel.state == .loaded {
+                    focusedCard = saved
+                } else {
+                    pendingRestore = saved
+                }
+            } else if old.isOnPage, new.isOnPage {
+                // The viewer moved first; leave focus where they put it.
+                pendingRestore = nil
+            }
+        }
+        // A tab return builds this view afresh, so seed the rule with the
+        // card the last one left: the first landing then goes back to it.
+        .onAppear {
+            if let key = memoryKey, let saved = focusMemory?[key] {
+                sidebarReturn.leave(from: saved)
+            }
+        }
+        .onChange(of: viewModel.state) { _, state in
+            guard state == .loaded, let pending = pendingRestore else { return }
+            pendingRestore = nil
+            // Gone from the results (or past the first page): focus stays
+            // where it landed, as on a first entry.
+            guard viewModel.items.contains(where: { $0.id == pending.item }) else { return }
+            // The cards arrive in this same update, so a write now would be
+            // dropped. One main-actor tick later they are in the hierarchy.
+            Task { @MainActor in
+                await Task.yield()
+                focusedCard = pending
             }
         }
         #endif
