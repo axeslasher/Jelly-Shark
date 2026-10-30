@@ -90,6 +90,8 @@ fi
 #    (TEST_RUNNER_ vars reach the test runner with the prefix stripped), so
 #    nothing waits on xcodebuild saving its result bundle — it has been seen
 #    stuck with the bundle still in staging long after the test ended.
+#    UI_CHECK_SERVER goes through the same way, so one check runs against
+#    any server.sh port without an edit.
 # xcodebuild refuses to overwrite a result bundle, so reusing an output
 # folder would otherwise end the run before it starts.
 rm -rf "$bundle"
@@ -97,7 +99,7 @@ shots="$out/screenshots"
 mkdir -p "$shots"
 rm -f "$shots"/*.png "$shots/verdict.txt"
 start=$(date +%s)
-TEST_RUNNER_UI_CHECK_OUT="$shots" xcodebuild test -scheme "Jelly Shark" -destination "id=$udid" \
+TEST_RUNNER_UI_CHECK_OUT="$shots" TEST_RUNNER_UI_CHECK_SERVER="${UI_CHECK_SERVER:-}" xcodebuild test -scheme "Jelly Shark" -destination "id=$udid" \
     -derivedDataPath "$derived" -resultBundlePath "$bundle" \
     -parallel-testing-enabled NO -collect-test-diagnostics never \
     -only-testing:"Jelly SharkUITests/$class" >"$log" 2>&1 &

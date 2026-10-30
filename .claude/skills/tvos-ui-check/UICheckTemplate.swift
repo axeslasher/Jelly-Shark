@@ -6,9 +6,10 @@ import XCTest
 
 @MainActor
 final class UICheckTemplate: XCTestCase {
-    /// The server from server.sh. On another port (`server.sh up <version> <port>`),
-    /// change it here and pass the same URL to run.sh as UI_CHECK_SERVER.
-    private let server = "http://localhost:8096"
+    /// The server from server.sh: run.sh's UI_CHECK_SERVER when set, so the
+    /// same check runs against `server.sh up <version> <port>` unedited.
+    private let server = ProcessInfo.processInfo.environment["UI_CHECK_SERVER"]
+        .flatMap { $0.isEmpty ? nil : $0 } ?? "http://localhost:8096"
 
     /// A cheap proxy to the same app, so there is nothing to store.
     private var app: XCUIApplication {
@@ -52,12 +53,16 @@ final class UICheckTemplate: XCTestCase {
     // MARK: - Flows
 
     /// Settings → Server → fill the form → Connect. Signs out first if the
-    /// simulator kept a session from an earlier run.
+    /// simulator kept a session from an earlier run. When the Server screen
+    /// is already showing, it is used as is: re-selecting the tab doesn't
+    /// pop back to the row.
     private func signIn(url: String, username: String, password: String) {
-        open(tab: "Settings")
-        open(row: "Server")
         let form = app.textFields.firstMatch
         let disconnect = app.buttons["Disconnect"].firstMatch
+        if !form.exists, !disconnect.exists {
+            open(tab: "Settings")
+            open(row: "Server")
+        }
         // Wait for either screen: waiting on the form alone costs its whole
         // timeout whenever the simulator starts signed in.
         XCTAssertNotNil(firstToExist([form, disconnect], timeout: 20), dump("No server screen"))
@@ -76,13 +81,20 @@ final class UICheckTemplate: XCTestCase {
         type(username, into: fields[1])
         type(password, into: app.secureTextFields.firstMatch, secure: true)
 
-        focus(app.buttons["Connect"].firstMatch, trying: [.down, .up])
-        remote.press(.select)
         // The form shows a refused or rejected sign-in within a second or so;
         // fail on it then rather than waiting out the caller's Disconnect wait.
         let error = app.staticTexts.matching(NSPredicate(
             format: "label CONTAINS[c] 'error' OR label CONTAINS[c] 'invalid' OR label CONTAINS[c] 'could not' OR label CONTAINS[c] 'expired' OR label CONTAINS[c] 'not supported'",
         )).firstMatch
+        // A message left by a failed restore ("Your session has expired")
+        // is still up when Connect is pressed; wait for Connect to clear it,
+        // or it reads as this sign-in failing.
+        let stale = error.exists ? error.label : nil
+        focus(app.buttons["Connect"].firstMatch, trying: [.down, .up])
+        remote.press(.select)
+        if let stale {
+            _ = waitUntil(timeout: 5) { !error.exists || error.label != stale }
+        }
         if firstToExist([disconnect, error], timeout: 30) == error {
             XCTFail(dump("Sign-in failed: \(error.label)"))
         }
@@ -101,6 +113,50 @@ final class UICheckTemplate: XCTestCase {
         focus(disconnect, trying: [.down, .up])
         remote.press(.select)
         XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 20), dump("Sign-out did not return to the form"))
+    }
+
+    /// Quits and relaunches the app. The Keychain survives, so a signed-in
+    /// app restores its saved session; navigation doesn't, so it starts at
+    /// the root.
+    private func relaunch() {
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 30), "App never came back after relaunch")
+    }
+
+    // MARK: - Server
+
+    /// One call to the server as its admin (test/test, on a device of its
+    /// own, so the app's session is untouched), for server-side steps such
+    /// as revoking the app's token. Returns the status code and the body.
+    @discardableResult
+    private func api(_ method: String, _ path: String) -> (status: Int, body: Data) {
+        let header = #"MediaBrowser Client="ui-check", Device="ui-check", DeviceId="ui-check-runner", Version="1""#
+        func send(_ request: URLRequest) -> (Int, Data) {
+            final class Box: @unchecked Sendable {
+                var result = (0, Data())
+            }
+            let box = Box()
+            let done = expectation(description: "\(request.httpMethod ?? "") \(request.url?.path() ?? "")")
+            URLSession.shared.dataTask(with: request) { data, response, _ in
+                box.result = ((response as? HTTPURLResponse)?.statusCode ?? 0, data ?? Data())
+                done.fulfill()
+            }.resume()
+            wait(for: [done], timeout: 10)
+            return box.result
+        }
+        var signIn = URLRequest(url: URL(string: server + "/Users/AuthenticateByName")!)
+        signIn.httpMethod = "POST"
+        signIn.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        signIn.setValue(header, forHTTPHeaderField: "Authorization")
+        signIn.httpBody = Data(#"{"Username":"test","Pw":"test"}"#.utf8)
+        let token = (try? JSONSerialization.jsonObject(with: send(signIn).1) as? [String: Any])?["AccessToken"] as? String
+        XCTAssertNotNil(token, "Admin sign-in failed on \(server)")
+
+        var request = URLRequest(url: URL(string: server + path)!)
+        request.httpMethod = method
+        request.setValue(header + #", Token="\#(token ?? "")""#, forHTTPHeaderField: "Authorization")
+        return send(request)
     }
 
     // MARK: - Navigation
