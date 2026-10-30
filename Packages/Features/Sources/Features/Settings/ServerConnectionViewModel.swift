@@ -291,8 +291,9 @@ public final class ServerConnectionViewModel {
                     return
                 }
                 guard state == .connected else { return }
-                try? sessionStore.clearSession()
-                await cache.purge(scope: scope)
+                // Unpublish before the purge, so no screen starts new work
+                // against the scope being purged. Writes already in flight
+                // are dropped by the store: their handles predate the purge.
                 errorMessage = message
                 state = .disconnected
                 self.client = nil
@@ -301,6 +302,9 @@ public final class ServerConnectionViewModel {
                 libraryCounts = [:]
                 isValidating = false
                 session?.clearClient()
+                try? sessionStore.clearSession()
+                await cache.purge(scope: scope)
+                await clearArtworkCaches()
             }
         }
     }
@@ -338,10 +342,7 @@ public final class ServerConnectionViewModel {
         if let cache, let scopeToPurge {
             await cache.purge(scope: scopeToPurge)
         }
-        // Artwork (posters, logos, chapter images, trickplay tiles) is shared
-        // across accounts, so it goes whole: encoded bytes and decoded images
-        urlCache.removeAllCachedResponses()
-        await artworkLoader.removeAllImages()
+        await clearArtworkCaches()
 
         client = nil
         connectedUser = nil
@@ -353,6 +354,14 @@ public final class ServerConnectionViewModel {
     }
 
     // MARK: - Helpers
+
+    /// Artwork (posters, logos, chapter images, trickplay tiles) is shared
+    /// across accounts, so an ended session's goes whole: encoded bytes and
+    /// decoded images
+    private func clearArtworkCaches() async {
+        urlCache.removeAllCachedResponses()
+        await artworkLoader.removeAllImages()
+    }
 
     /// Parse and validate the server URL
     private func parseServerURL(_ urlString: String) -> URL? {

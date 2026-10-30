@@ -1,3 +1,4 @@
+import DesignSystem
 @testable import Features
 import Foundation
 import JellyfinKit
@@ -164,6 +165,47 @@ struct AppSessionTests {
         #expect(rig.viewModel.hasAttemptedRestore)
         #expect(rig.viewModel.errorMessage == expectedMessage)
         #expect(rig.store.session == nil)
+        #expect(await rig.cache.read(CachedHomeSnapshot.self, scope: rig.scope, key: .homeSnapshot) == nil)
+
+        // A Home load still running when the session ended finishes after the
+        // purge, through the ended session's client and cache handle. Its
+        // snapshot write must not put the ended session's page back.
+        home.forceReload()
+        #expect(await home.load())
+        #expect(await rig.cache.read(CachedHomeSnapshot.self, scope: rig.scope, key: .homeSnapshot) == nil)
+        #expect(await rig.cache.read([Library].self, scope: rig.scope, key: .libraries) == nil)
+    }
+
+    @Test("A session ended by validation clears the artwork caches, as sign-out does")
+    func validationTeardownClearsArtwork() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let urlCache = URLCache(memoryCapacity: 1024 * 1024, diskCapacity: 1024 * 1024, directory: directory)
+        let request = URLRequest(url: URL(string: "https://demo.jellyfin.org/stable/Items/1/Images/Primary")!)
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+        urlCache.storeCachedResponse(CachedURLResponse(response: response, data: Data([1, 2, 3])), for: request)
+
+        // The instant-connect rig's wiring, with an artwork cache of its own
+        let rig = InstantConnectTests.Rig()
+        await rig.seedCache()
+        rig.client.fetchCurrentUserResult = .failure(APIError.unauthorized)
+        let client = rig.client
+        let viewModel = ServerConnectionViewModel(
+            sessionStore: rig.store,
+            makeClient: { _, _ in client },
+            cache: rig.cache,
+            urlCache: urlCache,
+            artworkLoader: ArtworkLoader(),
+        )
+        viewModel.attach(session: AppSession())
+
+        await viewModel.restoreSession()
+        #expect(urlCache.cachedResponse(for: request) != nil)
+        await viewModel.awaitValidation()
+
+        #expect(viewModel.state == .disconnected)
+        #expect(urlCache.cachedResponse(for: request) == nil)
     }
 
     @Test("A server below the minimum disconnects the cache-restored session")
