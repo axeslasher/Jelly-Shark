@@ -14,10 +14,9 @@ public struct PlaybackContainerView: View {
     @State private var viewModel: PlaybackViewModel
 
     /// Set by `.task` at presentation; `onDisappear` reads it to hand the
-    /// same session to `finishPlayback`. Owned by the presenter, which
-    /// unregisters it from its dismiss path in case `onDisappear` never
-    /// runs (#301). Nil if `.task` never ran or the presenter has already
-    /// unregistered it.
+    /// same session to `finishPlayback`, then clears it. Owned by the
+    /// presenter, whose dismiss schedules a deferred unregister in case
+    /// `onDisappear` never runs (#301). Nil if `.task` never ran.
     @Binding private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
 
     /// The concrete engine, held alongside the view model: the AVKit
@@ -41,7 +40,7 @@ public struct PlaybackContainerView: View {
     ///   - streamingBitrateCap: the viewer's streaming ceiling in bits per
     ///     second (#168); nil leaves the engine's declared ceiling
     ///   - playbackTicket: the presenter's slot for this session's refresh
-    ///     ticket, which it passes to `unregister` when the cover dismisses
+    ///     ticket, which it passes to `unregisterAfterGrace` on dismiss
     public init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
@@ -110,10 +109,10 @@ public struct PlaybackContainerView: View {
             // cooperative — an early dismiss can still resume this body after
             // `onDisappear` already ran its own fallback-ticket teardown. A
             // cancelled body must not register a session nothing will ever
-            // finish: that ticket would sit in `awaitPlaybackReporting`'s loop
-            // and wedge every drain, and the presenter's dismiss may already
-            // have run its unregister. `onDisappear`'s `stop()` already covers
-            // teardown for this case, idempotently.
+            // finish: that ticket would hold every drain until the presenter's
+            // deferred unregister, if that was even scheduled with it.
+            // `onDisappear`'s `stop()` already covers teardown for this case,
+            // idempotently.
             guard !Task.isCancelled else { return }
             // Registered before the player even starts, so no dismissal can
             // observe "nothing in flight" — SwiftUI guarantees no ordering
@@ -135,8 +134,16 @@ public struct PlaybackContainerView: View {
             // coordinator with nothing to await, and a refresh could then read
             // server state while this stop report was still landing — the exact
             // race this sequencing exists to remove.
-            let ticket = playbackTicket ?? refreshCoordinator.registerPlayback()
-            refreshCoordinator.finishPlayback(ticket, stop: Task { await viewModel.stop() })
+            //
+            // A ticket the coordinator no longer holds — left over from a
+            // player whose teardown never ran — takes the same fallback.
+            let stop = Task { await viewModel.stop() }
+            if let playbackTicket, refreshCoordinator.finishPlayback(playbackTicket, stop: stop) {
+                // Reported on the presentation's own ticket.
+            } else {
+                refreshCoordinator.finishPlayback(refreshCoordinator.registerPlayback(), stop: stop)
+            }
+            playbackTicket = nil
         }
     }
 

@@ -219,27 +219,80 @@ struct ContentRefreshCoordinatorTests {
         #expect(coordinator.hasPlayingSession == false)
     }
 
-    @Test(.timeLimit(.minutes(1))) func unregisteringAnOrphanedTicketLetsADrainProceed() async throws {
-        // #301: the player went away without `onDisappear`, so no stop task
-        // will ever arrive. The presenter's dismiss is the backup.
+    @Test(.timeLimit(.minutes(1))) func aDismissBeforeTeardownStillWaitsForTheStopReport() async {
+        // Seen on the tvOS simulator: the presenter's `onDismiss` can run
+        // before the player's `onDisappear`. The dismiss must not let a wait
+        // return before the stop report it is about to receive lands.
         let coordinator = ContentRefreshCoordinator()
         let ticket = coordinator.registerPlayback()
-        coordinator.post(.watchState)
+        coordinator.unregisterAfterGrace(ticket) // the presenter's dismiss
 
-        coordinator.unregister(ticket)
+        var waitReturned = false
+        let waiter = Task {
+            await coordinator.awaitPlaybackReporting()
+            waitReturned = true
+        }
+        await Task.yield()
+        let gate = AsyncGate()
+        var reported = false
+        let accepted = coordinator.finishPlayback(ticket, stop: Task { // the player's late `onDisappear`
+            try? await gate.wait()
+            reported = true
+        })
+        await Task.yield()
+        await Task.yield()
+        #expect(accepted)
+        #expect(waitReturned == false)
+
+        await gate.open()
+        await waiter.value
+        #expect(reported)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func anOrphanedTicketIsDroppedAfterTheGraceAndWakesTheDrain() async throws {
+        // #301: the player went away without `onDisappear`, so no stop task
+        // will ever arrive. The presenter's deferred unregister is the backup.
+        let coordinator = ContentRefreshCoordinator(orphanGrace: .milliseconds(20))
+        let ticket = coordinator.registerPlayback()
+        let before = coordinator.revision
+
+        coordinator.unregisterAfterGrace(ticket)
+        #expect(coordinator.hasPlayingSession) // not before the grace
+
+        // Media Detail's wait, started at dismissal, must end with the grace.
+        let waiter = Task { await coordinator.awaitPlaybackReporting() }
+        defer { waiter.cancel() }
+        try await Task.sleep(for: .milliseconds(300))
 
         #expect(coordinator.hasPlayingSession == false)
         // `#require` stops here on a regression: the wait below would
         // otherwise poll for a stop task that is not coming and hang the run.
         try #require(coordinator.hasPlaybackInFlight == false)
-        await coordinator.awaitPlaybackReporting()
+        await waiter.value
+        // The drop posts, so Home's drain, which returned early on this
+        // ticket, runs again without anyone acting.
+        #expect(coordinator.revision > before)
         #expect(coordinator.beginDrain(now: epoch)?.reason == .watchState)
     }
 
+    @Test(.timeLimit(.minutes(1))) func aDeferredUnregisterAfterTheStopTaskDoesNothing() async throws {
+        // The usual order: `onDisappear` stored its stop task before the
+        // grace ended. The deferred drop must leave the report to be awaited.
+        let coordinator = ContentRefreshCoordinator(orphanGrace: .milliseconds(20))
+        let ticket = coordinator.registerPlayback()
+        let gate = AsyncGate()
+        coordinator.finishPlayback(ticket, stop: Task { try? await gate.wait() })
+        let before = coordinator.revision
+
+        coordinator.unregisterAfterGrace(ticket)
+        try await Task.sleep(for: .milliseconds(300))
+
+        #expect(coordinator.hasPlaybackInFlight)
+        #expect(coordinator.revision == before)
+        await gate.open()
+    }
+
     @Test(.timeLimit(.minutes(1))) func unregisteringAfterTheStopTaskKeepsTheWaitForIt() async {
-        // The usual order: `onDisappear` handed over its stop task before the
-        // presenter's dismiss ran. Dropping that ticket would let a drain
-        // read server state before the stopped report lands.
         let coordinator = ContentRefreshCoordinator()
         let ticket = coordinator.registerPlayback()
         let gate = AsyncGate()
@@ -257,8 +310,8 @@ struct ContentRefreshCoordinatorTests {
         await waiter.value
         #expect(reported)
 
-        // Once the stop task has run and the drain has retired the ticket, a
-        // late dismiss is a no-op.
+        // Once the stop task has run and the drain has retired the ticket,
+        // a late unregister is a no-op.
         coordinator.unregister(ticket)
         #expect(coordinator.hasPlaybackInFlight == false)
     }
@@ -267,14 +320,15 @@ struct ContentRefreshCoordinatorTests {
         let coordinator = ContentRefreshCoordinator()
         let ticket = coordinator.registerPlayback()
         let other = coordinator.registerPlayback()
-        let before = coordinator.revision
 
         coordinator.unregister(ticket)
+        let afterFirst = coordinator.revision
         coordinator.unregister(ticket)
 
-        // The second call must not touch another live player's session.
+        // The second call must not post again or touch another live
+        // player's session.
+        #expect(coordinator.revision == afterFirst)
         #expect(coordinator.hasPlayingSession)
-        #expect(coordinator.revision == before)
         coordinator.unregister(other)
         #expect(coordinator.hasPlaybackInFlight == false)
     }
