@@ -40,3 +40,6 @@ Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts/*.woff2
 # decision, and docs/ here is current-state-only. A dated proposal would rot
 # beside it.
 docs/superpowers/
+
+# Agent worktrees created by Claude Code; each is its own checkout.
+.claude/worktrees/
