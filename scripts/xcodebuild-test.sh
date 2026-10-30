@@ -9,9 +9,15 @@
 #     stopped, exit 0 for TEST SUCCEEDED, 65 for TEST FAILED (xcodebuild's code);
 #   - no output for TEST_QUIET_LIMIT seconds: stopped, exit 2.
 #
-# Both stalls have been seen (#339). The usual one, xcodebuild waiting 600s on
-# simulator diagnostics after a failure, is switched off by the Makefile's
-# -collect-test-diagnostics never; this catches whatever else stalls.
+# The quiet limit catches the stall seen in #339: xcodebuild waiting 600s on
+# simulator diagnostics after a failure, before it prints a verdict. The
+# Makefile's -collect-test-diagnostics never switches that off; the limit stays
+# for anything else that goes silent. The exit limit is a backstop for a stall
+# not seen in #339: xcodebuild never exiting after its last test, which is in
+# the hang-mode table in .claude/skills/sim-ui-check/SKILL.md.
+#
+# Limit: if xcodebuild ignores SIGTERM and needs SIGKILL, processes it started
+# can be left running. Only xcodebuild itself is signalled.
 set -uo pipefail
 
 # A cold build or a slow test can go quiet for a while; the stall this
@@ -21,6 +27,10 @@ exit_limit=${TEST_EXIT_LIMIT:-30}
 
 log=$(mktemp -t xcodebuild-test)
 stalled=$log.stalled
+# Installed before anything starts, so Ctrl-C at any point stops what's running.
+pid="" tailpid="" watchdog=""
+trap 'for p in $pid $watchdog $tailpid; do kill "$p" 2>/dev/null; done; rm -f "$log" "$stalled"' EXIT
+trap 'exit 130' INT TERM
 xcodebuild test "$@" >"$log" 2>&1 &
 pid=$!
 tail -n +1 -f "$log" &
@@ -59,8 +69,6 @@ tailpid=$!
     fi
 ) &
 watchdog=$!
-trap 'kill "$pid" "$watchdog" "$tailpid" 2>/dev/null; rm -f "$log" "$stalled"' EXIT
-trap 'exit 130' INT TERM
 
 wait "$pid"
 code=$?
@@ -69,7 +77,7 @@ if [[ -f $stalled ]]; then
 else
     kill "$watchdog" 2>/dev/null
 fi
-sleep 0.2 # tail follows the log through kqueue, so this lets it print the last lines
+sleep 0.2 # gives tail a moment to print the last lines
 case $(cat "$stalled" 2>/dev/null) in
 "") exit "$code" ;;
 *SUCCEEDED*) exit 0 ;;
