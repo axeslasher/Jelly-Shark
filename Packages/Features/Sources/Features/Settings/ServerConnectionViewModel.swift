@@ -209,34 +209,61 @@ public final class ServerConnectionViewModel {
         }
 
         do {
-            // Validate the saved token before treating the session as live
-            let user = try await restoredClient.fetchCurrentUser()
+            // Validate the saved token, and the server version alongside it,
+            // before treating the session as live
+            async let serverInfo = try? restoredClient.fetchPublicServerInfo()
+            async let currentUser = restoredClient.fetchCurrentUser()
+            try await Self.requireSupported(serverInfo)
+            let user = try await currentUser
             try await completeConnection(client: restoredClient, user: user)
             username = user.name
-        } catch APIError.unauthorized {
-            // The token is no longer valid: clear it and fall back to the form
-            try? sessionStore.clearSession()
-            if let cache {
-                await cache.purge(scope: CacheScope(serverURL: saved.serverURL, userID: saved.userID))
-            }
-            errorMessage = "Your session has expired. Please sign in again."
-            state = .disconnected
-            client = nil
         } catch {
-            // Transient failure (network, server down): keep the saved session
-            errorMessage = error.localizedDescription
+            if let message = Self.endedSessionMessage(for: error) {
+                // The session can never work again: clear it and fall back to the form
+                try? sessionStore.clearSession()
+                if let cache {
+                    await cache.purge(scope: scope)
+                }
+                errorMessage = message
+            } else {
+                // Transient failure (network, server down): keep the saved session
+                errorMessage = error.localizedDescription
+            }
             state = .disconnected
             client = nil
         }
     }
 
+    /// Ends a restore on a server below the minimum. A version that couldn't
+    /// be read (nil) passes: like a transient token-check failure, it keeps
+    /// the session.
+    private static func requireSupported(_ serverInfo: ServerInfo?) throws {
+        if let serverInfo, !serverInfo.isSupported {
+            throw APIError.unsupportedServerVersion(serverInfo.version)
+        }
+    }
+
+    /// The form's message when a restore failure means the saved session can
+    /// never work again (revoked token, server too old); nil for a transient
+    /// failure, which keeps the session.
+    private static func endedSessionMessage(for error: any Error) -> String? {
+        switch error as? APIError {
+        case .unauthorized:
+            "Your session has expired. Please sign in again."
+        case .unsupportedServerVersion:
+            error.localizedDescription
+        default:
+            nil
+        }
+    }
+
     /// Verify an instantly-restored session against the server. Success
     /// refreshes the user and libraries (the caching client re-persists
-    /// them); a 401 means the token was revoked, so the provisional session
-    /// tears down exactly as a blocking restore would have, plus a cache
-    /// purge; any other failure leaves the session standing on cached
-    /// content — the server may just be rebooting, and playback will surface
-    /// its own errors.
+    /// them); a 401 (token revoked) or a server below the minimum version
+    /// tears the provisional session down exactly as a blocking restore
+    /// would have, plus a cache purge; any other failure leaves the session
+    /// standing on cached content — the server may just be rebooting, and
+    /// playback will surface its own errors.
     private func validateInBackground(
         client: any JellyfinClientProtocol,
         cache: MediaCacheStore,
@@ -245,7 +272,10 @@ public final class ServerConnectionViewModel {
         isValidating = true
         validationTask = Task { [weak self] in
             do {
-                let user = try await client.fetchCurrentUser()
+                async let serverInfo = try? client.fetchPublicServerInfo()
+                async let currentUser = client.fetchCurrentUser()
+                try await Self.requireSupported(serverInfo)
+                let user = try await currentUser
                 let fresh = try await client.getLibraries().filter(\.isBrowsable)
                 guard let self, !Task.isCancelled, state == .connected else { return }
                 connectedUser = user
@@ -258,11 +288,16 @@ public final class ServerConnectionViewModel {
                 // screens gated on `isConnected` actually start loading.
                 session?.refreshConnectionState()
                 await cache.purgeStaleDetails(scope: scope)
-            } catch APIError.unauthorized {
-                guard let self, !Task.isCancelled, state == .connected else { return }
+            } catch {
+                guard let self, !Task.isCancelled else { return }
+                guard let message = Self.endedSessionMessage(for: error) else {
+                    isValidating = false
+                    return
+                }
+                guard state == .connected else { return }
                 try? sessionStore.clearSession()
                 await cache.purge(scope: scope)
-                errorMessage = "Your session has expired. Please sign in again."
+                errorMessage = message
                 state = .disconnected
                 self.client = nil
                 connectedUser = nil
@@ -270,9 +305,6 @@ public final class ServerConnectionViewModel {
                 libraryCounts = [:]
                 isValidating = false
                 session?.clearClient()
-            } catch {
-                guard let self, !Task.isCancelled else { return }
-                isValidating = false
             }
         }
     }
