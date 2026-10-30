@@ -147,7 +147,7 @@ done
 
 # 4. Done: stop xcodebuild rather than wait for it to wind down.
 kill $pid 2>/dev/null; wait $pid 2>/dev/null
-grep -E "error: .*(failed|XCTAssert)" "$log" | sed -E 's/.*: (failed|XCTAssert[A-Za-z]* failed)/  failure: \1/' | cut -c1-300 | head -5
+grep -iE "error: .*(failed|XCTAssert)" "$log" | sed -E 's/.*\] : /  failure: /' | cut -c1-300 | head -5
 verdict=$(head -1 "$shots/verdict.txt")
 say "$verdict in $(($(date +%s) - start))s — screenshots: $shots"
 [[ $verdict == PASS ]]

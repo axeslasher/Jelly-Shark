@@ -36,7 +36,9 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 2. **Write the check.** Copy `UICheckTemplate.swift` to
    `Jelly SharkUITests/UICheck<Name>.swift` and rename the class. Keep
    `writeVerdictOnTeardown()` as the first line. Write the steps, and follow
-   each one with a `waitForExistence` and a `shot("NN-name")`. The template's
+   each one with a `waitForExistence` and a `shot("NN-name")`. Put every
+   step in the one `testCheck`: run.sh stops at the first verdict, so a
+   second test method never runs. The template's
    commented example checks Home and Search; uncomment and adapt it.
 3. **Run it.**
    `UI_CHECK_SERVER=http://localhost:8096 .claude/skills/tvos-ui-check/run.sh UICheck<Name> [simulator-udid]`
@@ -67,20 +69,31 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 - Assert the target is absent before the action that should produce it.
   Search's idle screen already lists every title as a suggestion, so a wait
   for "Static Season" passes before anything is typed.
-- Find content with `labelled(_:)`. Cards are Buttons labelled "Title, Year",
-  not cells. The fixture's posters are plain colour, so a screenshot often
+- Find content with `labelled(_:)`, which matches anywhere in the label.
+  Cards are Buttons, not cells. Movie cards read "Title, Year". Series cards
+  put the unwatched count first ("3, Night Shift Radio, 2022"), so never
+  match with `BEGINSWITH`. Text such as a details page's overview may live
+  only inside a Button's label, not as a StaticText.
+- Off-screen content is still in the tree, so `waitForExistence` passes for
+  rows below the fold. When the screenshot is meant to show it, move focus
+  there and assert `isHittable` before the `shot`.
+- A selected option shows an image labelled "Selected" (identifier
+  `checkmark.circle.fill`), so "is selected" can be asserted directly. The fixture's posters are plain colour, so a screenshot often
   can't show which title is which; the label match is the evidence.
 
 ## Focus rules learned the hard way
 
-1. **Sidebar tabs and list rows take focus as the cell,** not the button,
-   image or text inside them. Query `app.cells` (the `cell(_:)` helper), or
-   `hasFocus` never turns true.
+1. **Sidebar tabs and navigation rows take focus as the cell,** not the
+   button, image or text inside them. Query `app.cells` (the `cell(_:)`
+   helper), or `hasFocus` never turns true. **Picker rows are the exception:**
+   in Theme and Streaming Quality each row is a Button inside a List, and the
+   Button takes focus. Use `select(option:)`.
 2. **Left on an open sidebar collapses it** into a pill. Its cells then have
    an empty frame and Up/Down can't reach them. `open(tab:)` uses Up/Down
    while the sidebar is open, and Left only to bring a collapsed one back.
    Left moves through the content first (Home's hero has three buttons), so
-   it can take several presses; `open(tab:)` allows six. Left does nothing while the screen behind has nothing focusable, such as
+   it can take several presses; `open(tab:)` allows six. Equally, Left at a
+   shelf's leading edge opens the sidebar; `focus(card:)` watches for that. Left does nothing while the screen behind has nothing focusable, such as
    Home's loading skeleton; `open(tab:)` then fails with `sidebar-stuck.png`.
 3. **Re-selecting the current tab doesn't pop its stack.** If the target
    screen is already showing, use it as it is.

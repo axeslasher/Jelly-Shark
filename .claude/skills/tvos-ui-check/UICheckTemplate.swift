@@ -164,6 +164,47 @@ final class UICheckTemplate: XCTestCase {
         }
     }
 
+    /// Selects an option row in a picker list (Theme, Streaming Quality). These
+    /// rows are a Button inside a List, and the *Button* takes focus, not the
+    /// cell, so `open(row:)` can't reach them. Labels read "Name, description".
+    private func select(option label: String) {
+        let row = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", label + ",")).firstMatch
+        XCTAssertTrue(row.waitForExistence(timeout: 10), dump("No option '\(label)'"))
+        focus(row, trying: [.down, .up])
+        remote.press(.select)
+    }
+
+    /// Focuses a card in Home's shelves by walking each shelf right, then down
+    /// to the next. Coming back left, a shelf's leading edge opens the sidebar,
+    /// so the walk stops as soon as a sidebar cell takes focus.
+    private func focus(card: XCUIElement, rows: Int = 5, perRow: Int = 5) {
+        let sidebarFocused = app.cells.matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        for _ in 0 ..< rows {
+            for _ in 0 ..< perRow {
+                if card.exists, card.hasFocus {
+                    return
+                }
+                remote.press(.right)
+            }
+            if card.exists, card.hasFocus {
+                return
+            }
+            remote.press(.down)
+            for _ in 0 ..< perRow {
+                if card.exists, card.hasFocus {
+                    return
+                }
+                remote.press(.left)
+                if sidebarFocused.exists {
+                    remote.press(.right)
+                    break
+                }
+            }
+        }
+        shot("focus-failed")
+        XCTFail(dump("Could not focus \(card)"))
+    }
+
     /// Types into the Search tab's field. It is the system `.searchable` field,
     /// and its keyboard is already up when the tab opens, so no select, no
     /// clearing and no Menu, unlike `type(_:into:)`.
@@ -224,7 +265,9 @@ final class UICheckTemplate: XCTestCase {
     private func focus(_ element: XCUIElement, trying directions: [XCUIRemote.Button], limit: Int = 12) {
         for direction in directions {
             for _ in 0 ..< limit {
-                if element.hasFocus {
+                // `exists` first: an element that briefly leaves the tree mid-scroll
+                // makes `hasFocus` throw instead of returning false.
+                if element.exists, element.hasFocus {
                     return
                 }
                 remote.press(direction)
