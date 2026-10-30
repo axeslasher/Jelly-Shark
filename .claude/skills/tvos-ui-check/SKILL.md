@@ -84,10 +84,15 @@ Screenshots are evidence for the user to look at, not proof of appearance.
 | Simulator doesn't boot | `simctl bootstatus` never returns | run.sh boots it itself and gives it 120s |
 | Build never gets to testing | No "Test suite started" line | 600s limit (`UI_CHECK_BUILD_LIMIT`) |
 | Test stalls mid-run | The log stops growing | 90s with no output (`UI_CHECK_QUIET_LIMIT`) |
+| The app crashes or is killed mid-test | XCTest keeps logging `Checking existence of …` against the dead app until the wait times out, so the log never goes quiet | run.sh watches the app process (its path contains the simulator's UDID) and fails 15s after it disappears. Before this guard, a crash took 160s to report; now it takes 24s. |
+| The test runner dies (simulator shut down, or a second run) | `Restarting after unexpected exit, crash, or test timeout` or `Early unexpected exit`, then `Executed 0 tests` | run.sh fails on that line |
+| Two runs on one simulator | Each kills the other's runner | A lock per simulator in `~/Library/Caches/jelly-shark-ui-check/locks/<UDID>`, shared across worktrees; a lock left by a dead process is taken over |
+| Class name typo | `Executed 0 tests`, while xcodebuild reports `TEST SUCCEEDED` | run.sh fails on `Executed 0 tests` |
+| UDID typo | xcodebuild searches for about 60s, then `Unable to find a device matching …` | run.sh checks the UDID before doing anything else |
 
-The "never exits" mode may come from storing `XCUIApplication` on the test
-class together with `continueAfterFailure = false` (Apple forums, thread 818688).
-This is unverified. The template uses a computed `app` property, and run.sh
-passes `-collect-test-diagnostics never`. The guard stays in place either way.
+The "never exits" mode was not reproduced on 2026-10-29. With a stored or a
+computed `app`, xcodebuild exited within 10s after a failing test, in 3 of 3
+runs each, so the Apple forums theory (thread 818688) isn't supported. The
+guard stays because the hang has been seen.
 
 When you hit a new hang, add a row here and a guard in `run.sh`, in the same PR.
