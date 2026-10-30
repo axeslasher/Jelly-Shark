@@ -112,6 +112,60 @@ struct AppSessionTests {
         #expect(rig.appSession.isConnected == false)
     }
 
+    /// Home now loads while validation is still in flight. Its fan-out must
+    /// not stop a revoked token or a too-old server from ending the session,
+    /// and must not change the message the form shows. The end state is
+    /// exactly `HomeView`'s Welcome branch: not connected, restore attempted,
+    /// state disconnected.
+    @Test("Home's load racing validation still ends a revoked or too-old session", arguments: [true, false])
+    func homeLoadRacingValidationStillTearsDown(revoked: Bool) async {
+        let rig = InstantConnectTests.Rig()
+        await rig.seedCache()
+        let gate = AsyncGate()
+        let expectedMessage: String
+        if revoked {
+            rig.client.fetchCurrentUserDelay = { try? await gate.wait() }
+            rig.client.fetchCurrentUserResult = .failure(APIError.unauthorized)
+            // The revoked token is refused on Home's requests too
+            rig.client.resumeItemsResult = .failure(APIError.unauthorized)
+            rig.client.nextUpItemsResult = .failure(APIError.unauthorized)
+            rig.client.latestItemsHandler = { _ in .failure(APIError.unauthorized) }
+            expectedMessage = "Your session has expired. Please sign in again."
+        } else {
+            rig.client.serverInfoDelay = { try? await gate.wait() }
+            rig.client.serverInfoResult = .success(ServerInfo(serverName: "Old", version: "10.11.10", id: "server-1"))
+            expectedMessage = APIError.unsupportedServerVersion("10.11.10").localizedDescription
+        }
+
+        await rig.viewModel.restoreSession()
+        #expect(rig.appSession.isConnected)
+
+        // Home loads against the provisional session, as RootView's
+        // `.task(id: session.isConnected)` does, before validation answers
+        let home = HomeViewModel()
+        home.attach(
+            client: rig.appSession.client,
+            libraries: rig.viewModel.libraries,
+            cache: rig.appSession.scopedCache,
+            userState: rig.appSession.userState,
+        )
+        #expect(await home.load())
+        #expect(home.isInitialLoading == false)
+        if revoked {
+            #expect(home.latestStatus.isFailed)
+        }
+
+        await gate.open()
+        await rig.viewModel.awaitValidation()
+
+        #expect(rig.appSession.isConnected == false)
+        #expect(rig.appSession.client == nil)
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.viewModel.hasAttemptedRestore)
+        #expect(rig.viewModel.errorMessage == expectedMessage)
+        #expect(rig.store.session == nil)
+    }
+
     @Test("A server below the minimum disconnects the cache-restored session")
     func disconnectsOnTooOldServer() async {
         let rig = InstantConnectTests.Rig()
