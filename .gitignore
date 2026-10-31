@@ -43,3 +43,7 @@ docs/superpowers/
 
 # Agent worktrees created by Claude Code; each is its own checkout.
 .claude/worktrees/
+
+# SF Symbols pipeline output — regenerated from the local SF Symbols app, never committed
+# (Apple artwork; see scripts/figma/sf-symbols/README.md).
+scripts/figma/sf-symbols/out/

@@ -1,0 +1,6 @@
+# String literals in the app's sources that happen to be valid SF Symbol names but are not
+# icons. run.sh --check skips these. One per line, with where it comes from.
+display   # TypographyTokens role name
+eyebrow   # TypographyTokens role name
+star      # SearchRelevance search-term example
+tag       # JellyfinClient API field
