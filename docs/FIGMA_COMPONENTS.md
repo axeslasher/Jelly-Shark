@@ -53,10 +53,11 @@ Connect can show Swift snippets (see below).
 
 ## Liquid Glass calibration
 
-The current recipe and calibrated values live in the *Glass and Platters* spec (Foundations ›
-⮑ Glass and Platters); this section is the method for re-measuring them. Resting glass is
-compared against a `#Preview` render, focused glass against a tvOS simulator capture (previews
-never show focus).
+Every glass platter is an instance of the *Liquid Glass - Regular - Small* material (Foundations
+› ⮑ Materials), driven by the `System` variables; the *Glass and Platters* spec documents both.
+This section is the method for checking them against what tvOS draws. Resting glass is compared
+against a `#Preview` render, focused glass against a tvOS simulator capture (previews never show
+focus).
 
 1. Export a backdrop from the file (an `ArtworkImage` example) with `get_screenshot`.
 2. Draw the real component over it in a scratch `#Preview`
@@ -87,5 +88,7 @@ never show focus).
 | Spec | Long-form Markdown: mappings, deviations, foundations such as glass | `figma.spec.createOnCanvasAsync({ title, content })` → `{ specNodeId }`; `getContent({ specNodeId })` returns `markdown` (paged); `setContent({ specNodeId, content })` replaces it |
 | Annotation | A note pinned to one node that nothing else can hold | `node.annotations`, with `labelMarkdown` |
 
-Specs render only in the app; MCP screenshots show a placeholder. In descriptions, bold each
+Specs render only in the app; MCP screenshots show a placeholder. `setContent` diffs tables in
+place and refuses a rewrite that changes their columns ("ambiguous table column
+correspondence"); set plain text first, then the new content. In descriptions, bold each
 code span on its own: Figma stores spaces inside a bold run of several code spans as `&#32;`.
