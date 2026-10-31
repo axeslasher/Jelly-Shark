@@ -72,12 +72,11 @@ focus).
 
 1. **What works on the Professional plan.** Mappings made in the Figma app (Dev Mode →
    Connect to code, through the GitHub app link) attach a Swift file to a component.
-   `ArtworkImage` and `ArtworkShelfItem` are mapped this way. These show the file and component
-   name only — no snippet.
+   `ArtworkImage`, `ArtworkShelfItem` and `tvOS/CircleActionButton (SF Symbol)` are mapped this
+   way, one mapping per variant. These show the file and component name only — no snippet.
 2. **What doesn't.** Mappings can't be written over MCP (`add_code_connect_map` refuses: "only
    … Organization or Enterprise plans"), and templates — the only way to get a real
-   `CircleActionButton(…)` snippet — need the same plans. `tvOS/CircleActionButton` is not
-   mapped yet; map it in the app.
+   `CircleActionButton(…)` snippet — need the same plans.
 3. **Reading** mappings over MCP (`get_code_connect_map`) works.
 
 ## Descriptions, specs and annotations
