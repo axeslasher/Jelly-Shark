@@ -448,10 +448,18 @@
         private func dump(_ message: String) -> String {
             let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
             // A focused cell has no label of its own; name it by its first labelled child.
-            let focusedLabel = focused.exists && focused.label.isEmpty
-                ? focused.descendants(matching: .any).matching(NSPredicate(format: "label != ''")).firstMatch.label
-                : focused.label
-            let focusedText = focused.exists ? "'\(focusedLabel)'" : "nothing"
+            // Read `label` only on an element that exists: on a missing one it
+            // throws, and the query error replaces the caller's failure message.
+            // Both happen: nothing focused (a loading skeleton), or a focused
+            // element with no labelled child.
+            let focusedText: String
+            if focused.exists {
+                let child = focused.descendants(matching: .any).matching(NSPredicate(format: "label != ''")).firstMatch
+                let label = !focused.label.isEmpty ? focused.label : child.exists ? child.label : ""
+                focusedText = "'\(label)'"
+            } else {
+                focusedText = "nothing"
+            }
             let headings = app.staticTexts.allElementsBoundByIndex.prefix(40)
                 .filter { $0.frame.height >= 40 && !$0.label.isEmpty }
                 .map(\.label).prefix(4).joined(separator: ", ")

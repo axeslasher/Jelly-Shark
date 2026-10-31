@@ -40,8 +40,11 @@ jobs:
         run: xcodebuild -version
 
       # Same command developers run locally, so a green CI run and a green local
-      # run mean the same thing.
+      # run mean the same thing. make test-sim stops a stalled xcodebuild itself
+      # (#339); the step limit is a backstop so a stall can't hold the runner
+      # for the whole 45-minute job. A green run takes about 5 minutes.
       - name: Test
+        timeout-minutes: 20
         run: make test-sim
 
   # The app ships to tvOS and visionOS. The simulator job above covers the tvOS

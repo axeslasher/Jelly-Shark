@@ -257,6 +257,9 @@ public struct RootView: View {
                 cache: session.scopedCache,
                 userState: session.userState,
             )
+            // Read now, not after the awaits below: a restore can publish the
+            // client while this pass is still running without one (#338).
+            let loadedWithClient = session.client != nil
             // Read before the load: reasons raised before it are covered by
             // it, anything posted while it ran is not (§ 8).
             let revisionAtStart = refreshCoordinator.revision
@@ -291,7 +294,7 @@ public struct RootView: View {
             // `isConnected == false` on every cold launch; that pass takes
             // `load()`'s no-client branch and settles nothing, and opening the
             // gate for it let the drain supersede the real load (#236 § 8.1).
-            refreshCoordinator.isInitialLoadSettled = session.client != nil
+            refreshCoordinator.isInitialLoadSettled = loadedWithClient
             // Seed the floor only if a load actually ran; stamping the
             // timestamp for a guarded-out call would disable the
             // external-client fallback forever.

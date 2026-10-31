@@ -1,4 +1,5 @@
 import Foundation
+import os
 import OSLog
 import SwiftData
 
@@ -97,6 +98,27 @@ public struct CachedUserStateValue: Sendable, Equatable {
 
 // MARK: - Store
 
+/// Which purges a cache writer has seen, taken when its handle is made.
+///
+/// A write carrying a mark is dropped if its scope was purged since. That
+/// closes the window where a request already in flight when a session ends
+/// lands its write after the purge, and puts the ended session's rows back.
+/// A handle made after the purge, as by a new sign-in to the same scope,
+/// carries the new mark and writes normally.
+public struct CacheWriteMark: Sendable, Equatable {
+    fileprivate let counts: PurgeCounts
+}
+
+/// How many times each scope, and the whole store, has been purged
+private struct PurgeCounts: Sendable, Equatable {
+    var all = 0
+    var scopes: [String: Int] = [:]
+
+    func isCurrent(_ mark: CacheWriteMark, for scopeKey: String) -> Bool {
+        mark.counts.all == all && mark.counts.scopes[scopeKey, default: 0] == scopes[scopeKey, default: 0]
+    }
+}
+
 /// The SwiftData-backed cache behind the app's cache-then-network reads.
 ///
 /// Display acceleration only — the server stays the source of truth, and
@@ -140,6 +162,28 @@ public actor MediaCacheStore {
     static let schemaVersion = 2
 
     static let versionDefaultsKey = "mediaCacheSchemaVersion"
+
+    /// Behind a lock rather than actor state so a handle can take its mark
+    /// synchronously, where it is made (`ScopedCache.init`, a client's init)
+    private nonisolated let purgeCounts = OSAllocatedUnfairLock(initialState: PurgeCounts())
+
+    /// The purges seen so far. Take it when a handle is made and pass it
+    /// with every write through that handle.
+    public nonisolated func writeMark() -> CacheWriteMark {
+        CacheWriteMark(counts: purgeCounts.withLock { $0 })
+    }
+
+    /// False when the write's handle predates a purge of its scope. A nil
+    /// mark is an unguarded write.
+    private func accepts(_ mark: CacheWriteMark?, scope: CacheScope, _ kind: String) -> Bool {
+        guard let mark else { return true }
+        let scopeKey = scope.storageKey
+        guard purgeCounts.withLock({ $0.isCurrent(mark, for: scopeKey) }) else {
+            Self.logger.debug("[cache] dropped a \(kind, privacy: .public) write from before a purge")
+            return false
+        }
+        return true
+    }
 
     private static var schema: Schema {
         Schema([CachedSnapshot.self, CachedUserState.self])
@@ -315,7 +359,13 @@ public actor MediaCacheStore {
     /// Persist `value` under `key`, replacing any previous blob. Failures
     /// are swallowed: a cache write that cannot land is a future cache miss,
     /// not an error the caller can act on.
-    public func write(_ value: some Encodable & Sendable, scope: CacheScope, key: CacheSnapshotKey) {
+    public func write(
+        _ value: some Encodable & Sendable,
+        scope: CacheScope,
+        key: CacheSnapshotKey,
+        since mark: CacheWriteMark? = nil,
+    ) {
+        guard accepts(mark, scope: scope, key.kind) else { return }
         guard let payload = try? JSONEncoder().encode(value) else {
             // A domain model that will not encode is a code defect, not a
             // transient — it fails identically on every launch forever.
@@ -373,7 +423,8 @@ public actor MediaCacheStore {
     /// Record what the server just said about these items' user data.
     /// Items without `userData` (or without a real id) are skipped, not
     /// zeroed — absence of the field is not a statement about the state.
-    public func ingestServerUserData(scope: CacheScope, items: [MediaItem]) {
+    public func ingestServerUserData(scope: CacheScope, items: [MediaItem], since mark: CacheWriteMark? = nil) {
+        guard accepts(mark, scope: scope, "userState") else { return }
         let scopeKey = scope.storageKey
         let reported = items.filter { $0.userData != nil && !$0.id.isEmpty }
         guard !reported.isEmpty else { return }
@@ -417,8 +468,10 @@ public actor MediaCacheStore {
     public func setUserState(
         scope: CacheScope,
         itemID: String,
+        since mark: CacheWriteMark? = nil,
         mutating mutate: @Sendable (inout CachedUserStateValue) -> Void,
     ) {
+        guard accepts(mark, scope: scope, "userState") else { return }
         let scopeKey = scope.storageKey
         var descriptor = FetchDescriptor<CachedUserState>(
             predicate: #Predicate { $0.scopeKey == scopeKey && $0.itemID == itemID },
@@ -444,6 +497,9 @@ public actor MediaCacheStore {
     /// boundary, and the eventual "forget profile" (#192).
     public func purge(scope: CacheScope) {
         let scopeKey = scope.storageKey
+        // Every handle made before this point carries the old count, so its
+        // writes are dropped from now on, including any still in flight
+        purgeCounts.withLock { $0.scopes[scopeKey, default: 0] += 1 }
         // A purge that silently fails leaves one user's rows readable to the
         // next sign-in, so this is the one failure here that is a privacy
         // event rather than a performance one. It still cannot throw at the
@@ -469,6 +525,7 @@ public actor MediaCacheStore {
 
     /// Forget everything cached for every scope
     public func purgeAll() {
+        purgeCounts.withLock { $0.all += 1 }
         do {
             try modelContext.delete(model: CachedSnapshot.self)
         } catch {

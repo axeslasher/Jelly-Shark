@@ -62,6 +62,26 @@ struct CachingJellyfinClientTests {
         #expect(await store.read([Library].self, scope: scope, key: .libraries) != nil)
     }
 
+    /// A session ends and purges its scope while one of its requests is in
+    /// flight. That response must not write the ended session's rows back;
+    /// a client made for the next sign-in still caches.
+    @Test func aClientFromBeforeAPurgeWritesNothing() async throws {
+        let detail = item("m-1", userData: UserData(isFavorite: true))
+        stub.mediaItemResult = detail
+        stub.librariesResult = [Library(id: "lib-1", name: "Films")]
+        await store.purge(scope: scope)
+
+        _ = try await client.getMediaItem(itemId: "m-1")
+        _ = try await client.getLibraries()
+        #expect(await store.read(MediaItem.self, scope: scope, key: .mediaDetail(itemID: "m-1")) == nil)
+        #expect(await store.read([Library].self, scope: scope, key: .libraries) == nil)
+        #expect(await store.userStates(scope: scope, itemIDs: ["m-1"]).isEmpty)
+
+        let next = CachingJellyfinClient(wrapping: stub, cache: store)
+        _ = try await next.getLibraries()
+        #expect(await store.read([Library].self, scope: scope, key: .libraries) != nil)
+    }
+
     @Test func getMediaItemPersistsDetailAndIngestsUserData() async throws {
         let detail = item("m-1", userData: UserData(isFavorite: true))
         stub.mediaItemResult = detail

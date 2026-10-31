@@ -169,6 +169,66 @@ struct MediaCacheStoreTests {
         }
         #expect(await store.read([Library].self, scope: scope, key: .libraries) != nil)
     }
+
+    // MARK: Writes from before a purge (#338)
+
+    @Test func aHandleFromBeforeAPurgeCannotWriteBack() async {
+        let stale = ScopedCache(store: store, scope: scope)
+        await stale.write(sampleLibraries, key: .libraries)
+
+        await store.purge(scope: scope)
+        // An in-flight write from the ended session lands after its purge
+        await stale.write(sampleLibraries, key: .homeSnapshot)
+        await stale.write(sampleLibraries, key: .libraries)
+
+        #expect(await store.read([Library].self, scope: scope, key: .homeSnapshot) == nil)
+        #expect(await store.read([Library].self, scope: scope, key: .libraries) == nil)
+    }
+
+    @Test func aHandleFromAfterThePurgeWritesNormally() async {
+        let stale = ScopedCache(store: store, scope: scope)
+        await store.purge(scope: scope)
+
+        // A new sign-in to the same server and user
+        let fresh = ScopedCache(store: store, scope: scope)
+        await fresh.write(sampleLibraries, key: .libraries)
+        #expect(await stale.read([Library].self, key: .libraries) == sampleLibraries)
+
+        // The new session's writes don't revive the old handle
+        await stale.write([sampleLibraries[0]], key: .libraries)
+        #expect(await store.read([Library].self, scope: scope, key: .libraries) == sampleLibraries)
+    }
+
+    @Test func userStateWritesFromBeforeAPurgeAreDropped() async {
+        let mark = store.writeMark()
+        await store.purge(scope: scope)
+
+        await store.ingestServerUserData(
+            scope: scope,
+            items: [makeItem(id: "a", userData: UserData(played: true))],
+            since: mark,
+        )
+        await store.setUserState(scope: scope, itemID: "b", since: mark) { $0.isFavorite = true }
+
+        #expect(await store.userStates(scope: scope, itemIDs: ["a", "b"]).isEmpty)
+    }
+
+    @Test func aPurgeOnlyStopsHandlesForItsOwnScope() async {
+        let other = makeScope(user: "user-2")
+        let otherHandle = ScopedCache(store: store, scope: other)
+        await store.purge(scope: scope)
+
+        await otherHandle.write(sampleLibraries, key: .libraries)
+        #expect(await store.read([Library].self, scope: other, key: .libraries) == sampleLibraries)
+    }
+
+    @Test func purgeAllStopsEveryOlderHandle() async {
+        let handle = ScopedCache(store: store, scope: makeScope(user: "user-2"))
+        await store.purgeAll()
+
+        await handle.write(sampleLibraries, key: .libraries)
+        #expect(await store.read([Library].self, scope: handle.scope, key: .libraries) == nil)
+    }
 }
 
 @Suite("MediaCacheStore persistence")
