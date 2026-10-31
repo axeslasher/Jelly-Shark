@@ -94,7 +94,19 @@ public final class ContentRefreshCoordinator {
         sessions.values.contains { $0 == nil }
     }
 
-    public init() {}
+    /// How long after dismissal a ticket with no stop task counts as
+    /// orphaned. Not a playback ceiling: the clock starts when the player is
+    /// dismissed, so no film can outlast it. Generous on purpose: it only
+    /// delays recovering a true orphan, and a teardown later than this is
+    /// the remaining risk.
+    public static let defaultOrphanGrace: Duration = .seconds(10)
+
+    private let orphanGrace: Duration
+
+    /// - Parameter orphanGrace: injectable so tests needn't sleep for seconds
+    public init(orphanGrace: Duration = ContentRefreshCoordinator.defaultOrphanGrace) {
+        self.orphanGrace = orphanGrace
+    }
 
     // MARK: - Producers
 
@@ -124,14 +136,47 @@ public final class ContentRefreshCoordinator {
     }
 
     /// Call from the player's teardown with the task that reports the
-    /// final position.
-    public func finishPlayback(_ ticket: PlaybackTicket, stop: Task<Void, Never>) {
+    /// final position. Returns false, storing nothing, for a ticket this
+    /// coordinator no longer holds.
+    @discardableResult
+    public func finishPlayback(_ ticket: PlaybackTicket, stop: Task<Void, Never>) -> Bool {
         guard sessions.index(forKey: ticket) != nil else {
             Self.logger.debug("playback finished with an unknown ticket, ignored")
-            return
+            return false
         }
         sessions[ticket] = stop
         Self.logger.debug("playback finished, stop task stored")
+        post(.watchState)
+        return true
+    }
+
+    /// Call from the presenter's dismiss path, as a backup to the player's
+    /// own teardown: after `orphanGrace`, drops the ticket if it still has
+    /// no stop task (#301).
+    ///
+    /// Not immediate, because dismissal can run before the player's
+    /// `onDisappear` (seen on the tvOS simulator). Dropping the ticket then
+    /// would let a wait return before the stop report lands, the race this
+    /// type exists to remove. In the usual order the stop task is stored
+    /// long before the grace ends, and the deferred drop does nothing.
+    public func unregisterAfterGrace(_ ticket: PlaybackTicket) {
+        let grace = orphanGrace
+        Task { [weak self] in
+            try? await Task.sleep(for: grace)
+            self?.unregister(ticket)
+        }
+    }
+
+    /// Drops the ticket if it has no stop task, and wakes the waiters so a
+    /// drain held back by it runs now. A ticket already reporting is left
+    /// alone, so a drain still waits for its stopped report. Repeat calls
+    /// and unknown tickets do nothing.
+    func unregister(_ ticket: PlaybackTicket) {
+        guard let entry = sessions[ticket], entry == nil else { return }
+        sessions[ticket] = nil
+        Self.logger.debug("orphaned playback unregistered, sessions \(self.sessions.count, privacy: .public)")
+        // Home's drain returned early on this ticket and waits for a post;
+        // `awaitPlaybackReporting` polls and sees the drop by itself.
         post(.watchState)
     }
 

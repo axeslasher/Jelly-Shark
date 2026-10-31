@@ -15,7 +15,13 @@ public struct PlaybackContainerView: View {
 
     /// Set by `.task` at presentation; `onDisappear` reads it to hand the
     /// same session to `finishPlayback`. Nil only if `.task` never ran.
+    /// This player's own copy: the presenter's slot below may already hold
+    /// the next player's ticket by the time this one tears down.
     @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
+
+    /// The presenter's copy, which its dismiss hands to a deferred
+    /// unregister in case `onDisappear` never runs (#301).
+    @Binding private var presenterTicket: ContentRefreshCoordinator.PlaybackTicket?
 
     /// The concrete engine, held alongside the view model: the AVKit
     /// hosting below needs the typed `player` the `PlayerEngine` protocol
@@ -37,13 +43,17 @@ public struct PlaybackContainerView: View {
     ///     plays the server default
     ///   - streamingBitrateCap: the viewer's streaming ceiling in bits per
     ///     second (#168); nil leaves the engine's declared ceiling
+    ///   - playbackTicket: the presenter's slot for this session's refresh
+    ///     ticket, which it passes to `unregisterAfterGrace` on dismiss
     public init(
         client: any JellyfinClientProtocol,
         item: MediaItem,
         userState: UserStateStore? = nil,
         mediaSourceId: String? = nil,
         streamingBitrateCap: Int?,
+        playbackTicket: Binding<ContentRefreshCoordinator.PlaybackTicket?>,
     ) {
+        _presenterTicket = playbackTicket
         let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)
         _viewModel = State(initialValue: PlaybackViewModel(
@@ -103,15 +113,17 @@ public struct PlaybackContainerView: View {
             // cooperative — an early dismiss can still resume this body after
             // `onDisappear` already ran its own fallback-ticket teardown. A
             // cancelled body must not register a session nothing will ever
-            // finish: the coordinator has no unregister, so that ticket would
-            // sit in `awaitPlaybackReporting`'s loop forever and wedge every
-            // future drain. `onDisappear`'s `stop()` already covers teardown
-            // for this case, idempotently.
+            // finish: that ticket would hold every drain until the presenter's
+            // deferred unregister, if that was even scheduled with it.
+            // `onDisappear`'s `stop()` already covers teardown for this case,
+            // idempotently.
             guard !Task.isCancelled else { return }
             // Registered before the player even starts, so no dismissal can
             // observe "nothing in flight" — SwiftUI guarantees no ordering
             // between `onDisappear` and a presenter's `onDismiss` (#236 § 6).
-            playbackTicket = refreshCoordinator.registerPlayback()
+            let ticket = refreshCoordinator.registerPlayback()
+            playbackTicket = ticket
+            presenterTicket = ticket
             await viewModel.start()
         }
         .onChange(of: viewModel.state) { _, newState in
@@ -128,8 +140,19 @@ public struct PlaybackContainerView: View {
             // coordinator with nothing to await, and a refresh could then read
             // server state while this stop report was still landing — the exact
             // race this sequencing exists to remove.
-            let ticket = playbackTicket ?? refreshCoordinator.registerPlayback()
-            refreshCoordinator.finishPlayback(ticket, stop: Task { await viewModel.stop() })
+            //
+            // So does a ticket the coordinator already dropped, which only
+            // happens when this runs later than the orphan grace.
+            let stop = Task { await viewModel.stop() }
+            if let playbackTicket, refreshCoordinator.finishPlayback(playbackTicket, stop: stop) {
+                // Reported on this player's own ticket.
+            } else {
+                refreshCoordinator.finishPlayback(refreshCoordinator.registerPlayback(), stop: stop)
+            }
+            // A newer player from the same page may own the slot by now.
+            if presenterTicket == playbackTicket {
+                presenterTicket = nil
+            }
         }
     }
 
