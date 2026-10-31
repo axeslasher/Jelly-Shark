@@ -105,3 +105,65 @@ enum HomeFocusReconciler {
         return nil
     }
 }
+
+/// Sends tvOS focus back to where it was when it returns from the sidebar
+/// (#340).
+///
+/// Leaving the sidebar does not restore focus: on the simulator it lands on
+/// the topmost visible focusable of the page (the filter bar, or whichever
+/// Home row is at the top of the screen), not on what had focus. So a page
+/// records what had focus when focus left it, and redirects the first
+/// landing after it comes back.
+///
+/// A pure value on purpose, like the reconciler above: the rule is testable
+/// even though focus itself is not.
+struct SidebarFocusReturn<Target: Hashable> {
+    private var saved: Target?
+    private var isAway = false
+
+    /// Focus left the page.
+    ///
+    /// - Parameter last: what had focus on the page, or nil when nothing
+    ///   there needs restoring (the engine's own landing is fine).
+    mutating func leave(from last: Target?) {
+        saved = last
+        isAway = true
+    }
+
+    /// Focus came back to the page and landed on `landed`.
+    ///
+    /// - Returns: where focus must go instead, or nil to leave it where it
+    ///   landed. Answers once per departure.
+    mutating func reenter(landedOn landed: Target?) -> Target? {
+        guard isAway else { return nil }
+        isAway = false
+        defer { saved = nil }
+        guard let saved, saved != landed else { return nil }
+        return saved
+    }
+
+    /// Where focus is on a page: the tracked item, or `isOnPage` alone for
+    /// a focusable that needs no restoring. Neither means focus is elsewhere,
+    /// such as the sidebar or a pushed screen.
+    struct Snapshot: Equatable {
+        let target: Target?
+        let isOnPage: Bool
+
+        init(_ target: Target?, isOnPage: Bool = false) {
+            self.target = target
+            self.isOnPage = isOnPage || target != nil
+        }
+    }
+
+    /// One focus move on a page that tracks itself with a `Snapshot`.
+    ///
+    /// - Returns: where focus must go instead of `new`, or nil.
+    mutating func move(from old: Snapshot, to new: Snapshot) -> Target? {
+        if !new.isOnPage {
+            leave(from: old.target)
+        } else if !old.isOnPage {
+            return reenter(landedOn: new.target)
+        }
+        return nil
+    }
+}

@@ -8,6 +8,12 @@ struct SearchView: View {
     @Environment(AppSession.self) private var session
     @State private var viewModel = SearchViewModel()
 
+    /// Which result card or seed pill has focus, and the last one that did,
+    /// so a return from the tvOS sidebar can put it back (#340).
+    @FocusState private var focusedItem: ShelfFocusID?
+    @State private var lastFocusedItem: ShelfFocusID?
+    @State private var sidebarReturn = SidebarFocusReturn<ShelfFocusID>()
+
     #if os(visionOS)
         /// Whether the system search presentation is up. Bound so a push can
         /// take it down (#258): on visionOS the suggestion dropdown is a menu
@@ -60,6 +66,15 @@ struct SearchView: View {
             .task(id: session.isConnected) {
                 viewModel.attach(client: session.client)
             }
+        #if os(tvOS)
+            .onChange(of: focusedItem) { _, item in
+                // Only a positive focus: it goes nil on the way to the
+                // sidebar, which is exactly when the last one is needed.
+                if let item {
+                    lastFocusedItem = item
+                }
+            }
+        #endif
             // Outside `.searchable`: applied to `content` it stopped at the
             // results, leaving the headroom RootView opens above the field as
             // bare system chrome rather than themed background (#148).
@@ -115,6 +130,21 @@ struct SearchView: View {
             stateContent
         }
         .scrollClipDisabled()
+        #if os(tvOS)
+            .background {
+                SearchFocusObserver { from, to in
+                    // Back from the sidebar (#340), the engine lands on the
+                    // keyboard. Put focus on the result it left instead.
+                    if to == .outside {
+                        sidebarReturn.leave(from: from == .results ? lastFocusedItem : nil)
+                    } else if from == .outside,
+                              let saved = sidebarReturn.reenter(landedOn: to == .results ? focusedItem : nil)
+                    {
+                        focusedItem = saved
+                    }
+                }
+            }
+        #endif
     }
 
     @ViewBuilder
@@ -216,6 +246,7 @@ struct SearchView: View {
                     // one changes, so the style presents its own focus and
                     // sees every press through.
                     .glassButtonStyle(tint: theme.focusFill)
+                    .focused($focusedItem, equals: ShelfFocusID(row: "seed", item: item.id))
                 }
             }
             .padding(.horizontal, SpacingTokens.screenPadding)
@@ -272,15 +303,15 @@ struct SearchView: View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             SearchShelfSection(
                 title: "Movies", icon: "film.fill",
-                items: viewModel.movies, style: .poster,
+                items: viewModel.movies, style: .poster, focusBinding: $focusedItem,
             )
             SearchShelfSection(
                 title: "TV Series", icon: "tv.fill",
-                items: viewModel.series, style: .poster,
+                items: viewModel.series, style: .poster, focusBinding: $focusedItem,
             )
             SearchShelfSection(
                 title: "Episodes", icon: "play.tv",
-                items: viewModel.episodes, style: .landscape,
+                items: viewModel.episodes, style: .landscape, focusBinding: $focusedItem,
             )
         }
         .padding(.vertical, SpacingTokens.lg)
