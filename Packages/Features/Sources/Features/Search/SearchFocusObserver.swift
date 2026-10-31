@@ -40,27 +40,26 @@
             private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Search")
 
             var onMove: ((Zone, Zone) -> Void)?
-            private var observer: NSObjectProtocol?
 
             override func didMoveToWindow() {
                 super.didMoveToWindow()
-                if let observer {
-                    NotificationCenter.default.removeObserver(observer)
-                    self.observer = nil
-                }
+                let center = NotificationCenter.default
+                center.removeObserver(self, name: UIFocusSystem.didUpdateNotification, object: nil)
                 guard window != nil else { return }
-                observer = NotificationCenter.default.addObserver(
-                    forName: UIFocusSystem.didUpdateNotification,
+                // A selector, not a block: the block form is `@Sendable`, so it
+                // can't read the main-actor focus context. UIKit posts focus
+                // updates on the main thread, and the center doesn't retain `self`.
+                center.addObserver(
+                    self,
+                    selector: #selector(focusDidUpdate(_:)),
+                    name: UIFocusSystem.didUpdateNotification,
                     object: nil,
-                    queue: .main,
-                ) { [weak self] note in
-                    let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext
-                    let previous = context?.previouslyFocusedItem
-                    let next = context?.nextFocusedItem
-                    MainActor.assumeIsolated {
-                        self?.report(from: previous, to: next)
-                    }
-                }
+                )
+            }
+
+            @objc private func focusDidUpdate(_ note: Notification) {
+                let context = note.userInfo?[UIFocusSystem.focusUpdateContextUserInfoKey] as? UIFocusUpdateContext
+                report(from: context?.previouslyFocusedItem, to: context?.nextFocusedItem)
             }
 
             private func report(from previous: UIFocusItem?, to next: UIFocusItem?) {
