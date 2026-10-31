@@ -13,7 +13,7 @@ in [FIGMA_COMPONENTS.md](FIGMA_COMPONENTS.md).
 | `Theme` | Standard, Horror, Action, Video Store, Sci-Fi | 17 `color/<role>` + 2 `color/artwork-scrim*`, 39 `type/…` (family/size/weight/tracking per role + emphasis weights), `motion/transition-duration`, `motion/easing`, 3 `geometry/…`, 2 design-only `focus/…` (see deviations) | `Theming/Themes/*.swift`, `Theming/{Theme,FontScheme}.swift` |
 | `Platform` | tvOS, visionOS | 16 `spacing/…` + `spacing/platform-scale`, 9 `type/base-size/…`, 9 `type/base-weight/…`, 4 `type/tracking/…`, 3 `type/line-height/…`, `type/platform-scale` | `Tokens/SpacingTokens.swift`, `Tokens/TypographyTokens.swift` |
 | `Motion` | Value | 4 `duration/…`, 6 `easing/…`, `focus-scale`, `pressed-scale`, `caption-idle-opacity` | `Tokens/MotionTokens.swift` |
-| `System` | Mode 1 | 7 `tvOS/glass/…` (frost, light angle and strength, refraction, depth, dispersion, splay) — tuned by eye against Apple's UI kits | **Design-only.** tvOS draws the glass; these drive the Materials page. Only `frost` is bound. |
+| `System` | Mode 1 | 7 `tvOS/glass/…` (frost, light angle and strength, refraction, depth, dispersion, splay) — tuned by eye against Apple's UI kits | **Design-only.** tvOS draws the glass; these drive the Materials page. Bound to the glass effect in the app; the plugin API only sees the `frost` binding. |
 
 Switching a frame's `Theme` mode flips every bound color/type/motion value to that theme.
 Every variable carries iOS code syntax (`theme.accent`, `SpacingTokens.md`,
