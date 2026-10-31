@@ -18,8 +18,9 @@ bind to are documented in [FIGMA_TOKENS.md](FIGMA_TOKENS.md).
 | `tvOS/CircleActionButton (SF Symbol)` (⮑ Buttons; State Resting\|Focused × Tint Primary\|Accent, `title`, `symbol` text) | `Components/CircleActionButton.swift` — Tint=Accent is `tint` + `focusedTint` both `theme.accent`; glyph doesn't grow with focus; no disabled variant (unverified on device); visionOS not modelled |
 | `tvOS/CircleActionButton` (⮑ Buttons; same axes, `icon` slot) | Earlier vector-icon version of the same view, kept for comparison |
 
-Each component's Figma description carries its Swift file, init signature, prop↔parameter
-mapping, known deviations from code, and GitHub URL. It is the authoritative mapping until Code
+Each component's Figma description is a short Markdown summary: Swift view, prop↔parameter
+mapping, and a GitHub link. Longer material — full mappings, geometry, deviations from code —
+goes in a spec beside the component. Together they are the authoritative mapping until Code
 Connect can show Swift snippets (see below).
 
 ## Building conventions
@@ -52,8 +53,10 @@ Connect can show Swift snippets (see below).
 
 ## Liquid Glass calibration
 
-Figma's glass effect is tuned by measurement, not by eye. Resting glass is compared against a
-`#Preview` render; focused glass against a tvOS simulator capture (previews never show focus).
+The current recipe and calibrated values live in the *Glass and Platters* spec (Foundations ›
+⮑ Glass and Platters); this section is the method for re-measuring them. Resting glass is
+compared against a `#Preview` render, focused glass against a tvOS simulator capture (previews
+never show focus).
 
 1. Export a backdrop from the file (an `ArtworkImage` example) with `get_screenshot`.
 2. Draw the real component over it in a scratch `#Preview`
@@ -63,17 +66,6 @@ Figma's glass effect is tuned by measurement, not by eye. Resting glass is compa
 4. Sample pixels **raw** (`NSBitmapImageRep.getPixel`). `get_screenshot` URL PNGs carry no
    colour profile while preview and simulator PNGs are tagged sRGB; converting them reads
    different values for the same colour.
-
-Current values on `tvOS/CircleActionButton` (calibrated 2026-10-30, preview and simulator,
-not device):
-
-| State | Figma treatment | Match |
-|---|---|---|
-| Resting | Glass: frost 3, refraction 1.0, depth 38, light 0.2 at −45°, dispersion 0.3; 8% white fill | Flat ground: #232426 vs code #252528; over artwork the edge lens matches |
-| Focused, themed | `color/focusFill` + 5% white lift, same glass; 1.05× | Horror: #63112E vs code #681131 |
-| Focused, Standard | White `systemPlatter` at 82%; 82.7pt (`focus/platter-padding`) | Lightness matches; real system glass also tints toward the backdrop, which isn't modelled |
-
-Paint opacity is lost when a fill is bound to a variable, so partial-alpha white is a raw paint.
 
 ## Code Connect
 
@@ -87,10 +79,13 @@ Paint opacity is lost when a fill is bound to a variable, so partial-alpha white
    mapped yet; map it in the app.
 3. **Reading** mappings over MCP (`get_code_connect_map`) works.
 
-## Dev Mode annotations
+## Descriptions, specs and annotations
 
-Annotations are the second mapping channel, and unlike descriptions they attach to any node.
-`node.annotations` reads and writes them over MCP; `labelMarkdown` renders bold and code ticks
-in Dev Mode. Use them for per-node notes a description can't hold — which variable a fill
-resolves through, why a frame carries an explicit `Theme` mode, where a calibrated value came
-from.
+| Channel | Holds | MCP access |
+|---|---|---|
+| Description | Short summary per component | Write `descriptionMarkdown`; Figma derives the plain `description`. Writing `description` directly double-escapes apostrophes (`&amp;#39;`). |
+| Spec | Long-form Markdown: mappings, deviations, foundations such as glass | `figma.spec.createOnCanvasAsync({ title, content })` → `{ specNodeId }`; `getContent({ specNodeId })` returns `markdown` (paged); `setContent({ specNodeId, content })` replaces it |
+| Annotation | A note pinned to one node that nothing else can hold | `node.annotations`, with `labelMarkdown` |
+
+Specs render only in the app; MCP screenshots show a placeholder. In descriptions, bold each
+code span on its own: Figma stores spaces inside a bold run of several code spans as `&#32;`.
