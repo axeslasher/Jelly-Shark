@@ -33,8 +33,8 @@ with the exact code formula in the variable description (Figma variables cannot 
 - **Primitive values are gamut-clipped sRGB.** `BaseColors` is authored in OKLCH and renders
   extended-sRGB on device; high-chroma shades are more saturated than the Figma swatch.
 - **Alpha values alias their primitive** through `COMPOSE_COLOR` expressions, mirroring
-  code's `BaseColors.x.opacity(n)`. 23 cells use it: `focusRing` (all modes), `focusFill`
-  (Horror/Action/Video Store), Horror + Video Store `secondary` and `tertiary`, Horror
+  code's `BaseColors.x.opacity(n)`. 24 cells use it: `focusRing` (all modes), `focusFill`
+  (Standard/Horror/Action/Video Store), Horror + Video Store `secondary` and `tertiary`, Horror
   `onFocusFillSecondary`, and the scrim pair. The scrim aliases `color/background` *inside*
   `Theme` rather than a primitive, matching code's `theme.background.opacity(0.55)`.
   Gradient stops still take their *alpha from the variable*, so `color/artwork-scrim` /
@@ -42,9 +42,9 @@ with the exact code formula in the variable description (Figma variables cannot 
 - **The `COMPOSE_COLOR` alpha argument is a percentage.** `COMPOSE_COLOR(alias, 80)` is 80%
   opacity; passing `0.8` silently resolves to 0.8% — a near-invisible fill, no error raised.
   Same percent convention as `caption-idle-opacity`.
-- **Standard `focusFill` is the one remaining raw RGBA**, at alpha 0; in code it is `nil`
-  (untinted system Liquid Glass platter). That is the absence of a color, not a primitive at
-  0%, so it must not be converted to an alias.
+- **Standard `focusFill` is ahead of code.** Figma has `base/white` at 80%; code is still
+  `nil` (the untinted system Liquid Glass platter) until the matching change lands. Until then
+  `focus/system-platter` and Standard's `focus/platter-padding` (18.25) still describe code.
 - **Multiplied type sizes are tvOS points**; aliased size modes resolve through `Platform`
   and are platform-aware (theme × platform would need a 10-mode cross product).
 - **Durations are FLOAT seconds and easings are STRINGs** — TIMING/EASING variable types are
