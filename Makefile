@@ -36,9 +36,17 @@ SCHEME   = Jelly Shark
 # The same commit had built fine on the PR branch minutes earlier. A build target
 # pinned to a device name fails on runner-image drift for no benefit.
 #
-# SIM_DEST names the 4K model because Xcode 27 ships no plain "Apple TV"
-# simulator, locally or on the xcode-27 runner image.
-SIM_DEST    = platform=tvOS Simulator,name=Apple TV 4K (3rd generation)
+# SIM_DEST is looked up, not named, for the same reason: on 2026-11-10 the
+# xcode-27 runner moved to Xcode 27.1, and "Apple TV 4K (3rd generation)" stopped
+# running there while it was still the only model installed locally. The lookup
+# takes the newest installed tvOS runtime's Apple TV 4K simulator (skipping the
+# 1080p variant). Override it with `make test-sim SIM_DEST=...`.
+SIM_ID ?= $(shell xcrun simctl list devices available | awk ' \
+	/^-- tvOS / { tv = 1; next } /^--/ { tv = 0 } \
+	tv && /Apple TV 4K/ && !/1080p/ && match($$0, /\([0-9A-F-]{36}\)/) \
+		{ id = substr($$0, RSTART + 1, RLENGTH - 2) } \
+	END { print id }')
+SIM_DEST   ?= platform=tvOS Simulator,id=$(SIM_ID)
 BUILD_DEST  = generic/platform=tvOS Simulator
 VISION_DEST = generic/platform=visionOS Simulator
 
@@ -55,13 +63,20 @@ SWIFTFORMAT_VERSION = 0.62.1
 SIM_TEST = scripts/xcodebuild-test.sh -collect-test-diagnostics never
 
 .PHONY: test test-sim test-host test-only build build-visionos clean \
-	format lint check-swiftformat install-hooks fonts
+	format lint check-swiftformat install-hooks fonts check-sim-dest
 
 # Full suite across both venues.
 test: test-sim test-host
 
+# Fail with a readable message, not xcodebuild's device list, when the lookup
+# above finds no Apple TV 4K simulator.
+check-sim-dest:
+	@case "$(SIM_DEST)" in *id=) \
+		echo "No available Apple TV 4K tvOS simulator. Create one in Xcode, or pass SIM_DEST=..." >&2; exit 1;; \
+	esac
+
 # App + DesignSystemTests + FeaturesTests on the tvOS simulator.
-test-sim:
+test-sim: check-sim-dest
 	$(SIM_TEST) -scheme "$(SCHEME)" -destination "$(SIM_DEST)"
 
 # JellyfinKit on the Mac host.
@@ -70,7 +85,7 @@ test-host:
 
 # One simulator suite, e.g. `make test-only ONLY=DesignSystemTests`. Targets are
 # quoted because the UI suite's name contains a space ("Jelly SharkUITests").
-test-only:
+test-only: check-sim-dest
 	@[ -n "$(ONLY)" ] || \
 		{ echo "usage: make test-only ONLY=<test target>   (DesignSystemTests | FeaturesTests | 'Jelly SharkUITests')"; exit 1; }
 	$(SIM_TEST) -scheme "$(SCHEME)" -destination "$(SIM_DEST)" -only-testing:"$(ONLY)"
