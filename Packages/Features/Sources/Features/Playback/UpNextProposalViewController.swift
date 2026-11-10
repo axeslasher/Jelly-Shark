@@ -112,7 +112,7 @@
         private func rebuildCard(from proposal: AVContentProposal?) {
             let card = UpNextProposalCard(
                 eyebrow: (proposal as? UpNextContentProposal)?.episodeCode,
-                title: proposal?.title ?? String(localized: "Up Next"),
+                title: proposal?.title ?? String(localized: "player.upNext.title", bundle: #bundle, comment: "Heading for the card proposing the next episode when one finishes."),
                 previewImage: proposal?.previewImage.map(Image.init(uiImage:)),
                 onPlayNext: { [weak self] in
                     self?.decisionMade = true
@@ -221,7 +221,7 @@
                     Button(action: onPlayNext) {
                         HStack(spacing: SpacingTokens.sm) {
                             Image(systemName: "play.fill")
-                            Text("Play Next")
+                            Text("player.upNext.playNext", bundle: #bundle, comment: "Button that accepts the proposed next episode.")
                         }
                         .jsStyle(.body).bold()
                     }

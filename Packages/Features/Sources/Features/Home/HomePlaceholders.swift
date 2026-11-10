@@ -150,7 +150,7 @@ struct HomeEmptyState: View {
                 .font(.system(size: 64))
                 .foregroundStyle(theme.secondary)
 
-            Text(isConnected ? "Nothing here yet" : "Welcome to Jelly Shark")
+            Text(isConnected ? LocalizedStringResource("home.empty.title", bundle: #bundle, comment: "Home heading when signed in but the server has nothing to show.") : LocalizedStringResource("home.welcome.title", bundle: #bundle, comment: "Home heading before the user has connected a server. Jelly Shark is the app name."))
                 .jsStyle(.display)
                 .foregroundStyle(theme.primary)
 
@@ -165,7 +165,7 @@ struct HomeEmptyState: View {
                 } label: {
                     HStack(spacing: SpacingTokens.sm) {
                         Image(systemName: "gear")
-                        Text(isConnected ? "Open Settings" : "Connect in Settings")
+                        Text(isConnected ? LocalizedStringResource("home.empty.openSettings", bundle: #bundle, comment: "Button on an empty Home screen that opens Settings.") : LocalizedStringResource("home.welcome.connect", bundle: #bundle, comment: "Button on the first-run Home screen that opens Settings to connect a server."))
                     }
                     .jsStyle(.headline)
                 }

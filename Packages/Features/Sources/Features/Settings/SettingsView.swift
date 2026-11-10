@@ -118,7 +118,7 @@ public struct SettingsView: View {
         // needs the system list background hidden first.
         #if os(visionOS)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Settings")
+        .navigationTitle(LocalizedStringResource("settings.navigationTitle", bundle: #bundle, comment: "Title of the settings screen."))
         #endif
         .background(theme.background)
         .navigationDestination(for: Destination.self) { destination in
@@ -191,7 +191,7 @@ public struct SettingsView: View {
         }
         #if os(visionOS)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Theme")
+        .navigationTitle(LocalizedStringResource("settings.theme.navigationTitle", bundle: #bundle, comment: "Title of the screen for choosing a visual theme."))
         #endif
         .background(theme.background)
     }
@@ -219,7 +219,7 @@ public struct SettingsView: View {
         }
         #if os(visionOS)
         .scrollContentBackground(.hidden)
-        .navigationTitle("Streaming Quality")
+        .navigationTitle(LocalizedStringResource("settings.streamingQuality.navigationTitle", bundle: #bundle, comment: "Title of the screen for choosing a streaming bitrate limit."))
         #endif
         .background(theme.background)
     }

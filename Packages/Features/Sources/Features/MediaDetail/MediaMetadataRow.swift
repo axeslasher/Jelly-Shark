@@ -62,7 +62,7 @@ struct MediaMetadataRow: View {
                 }
                 if let critic = criticRating {
                     Label {
-                        Text("\(Int(critic.rounded()))%")
+                        Text(critic / 100, format: .percent.precision(.fractionLength(0)).rounded(rule: .toNearestOrAwayFromZero))
                     } icon: {
                         Image(systemName: "rosette")
                     }

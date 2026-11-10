@@ -50,7 +50,7 @@ struct OverviewOverlay: View {
                         #endif
                     }
 
-                    Button("Close") {
+                    Button(LocalizedStringResource("common.close", bundle: #bundle, comment: "Button that dismisses the current overlay or screen.")) {
                         dismiss()
                     }
                     .glassButtonStyle(tint: theme.focusFill)

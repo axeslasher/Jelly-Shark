@@ -124,7 +124,7 @@ struct LibraryItemsView: View {
                     .font(.system(size: 48))
                     .foregroundStyle(theme.secondary)
 
-                Text("No items match these filters")
+                Text("library.empty.noMatches", bundle: #bundle, comment: "Shown in a library when the active filters exclude everything.")
                     .jsStyle(.body)
                     .foregroundStyle(theme.secondary)
             }

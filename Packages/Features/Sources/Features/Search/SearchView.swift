@@ -96,7 +96,7 @@ struct SearchView: View {
                 .searchable(
                     text: $viewModel.query,
                     isPresented: $isSearchPresented,
-                    prompt: "Search movies, shows…",
+                    prompt: Text("search.prompt", bundle: #bundle, comment: "Placeholder in the search field."),
                 )
                 .onDisappear {
                     isLeaving = true
@@ -105,7 +105,7 @@ struct SearchView: View {
                 .onAppear { isLeaving = false }
         #else
             content
-                .searchable(text: $viewModel.query, prompt: "Search movies, shows…")
+                .searchable(text: $viewModel.query, prompt: Text("search.prompt", bundle: #bundle, comment: "Placeholder in the search field."))
         #endif
     }
 
@@ -210,11 +210,11 @@ struct SearchView: View {
                 .font(.system(size: 64))
                 .foregroundStyle(theme.secondary)
 
-            Text("Search Your Library")
+            Text("search.empty.title", bundle: #bundle, comment: "Heading shown before the user has typed a search.")
                 .jsStyle(.headline)
                 .foregroundStyle(theme.primary)
 
-            Text("Find movies, shows, and more")
+            Text("search.empty.subtitle", bundle: #bundle, comment: "Subheading shown before the user has typed a search.")
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
         }
