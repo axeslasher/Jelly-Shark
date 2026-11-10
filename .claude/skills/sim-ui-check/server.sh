@@ -16,6 +16,8 @@ port=${3:-8096}
 [[ $cmd == down ]] && port=${2:-8096}
 name="js-ui-check-$port"
 media="$HOME/Library/Caches/jelly-shark-ui-check/media"
+# Bump when the generated media changes, so an older cache regenerates.
+fixture_version=2
 base="http://localhost:$port"
 auth='MediaBrowser Client="ui-check", Device="ui-check", DeviceId="ui-check", Version="1"'
 
@@ -36,7 +38,7 @@ art() { # out, size, colour
 }
 
 seed_media() {
-    [[ -f "$media/.complete" ]] && return
+    [[ $(cat "$media/.complete" 2>/dev/null) == "$fixture_version" ]] && return
     command -v ffmpeg >/dev/null || fail "ffmpeg is required (brew install ffmpeg)"
     rm -rf "$media"
     local i title year colour
@@ -57,12 +59,14 @@ EOF
     art "$show/poster.jpg" 600x900 indigo
     art "$show/backdrop.jpg" 1920x1080 indigo
     echo '<tvshow><title>Night Shift Radio</title><year>2022</year><plot>A UI-check fixture series.</plot><genre>Comedy</genre></tvshow>' >"$show/tvshow.nfo"
+    # 45s, not shorter: tvOS shows its Up Next card 30s before an episode
+    # ends, and AVKit skips the card when the episode is shorter than that.
     for i in 1 2 3; do
-        clip "$show/Season 01/Night Shift Radio S01E0$i.mp4" 15
+        clip "$show/Season 01/Night Shift Radio S01E0$i.mp4" 45
         echo "<episodedetails><title>Episode $i</title><season>1</season><episode>$i</episode><plot>Fixture episode $i.</plot></episodedetails>" \
             >"$show/Season 01/Night Shift Radio S01E0$i.nfo"
     done
-    touch "$media/.complete"
+    echo "$fixture_version" >"$media/.complete"
 }
 
 api() { # method, path, [json]
