@@ -14,13 +14,33 @@ and focus) or visionos.md (taps, system sheets, screenshots).
 
 ## Which tool
 
-| Platform | Use | Not this, and why |
+| Platform | Repeatable check, or anything needing the test server | Quick one-off look |
 |---|---|---|
-| tvOS | This skill, `UICheckTemplateTV.swift` | Xcode MCP device-interaction tools: a session starts, but taps return "Unsupported command", `b select` "Unsupported button", and arrow and Return keys do nothing |
-| visionOS | This skill, `UICheckTemplateVision.swift` | Xcode MCP device-interaction tools: they refuse to start a session ("Supported: iOS / watchOS / tvOS [Simulator] 27.0+") |
+| tvOS | This skill, `UICheckTemplateTV.swift` | Xcode plugin device-interaction tools (below) |
+| visionOS | This skill, `UICheckTemplateVision.swift` | None: the device-interaction tools never list the Vision Pro simulator as eligible |
 
-Checked with Xcode 27 and the 27.0 simulators. After an Xcode update, the
-`Supported:` line in that error says whether visionOS has been added.
+Use this skill when the result should fail fast, run again unedited, or go to
+the user as a captioned set of screenshots. Use the device-interaction tools to
+poke at one screen interactively on tvOS.
+
+### Device-interaction tools on tvOS
+
+Checked 2026-11-10 with Xcode 27, the Xcode plugin 1.0.0 and the tvOS 27.0
+simulator: focus moved, Select opened screens, and text reached a field.
+
+1. **Start a session** with `DeviceInteractionStartWorkspaceSession`, passing the
+   simulator's UDID. Names like "Apple TV 4K (3rd generation)" match several
+   simulators and get refused. Then call `DeviceInteractionInstallAndRun`.
+2. **Drive it with `r` commands:** `r up/down/left/right/select/menu`. Taps and
+   `b select` are rejected on tvOS.
+3. **Send one press per call.** `r down r down` from the sidebar collapsed it and
+   left nothing focused; single presses with a capture between them worked.
+4. **Read focus from the hierarchy:** the focused element is marked `Focused`,
+   and sidebar items take focus as cells. Text typed with
+   `sender keyboard kbd <text>` shows only in the screenshot, not the hierarchy.
+5. **End the session** with `DeviceInteractionEndSession` when done.
+
+On visionOS, recheck the eligible-device list after an Xcode or plugin update.
 
 ## What it can and can't verify
 

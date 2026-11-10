@@ -127,8 +127,9 @@ and ask for a device check.
 device time on a small tvOS or visionOS change — a flow completing, a label or
 error showing, where focus lands — use the `sim-ui-check` skill: a throwaway
 XCUITest (`XCUIRemote` on tvOS, taps on visionOS), run by a fail-fast script, with
-screenshots handed to the user. The Xcode MCP device-interaction tools can't drive
-either platform; don't use them for this.
+screenshots handed to the user. On tvOS, the Xcode plugin's device-interaction tools
+also work for a quick one-off look (Siri Remote `r` commands); the skill says when
+to pick which. They refuse visionOS.
 
 Any change to scrolling, opacity/fades, snapping, layout offsets, `.disabled`,
 or navigation state must state which elements remain focusable and where default
