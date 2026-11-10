@@ -103,6 +103,23 @@ if kill -0 $boot 2>/dev/null; then
     [[ -n $booterr ]] && say "simctl boot said: $booterr"
     die "simulator $udid did not finish booting in 120s; if it shows Booted it is wedged: xcrun simctl shutdown $udid, then run again"
 fi
+# A simulator that was already Booted passes the wait above even when wedged,
+# and xcodebuild then sits after the build until the build limit. A healthy
+# simulator launches a system app in well under a second. Only a launch that
+# never returns fails here: one that errors (a missing app) is not a wedge.
+case $platform in
+tvos) probe=com.apple.TVSettings ;;
+visionos) probe=com.apple.Preferences ;;
+esac
+(xcrun simctl launch "$udid" "$probe" >/dev/null 2>&1) &
+launch=$!
+for _ in $(seq 1 80); do kill -0 $launch 2>/dev/null || break; sleep 0.25; done
+if kill -0 $launch 2>/dev/null; then
+    kill $launch
+    wait $launch 2>/dev/null
+    die "simulator $udid shows Booted but launched nothing in 20s: it is wedged. xcrun simctl shutdown $udid, then run again"
+fi
+xcrun simctl terminate "$udid" "$probe" >/dev/null 2>&1
 
 # Server preflight, before the build: a dead server otherwise surfaces only
 # as a sign-in failure, a minute or more into the run. A paused (frozen)
