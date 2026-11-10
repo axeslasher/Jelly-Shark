@@ -7,8 +7,12 @@ public struct VideoStoreTheme: Theme, Sendable {
     // MARK: - Identity
 
     public let id = "videoStore"
-    public let name = "Video Store"
-    public let description = "90s nostalgia, Friday night vibes. Bouncy, playful motion in deep blue and gold."
+    public let name = ThemeIdentifier.videoStore.displayName
+    public let description = LocalizedStringResource(
+        "theme.videoStore.description",
+        bundle: #bundle,
+        comment: "One-line summary of a visual theme's mood.",
+    )
 
     // MARK: - Colors
 

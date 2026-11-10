@@ -6,8 +6,12 @@ public struct StandardTheme: Theme, Sendable {
     // MARK: - Identity
 
     public let id = "standard"
-    public let name = "Standard"
-    public let description = "Elegant, timeless baseline. Professional and unobtrusive, letting content shine."
+    public let name = ThemeIdentifier.standard.displayName
+    public let description = LocalizedStringResource(
+        "theme.standard.description",
+        bundle: #bundle,
+        comment: "One-line summary of a visual theme's mood.",
+    )
 
     // MARK: - Colors
 

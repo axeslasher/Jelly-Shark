@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "DesignSystem",
+    defaultLocalization: "en",
     platforms: [
         .tvOS(.v26),
         // Spelled as a string because `SupportedPlatform.VisionOSVersion` only
@@ -26,6 +27,7 @@ let package = Package(
                 // The build works whether or not the fonts are present; styles fall
                 // back to the system font when they're missing.
                 .process("Resources/Fonts"),
+                .process("Localizable.xcstrings"),
             ],
         ),
         .testTarget(

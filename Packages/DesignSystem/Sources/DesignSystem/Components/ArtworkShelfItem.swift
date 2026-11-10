@@ -236,7 +236,7 @@ public struct ArtworkShelfItem<Value: Hashable>: View {
             // lifts with the card.
             .overlay(alignment: .topTrailing) {
                 if let countBadge {
-                    Text("\(countBadge)")
+                    Text(countBadge, format: .number)
                         .jsStyle(.caption, .strong)
                         .foregroundStyle(theme.primary)
                         .padding(SpacingTokens.xxs)

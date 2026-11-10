@@ -1,0 +1,227 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "%@ %lldpt": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "%@ body emphasis": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "2h 14m": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "A signal in the static — %@": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Idle captions dim to this": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Inert glass": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Placeholder lines keep layout but stay invisible": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Plain with themed platter": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Static Bloom": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "System glass": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "The lighthouse keeps its own weather": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Themed glass": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Tight spacing": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "placeholder.comingSoon": {
+      "comment": "Caption under the name of a feature that isn't built yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coming Soon"
+          }
+        }
+      }
+    },
+    "shelf.failed.retry": {
+      "comment": "Button that reloads a row of posters that failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
+          }
+        }
+      }
+    },
+    "skeleton.loading": {
+      "comment": "VoiceOver label for a placeholder shown while content loads.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Loading"
+          }
+        }
+      }
+    },
+    "theme.action.description": {
+      "comment": "One-line summary of a visual theme's mood.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kinetic energy, technological precision. Fast, explosive motion with electric cyan highlights."
+          }
+        }
+      }
+    },
+    "theme.action.name": {
+      "comment": "Name of a visual theme, shown in Settings. Themes are named after film genres.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Action"
+          }
+        }
+      }
+    },
+    "theme.horror.description": {
+      "comment": "One-line summary of a visual theme's mood.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atmospheric dread, visceral intensity. Slow, tension-building motion over blood-red accents."
+          }
+        }
+      }
+    },
+    "theme.horror.name": {
+      "comment": "Name of a visual theme, shown in Settings. Themes are named after film genres.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Horror"
+          }
+        }
+      }
+    },
+    "theme.sciFi.description": {
+      "comment": "One-line summary of a visual theme's mood.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep-space greens, engineered precision. Slow, weightless motion with a phosphor glow."
+          }
+        }
+      }
+    },
+    "theme.sciFi.name": {
+      "comment": "Name of a visual theme, shown in Settings. Themes are named after film genres.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sci-Fi"
+          }
+        }
+      }
+    },
+    "theme.standard.description": {
+      "comment": "One-line summary of a visual theme's mood.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegant, timeless baseline. Professional and unobtrusive, letting content shine."
+          }
+        }
+      }
+    },
+    "theme.standard.name": {
+      "comment": "Name of a visual theme, shown in Settings. Themes are named after film genres.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Standard"
+          }
+        }
+      }
+    },
+    "theme.videoStore.description": {
+      "comment": "One-line summary of a visual theme's mood.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90s nostalgia, Friday night vibes. Bouncy, playful motion in deep blue and gold."
+          }
+        }
+      }
+    },
+    "theme.videoStore.name": {
+      "comment": "Name of a visual theme, shown in Settings. Themes are named after film genres.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Video Store"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

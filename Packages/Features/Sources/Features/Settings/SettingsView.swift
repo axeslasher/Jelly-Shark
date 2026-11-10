@@ -50,7 +50,7 @@ public struct SettingsView: View {
                     settingsRow(
                         icon: "paintpalette.fill",
                         title: "Theme",
-                        subtitle: themeManager.currentTheme.name,
+                        subtitle: String(localized: themeManager.currentTheme.name),
                     )
                 }
             } header: {
@@ -181,7 +181,7 @@ public struct SettingsView: View {
                     themeManager.switchTheme(to: themeId)
                 } label: {
                     SelectionRowLabel(
-                        name: themeId.displayName,
+                        name: String(localized: themeId.displayName),
                         description: themeDescription(for: themeId),
                         isSelected: themeManager.currentThemeId == themeId,
                     )

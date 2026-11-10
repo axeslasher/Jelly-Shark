@@ -7,8 +7,12 @@ public struct ActionTheme: Theme, Sendable {
     // MARK: - Identity
 
     public let id = "action"
-    public let name = "Action"
-    public let description = "Kinetic energy, technological precision. Fast, explosive motion with electric cyan highlights."
+    public let name = ThemeIdentifier.action.displayName
+    public let description = LocalizedStringResource(
+        "theme.action.description",
+        bundle: #bundle,
+        comment: "One-line summary of a visual theme's mood.",
+    )
 
     // MARK: - Colors
 

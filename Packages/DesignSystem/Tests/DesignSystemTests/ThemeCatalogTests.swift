@@ -110,17 +110,30 @@ struct ThemeCatalogTests {
 
         @Test("Theme names match identifier display names")
         func namesMatchDisplayNames() {
-            #expect(StandardTheme().name == ThemeIdentifier.standard.displayName)
-            #expect(HorrorTheme().name == ThemeIdentifier.horror.displayName)
-            #expect(ActionTheme().name == ThemeIdentifier.action.displayName)
-            #expect(VideoStoreTheme().name == ThemeIdentifier.videoStore.displayName)
-            #expect(SciFiTheme().name == ThemeIdentifier.sciFi.displayName)
+            #expect(StandardTheme().name.key == ThemeIdentifier.standard.displayName.key)
+            #expect(HorrorTheme().name.key == ThemeIdentifier.horror.displayName.key)
+            #expect(ActionTheme().name.key == ThemeIdentifier.action.displayName.key)
+            #expect(VideoStoreTheme().name.key == ThemeIdentifier.videoStore.displayName.key)
+            #expect(SciFiTheme().name.key == ThemeIdentifier.sciFi.displayName.key)
         }
 
         @Test("Every theme has a description")
         func descriptionsPresent() {
             for theme in ThemeCatalogTests.allThemes {
-                #expect(!theme.description.isEmpty, "\(theme.id)")
+                #expect(!String(localized: theme.description).isEmpty, "\(theme.id)")
+            }
+        }
+
+        /// A resource looked up in the wrong bundle resolves to its own key,
+        /// so this fails if the package's string catalog isn't the one read.
+        @Test("Theme names and descriptions resolve from the package catalog")
+        func identityStringsResolve() {
+            let resources = ThemeCatalogTests.allThemes.flatMap { [$0.name, $0.description] }
+                + ThemeIdentifier.allCases.map(\.displayName)
+            for resource in resources {
+                let resolved = String(localized: resource)
+                #expect(!resolved.isEmpty, "\(resource.key)")
+                #expect(resolved != resource.key, "\(resource.key) resolved to its key")
             }
         }
 

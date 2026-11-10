@@ -166,7 +166,7 @@ private struct SkeletonPulseModifier: ViewModifier {
                 value: pulsing,
             )
             .onAppear { pulsing = true }
-            .accessibilityLabel("Loading")
+            .accessibilityLabel(Text("skeleton.loading", bundle: #bundle, comment: "VoiceOver label for a placeholder shown while content loads."))
     }
 }
 
