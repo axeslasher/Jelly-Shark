@@ -51,7 +51,7 @@ public struct FailedShelfNotice: View {
 
                 if let retry {
                     Button(action: retry) {
-                        Label("Retry", systemImage: "arrow.clockwise")
+                        Label(LocalizedStringResource("shelf.failed.retry", bundle: #bundle, comment: "Button that reloads a row of posters that failed to load."), systemImage: "arrow.clockwise")
                             .jsStyle(.title)
                     }
                     .glassButtonStyle(tint: theme.focusFill)

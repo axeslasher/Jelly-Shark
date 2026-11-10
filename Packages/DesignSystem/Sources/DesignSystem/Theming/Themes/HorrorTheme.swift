@@ -7,8 +7,12 @@ public struct HorrorTheme: Theme, Sendable {
     // MARK: - Identity
 
     public let id = "horror"
-    public let name = "Horror"
-    public let description = "Atmospheric dread, visceral intensity. Slow, tension-building motion over blood-red accents."
+    public let name = ThemeIdentifier.horror.displayName
+    public let description = LocalizedStringResource(
+        "theme.horror.description",
+        bundle: #bundle,
+        comment: "One-line summary of a visual theme's mood.",
+    )
 
     // MARK: - Colors
 

@@ -472,7 +472,9 @@ struct HomeHeroSection: View {
                 // An episode hero wears its episode code: the lockup reads as
                 // the show (series logo), so the button says which episode
                 // this slot plays.
-                Text(item.episodeCode ?? (item.hasProgress ? "Resume" : "Play"))
+                item.episodeCode.map { Text($0) } ?? Text(item.hasProgress
+                    ? LocalizedStringResource("home.hero.resume", bundle: #bundle, comment: "Home hero button that continues a partly watched item.")
+                    : LocalizedStringResource("home.hero.play", bundle: #bundle, comment: "Home hero button that starts an item from the beginning."))
             }
             .jsStyle(.headline)
         }

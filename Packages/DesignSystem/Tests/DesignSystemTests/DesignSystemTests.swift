@@ -10,7 +10,7 @@ struct DesignSystemTests {
         func standardThemeIdentity() {
             let theme = StandardTheme()
             #expect(theme.id == "standard")
-            #expect(theme.name == "Standard")
+            #expect(String(localized: theme.name) == "Standard")
         }
 
         @Test("StandardTheme colors are set")
@@ -110,7 +110,7 @@ struct DesignSystemTests {
         @Test("All themes have display names")
         func displayNames() {
             for theme in ThemeIdentifier.allCases {
-                #expect(!theme.displayName.isEmpty)
+                #expect(!String(localized: theme.displayName).isEmpty)
             }
         }
 

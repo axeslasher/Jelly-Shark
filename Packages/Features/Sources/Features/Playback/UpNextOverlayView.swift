@@ -23,7 +23,7 @@ struct UpNextOverlayView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.md) {
-            Text("Up Next")
+            Text("player.upNext.title", bundle: #bundle, comment: "Heading for the card proposing the next episode when one finishes.")
                 .jsStyle(.caption)
                 .foregroundStyle(theme.secondary)
 
@@ -39,12 +39,12 @@ struct UpNextOverlayView: View {
                 } label: {
                     HStack(spacing: SpacingTokens.sm) {
                         Image(systemName: "play.fill")
-                        Text("Play Now (\(secondsRemaining))")
+                        Text("player.upNext.playNow \(secondsRemaining)", bundle: #bundle, comment: "Button that starts the next episode immediately. The variable is the seconds left before it starts on its own.")
                     }
                     .jsStyle(.body)
                 }
 
-                Button("Cancel") {
+                Button(LocalizedStringResource("common.cancel", bundle: #bundle, comment: "Button that dismisses a prompt without choosing anything.")) {
                     countdownTask?.cancel()
                     onCancel()
                 }

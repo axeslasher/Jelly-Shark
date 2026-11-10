@@ -9,10 +9,10 @@ public protocol Theme: Sendable {
     var id: String { get }
 
     /// Display name of the theme
-    var name: String { get }
+    var name: LocalizedStringResource { get }
 
     /// Description of the theme's mood and use case
-    var description: String { get }
+    var description: LocalizedStringResource { get }
 
     // MARK: - Colors
 
@@ -127,13 +127,15 @@ public enum ThemeIdentifier: String, CaseIterable, Sendable, Codable {
     case videoStore
     case sciFi
 
-    public var displayName: String {
+    /// The theme's name. Each theme's `name` reads this, so the two can't
+    /// drift apart.
+    public var displayName: LocalizedStringResource {
         switch self {
-        case .standard: "Standard"
-        case .horror: "Horror"
-        case .action: "Action"
-        case .videoStore: "Video Store"
-        case .sciFi: "Sci-Fi"
+        case .standard: LocalizedStringResource("theme.standard.name", bundle: #bundle, comment: "Name of a visual theme, shown in Settings. Themes are named after film genres.")
+        case .horror: LocalizedStringResource("theme.horror.name", bundle: #bundle, comment: "Name of a visual theme, shown in Settings. Themes are named after film genres.")
+        case .action: LocalizedStringResource("theme.action.name", bundle: #bundle, comment: "Name of a visual theme, shown in Settings. Themes are named after film genres.")
+        case .videoStore: LocalizedStringResource("theme.videoStore.name", bundle: #bundle, comment: "Name of a visual theme, shown in Settings. Themes are named after film genres.")
+        case .sciFi: LocalizedStringResource("theme.sciFi.name", bundle: #bundle, comment: "Name of a visual theme, shown in Settings. Themes are named after film genres.")
         }
     }
 }

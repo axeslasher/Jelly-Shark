@@ -7,8 +7,12 @@ public struct SciFiTheme: Theme, Sendable {
     // MARK: - Identity
 
     public let id = "sciFi"
-    public let name = "Sci-Fi"
-    public let description = "Deep-space greens, engineered precision. Slow, weightless motion with a phosphor glow."
+    public let name = ThemeIdentifier.sciFi.displayName
+    public let description = LocalizedStringResource(
+        "theme.sciFi.description",
+        bundle: #bundle,
+        comment: "One-line summary of a visual theme's mood.",
+    )
 
     // MARK: - Colors
 

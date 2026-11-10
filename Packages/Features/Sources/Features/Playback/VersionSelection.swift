@@ -71,7 +71,7 @@ extension View {
     ) -> some View {
         if isActive {
             contextMenu {
-                Section("Select Version") {
+                Section(LocalizedStringResource("player.selectVersion", bundle: #bundle, comment: "Title of the prompt asking which version of a movie to play, such as 4K or 1080p.")) {
                     ForEach(sources) { source in
                         Button {
                             onSelect(source)
@@ -96,7 +96,7 @@ extension View {
         onPlay: @escaping (PlaybackRequest) -> Void,
     ) -> some View {
         alert(
-            "Select Version",
+            LocalizedStringResource("player.selectVersion", bundle: #bundle, comment: "Title of the prompt asking which version of a movie to play, such as 4K or 1080p."),
             isPresented: Binding(
                 get: { target.wrappedValue != nil },
                 set: {
@@ -112,7 +112,7 @@ extension View {
                     onPlay(PlaybackRequest(item: alertTarget.item, mediaSourceId: source.id))
                 }
             }
-            Button("Cancel", role: .cancel) {}
+            Button(LocalizedStringResource("common.cancel", bundle: #bundle, comment: "Button that dismisses a prompt without choosing anything."), role: .cancel) {}
         }
     }
 }

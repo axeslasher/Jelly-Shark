@@ -180,7 +180,7 @@ struct LibraryFilterBar: View {
     /// rows carry the system selection checkmark.
     private var libraryMenu: some View {
         Menu {
-            Picker("Library", selection: Binding(
+            Picker(LocalizedStringResource("library.filter.library", bundle: #bundle, comment: "Filter menu for choosing which library to browse."), selection: Binding(
                 get: { query.library },
                 set: { selected in
                     var next = query
@@ -188,14 +188,14 @@ struct LibraryFilterBar: View {
                     onChange(next)
                 },
             )) {
-                Text("All Libraries").tag(Library?.none)
+                Text("library.filter.allLibraries", bundle: #bundle, comment: "Library filter option that browses every library at once.").tag(Library?.none)
                 ForEach(libraryOptions) { library in
                     Text(library.name).tag(Library?.some(library))
                 }
             }
             .tint(theme.accent)
         } label: {
-            Text(query.library?.name ?? "Library")
+            query.library.map { Text($0.name) } ?? Text(LocalizedStringResource("library.filter.library", bundle: #bundle, comment: "Filter menu for choosing which library to browse."))
         }
     }
 
@@ -234,7 +234,7 @@ struct LibraryFilterBar: View {
 
     private var watchedMenu: some View {
         Menu {
-            Picker("Status", selection: Binding(
+            Picker(LocalizedStringResource("library.filter.status", bundle: #bundle, comment: "Filter menu for watched or unwatched items."), selection: Binding(
                 get: { query.watched },
                 set: { selected in
                     var next = query
@@ -248,7 +248,7 @@ struct LibraryFilterBar: View {
             }
             .tint(theme.accent)
         } label: {
-            Text(query.watched == .any ? "Status" : query.watched.displayName)
+            query.watched == .any ? Text(LocalizedStringResource("library.filter.status", bundle: #bundle, comment: "Filter menu for watched or unwatched items.")) : Text(query.watched.displayName)
         }
     }
 
@@ -258,7 +258,7 @@ struct LibraryFilterBar: View {
             next.favoritesOnly.toggle()
             onChange(next)
         } label: {
-            Label("Favorites", systemImage: query.favoritesOnly ? "heart.fill" : "heart")
+            Label(LocalizedStringResource("library.filter.favorites", bundle: #bundle, comment: "Filter toggle that shows only favorited items."), systemImage: query.favoritesOnly ? "heart.fill" : "heart")
         }
     }
 
@@ -277,7 +277,7 @@ struct LibraryFilterBar: View {
         Button {
             onChange(query.withFiltersCleared)
         } label: {
-            Label("Clear", systemImage: "x.circle.fill")
+            Label(LocalizedStringResource("library.filter.clear", bundle: #bundle, comment: "Button that removes every active library filter."), systemImage: "x.circle.fill")
         }
     }
 
@@ -288,7 +288,7 @@ struct LibraryFilterBar: View {
         HStack(spacing: SpacingTokens.xs) {
             Text(title)
             if count > 0 {
-                Text("\(count)")
+                Text(count, format: .number)
                     .jsStyle(.caption, .strong)
                     .foregroundStyle(theme.primary)
                     .padding(SpacingTokens.xxs)

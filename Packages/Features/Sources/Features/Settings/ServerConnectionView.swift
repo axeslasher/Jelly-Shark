@@ -21,7 +21,7 @@ public struct ServerConnectionView: View {
                 connectedView
             }
         }
-        .navigationTitle("Server")
+        .navigationTitle(LocalizedStringResource("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
         .onAppear {
             viewModel.attach(session: session)
         }
@@ -39,11 +39,11 @@ public struct ServerConnectionView: View {
                         .font(.system(size: 64))
                         .foregroundStyle(theme.accent)
 
-                    Text("Connect to Jellyfin")
+                    Text("signIn.title", bundle: #bundle, comment: "Heading of the sign-in screen. Jellyfin is a product name.")
                         .jsStyle(.headline)
                         .foregroundStyle(theme.primary)
 
-                    Text("Enter your server details to get started")
+                    Text("signIn.subtitle", bundle: #bundle, comment: "Subheading of the sign-in screen.")
                         .jsStyle(.body)
                         .foregroundStyle(theme.secondary)
                         .multilineTextAlignment(.center)
@@ -54,11 +54,11 @@ public struct ServerConnectionView: View {
                 VStack(spacing: SpacingTokens.lg) {
                     // Server URL
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("Server URL")
+                        Text("signIn.serverURL.label", bundle: #bundle, comment: "Label above the field for the server's web address.")
                             .jsStyle(.caption)
                             .foregroundStyle(theme.secondary)
 
-                        TextField("https://demo.jellyfin.org/stable", text: $viewModel.serverURL)
+                        TextField(LocalizedStringResource("signIn.serverURL.placeholder", bundle: #bundle, comment: "Example address shown in the empty server field. Keep it a valid web address."), text: $viewModel.serverURL)
                         #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
                         #endif
@@ -70,11 +70,11 @@ public struct ServerConnectionView: View {
 
                     // Username
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("Username")
+                        Text("signIn.username.label", bundle: #bundle, comment: "Label above the username field.")
                             .jsStyle(.caption)
                             .foregroundStyle(theme.secondary)
 
-                        TextField("demo", text: $viewModel.username)
+                        TextField(LocalizedStringResource("signIn.username.placeholder", bundle: #bundle, comment: "Example username shown in the empty field; it signs in to the public demo server."), text: $viewModel.username)
                         #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
                         #endif
@@ -83,11 +83,11 @@ public struct ServerConnectionView: View {
 
                     // Password
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("Password")
+                        Text("signIn.password.label", bundle: #bundle, comment: "Label above the password field.")
                             .jsStyle(.caption)
                             .foregroundStyle(theme.secondary)
 
-                        SecureField("Password (leave empty for demo)", text: $viewModel.password)
+                        SecureField(LocalizedStringResource("signIn.password.placeholder", bundle: #bundle, comment: "Placeholder in the empty password field."), text: $viewModel.password)
                         #if os(visionOS)
                             .textFieldStyle(.roundedBorder)
                         #endif
@@ -110,7 +110,7 @@ public struct ServerConnectionView: View {
                         await viewModel.connect()
                     }
                 } label: {
-                    Text("Connect")
+                    Text("signIn.connect", bundle: #bundle, comment: "Button that signs in to the server.")
                         .jsStyle(.body, .emphasized)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, SpacingTokens.md)
@@ -132,7 +132,7 @@ public struct ServerConnectionView: View {
             ProgressView()
                 .scaleEffect(1.5)
 
-            Text(viewModel.state == .connecting ? "Connecting to server..." : "Signing in...")
+            Text(viewModel.state == .connecting ? LocalizedStringResource("signIn.progress.connecting", bundle: #bundle, comment: "Progress message while reaching the server.") : LocalizedStringResource("signIn.progress.signingIn", bundle: #bundle, comment: "Progress message while checking the username and password."))
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
         }
@@ -163,7 +163,7 @@ public struct ServerConnectionView: View {
                                 .jsStyle(.body)
                                 .foregroundStyle(theme.primary)
 
-                            Text(user.isAdministrator ? "Administrator" : "User")
+                            Text(user.isAdministrator ? LocalizedStringResource("server.user.administrator", bundle: #bundle, comment: "Account role of a signed-in server administrator.") : LocalizedStringResource("server.user.standard", bundle: #bundle, comment: "Account role of a signed-in user who isn't an administrator."))
                                 .jsStyle(.caption)
                                 .foregroundStyle(theme.secondary)
                         }
@@ -178,7 +178,7 @@ public struct ServerConnectionView: View {
                 }
 
                 HStack {
-                    Text("Server")
+                    Text("server.row.server", bundle: #bundle, comment: "Label for the row showing the connected server's address.")
                         .jsStyle(.body)
                         .foregroundStyle(theme.secondary)
 
@@ -190,13 +190,13 @@ public struct ServerConnectionView: View {
                         .lineLimit(1)
                 }
             } header: {
-                Text("Connected")
+                Text("server.connected", bundle: #bundle, comment: "Status shown once signed in to the server.")
             }
 
             // Libraries Section
             Section {
                 if viewModel.libraries.isEmpty {
-                    Text("No libraries found")
+                    Text("server.noLibraries", bundle: #bundle, comment: "Shown when the server has no libraries for this user.")
                         .jsStyle(.body)
                         .foregroundStyle(theme.secondary)
                 } else {
@@ -213,7 +213,7 @@ public struct ServerConnectionView: View {
                                     .foregroundStyle(theme.primary)
 
                                 if let count = viewModel.libraryCounts[library.id] {
-                                    Text("\(count) items")
+                                    Text("server.library.itemCount \(count)", bundle: #bundle, comment: "Number of items in a library. The variable is the item count.")
                                         .jsStyle(.caption)
                                         .foregroundStyle(theme.secondary)
                                 }
@@ -223,7 +223,7 @@ public struct ServerConnectionView: View {
                     }
                 }
             } header: {
-                Text("Libraries (\(viewModel.libraries.count))")
+                Text("server.libraries.header \(viewModel.libraries.count)", bundle: #bundle, comment: "Section heading over the server's libraries. The variable is how many there are.")
             }
 
             // Disconnect Section
@@ -235,7 +235,7 @@ public struct ServerConnectionView: View {
                 } label: {
                     HStack {
                         Spacer()
-                        Text("Disconnect")
+                        Text("server.disconnect", bundle: #bundle, comment: "Button that signs out of the server.")
                             // Explicit colors so the label ignores the
                             // destructive role's red text, which is illegible
                             // on the themed background at rest. The system

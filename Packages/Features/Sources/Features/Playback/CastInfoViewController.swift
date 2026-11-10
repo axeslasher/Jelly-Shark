@@ -15,7 +15,7 @@
         init(people: [CastMember], headshotURL: @escaping (CastMember) -> URL?) {
             super.init(rootView: CastInfoPanel(people: people, headshotURL: headshotURL))
             // AVKit reads the title for the tab label at attach time
-            title = String(localized: "Cast & Crew")
+            title = String(localized: "player.tab.castAndCrew", bundle: #bundle, comment: "Player info-panel tab listing the cast and crew.")
             // tvOS stretches tabs to full width; visionOS reads both axes
             preferredContentSize = CGSize(width: 960, height: 360)
             view.backgroundColor = .clear

@@ -157,7 +157,7 @@ public struct RootView: View {
             // entries no matter what the server exposes.
             #if os(tvOS)
                 if !connectionViewModel.libraries.isEmpty {
-                    TabSection("Libraries") {
+                    TabSection(LocalizedStringResource("tab.libraries", bundle: #bundle, comment: "Tab and sidebar section listing the user's media libraries.")) {
                         libraryTabs
                     }
                 }
@@ -400,7 +400,7 @@ public struct RootView: View {
     // can't drift as visionOS is adapted.
 
     private var homeTab: some TabContent<AppTab> {
-        Tab("Home", systemImage: "house.fill", value: AppTab.home) {
+        Tab(LocalizedStringResource("tab.home", bundle: #bundle, comment: "Tab for the home screen."), systemImage: "house.fill", value: AppTab.home) {
             navigationRoot(for: .home) {
                 HomeView(
                     viewModel: homeViewModel,
@@ -458,7 +458,7 @@ public struct RootView: View {
         /// there is no label for the Library pill to contradict, and the
         /// viewer can re-scope without walking back to the grid.
         private var librariesTab: some TabContent<AppTab> {
-            Tab("Libraries", systemImage: "square.stack.3d.down.forward.fill", value: AppTab.libraries) {
+            Tab(LocalizedStringResource("tab.libraries", bundle: #bundle, comment: "Tab and sidebar section listing the user's media libraries."), systemImage: "square.stack.3d.down.forward.fill", value: AppTab.libraries) {
                 navigationRoot(for: .libraries) {
                     LibrariesGridView(libraries: connectionViewModel.libraries)
                         .navigationDestination(for: Library.self) { library in
@@ -481,7 +481,7 @@ public struct RootView: View {
     /// it costs nothing. Not `#if`-guarded: semantically true on visionOS too,
     /// where a device check found no regression.
     private var searchTab: some TabContent<AppTab> {
-        Tab("Search", systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
+        Tab(LocalizedStringResource("tab.search", bundle: #bundle, comment: "Tab for searching the server."), systemImage: "magnifyingglass", value: AppTab.search, role: .search) {
             navigationRoot(for: .search) {
                 SearchView()
             }
@@ -525,7 +525,7 @@ public struct RootView: View {
     #endif
 
     private var settingsTab: some TabContent<AppTab> {
-        Tab("Settings", systemImage: "gear", value: AppTab.settings) {
+        Tab(LocalizedStringResource("tab.settings", bundle: #bundle, comment: "Tab for app settings."), systemImage: "gear", value: AppTab.settings) {
             navigationRoot(for: .settings) {
                 SettingsView()
             }

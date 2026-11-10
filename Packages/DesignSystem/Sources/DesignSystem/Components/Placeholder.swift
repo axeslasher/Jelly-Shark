@@ -23,7 +23,7 @@ public struct ComponentPlaceholder: View {
                 .jsStyle(.title)
                 .foregroundStyle(theme.primary)
 
-            Text("Coming Soon")
+            Text("placeholder.comingSoon", bundle: #bundle, comment: "Caption under the name of a feature that isn't built yet.")
                 .jsStyle(.caption)
                 .foregroundStyle(theme.tertiary)
         }

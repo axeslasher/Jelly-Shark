@@ -40,7 +40,7 @@ struct LibrariesGridView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
-                Text("Libraries")
+                Text("libraries.pageTitle", bundle: #bundle, comment: "Heading of the page listing the user's media libraries.")
                     .jsStyle(.headline)
                     .foregroundStyle(theme.primary)
 

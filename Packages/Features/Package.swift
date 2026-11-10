@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "Features",
+    defaultLocalization: "en",
     platforms: [
         .tvOS(.v26),
         // Spelled as a string because `SupportedPlatform.VisionOSVersion` only
@@ -27,6 +28,9 @@ let package = Package(
             dependencies: [
                 "JellyfinKit",
                 "DesignSystem",
+            ],
+            resources: [
+                .process("Localizable.xcstrings"),
             ],
         ),
         .testTarget(

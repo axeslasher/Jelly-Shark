@@ -184,7 +184,7 @@ public struct PlaybackContainerView: View {
                 )
             }
         #else
-            Text("Playback is not supported on this platform")
+            Text("player.unsupportedPlatform", bundle: #bundle, comment: "Shown in place of the player on a platform without playback.")
                 .jsStyle(.body)
                 .foregroundStyle(theme.secondary)
         #endif
@@ -196,7 +196,7 @@ public struct PlaybackContainerView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(theme.tertiary)
 
-            Text("Playback Failed")
+            Text("player.failed.title", bundle: #bundle, comment: "Heading shown when a video can't be played.")
                 .jsStyle(.headline)
                 .foregroundStyle(theme.primary)
 
@@ -210,13 +210,13 @@ public struct PlaybackContainerView: View {
             // ends by suggesting another attempt, and until now the screen
             // offered no way to make one. Close stays as the way out.
             HStack(spacing: SpacingTokens.md) {
-                Button("Try Again") {
+                Button(LocalizedStringResource("player.failed.tryAgain", bundle: #bundle, comment: "Button that retries playback after it failed.")) {
                     Task { await viewModel.retry() }
                 }
                 .jsStyle(.body)
                 .focused($isRetryFocused)
 
-                Button("Close") {
+                Button(LocalizedStringResource("common.close", bundle: #bundle, comment: "Button that dismisses the current overlay or screen.")) {
                     dismiss()
                 }
                 .jsStyle(.body)

@@ -1,0 +1,702 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "common.cancel": {
+      "comment": "Button that dismisses a prompt without choosing anything.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel"
+          }
+        }
+      }
+    },
+    "common.close": {
+      "comment": "Button that dismisses the current overlay or screen.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Close"
+          }
+        }
+      }
+    },
+    "genre.card.shuffleImage": {
+      "comment": "Menu action that shows a different backdrop on a genre card.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shuffle image"
+          }
+        }
+      }
+    },
+    "home.empty.openSettings": {
+      "comment": "Button on an empty Home screen that opens Settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open Settings"
+          }
+        }
+      }
+    },
+    "home.empty.title": {
+      "comment": "Home heading when signed in but the server has nothing to show.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nothing here yet"
+          }
+        }
+      }
+    },
+    "home.hero.play": {
+      "comment": "Home hero button that starts an item from the beginning.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        }
+      }
+    },
+    "home.hero.resume": {
+      "comment": "Home hero button that continues a partly watched item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        }
+      }
+    },
+    "home.welcome.connect": {
+      "comment": "Button on the first-run Home screen that opens Settings to connect a server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect in Settings"
+          }
+        }
+      }
+    },
+    "home.welcome.title": {
+      "comment": "Home heading before the user has connected a server. Jelly Shark is the app name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Welcome to Jelly Shark"
+          }
+        }
+      }
+    },
+    "libraries.pageTitle": {
+      "comment": "Heading of the page listing the user's media libraries.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libraries"
+          }
+        }
+      }
+    },
+    "library.empty.noMatches": {
+      "comment": "Shown in a library when the active filters exclude everything.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No items match these filters"
+          }
+        }
+      }
+    },
+    "library.filter.allLibraries": {
+      "comment": "Library filter option that browses every library at once.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All Libraries"
+          }
+        }
+      }
+    },
+    "library.filter.clear": {
+      "comment": "Button that removes every active library filter.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clear"
+          }
+        }
+      }
+    },
+    "library.filter.favorites": {
+      "comment": "Filter toggle that shows only favorited items.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorites"
+          }
+        }
+      }
+    },
+    "library.filter.library": {
+      "comment": "Filter menu for choosing which library to browse.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Library"
+          }
+        }
+      }
+    },
+    "library.filter.status": {
+      "comment": "Filter menu for watched or unwatched items.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Status"
+          }
+        }
+      }
+    },
+    "player.failed.title": {
+      "comment": "Heading shown when a video can't be played.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback Failed"
+          }
+        }
+      }
+    },
+    "player.failed.tryAgain": {
+      "comment": "Button that retries playback after it failed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try Again"
+          }
+        }
+      }
+    },
+    "player.selectVersion": {
+      "comment": "Title of the prompt asking which version of a movie to play, such as 4K or 1080p.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select Version"
+          }
+        }
+      }
+    },
+    "player.subtitles.off": {
+      "comment": "Subtitle picker option that turns subtitles off.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Off"
+          }
+        }
+      }
+    },
+    "player.tab.audio": {
+      "comment": "Player info-panel tab and picker for choosing the audio track.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio"
+          }
+        }
+      }
+    },
+    "player.tab.castAndCrew": {
+      "comment": "Player info-panel tab listing the cast and crew.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cast & Crew"
+          }
+        }
+      }
+    },
+    "player.tab.imageSubtitles": {
+      "comment": "Player info-panel tab and picker for choosing a picture-based subtitle track.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image Subtitles"
+          }
+        }
+      }
+    },
+    "player.unsupportedPlatform": {
+      "comment": "Shown in place of the player on a platform without playback.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback is not supported on this platform"
+          }
+        }
+      }
+    },
+    "player.upNext.playNext": {
+      "comment": "Button that accepts the proposed next episode.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play Next"
+          }
+        }
+      }
+    },
+    "player.upNext.playNow %lld": {
+      "comment": "Button that starts the next episode immediately. The variable is the seconds left before it starts on its own.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play Now (%lld)"
+          }
+        }
+      }
+    },
+    "player.upNext.title": {
+      "comment": "Heading for the card proposing the next episode when one finishes.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up Next"
+          }
+        }
+      }
+    },
+    "search.empty.subtitle": {
+      "comment": "Subheading shown before the user has typed a search.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Find movies, shows, and more"
+          }
+        }
+      }
+    },
+    "search.empty.title": {
+      "comment": "Heading shown before the user has typed a search.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search Your Library"
+          }
+        }
+      }
+    },
+    "search.prompt": {
+      "comment": "Placeholder in the search field.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search movies, shows…"
+          }
+        }
+      }
+    },
+    "server.connected": {
+      "comment": "Status shown once signed in to the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        }
+      }
+    },
+    "server.disconnect": {
+      "comment": "Button that signs out of the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disconnect"
+          }
+        }
+      }
+    },
+    "server.libraries.header %lld": {
+      "comment": "Section heading over the server's libraries. The variable is how many there are.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libraries (%lld)"
+          }
+        }
+      }
+    },
+    "server.library.itemCount %lld": {
+      "comment": "Number of items in a library. The variable is the item count.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld items"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "server.navigationTitle": {
+      "comment": "Title of the screen for connecting to a Jellyfin server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        }
+      }
+    },
+    "server.noLibraries": {
+      "comment": "Shown when the server has no libraries for this user.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No libraries found"
+          }
+        }
+      }
+    },
+    "server.row.server": {
+      "comment": "Label for the row showing the connected server's address.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        }
+      }
+    },
+    "server.user.administrator": {
+      "comment": "Account role of a signed-in server administrator.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Administrator"
+          }
+        }
+      }
+    },
+    "server.user.standard": {
+      "comment": "Account role of a signed-in user who isn't an administrator.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "User"
+          }
+        }
+      }
+    },
+    "settings.navigationTitle": {
+      "comment": "Title of the settings screen.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.navigationTitle": {
+      "comment": "Title of the screen for choosing a streaming bitrate limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Quality"
+          }
+        }
+      }
+    },
+    "settings.theme.navigationTitle": {
+      "comment": "Title of the screen for choosing a visual theme.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Theme"
+          }
+        }
+      }
+    },
+    "signIn.connect": {
+      "comment": "Button that signs in to the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect"
+          }
+        }
+      }
+    },
+    "signIn.password.label": {
+      "comment": "Label above the password field.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password"
+          }
+        }
+      }
+    },
+    "signIn.password.placeholder": {
+      "comment": "Placeholder in the empty password field.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Password (leave empty for demo)"
+          }
+        }
+      }
+    },
+    "signIn.progress.connecting": {
+      "comment": "Progress message while reaching the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting to server..."
+          }
+        }
+      }
+    },
+    "signIn.progress.signingIn": {
+      "comment": "Progress message while checking the username and password.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Signing in..."
+          }
+        }
+      }
+    },
+    "signIn.serverURL.label": {
+      "comment": "Label above the field for the server's web address.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server URL"
+          }
+        }
+      }
+    },
+    "signIn.serverURL.placeholder": {
+      "comment": "Example address shown in the empty server field. Keep it a valid web address.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://demo.jellyfin.org/stable"
+          }
+        }
+      }
+    },
+    "signIn.subtitle": {
+      "comment": "Subheading of the sign-in screen.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter your server details to get started"
+          }
+        }
+      }
+    },
+    "signIn.title": {
+      "comment": "Heading of the sign-in screen. Jellyfin is a product name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect to Jellyfin"
+          }
+        }
+      }
+    },
+    "signIn.username.label": {
+      "comment": "Label above the username field.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Username"
+          }
+        }
+      }
+    },
+    "signIn.username.placeholder": {
+      "comment": "Example username shown in the empty field; it signs in to the public demo server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "demo"
+          }
+        }
+      }
+    },
+    "tab.home": {
+      "comment": "Tab for the home screen.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home"
+          }
+        }
+      }
+    },
+    "tab.libraries": {
+      "comment": "Tab and sidebar section listing the user's media libraries.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Libraries"
+          }
+        }
+      }
+    },
+    "tab.search": {
+      "comment": "Tab for searching the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search"
+          }
+        }
+      }
+    },
+    "tab.settings": {
+      "comment": "Tab for app settings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

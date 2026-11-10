@@ -25,7 +25,7 @@
         override init(rootView: AudioTrackPanel) {
             super.init(rootView: rootView)
             // AVKit reads the title for the tab label at attach time
-            title = String(localized: "Audio")
+            title = String(localized: "player.tab.audio", bundle: #bundle, comment: "Player info-panel tab and picker for choosing the audio track.")
             preferredContentSize = CGSize(width: 960, height: 360)
             view.backgroundColor = .clear
         }
@@ -40,7 +40,7 @@
     final class ImageSubtitleInfoViewController: UIHostingController<ImageSubtitlePanel> {
         override init(rootView: ImageSubtitlePanel) {
             super.init(rootView: rootView)
-            title = String(localized: "Image Subtitles")
+            title = String(localized: "player.tab.imageSubtitles", bundle: #bundle, comment: "Player info-panel tab and picker for choosing a picture-based subtitle track.")
             preferredContentSize = CGSize(width: 960, height: 360)
             view.backgroundColor = .clear
         }
@@ -61,7 +61,7 @@
             // The tab is already titled "Audio", so the picker's own label is
             // hidden — left visible it repeats the title as a header row.
             List {
-                Picker("Audio", selection: audioSelection) {
+                Picker(LocalizedStringResource("player.tab.audio", bundle: #bundle, comment: "Player info-panel tab and picker for choosing the audio track."), selection: audioSelection) {
                     ForEach(audioStreams, id: \.index) { stream in
                         Text(stream.audioTrackTitle).tag(stream.index)
                     }
@@ -96,8 +96,8 @@
             // Tab-titled "Image Subtitles"; the picker label is hidden for the
             // same reason as the Audio tab.
             List {
-                Picker("Image Subtitles", selection: subtitleSelection) {
-                    Text("Off").tag(Int?.none)
+                Picker(LocalizedStringResource("player.tab.imageSubtitles", bundle: #bundle, comment: "Player info-panel tab and picker for choosing a picture-based subtitle track."), selection: subtitleSelection) {
+                    Text("player.subtitles.off", bundle: #bundle, comment: "Subtitle picker option that turns subtitles off.").tag(Int?.none)
                     ForEach(burnInSubtitleStreams, id: \.index) { stream in
                         Text(BurnInSubtitleLabel.title(for: stream)).tag(Int?.some(stream.index))
                     }

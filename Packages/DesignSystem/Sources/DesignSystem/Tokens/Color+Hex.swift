@@ -47,7 +47,7 @@ extension Color {
                     .fill(Color(hex: hex))
                     .frame(width: 140, height: 72)
 
-                Text("#\(hex)")
+                Text(verbatim: "#\(hex)")
                     .jsStyle(.small)
                     .foregroundStyle(manager.currentTheme.secondary)
             }
