@@ -61,6 +61,30 @@
         }
       }
     },
+    "home.hero.play": {
+      "comment": "Home hero button that starts an item from the beginning.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        }
+      }
+    },
+    "home.hero.resume": {
+      "comment": "Home hero button that continues a partly watched item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        }
+      }
+    },
     "home.welcome.connect": {
       "comment": "Button on the first-run Home screen that opens Settings to connect a server.",
       "extractionState": "manual",

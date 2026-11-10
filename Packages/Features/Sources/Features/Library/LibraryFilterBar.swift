@@ -195,7 +195,7 @@ struct LibraryFilterBar: View {
             }
             .tint(theme.accent)
         } label: {
-            Text(query.library?.name ?? "Library")
+            query.library.map { Text($0.name) } ?? Text(LocalizedStringResource("library.filter.library", bundle: #bundle, comment: "Filter menu for choosing which library to browse."))
         }
     }
 
@@ -248,7 +248,7 @@ struct LibraryFilterBar: View {
             }
             .tint(theme.accent)
         } label: {
-            Text(query.watched == .any ? "Status" : query.watched.displayName)
+            query.watched == .any ? Text(LocalizedStringResource("library.filter.status", bundle: #bundle, comment: "Filter menu for watched or unwatched items.")) : Text(query.watched.displayName)
         }
     }
 
