@@ -262,7 +262,11 @@ struct ContentRefreshCoordinatorTests {
         // Media Detail's wait, started at dismissal, must end with the grace.
         let waiter = Task { await coordinator.awaitPlaybackReporting() }
         defer { waiter.cancel() }
-        try await Task.sleep(for: .milliseconds(300))
+        // The grace runs in a main-actor task that the parallel suite can
+        // delay well past its 20ms, so poll for the drop.
+        for _ in 0 ..< 500 where coordinator.hasPlayingSession {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         #expect(coordinator.hasPlayingSession == false)
         // `#require` stops here on a regression: the wait below would
@@ -285,10 +289,24 @@ struct ContentRefreshCoordinatorTests {
         let before = coordinator.revision
 
         coordinator.unregisterAfterGrace(ticket)
-        try await Task.sleep(for: .milliseconds(300))
+        // The ticket's grace does nothing observable when it runs, and a busy
+        // main actor can delay it. An orphaned sentinel whose grace starts
+        // 50ms later shows when it has run: the earlier grace fires first.
+        // The yield lets the ticket's grace start its sleep before the 50ms
+        // begins, so a busy main actor can't erase the margin.
+        let sentinel = coordinator.registerPlayback()
+        await Task.yield()
+        try await Task.sleep(for: .milliseconds(50))
+        coordinator.unregisterAfterGrace(sentinel)
+        for _ in 0 ..< 500 where coordinator.hasPlayingSession {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.hasPlayingSession == false)
 
         #expect(coordinator.hasPlaybackInFlight)
-        #expect(coordinator.revision == before)
+        // The sentinel's drop posts once; a second post means the ticket was
+        // dropped too.
+        #expect(coordinator.revision == before + 1)
         await gate.open()
     }
 
