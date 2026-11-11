@@ -11,8 +11,8 @@ import SwiftUI
 struct ArtworkSlot: Equatable, Sendable {
     let itemId: String
     let imageType: ImageType
-    /// Rides the URL so the image caches for a year rather than revalidating
-    /// on every read (#117). Persisted card choices deliberately don't keep
+    /// Rides the URL so the image caches for a year rather than on a
+    /// heuristic that often revalidates (#117). Persisted card choices deliberately don't keep
     /// it: a remembered tag would pin artwork the server has since replaced.
     var tag: String?
 }
