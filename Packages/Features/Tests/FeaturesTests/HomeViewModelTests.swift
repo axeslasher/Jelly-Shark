@@ -1503,8 +1503,9 @@ struct HomeViewModelTests {
         await gate.arrivals(atLeast: 4)
         task.cancel()
 
-        // Release the gate: the requests that resumed will throw the
-        // cancellation-shaped error after the task saw isCancelled.
+        // The cancel resumes all four parked requests, which then return the
+        // cancellation-shaped error after the task saw isCancelled. Opening
+        // the gate is only cleanup.
         await gate.open()
         await task.value
 

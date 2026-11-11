@@ -22,25 +22,54 @@ actor AsyncGate {
     private var waiters: [Int: CheckedContinuation<Void, any Error>] = [:]
     private var cancelledIDs: Set<Int> = []
     private var arrivalCount = 0
-    private var arrivalWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var nextArrivalID = 0
+    private var arrivalWaiters: [Int: (count: Int, continuation: CheckedContinuation<Void, Never>)] = [:]
+    private var cancelledArrivalIDs: Set<Int> = []
 
     /// Suspends until at least `count` callers have parked here, so a test
     /// can act once work has provably reached the gate instead of sleeping
     /// and hoping it has. Only parked callers count: once the gate is open,
     /// `wait()` returns at once and never arrives.
+    ///
+    /// Cancellation returns early, so a test whose count is never reached
+    /// ends at its time limit instead of leaving its task parked here.
     func arrivals(atLeast count: Int) async {
         if arrivalCount >= count {
             return
         }
-        await withCheckedContinuation { arrivalWaiters.append((count, $0)) }
+        let id = nextArrivalID
+        nextArrivalID += 1
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                registerArrivalWaiter(id: id, count: count, continuation: continuation)
+            }
+        } onCancel: {
+            Task { await self.cancelArrivalWaiter(id: id) }
+        }
     }
 
     private func arrive() {
         arrivalCount += 1
-        let ready = arrivalWaiters.filter { $0.count <= arrivalCount }
-        arrivalWaiters.removeAll { $0.count <= arrivalCount }
-        for waiter in ready {
+        for (id, waiter) in arrivalWaiters where waiter.count <= arrivalCount {
+            arrivalWaiters[id] = nil
             waiter.continuation.resume()
+        }
+    }
+
+    /// Same race as `register(id:continuation:)`: a cancel can land first.
+    private func registerArrivalWaiter(id: Int, count: Int, continuation: CheckedContinuation<Void, Never>) {
+        if cancelledArrivalIDs.remove(id) != nil || arrivalCount >= count {
+            continuation.resume()
+        } else {
+            arrivalWaiters[id] = (count, continuation)
+        }
+    }
+
+    private func cancelArrivalWaiter(id: Int) {
+        if let waiter = arrivalWaiters.removeValue(forKey: id) {
+            waiter.continuation.resume()
+        } else {
+            cancelledArrivalIDs.insert(id)
         }
     }
 
