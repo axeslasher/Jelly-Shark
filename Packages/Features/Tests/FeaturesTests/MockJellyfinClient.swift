@@ -496,7 +496,11 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks: Int64,
     ) async throws {
         stopReports.append((itemId, positionTicks))
+        await stopReportGate?()
     }
+
+    /// Suspension point inside `reportPlaybackStopped`, after it is recorded
+    var stopReportGate: (@Sendable () async -> Void)?
 
     // MARK: Live TV
 

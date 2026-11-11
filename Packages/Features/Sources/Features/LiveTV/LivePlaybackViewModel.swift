@@ -40,6 +40,7 @@ final class LivePlaybackViewModel {
     private var startedAt: ContinuousClock.Instant?
     private var progressTask: Task<Void, Never>?
     private var hasStopped = false
+    private var hasBegun = false
 
     /// Bumped per open. An open that finds it moved on has been replaced by
     /// a channel change or a stop, and must release what it opened.
@@ -55,6 +56,17 @@ final class LivePlaybackViewModel {
         self.channel = channel
         self.capabilities = capabilities
         self.progressInterval = progressInterval
+    }
+
+    /// Start the session, once. The work runs in a task this model owns,
+    /// not the caller's: a view's `.task` is cancelled when the view goes
+    /// away, and cancelling the open request mid-flight would throw away the
+    /// server's answer while the tuner it opened stayed open. Run to the
+    /// end, a late open is seen to be stale and closed.
+    func begin() {
+        guard !hasBegun else { return }
+        hasBegun = true
+        Task { await start() }
     }
 
     func start() async {
@@ -77,7 +89,14 @@ final class LivePlaybackViewModel {
 
     func retry() async {
         guard !hasStopped else { return }
+        // Claimed up front, as a channel change does: a stop that lands
+        // while the release below is suspended must end this retry, not be
+        // overtaken by the open that follows it.
+        generation += 1
+        let claimed = generation
+        state = .loading
         await releaseSession()
+        guard claimed == generation else { return }
         await open()
     }
 
@@ -96,6 +115,12 @@ final class LivePlaybackViewModel {
             bundle: #bundle,
             comment: "Error shown when a live TV stream stops unexpectedly.",
         ))
+        // Nothing is playing any more, so stop telling the server otherwise
+        // and give the stream back now. Left running, the heartbeat would
+        // hold it for as long as the error screen stayed up.
+        progressTask?.cancel()
+        progressTask = nil
+        Task { await releaseSession() }
     }
 
     /// Release the stream and end the session. Idempotent.
@@ -109,6 +134,7 @@ final class LivePlaybackViewModel {
     // MARK: - Private
 
     private func open() async {
+        guard !hasStopped else { return }
         generation += 1
         let opening = generation
         state = .loading

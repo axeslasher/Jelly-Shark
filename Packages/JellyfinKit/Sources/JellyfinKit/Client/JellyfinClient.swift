@@ -1466,9 +1466,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 positionTicks: Int(positionTicks),
             )
 
+            // The session is over whether or not the report lands, so the
+            // entry goes either way.
+            defer { liveStreams.forget(playSession: playSessionId) }
             _ = try await sdkClient.send(Paths.reportPlaybackStopped(info))
-            // The stopped report is what releases the tuner; the session is over.
-            liveStreams.forget(playSession: playSessionId)
         } catch let error as APIError {
             throw error
         } catch {

@@ -27,6 +27,13 @@ struct LivePlaybackViewModelTests {
         }
     }
 
+    private func waitForStopReport(_ client: MockJellyfinClient, count: Int = 1) async {
+        for _ in 0 ..< 200 where client.stopReports.count < count {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+    }
+
     @Test("Starting opens the channel's stream and reports it as playing")
     func startOpensAndReports() async {
         let client = MockJellyfinClient()
@@ -140,6 +147,56 @@ struct LivePlaybackViewModelTests {
         #expect(model.state == .failed("decode error"))
     }
 
+    @Test("A player failure releases the stream at once, without waiting for Close")
+    func playerFailureReleases() async throws {
+        let client = MockJellyfinClient()
+        let model = makeModel(client)
+        await model.start()
+        let url = try #require(model.session?.url)
+
+        model.playerFailed(url: url, reason: "decode error")
+        await waitForStopReport(client)
+
+        #expect(client.stopReports.map(\.itemId) == ["ch4"])
+        #expect(client.stopEncodingCalls == ["play1"])
+        #expect(model.session == nil)
+        // Leaving the error screen afterwards has nothing left to release.
+        await model.stop()
+        #expect(client.stopReports.count == 1)
+    }
+
+    @Test("Leaving while Try Again is still releasing the old stream opens nothing new")
+    func stopDuringRetry() async {
+        let client = MockJellyfinClient()
+        let model = makeModel(client)
+        await model.start()
+        let gate = AsyncGate()
+        client.stopReportGate = { try? await gate.wait() }
+
+        // Retry with a live session still held, so its release suspends.
+        let retry = Task { await model.retry() }
+        await gate.arrivals(atLeast: 1)
+        await model.stop()
+        await gate.open()
+        await retry.value
+
+        #expect(client.openLiveStreamRequests == ["ch4"])
+        #expect(model.session == nil)
+        #expect(client.stopReports.map(\.itemId) == ["ch4"])
+    }
+
+    @Test("Beginning twice starts one session")
+    func beginIsOnce() async {
+        let client = MockJellyfinClient()
+        let model = makeModel(client)
+
+        model.begin()
+        model.begin()
+        await waitForStartReport(client)
+
+        #expect(client.openLiveStreamRequests == ["ch4"])
+    }
+
     @Test("Try Again releases the failed stream and opens a fresh one")
     func retry() async throws {
         let client = MockJellyfinClient()
@@ -149,6 +206,7 @@ struct LivePlaybackViewModelTests {
         model.playerFailed(url: url, reason: "decode error")
 
         await model.retry()
+        await waitForStopReport(client)
 
         #expect(client.stopReports.map(\.itemId) == ["ch4"])
         #expect(client.openLiveStreamRequests == ["ch4", "ch4"])

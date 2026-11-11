@@ -55,10 +55,8 @@ struct LivePlaybackView: View {
             }
         }
         .ignoresSafeArea()
-        .task {
-            guard !Task.isCancelled else { return }
-            await viewModel.start()
-        }
+        // Not `.task`: see `begin()` for why the open must outlive this view.
+        .onAppear { viewModel.begin() }
         .task {
             // Keeps "on now" honest while watching: the player's title and
             // the strip follow the schedule as programmes change over.
