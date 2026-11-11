@@ -105,6 +105,20 @@ jobs:
             -authenticationKeyID "${{ secrets.ASC_API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_API_ISSUER_ID }}"
 
+      # verify-version reads project.pbxproj; this reads what was built, so a
+      # version Xcode resolved from anywhere else still can't ship mislabeled.
+      - name: Archived version matches tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          archived=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" \
+            "$RUNNER_TEMP/JellyShark-${{ matrix.platform }}.xcarchive/Info.plist")
+          echo "archived: $archived, tag: $RELEASE_TAG"
+          if [ "v$archived" != "$RELEASE_TAG" ]; then
+            echo "::error::the ${{ matrix.platform }} archive is version $archived, tag is $RELEASE_TAG"
+            exit 1
+          fi
+
       # manageAppVersionAndBuildNumber must stay false: letting Xcode
       # "helpfully" rewrite the build number on upload would defeat the
       # run_number.run_attempt scheme the re-upload acceptance depends on.
