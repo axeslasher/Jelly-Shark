@@ -92,7 +92,6 @@ struct LivePlaybackView: View {
                     onFailure: { url, reason in
                         viewModel.playerFailed(url: url, reason: reason)
                     },
-                    onRequestDismiss: { dismiss() },
                 )
             }
         #else
@@ -153,10 +152,9 @@ struct LivePlaybackView: View {
         let channelId: String
         let onSelectChannel: (LiveChannel) -> Void
         let onFailure: (URL, String?) -> Void
-        let onRequestDismiss: () -> Void
 
         @MainActor
-        final class Coordinator: NSObject, AVPlayerViewControllerDelegate {
+        final class Coordinator {
             let player = AVPlayer()
             var loadedURL: URL?
             var statusObservation: NSKeyValueObservation?
@@ -165,7 +163,6 @@ struct LivePlaybackView: View {
             var artworkData: Data?
             var artworkTask: Task<Void, Never>?
             var onFailure: (URL, String?) -> Void = { _, _ in }
-            var onRequestDismiss: () -> Void = {}
 
             func load(_ url: URL) {
                 let item = AVPlayerItem(url: url)
@@ -210,15 +207,6 @@ struct LivePlaybackView: View {
                 player.pause()
                 player.replaceCurrentItem(with: nil)
             }
-
-            #if os(visionOS)
-                func playerViewController(
-                    _: AVPlayerViewController,
-                    willEndFullScreenPresentationWithAnimationCoordinator _: UIViewControllerTransitionCoordinator,
-                ) {
-                    onRequestDismiss()
-                }
-            #endif
         }
 
         func makeCoordinator() -> Coordinator {
@@ -229,7 +217,6 @@ struct LivePlaybackView: View {
             let controller = AVPlayerViewController()
             let coordinator = context.coordinator
             controller.player = coordinator.player
-            controller.delegate = coordinator
             // A live stream has nothing to scrub: there is no start to go
             // back to and no end to skip toward.
             controller.requiresLinearPlayback = true
@@ -258,7 +245,6 @@ struct LivePlaybackView: View {
 
         private func sync(_ coordinator: Coordinator) {
             coordinator.onFailure = onFailure
-            coordinator.onRequestDismiss = onRequestDismiss
             let metadataChanged = coordinator.nowPlaying != nowPlaying
             coordinator.nowPlaying = nowPlaying
             if coordinator.loadedURL != url {
