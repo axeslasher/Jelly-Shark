@@ -89,8 +89,7 @@ struct GuideLayoutTests {
 
     @Test("Widths keep every row aligned to the ruler whatever its cell count")
     func widthsAlign() {
-        let pointsPerMinute = GuideLayout.pointsPerMinute(laneWidth: 1200)
-        #expect(pointsPerMinute == 10)
+        let pointsPerMinute = 10.0
         let gap = 8.0
         let many = cells(stride(from: 0.0, to: 240, by: 4).map { program("m\($0)", from: $0, to: $0 + 4) })
         let one = cells([program("a", from: 0, to: 240)])

@@ -24,6 +24,15 @@ final class LiveGuideModel {
     private(set) var channels: [LiveChannel] = []
     private(set) var programsByChannel: [String: [LiveProgram]] = [:]
 
+    /// The guide grid's rows, built once per load. Building them means
+    /// sorting and clipping every programme, which is too much to redo each
+    /// time a view re-renders.
+    private(set) var rows: [GuideRow] = []
+
+    /// Bumped whenever `rows` is rebuilt, so the grid can tell cheaply
+    /// whether it needs laying out again
+    private(set) var rowsRevision = 0
+
     /// The loaded stretch of time. It opens on a half hour so the guide's
     /// time ruler starts on a round label.
     private(set) var windowStart: Date
@@ -60,7 +69,20 @@ final class LiveGuideModel {
         client = nil
         channels = []
         programsByChannel = [:]
+        rebuildRows()
         status = .idle
+    }
+
+    private func rebuildRows() {
+        rows = channels.map { channel in
+            GuideRow(channel: channel, cells: GuideLayout.cells(
+                for: programs(for: channel),
+                channelId: channel.id,
+                windowStart: windowStart,
+                windowEnd: windowEnd,
+            ))
+        }
+        rowsRevision += 1
     }
 
     /// Whether the server has any channels to show. False until a load says so.
@@ -93,6 +115,7 @@ final class LiveGuideModel {
             windowStart = start
             windowEnd = end
             self.now = now
+            rebuildRows()
             status = channels.isEmpty ? .empty : .loaded
         } catch {
             guard generation == loadGeneration else { return }
@@ -164,6 +187,7 @@ final class LiveGuideModel {
                 "3": stride(from: -3.0, to: 720, by: 4).map { program("3", "Music Video", nil, from: $0, minutes: 4) },
                 "4": stride(from: -27.0, to: 720, by: 50).map { program("4", "Star Trek", "Errand of Mercy", from: $0, minutes: 50) },
             ]
+            model.rebuildRows()
             model.status = .loaded
             return model
         }

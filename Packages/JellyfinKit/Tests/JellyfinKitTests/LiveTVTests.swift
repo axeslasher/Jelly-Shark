@@ -111,16 +111,28 @@ struct LiveTVTests {
 
     // MARK: - Stream negotiation
 
-    @Test("The live profile offers no direct play but keeps the HLS transcode")
-    func liveProfileRefusesDirectPlay() {
-        // With any direct-play claim the server answers with the tuner's
-        // raw address (observed 2026-11-11 against 10.11.11 + an M3U tuner).
+    @Test("The live profile offers no direct play, and HLS in TS segments only")
+    func liveProfile() throws {
+        // With any direct-play claim the server answers with the tuner's raw
+        // address; offered MP4 segments it answers with a progressive file
+        // AVPlayer stops on (both observed 2026-11-11, 10.11.11 + M3U tuner).
         let base = JellyfinAPI.DeviceProfile(capabilities: .jellySharkAVFoundationFixture)
         let live = JellyfinAPI.DeviceProfile(liveCapabilities: .jellySharkAVFoundationFixture)
         #expect(base.directPlayProfiles?.isEmpty == false)
         #expect(live.directPlayProfiles?.isEmpty == true)
-        #expect(live.transcodingProfiles == base.transcodingProfiles)
+
+        let transcoding = try #require(live.transcodingProfiles?.first)
+        #expect(live.transcodingProfiles?.count == 1)
+        #expect(transcoding.protocol == .hls)
+        #expect(transcoding.container == "ts")
+        #expect(transcoding.videoCodec == "h264")
+        // Everything else is the engine's own declaration
+        let baseTranscoding = try #require(base.transcodingProfiles?.first)
+        #expect(transcoding.audioCodec == baseTranscoding.audioCodec)
+        #expect(transcoding.minSegments == baseTranscoding.minSegments)
         #expect(live.codecProfiles == base.codecProfiles)
+        // The library profile is untouched
+        #expect(baseTranscoding.container != "ts")
     }
 
     @Test(

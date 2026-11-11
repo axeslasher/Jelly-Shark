@@ -30,23 +30,11 @@ struct LiveGuideView: View {
     /// cleared, so the header keeps its content while focus is in the sidebar.
     @State private var describedCell: String?
 
-    /// How far the grid has scrolled sideways, which the ruler follows
-    @State private var scrollOffset: CGFloat = 0
-    @State private var viewWidth: CGFloat = 1920
     @State private var playingChannel: LiveChannel?
 
-    private static let channelColumnWidth: CGFloat = 190
-    private static let rowHeight: CGFloat = 84
-    private static let gap = SpacingTokens.xs
-    private static let leadingPadding = SpacingTokens.xl
-
-    private struct Row: Identifiable {
-        let channel: LiveChannel
-        let cells: [GuideCell]
-        var id: String {
-            channel.id
-        }
-    }
+    /// How far the grid has scrolled sideways. A reference the ruler reads,
+    /// so scrolling re-renders the ruler alone and never the grid.
+    @State private var scroll = GuideScroll()
 
     var body: some View {
         Group {
@@ -95,71 +83,33 @@ struct LiveGuideView: View {
 
     // MARK: - Loaded
 
-    private var rows: [Row] {
-        guide.channels.map { channel in
-            Row(channel: channel, cells: GuideLayout.cells(
-                for: guide.programs(for: channel),
-                channelId: channel.id,
-                windowStart: guide.windowStart,
-                windowEnd: guide.windowEnd,
-            ))
-        }
-    }
-
-    private var pointsPerMinute: Double {
-        let laneWidth = viewWidth - Self.leadingPadding - Self.channelColumnWidth - Self.gap
-        return GuideLayout.pointsPerMinute(laneWidth: laneWidth)
-    }
-
     private var loaded: some View {
-        let rows = rows
-        let pointsPerMinute = pointsPerMinute
+        let rows = guide.rows
         let described = describedCell.flatMap { id in rows.lazy.flatMap(\.cells).first { $0.id == id } }
             ?? rows.first?.cells.first
 
         return VStack(alignment: .leading, spacing: SpacingTokens.md) {
             if let described, let channel = guide.channels.first(where: { $0.id == described.channelId }) {
                 GuideHeader(cell: described, channel: channel, now: guide.now, client: session.client)
-                    .padding(.leading, Self.leadingPadding)
+                    .padding(.leading, GuideMetrics.leadingPadding)
                     .padding(.trailing, SpacingTokens.xxl)
             }
 
-            ruler(pointsPerMinute: pointsPerMinute)
+            GuideRuler(windowStart: guide.windowStart, windowEnd: guide.windowEnd, scroll: scroll)
 
-            ScrollView(.vertical) {
-                HStack(alignment: .top, spacing: Self.gap) {
-                    // Plain stacks, not lazy ones: a lazy stack drops rows
-                    // that scroll away, and focus moving toward a row that
-                    // is not there leaves the grid for the sidebar instead.
-                    VStack(spacing: Self.gap) {
-                        ForEach(rows) { row in
-                            channelLabel(row.channel)
-                        }
-                    }
-
-                    ScrollView(.horizontal) {
-                        VStack(alignment: .leading, spacing: Self.gap) {
-                            ForEach(rows) { row in
-                                HStack(spacing: Self.gap) {
-                                    ForEach(row.cells) { cell in
-                                        cellButton(cell, channel: row.channel, pointsPerMinute: pointsPerMinute)
-                                    }
-                                }
-                            }
-                        }
-                        .overlay(alignment: .topLeading) {
-                            nowLine(pointsPerMinute: pointsPerMinute)
-                        }
-                    }
-                    .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                        geometry.contentOffset.x
-                    } action: { _, offset in
-                        scrollOffset = offset
-                    }
-                }
-                .padding(.leading, Self.leadingPadding)
-                .padding(.bottom, SpacingTokens.xl)
-            }
+            GuideGrid(
+                rows: rows,
+                revision: guide.rowsRevision,
+                windowStart: guide.windowStart,
+                windowEnd: guide.windowEnd,
+                now: guide.now,
+                scroll: scroll,
+                focusedCell: $focusedCell,
+                onSelect: { playingChannel = $0 },
+            )
+            // The header changes on every focus move; without this the
+            // whole grid would be re-laid out each time it did.
+            .equatable()
         }
         .padding(.top, SpacingTokens.lg)
         .defaultFocus($focusedCell, rows.first?.cells.first?.id)
@@ -168,10 +118,113 @@ struct LiveGuideView: View {
                 describedCell = focused
             }
         }
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            viewWidth = width
+    }
+}
+
+private enum GuideMetrics {
+    static let channelColumnWidth: CGFloat = 190
+    static let rowHeight: CGFloat = 84
+    static let rulerHeight: CGFloat = 32
+    static let gap = SpacingTokens.xs
+    static let leadingPadding = SpacingTokens.xl
+}
+
+@Observable
+@MainActor
+private final class GuideScroll {
+    var offset: CGFloat = 0
+}
+
+/// The time ruler. It sits outside the grid's scroll view so it stays put
+/// when the rows scroll up, and follows the sideways scroll by offset.
+private struct GuideRuler: View {
+    @Environment(\.theme) private var theme
+
+    let windowStart: Date
+    let windowEnd: Date
+    let scroll: GuideScroll
+
+    var body: some View {
+        let step = GuideLayout.rulerStep / 60 * GuideLayout.pointsPerMinute
+        // The marks ride in an overlay so their combined width, which is the
+        // whole twelve hours, never reaches layout. Laid out in line, they
+        // made this screen twelve hours wide and centred it on the middle.
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: GuideMetrics.rulerHeight)
+            .overlay(alignment: .leading) {
+                HStack(spacing: 0) {
+                    ForEach(GuideLayout.rulerMarks(windowStart: windowStart, windowEnd: windowEnd), id: \.self) { mark in
+                        Text(LiveTVText.time(mark))
+                            .jsStyle(.caption, .emphasized)
+                            .foregroundStyle(theme.secondary)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .frame(width: step, alignment: .leading)
+                    }
+                }
+                .fixedSize()
+                .offset(x: -scroll.offset)
+            }
+            .clipped()
+            .padding(.leading, GuideMetrics.leadingPadding + GuideMetrics.channelColumnWidth + GuideMetrics.gap)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The channel column and the scrolling block of programme cells.
+private struct GuideGrid: View, Equatable {
+    @Environment(\.theme) private var theme
+
+    let rows: [GuideRow]
+    let revision: Int
+    let windowStart: Date
+    let windowEnd: Date
+    let now: Date
+    let scroll: GuideScroll
+    let focusedCell: FocusState<String?>.Binding
+    let onSelect: (LiveChannel) -> Void
+
+    /// `revision` stands in for `rows`, and `now` only moves the now-line.
+    /// The binding and the closure are the same on every pass.
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.revision == rhs.revision && lhs.now == rhs.now
+    }
+
+    var body: some View {
+        ScrollView(.vertical) {
+            HStack(alignment: .top, spacing: GuideMetrics.gap) {
+                // Plain stacks, not lazy ones: a lazy stack drops rows that
+                // scroll away, and focus moving toward a row that is not
+                // there leaves the grid for the sidebar instead.
+                VStack(spacing: GuideMetrics.gap) {
+                    ForEach(rows) { row in
+                        channelLabel(row.channel)
+                    }
+                }
+
+                ScrollView(.horizontal) {
+                    VStack(alignment: .leading, spacing: GuideMetrics.gap) {
+                        ForEach(rows) { row in
+                            HStack(spacing: GuideMetrics.gap) {
+                                ForEach(row.cells) { cell in
+                                    cellButton(cell, channel: row.channel)
+                                }
+                            }
+                        }
+                    }
+                    .overlay(alignment: .topLeading) {
+                        nowLine
+                    }
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentOffset.x
+                } action: { _, offset in
+                    scroll.offset = offset
+                }
+            }
+            .padding(.leading, GuideMetrics.leadingPadding)
+            .padding(.bottom, SpacingTokens.xl)
         }
     }
 
@@ -189,18 +242,19 @@ struct LiveGuideView: View {
         }
         .jsStyle(.caption, .emphasized)
         .padding(.horizontal, SpacingTokens.xs)
-        .frame(width: Self.channelColumnWidth, height: Self.rowHeight, alignment: .leading)
+        .frame(width: GuideMetrics.channelColumnWidth, height: GuideMetrics.rowHeight, alignment: .leading)
         .background(theme.surfaceElevated, in: .rect(cornerRadius: theme.cornerRadius))
         .accessibilityElement(children: .combine)
     }
 
-    private func cellButton(_ cell: GuideCell, channel: LiveChannel, pointsPerMinute: Double) -> some View {
-        let width = GuideLayout.width(of: cell, pointsPerMinute: pointsPerMinute, gap: Self.gap)
+    private func cellButton(_ cell: GuideCell, channel: LiveChannel) -> some View {
+        let width = GuideLayout.width(of: cell, pointsPerMinute: GuideLayout.pointsPerMinute, gap: GuideMetrics.gap)
+        let showsTitle = GuideLayout.showsTitle(width: width)
         return Button {
-            playingChannel = channel
+            onSelect(channel)
         } label: {
             HStack(spacing: SpacingTokens.xs) {
-                if GuideLayout.showsTitle(width: width) {
+                if showsTitle {
                     if cell.startedEarlier {
                         Image(systemName: "chevron.left")
                             .imageScale(.small)
@@ -211,44 +265,23 @@ struct LiveGuideView: View {
                 }
             }
             .jsStyle(.body, .emphasized)
-            .padding(.horizontal, GuideLayout.showsTitle(width: width) ? SpacingTokens.sm : 0)
-            .frame(width: width, height: Self.rowHeight, alignment: .leading)
+            .padding(.horizontal, showsTitle ? SpacingTokens.sm : 0)
+            .frame(width: width, height: GuideMetrics.rowHeight, alignment: .leading)
         }
         .buttonStyle(GuideCellButtonStyle(isEmpty: cell.program == nil))
-        .focused($focusedCell, equals: cell.id)
+        .focused(focusedCell, equals: cell.id)
         // A narrow cell shows no title, so VoiceOver gets it here.
         .accessibilityLabel(GuideHeader.accessibilityLabel(for: cell, channel: channel))
     }
 
-    /// The time ruler. It sits outside the grid's scroll view so it stays
-    /// put when the rows scroll up, and follows the sideways scroll by offset.
-    private func ruler(pointsPerMinute: Double) -> some View {
-        let step = GuideLayout.rulerStep / 60 * pointsPerMinute
-        return HStack(spacing: 0) {
-            ForEach(GuideLayout.rulerMarks(windowStart: guide.windowStart, windowEnd: guide.windowEnd), id: \.self) { mark in
-                Text(LiveTVText.time(mark))
-                    .jsStyle(.caption, .emphasized)
-                    .foregroundStyle(theme.secondary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .frame(width: step, alignment: .leading)
-            }
-        }
-        .offset(x: -scrollOffset)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
-        .padding(.leading, Self.leadingPadding + Self.channelColumnWidth + Self.gap)
-        .accessibilityHidden(true)
-    }
-
     @ViewBuilder
-    private func nowLine(pointsPerMinute: Double) -> some View {
-        if guide.now >= guide.windowStart, guide.now < guide.windowEnd {
+    private var nowLine: some View {
+        if now >= windowStart, now < windowEnd {
             Rectangle()
                 .fill(theme.accent)
                 .frame(width: 3)
                 .frame(maxHeight: .infinity)
-                .offset(x: GuideLayout.offset(of: guide.now, windowStart: guide.windowStart, pointsPerMinute: pointsPerMinute))
+                .offset(x: GuideLayout.offset(of: now, windowStart: windowStart, pointsPerMinute: GuideLayout.pointsPerMinute))
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }

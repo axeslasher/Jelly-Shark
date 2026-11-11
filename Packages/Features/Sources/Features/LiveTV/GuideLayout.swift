@@ -23,11 +23,28 @@ struct GuideCell: Identifiable, Hashable {
     }
 }
 
+/// One channel's line of the guide
+struct GuideRow: Identifiable, Hashable {
+    let channel: LiveChannel
+    let cells: [GuideCell]
+
+    var id: String {
+        channel.id
+    }
+}
+
 /// The guide grid's arithmetic: which cells a row has, and how wide each is.
 /// Pure, so the rules are tested without a screen.
 enum GuideLayout {
     /// How much time fits across the screen
     static let visibleMinutes: Double = 120
+
+    /// The guide's time scale: two hours across the grid's share of a
+    /// 1920-point tvOS screen. A constant, not a measurement. The grid was
+    /// first sized from its measured width, which changes on every frame of
+    /// the sidebar's animation; each change re-laid out every cell and the
+    /// main thread never caught up (seen on the simulator, 2026-11-11).
+    static let pointsPerMinute: Double = 13
 
     /// The time ruler's spacing
     static let rulerStep: TimeInterval = 1800
@@ -89,11 +106,6 @@ enum GuideLayout {
         }
         fill(until: windowEnd)
         return cells
-    }
-
-    /// Points per minute that put `visibleMinutes` across `laneWidth`
-    static func pointsPerMinute(laneWidth: Double) -> Double {
-        max(laneWidth, 1) / visibleMinutes
     }
 
     /// Width of a cell's block. The gap to the next cell comes out of the
