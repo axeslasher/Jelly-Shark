@@ -19,6 +19,11 @@ enum LiveTVText {
         date.formatted(date: .omitted, time: .shortened)
     }
 
+    /// The word that marks a stream as live, as broadcasters set it
+    static var live: String {
+        String(localized: "liveTV.live", bundle: #bundle, comment: "Short all-caps marker shown beside a live TV stream that is playing.")
+    }
+
     static let noProgramInfo = LocalizedStringResource(
         "liveTV.noProgramInfo",
         bundle: #bundle,
@@ -29,12 +34,19 @@ enum LiveTVText {
     /// guide knows it, the bare channel otherwise. Built as a `MediaItem`
     /// because that is what the player's metadata is made from; the second
     /// line rides in `tagline`, which is where that code reads it for
-    /// anything that is not an episode.
+    /// anything that is not an episode. The line opens with the live
+    /// marker: the system player's title view takes text only.
     static func nowPlayingItem(channel: LiveChannel, program: LiveProgram?) -> MediaItem {
         guard let program else {
-            return channel.asMediaItem
+            return MediaItem(
+                id: channel.id,
+                name: channel.name,
+                type: .tvChannel,
+                tagline: [live, channel.number].compactMap(\.self).joined(separator: " · "),
+                imageTags: ImageTags(primary: channel.imageTag),
+            )
         }
-        let secondLine = [program.episodeTitle, episodeCode(program), channelLabel(channel)]
+        let secondLine = [live, program.episodeTitle, episodeCode(program), channelLabel(channel)]
             .compactMap(\.self)
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
@@ -51,11 +63,22 @@ enum LiveTVText {
 }
 
 extension JellyfinClientProtocol {
-    /// Artwork for a channel card: the programme's own image when the guide
-    /// has one, else the channel logo.
+    /// Artwork for a 16:9 Live TV slot, best fit first:
+    ///
+    /// 1. the programme's landscape still (thumb, then backdrop),
+    /// 2. its poster, which the slot crops. A stopgap until posters get a
+    ///    presentation of their own,
+    /// 3. the channel logo, which reads better than an empty placeholder.
     func liveArtworkURL(channel: LiveChannel, program: LiveProgram?, maxWidth: Int) -> URL? {
-        if let program, let tag = program.imageTag {
-            return getImageURL(itemId: program.id, imageType: .primary, tag: tag, maxWidth: maxWidth, maxHeight: nil)
+        if let program {
+            let choices: [(ImageType, String?)] = [
+                (.thumb, program.thumbImageTag),
+                (.backdrop, program.backdropImageTag),
+                (.primary, program.imageTag),
+            ]
+            for case let (type, tag?) in choices {
+                return getImageURL(itemId: program.id, imageType: type, tag: tag, maxWidth: maxWidth, maxHeight: nil)
+            }
         }
         if let tag = channel.imageTag {
             return getImageURL(itemId: channel.id, imageType: .primary, tag: tag, maxWidth: maxWidth, maxHeight: nil)
@@ -81,6 +104,8 @@ struct LiveChannelCard: View {
     let secondLine: SecondLine
     let client: (any JellyfinClientProtocol)?
     var width: CGFloat = 440
+    /// Marks the channel being watched, in the player's guide strip
+    var isLive = false
     var focusBinding: FocusState<ShelfFocusID?>.Binding?
     var focusID: ShelfFocusID?
     let onPlay: () -> Void
@@ -89,7 +114,7 @@ struct LiveChannelCard: View {
         ArtworkShelfItem(
             url: client?.liveArtworkURL(channel: channel, program: program, maxWidth: 1000),
             title: program?.name ?? channel.name,
-            subtitle: subtitle,
+            subtitle: isLive ? "\(LiveTVText.live) · \(subtitle)" : subtitle,
             captionAlignment: .leading,
             placeholderIcon: "antenna.radiowaves.left.and.right",
             aspectRatio: 16.0 / 9.0,

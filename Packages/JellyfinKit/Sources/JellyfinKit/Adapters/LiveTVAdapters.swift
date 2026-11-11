@@ -37,6 +37,8 @@ extension LiveProgram {
             seasonNumber: dto.parentIndexNumber,
             episodeNumber: dto.indexNumber,
             imageTag: dto.imageTags?["Primary"],
+            thumbImageTag: dto.imageTags?["Thumb"],
+            backdropImageTag: dto.backdropImageTags?.first,
         )
     }
 }

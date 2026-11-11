@@ -52,8 +52,15 @@ public struct LiveProgram: Identifiable, Sendable, Equatable, Hashable {
 
     public let episodeNumber: Int?
 
-    /// Tag of the programme's own artwork, nil when the guide carried none
+    /// Tag of the programme's primary artwork, nil when the guide carried
+    /// none. Usually a portrait poster.
     public let imageTag: String?
+
+    /// Tags of the programme's landscape artwork, when the guide source
+    /// supplied any. An XMLTV guide gives the server a single image, so
+    /// these are nil there (seen with ErsatzTV on Jellyfin 10.11.11).
+    public let thumbImageTag: String?
+    public let backdropImageTag: String?
 
     public init(
         id: String,
@@ -68,7 +75,11 @@ public struct LiveProgram: Identifiable, Sendable, Equatable, Hashable {
         seasonNumber: Int? = nil,
         episodeNumber: Int? = nil,
         imageTag: String? = nil,
+        thumbImageTag: String? = nil,
+        backdropImageTag: String? = nil,
     ) {
+        self.thumbImageTag = thumbImageTag
+        self.backdropImageTag = backdropImageTag
         self.id = id
         self.channelId = channelId
         self.name = name

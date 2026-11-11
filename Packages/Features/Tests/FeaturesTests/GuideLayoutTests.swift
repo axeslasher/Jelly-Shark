@@ -112,3 +112,66 @@ struct GuideLayoutTests {
         #expect(GuideLayout.offset(of: start.addingTimeInterval(300), windowStart: start, pointsPerMinute: 10) == 50)
     }
 }
+
+@Suite("Live TV artwork and titles")
+struct LiveTVPresentationTests {
+    private let channel = LiveChannel(id: "ch4", name: "Star Trek", number: "4", imageTag: "logo")
+    private let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
+
+    private func program(primary: String? = nil, thumb: String? = nil, backdrop: String? = nil) -> LiveProgram {
+        LiveProgram(
+            id: "p1",
+            channelId: "ch4",
+            name: "Star Trek: Voyager",
+            episodeTitle: "Ex Post Facto",
+            startDate: start,
+            endDate: start.addingTimeInterval(60),
+            seasonNumber: 1,
+            episodeNumber: 8,
+            imageTag: primary,
+            thumbImageTag: thumb,
+            backdropImageTag: backdrop,
+        )
+    }
+
+    private func artworkPath(_ program: LiveProgram?, channel: LiveChannel? = nil) -> String? {
+        MockJellyfinClient().liveArtworkURL(channel: channel ?? self.channel, program: program, maxWidth: 1000)?.path()
+    }
+
+    @Test("A landscape still beats the poster, and a thumb beats a backdrop")
+    func prefersLandscape() {
+        #expect(artworkPath(program(primary: "p", thumb: "t", backdrop: "b")) == "/Items/p1/Images/Thumb")
+        #expect(artworkPath(program(primary: "p", backdrop: "b")) == "/Items/p1/Images/Backdrop")
+    }
+
+    @Test("With only a poster, the poster is used")
+    func fallsBackToPoster() {
+        #expect(artworkPath(program(primary: "p")) == "/Items/p1/Images/Primary")
+    }
+
+    @Test("With no programme art, or no programme, the channel logo is used")
+    func fallsBackToChannelLogo() {
+        #expect(artworkPath(program()) == "/Items/ch4/Images/Primary")
+        #expect(artworkPath(nil) == "/Items/ch4/Images/Primary")
+    }
+
+    @Test("With nothing at all there is no artwork")
+    func noArtwork() {
+        #expect(artworkPath(nil, channel: LiveChannel(id: "x", name: "Bare")) == nil)
+    }
+
+    @Test("The player's title is the programme, and its second line opens with the live marker")
+    func nowPlayingProgramme() {
+        let item = LiveTVText.nowPlayingItem(channel: channel, program: program())
+        #expect(item.name == "Star Trek: Voyager")
+        #expect(item.tagline == "LIVE · Ex Post Facto · S1 E8 · 4 Star Trek")
+        #expect(item.id == "ch4")
+    }
+
+    @Test("With no programme the player still has a title: the channel, marked live")
+    func nowPlayingChannelOnly() {
+        let item = LiveTVText.nowPlayingItem(channel: channel, program: nil)
+        #expect(item.name == "Star Trek")
+        #expect(item.tagline == "LIVE · 4")
+    }
+}

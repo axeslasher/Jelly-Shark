@@ -241,6 +241,18 @@
         }
       }
     },
+    "liveTV.live": {
+      "comment": "Short all-caps marker shown beside a live TV stream that is playing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LIVE"
+          }
+        }
+      }
+    },
     "liveTV.noProgramInfo": {
       "comment": "Shown for a live TV channel when the guide has no programme for the time in question.",
       "extractionState": "manual",

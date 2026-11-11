@@ -155,6 +155,9 @@ struct LivePlaybackView: View {
         final class Coordinator {
             let player = AVPlayer()
             var loadedURL: URL?
+            /// The item handed to the player, held because the player's own
+            /// `currentItem` lags a replacement
+            var currentItem: AVPlayerItem?
             var statusObservation: NSKeyValueObservation?
             var nowPlaying: MediaItem?
             var artworkURL: URL?
@@ -164,6 +167,13 @@ struct LivePlaybackView: View {
 
             func load(_ url: URL) {
                 let item = AVPlayerItem(url: url)
+                // Set on the item itself, before it is handed over:
+                // `replaceCurrentItem` takes effect asynchronously, so
+                // `player.currentItem` can still be nil on the next line.
+                if let nowPlaying {
+                    item.externalMetadata = PlayerMetadataFactory.externalMetadata(for: nowPlaying, artworkData: artworkData)
+                }
+                currentItem = item
                 statusObservation = item.observe(\.status) { [weak self] item, _ in
                     guard item.status == .failed else { return }
                     let reason = item.error?.localizedDescription
@@ -173,7 +183,6 @@ struct LivePlaybackView: View {
                 }
                 loadedURL = url
                 player.replaceCurrentItem(with: item)
-                applyMetadata()
                 player.play()
             }
 
@@ -181,7 +190,7 @@ struct LivePlaybackView: View {
             /// player's title view and Info tab are filled from the guide.
             func applyMetadata() {
                 guard let nowPlaying else { return }
-                player.currentItem?.externalMetadata = PlayerMetadataFactory.externalMetadata(
+                currentItem?.externalMetadata = PlayerMetadataFactory.externalMetadata(
                     for: nowPlaying,
                     artworkData: artworkData,
                 )
@@ -202,6 +211,7 @@ struct LivePlaybackView: View {
             func tearDown() {
                 artworkTask?.cancel()
                 statusObservation = nil
+                currentItem = nil
                 player.pause()
                 player.replaceCurrentItem(with: nil)
             }
@@ -218,6 +228,11 @@ struct LivePlaybackView: View {
             // A live stream has nothing to scrub: there is no start to go
             // back to and no end to skip toward.
             controller.requiresLinearPlayback = true
+            #if os(tvOS)
+                // The panel's stock action is "From Beginning", which a live
+                // channel cannot honour.
+                controller.infoViewActions = []
+            #endif
             // Built once. AVKit re-lays out its tabs whenever the array is
             // reassigned, and the strip reads the guide itself, so it stays
             // current without being replaced.
@@ -302,6 +317,7 @@ struct LivePlaybackView: View {
                             secondLine: .channelAndNext(guide.nextProgram(for: channel)),
                             client: client,
                             width: 300,
+                            isLive: channel.id == channelId,
                             focusBinding: $focus,
                             focusID: ShelfFocusID(row: Self.row, item: channel.id),
                             onPlay: { onSelect(channel) },

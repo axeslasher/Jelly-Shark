@@ -68,7 +68,26 @@ struct LiveTVTests {
         #expect(program.genres == ["Science Fiction"])
         #expect(program.officialRating == "TV-PG")
         #expect(program.imageTag == "ptag")
+        // An XMLTV guide supplies one image, so landscape art is absent
+        #expect(program.thumbImageTag == nil)
+        #expect(program.backdropImageTag == nil)
         #expect(program.endDate.timeIntervalSince(program.startDate) == 3000)
+    }
+
+    @Test("A programme maps landscape artwork when the guide source supplies it")
+    func programAdapterLandscapeArt() throws {
+        let dto = BaseItemDto(
+            backdropImageTags: ["btag", "second"],
+            channelID: "ch4",
+            endDate: start.addingTimeInterval(60),
+            id: "p1",
+            imageTags: ["Primary": "ptag", "Thumb": "ttag"],
+            startDate: start,
+        )
+        let program = try #require(LiveProgram(from: dto))
+        #expect(program.imageTag == "ptag")
+        #expect(program.thumbImageTag == "ttag")
+        #expect(program.backdropImageTag == "btag")
     }
 
     @Test("A programme that cannot be placed on the guide is dropped")
