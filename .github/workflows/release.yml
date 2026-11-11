@@ -55,14 +55,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The script comes from the workflow's own commit and the project file
+      # from the tag, so a manual run against a tag older than the script
+      # still gets checked. On a tag push the two are the same commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.ref }}
+          path: tagged
 
       - name: Compare
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: scripts/verify-release-version.sh "$RELEASE_TAG"
+        run: scripts/verify-release-version.sh "$RELEASE_TAG" "tagged/Jelly Shark.xcodeproj/project.pbxproj"
 
   upload:
     name: Archive + upload (${{ matrix.platform }})
