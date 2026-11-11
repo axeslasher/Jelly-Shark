@@ -21,6 +21,7 @@ reviews:
   poem: false
   in_progress_fortune: false
   review_status: false
+  review_info: false
   sequence_diagrams: false
   estimate_code_review_effort: false
   # Solo-maintained repo: there is nobody else to suggest.
@@ -29,8 +30,8 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    # Every push to an open PR would re-review and spend the hourly quota.
-    # Ask for a follow-up review with `@coderabbitai review`.
+    # The OSS free tier allows about one review an hour, and re-reviewing every
+    # push would spend it. Ask for a follow-up with `@coderabbitai review`.
     auto_incremental_review: false
 
   # Turned off because they fight repo conventions: comments explain *why*,
@@ -46,14 +47,13 @@ reviews:
       mode: "off"
 
   path_filters:
-    # Xcode-managed project and asset files: unreadable diffs, no review value.
-    - "!**/*.pbxproj"
+    # Xcode-managed workspace and asset files: no review value. project.pbxproj
+    # and the .xcstrings catalogs stay in scope: both are edited by hand (the
+    # marketing version, and the only copy of the user-facing English text).
     - "!**/*.xcworkspace/**"
     - "!**/xcuserdata/**"
     - "!**/*.xcassets/**"
     - "!**/Package.resolved"
-    # String catalogs are rewritten by Xcode on build; they're big JSON diffs.
-    - "!**/*.xcstrings"
     # Binary fixtures, fonts, images, and build output.
     - "!**/Fixtures/**"
     - "!**/*.mkv"
@@ -102,7 +102,7 @@ reviews:
         JellyfinKit is the API client, models, persistence, and remux. Review for:
         - Swift 6 strict concurrency: public types are `Sendable`; actor isolation is correct; flag any new `@unchecked Sendable`, `nonisolated(unsafe)`, or `@preconcurrency` without a written justification.
         - Errors: HTTP failures map through `APIError`; no swallowed errors except the SwiftData cache, which deliberately degrades every failure to a cache miss. Error messages are localized.
-        - Security: the access token, server URL, and user ID live only in the Keychain (`SavedSession` via `SessionStore`/`KeychainStore`), never UserDefaults, files, or the SwiftData cache. Never log tokens, auth headers, or URLs that carry `api_key`/`ApiKey` query parameters. Flag interpolating them into `Logger`, `print`, or error descriptions, and `Logger` interpolation of sensitive values without `privacy: .private`.
+        - Security: the access token lives only in the Keychain (`SavedSession` via `SessionStore`/`KeychainStore`), never UserDefaults, files, or the SwiftData cache. The server URL and user ID are also saved there, and they are allowed in `CacheScope.storageKey`, which keys every cache row by design. Never log tokens, auth headers, or URLs that carry `api_key`/`ApiKey` query parameters. Flag interpolating them into `Logger`, `print`, or error descriptions, and `Logger` interpolation of sensitive values without `privacy: .private`.
         - Cache: rows are scoped per user per server (`CacheScope`), and that is a privacy boundary. No migrations by design: a shape or key change must bump `MediaCacheStore.schemaVersion`. Playback URLs and transcoding decisions must never be cached.
         - SDK DTOs stay behind the adapters; Features should only see JellyfinKit domain types.
         - Minimum server is 10.11.11 (`ServerInfo.minimumVersion`). Don't add fallbacks for older servers.
