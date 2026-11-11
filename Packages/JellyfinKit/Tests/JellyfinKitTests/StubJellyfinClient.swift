@@ -180,7 +180,7 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         fatalError("unstubbed getItemsFeaturingPerson")
     }
 
-    func getImageURL(itemId _: String, imageType _: ImageType, maxWidth _: Int?, maxHeight _: Int?) -> URL {
+    func getImageURL(itemId _: String, imageType _: ImageType, tag _: String?, maxWidth _: Int?, maxHeight _: Int?) -> URL {
         fatalError("unstubbed getImageURL")
     }
 

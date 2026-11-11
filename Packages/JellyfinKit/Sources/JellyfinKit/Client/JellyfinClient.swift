@@ -165,10 +165,16 @@ public protocol JellyfinClientProtocol: Sendable {
     /// - Parameters:
     ///   - itemId: The item ID
     ///   - imageType: The type of image (primary, backdrop, etc.)
+    ///   - tag: The image's tag (`ImageTags`, `ParentArtwork`, …). Pass it
+    ///     whenever it's known: a tagged request is served with a one-year
+    ///     `max-age`. An untagged one gets no explicit lifetime, so it is
+    ///     cached only by a `Last-Modified` heuristic and often revalidates
+    ///     (#117). The tag changes when the image does, so once the item's
+    ///     metadata is fresh, the long lifetime can't serve replaced artwork.
     ///   - maxWidth: Optional maximum width for the image
     ///   - maxHeight: Optional maximum height for the image
     /// - Returns: The image URL
-    func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL
+    func getImageURL(itemId: String, imageType: ImageType, tag: String?, maxWidth: Int?, maxHeight: Int?) -> URL
 
     /// Fetch metadata for the images an item carries — type and pixel
     /// dimensions (GET /Items/{itemId}/Images), so callers can judge whether
@@ -1040,7 +1046,13 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
     }
 
-    public func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int? = nil, maxHeight: Int? = nil) -> URL {
+    public func getImageURL(
+        itemId: String,
+        imageType: ImageType,
+        tag: String?,
+        maxWidth: Int? = nil,
+        maxHeight: Int? = nil,
+    ) -> URL {
         // Append to the server URL rather than overwriting the path,
         // so servers hosted under a path prefix (e.g. /jellyfin) keep working
         let endpoint = serverURL
@@ -1059,6 +1071,9 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
         if let maxHeight {
             queryItems.append(URLQueryItem(name: "maxHeight", value: String(maxHeight)))
+        }
+        if let tag {
+            queryItems.append(URLQueryItem(name: "tag", value: tag))
         }
 
         if !queryItems.isEmpty {
@@ -1911,7 +1926,13 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 public extension JellyfinClientProtocol {
     /// Get the image URL with default parameters
     func getImageURL(itemId: String, imageType: ImageType) -> URL {
-        getImageURL(itemId: itemId, imageType: imageType, maxWidth: nil, maxHeight: nil)
+        getImageURL(itemId: itemId, imageType: imageType, tag: nil, maxWidth: nil, maxHeight: nil)
+    }
+
+    /// An untagged image URL, for callers that hold no tag — it is cached only
+    /// heuristically and often revalidates (see the protocol requirement)
+    func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL {
+        getImageURL(itemId: itemId, imageType: imageType, tag: nil, maxWidth: maxWidth, maxHeight: maxHeight)
     }
 
     /// Get the URL for a user's profile image: `/Users/{userId}/Images/Primary`

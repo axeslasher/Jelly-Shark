@@ -80,13 +80,13 @@ struct HomeViewModelTests {
             id: id,
             name: "\(id)-name",
             type: .episode,
-            imageTags: primary ? ImageTags(primary: "tag") : nil,
+            imageTags: primary ? ImageTags(primary: "ep") : nil,
             seriesId: seriesId,
             seriesName: "Series",
             indexNumber: 4,
             parentIndexNumber: 2,
             parentArtwork: seriesBackdrop
-                ? ParentArtwork(backdropItemId: seriesId ?? "s1", backdropImageTag: "tag")
+                ? ParentArtwork(backdropItemId: seriesId ?? "s1", backdropImageTag: "sb")
                 : nil,
         )
     }
@@ -927,6 +927,7 @@ struct HomeViewModelTests {
         #expect(viewModel.heroItems.map(\.id) == ["e1"])
         let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
         #expect(url?.path() == "/Items/e1/Images/Primary")
+        #expect(url?.query() == "tag=ep")
     }
 
     @Test("A narrow primary falls back to the series backdrop")
@@ -938,6 +939,7 @@ struct HomeViewModelTests {
         #expect(viewModel.heroItems.map(\.id) == ["e1"])
         let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
         #expect(url?.path() == "/Items/s1/Images/Backdrop")
+        #expect(url?.query() == "tag=sb")
     }
 
     @Test("A failed image-info lookup degrades to the series backdrop")

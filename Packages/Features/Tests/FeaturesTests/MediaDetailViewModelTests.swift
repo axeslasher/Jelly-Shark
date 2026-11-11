@@ -26,11 +26,11 @@ struct MediaDetailViewModelTests {
             id: id,
             name: id,
             type: .episode,
-            imageTags: primary ? ImageTags(primary: "tag") : nil,
+            imageTags: primary ? ImageTags(primary: "ep") : nil,
             seriesId: seriesId,
             seasonId: seasonId,
             parentArtwork: seriesBackdrop
-                ? ParentArtwork(backdropItemId: seriesId, backdropImageTag: "tag")
+                ? ParentArtwork(backdropItemId: seriesId, backdropImageTag: "sb")
                 : nil,
         )
     }
@@ -306,6 +306,7 @@ struct MediaDetailViewModelTests {
         await load(viewModel, client: client, item: page)
 
         #expect(viewModel.heroBackdropURL(for: page)?.path() == "/Items/e1/Images/Primary")
+        #expect(viewModel.heroBackdropURL(for: page)?.query() == "tag=ep")
     }
 
     @Test("A narrow primary falls back to the series backdrop, never the thumb")
@@ -320,6 +321,7 @@ struct MediaDetailViewModelTests {
         await load(viewModel, client: client, item: page)
 
         #expect(viewModel.heroBackdropURL(for: page)?.path() == "/Items/s1/Images/Backdrop")
+        #expect(viewModel.heroBackdropURL(for: page)?.query() == "tag=sb")
     }
 
     @Test("A failed image-info lookup keeps the series backdrop")

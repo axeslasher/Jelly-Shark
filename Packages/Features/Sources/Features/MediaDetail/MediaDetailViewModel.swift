@@ -132,13 +132,19 @@ public final class MediaDetailViewModel {
     public func heroBackdropURL(for item: MediaItem) -> URL? {
         guard let client else { return nil }
         if episodePrimaryIsHeroBackdrop {
-            return client.getImageURL(itemId: item.id, imageType: .primary, maxWidth: 1920, maxHeight: nil)
+            return client.getImageURL(
+                itemId: item.id,
+                imageType: .primary,
+                tag: item.imageTags?.primary,
+                maxWidth: 1920,
+                maxHeight: nil,
+            )
         }
         if item.type == .episode,
            let parentId = item.parentArtwork?.backdropItemId,
-           item.parentArtwork?.backdropImageTag != nil
+           let tag = item.parentArtwork?.backdropImageTag
         {
-            return client.getImageURL(itemId: parentId, imageType: .backdrop, maxWidth: 1920, maxHeight: nil)
+            return client.getImageURL(itemId: parentId, imageType: .backdrop, tag: tag, maxWidth: 1920, maxHeight: nil)
         }
         return client.backdropURL(for: item)
     }
