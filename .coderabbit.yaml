@@ -1,0 +1,161 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit review config. Every key is checked against schema.v2.json.
+# The OSS tier is rate-limited (~1 review/hour, ~100 files), so this file mostly
+# keeps CodeRabbit's attention on the Swift we write and away from generated
+# files and anything CI already enforces.
+
+language: en-US
+tone_instructions: >-
+  Be direct and brief. Lead with the defect and its consequence. Skip praise,
+  restating the diff, and formatting nits; SwiftFormat already enforces style in CI.
+
+reviews:
+  profile: chill
+  request_changes_workflow: false
+
+  # Keep the summary and walkthrough; drop everything decorative.
+  high_level_summary: true
+  collapse_walkthrough: true
+  changed_files_summary: true
+  poem: false
+  in_progress_fortune: false
+  review_status: false
+  review_info: false
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  # Solo-maintained repo: there is nobody else to suggest.
+  suggested_reviewers: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    # The OSS free tier allows about one review an hour, and re-reviewing every
+    # push would spend it. Ask for a follow-up with `@coderabbitai review`.
+    auto_incremental_review: false
+
+  # Turned off because they fight repo conventions: comments explain *why*,
+  # not *what*, so docstring coverage is the wrong measure. Tests are written to
+  # the repo's Swift Testing conventions and the two-venue split (see CLAUDE.md).
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+
+  path_filters:
+    # Xcode-managed workspace and asset files: no review value. project.pbxproj
+    # and the .xcstrings catalogs stay in scope: both are edited by hand (the
+    # marketing version, and the only copy of the user-facing English text).
+    - "!**/*.xcworkspace/**"
+    - "!**/xcuserdata/**"
+    - "!**/*.xcassets/**"
+    - "!**/Package.resolved"
+    # Binary fixtures, fonts, images, and build output.
+    - "!**/Fixtures/**"
+    - "!**/*.mkv"
+    - "!**/*.ttf"
+    - "!**/*.otf"
+    - "!**/*.png"
+    - "!**/*.svg"
+    - "!docs/images/**"
+    - "!**/.build/**"
+    - "!**/DerivedData/**"
+
+  path_instructions:
+    - path: "**/*.swift"
+      instructions: |
+        Swift 6.2, tvOS 26 / visionOS 26 only. Enforce the CLAUDE.md conventions, not generic Swift advice:
+        - Shared state is an `@Observable` class marked `@MainActor`, owned with `@State`, passed with `@Bindable` or `@Environment`. Flag `ObservableObject`, `@Published`, `@StateObject`, `@ObservedObject`, `@EnvironmentObject`.
+        - Prefer async/await over closure APIs. Flag `DispatchQueue.main.async` and `Task.sleep(nanoseconds:)`.
+        - No force unwraps or `try!` outside tests and truly unrecoverable paths.
+        - SwiftUI: `foregroundStyle`, `clipShape(.rect(cornerRadius:))`, `Tab`, `NavigationStack` + `navigationDestination(for:)`. `Button` over `onTapGesture` unless location/count is needed; image-only buttons still carry a text label (VoiceOver).
+        - User-facing numbers and dates use `FormatStyle`, not `DateFormatter`/`NumberFormatter`/`String(format:)`. User-facing strings must be localizable.
+        Do NOT flag these deliberate exceptions: `String(format:)` for HLS playlist text and `S%02dE%02d` IDs; `DispatchQueue` in the playback servers and discovery socket (Network.framework takes a queue); `AnyView` in `UpNextProposalViewController`; UIKit in playback; `ScrollViewReader`/`GeometryReader`/`onGeometryChange` (device-verified scroll and focus behaviour depends on them).
+        Don't suggest refactors, new abstractions, or helpers beyond what the PR is doing.
+
+    - path: "Packages/DesignSystem/**"
+      instructions: |
+        DesignSystem owns the theme tokens. Review for:
+        - Hardcoded colors, fonts, sizes, spacing, durations, or curves in components where a token exists: `BaseColors` (Tailwind v4 names via `Color(oklch:)`), `TypographyTokens`, `SpacingTokens`, `MotionTokens`, or the `\.theme` environment value. Raw hex or `Color(red:green:blue:)` in a component is a defect.
+        - `Color(oklch:)` converts to extended linear sRGB so P3/HDR shades survive. Flag anything that clamps to sRGB or bypasses that path.
+        - Theme or palette changes must keep `ThemeCatalogTests` green (WCAG AA: 4.5:1 text, 3:1 accents and focus rings). Flag a palette change that has no matching test update or that weakens a floor.
+        - The genre palettes (Horror, Action, Video Store, Sci-Fi) are hand-curated. Don't suggest shade "corrections".
+        - Theme switching happens at runtime through `ThemeManager` and the environment, with no restart. Flag anything that caches a theme value outside the environment, reads `ThemeManager.shared` from a component, or otherwise needs a relaunch to pick up a new theme.
+        - New visual components ship the five theme `#Preview` tabs (Standard, Horror, Action, Video Store, Sci-Fi) pinned with `.previewCanvas(_:)` or `.withThemeEnvironment(.preview(_:))`, never bare `.withThemeEnvironment()`. Previews that use `PreviewData` must be inside `#if DEBUG`.
+        - Reduce Motion is honoured for non-trivial animation.
+
+    - path: "Packages/Features/**"
+      instructions: |
+        Features holds the screens and view models. Review for:
+        - tvOS focus correctness: every interactive element is reachable by the Siri Remote; default focus lands somewhere sensible (`defaultFocus`, `prefersDefaultFocus`, `focusSection`); no focus traps or dead ends. Any change to scrolling, opacity/fades, snapping, layout offsets, `.disabled`, or navigation state should say in the PR which elements stay focusable and where default focus lands. Ask for it when it's missing.
+        - 10-foot readability: text uses the theme's typography roles, not small literal sizes; content respects safe areas and overscan.
+        - visionOS differs: no focus engine (gaze and pinch), and it has hover effects, ornaments, and window sizing. Flag tvOS-only APIs used without `#if os(tvOS)` (the visionOS CI build will fail), and tvOS-only assumptions in shared views.
+        - Every screen has an `@Observable @MainActor` view model. Server fetches and optimistic toggles live there, not in views. Tasks are cancelled when the screen goes away.
+        - Playback servers (`PlaybackLocalServer`, `RemuxHLSServer`, `LoopbackHTTPListener`) are Network.framework code where queues are expected. Check `@unchecked Sendable` there for real data races, not style.
+
+    - path: "Packages/JellyfinKit/**"
+      instructions: |
+        JellyfinKit is the API client, models, persistence, and remux. Review for:
+        - Swift 6 strict concurrency: public types are `Sendable`; actor isolation is correct; flag any new `@unchecked Sendable`, `nonisolated(unsafe)`, or `@preconcurrency` without a written justification.
+        - Errors: HTTP failures map through `APIError`; no swallowed errors except the SwiftData cache, which deliberately degrades every failure to a cache miss. Error messages are localized.
+        - Security: the access token lives only in the Keychain (`SavedSession` via `SessionStore`/`KeychainStore`), never UserDefaults, files, or the SwiftData cache. The server URL and user ID are also saved there, and they are allowed in `CacheScope.storageKey`, which keys every cache row by design. Never log tokens, auth headers, or URLs that carry `api_key`/`ApiKey` query parameters. Flag interpolating them into `Logger`, `print`, or error descriptions, and `Logger` interpolation of sensitive values without `privacy: .private`.
+        - Cache: rows are scoped per user per server (`CacheScope`), and that is a privacy boundary. No migrations by design: a shape or key change must bump `MediaCacheStore.schemaVersion`. Playback URLs and transcoding decisions must never be cached.
+        - SDK DTOs stay behind the adapters; Features should only see JellyfinKit domain types.
+        - Minimum server is 10.11.11 (`ServerInfo.minimumVersion`). Don't add fallbacks for older servers.
+
+    - path: "**/Tests/**"
+      instructions: |
+        Swift Testing (`@Test("description") func camelCaseName()`); force unwraps are fine here. Flag timing-dependent tests (fixed sleeps, wall-clock races) and suggest awaiting a signal instead. Don't propose tests that try to verify visual appearance or how focus feels; nothing in this repo can verify those.
+
+    - path: ".github/workflows/**"
+      instructions: |
+        Actions are pinned to full commit SHAs; keep them pinned. Never rename `release.yml`: build numbers come from `github.run_number`, which resets on rename.
+
+  tools:
+    # No .swiftlint.yml in the repo, so CodeRabbit would run SwiftLint's
+    # defaults, which overlap with SwiftFormat and produce style noise.
+    swiftlint:
+      enabled: false
+    # Prose and Markdown style checkers: noise on docs PRs.
+    languagetool:
+      enabled: false
+    markdownlint:
+      enabled: false
+    # Only a couple of throwaway Figma helper scripts are Python/JS.
+    ruff:
+      enabled: false
+    pylint:
+      enabled: false
+    flake8:
+      enabled: false
+    biome:
+      enabled: false
+    # Kept on (defaults, listed here so the choice is visible): secret scanning,
+    # shell-script bugs, GitHub Actions correctness and security, and reading CI results.
+    gitleaks:
+      enabled: true
+    shellcheck:
+      enabled: true
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    github-checks:
+      enabled: true
+
+chat:
+  art: false
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    # The conventions the path_instructions above are drawn from.
+    filePatterns:
+      - "CLAUDE.md"
+      - "docs/ARCHITECTURE.md"
+      - "docs/DESIGN_SYSTEM.md"
+      - "docs/JELLYFIN_INTEGRATION.md"
