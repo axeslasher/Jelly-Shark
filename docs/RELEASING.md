@@ -96,7 +96,7 @@ Not in `MARKETING_VERSION` — App Store Connect requires one to three period-se
 
 ## What must move together
 
-The tag and the app's version are two records of the same fact, and nothing enforces that they agree:
+The tag and the app's version are two records of the same fact. The release workflow refuses to upload unless they agree — `scripts/verify-release-version.sh` checks both app configurations before archiving, and the archive's own version is checked again before upload. Run the script yourself before tagging: `scripts/verify-release-version.sh v<version>`.
 
 | Record | Where | Set by |
 |---|---|---|

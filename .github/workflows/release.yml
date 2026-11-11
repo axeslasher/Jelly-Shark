@@ -55,27 +55,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # The script comes from the workflow's own commit and the project file
+      # from the tag, so a manual run against a tag older than the script
+      # still gets checked. On a tag push the two are the same commit.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag || github.ref }}
+          path: tagged
 
       - name: Compare
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          case "$RELEASE_TAG" in
-            v*) ;;
-            *) echo "::error::'$RELEASE_TAG' is not a v* release tag"; exit 1 ;;
-          esac
-          tag="${RELEASE_TAG#v}"
-          versions=$(grep -o 'MARKETING_VERSION = [^;]*' "Jelly Shark.xcodeproj/project.pbxproj" | awk '{print $3}' | sort -u)
-          echo "tag: $tag"
-          echo "MARKETING_VERSION values (app 1, test targets at template 1.0):"
-          echo "$versions"
-          if ! echo "$versions" | grep -qx "$tag"; then
-            echo "::error::tag v$tag has no matching MARKETING_VERSION — bump project.pbxproj first, then tag (docs/RELEASING.md)"
-            exit 1
-          fi
+        run: scripts/verify-release-version.sh "$RELEASE_TAG" "tagged/Jelly Shark.xcodeproj/project.pbxproj"
 
   upload:
     name: Archive + upload (${{ matrix.platform }})
@@ -117,6 +110,20 @@ jobs:
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "${{ secrets.ASC_API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_API_ISSUER_ID }}"
+
+      # verify-version reads project.pbxproj; this reads what was built, so a
+      # version Xcode resolved from anywhere else still can't ship mislabeled.
+      - name: Archived version matches tag
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          archived=$(/usr/libexec/PlistBuddy -c "Print :ApplicationProperties:CFBundleShortVersionString" \
+            "$RUNNER_TEMP/JellyShark-${{ matrix.platform }}.xcarchive/Info.plist")
+          echo "archived: $archived, tag: $RELEASE_TAG"
+          if [ "v$archived" != "$RELEASE_TAG" ]; then
+            echo "::error::the ${{ matrix.platform }} archive is version $archived, tag is $RELEASE_TAG"
+            exit 1
+          fi
 
       # manageAppVersionAndBuildNumber must stay false: letting Xcode
       # "helpfully" rewrite the build number on upload would defeat the
