@@ -346,11 +346,28 @@ private struct GuideHeader: View {
                     progress(program)
                 }
 
-                if let line = Self.episodeLine(cell) {
-                    Text(line)
-                        .jsStyle(.body)
-                        .foregroundStyle(theme.secondary)
-                        .lineLimit(1)
+                HStack(alignment: .center, spacing: SpacingTokens.md) {
+                    if let line = Self.episodeLine(cell) {
+                        Text(line)
+                            .jsStyle(.body)
+                            .foregroundStyle(theme.secondary)
+                            .lineLimit(1)
+                    }
+                    // The same certificate badge the Home hero and the detail
+                    // page show, from the row that owns it. Draws nothing
+                    // when the guide carries no rating.
+                    MediaMetadataRow(
+                        yearText: nil,
+                        runtime: nil,
+                        seasons: nil,
+                        seasonsIcon: "tv",
+                        communityRating: nil,
+                        criticRating: nil,
+                        certificate: cell.program?.officialRating,
+                        resolution: nil,
+                        videoRange: nil,
+                        audioFormat: nil,
+                    )
                 }
 
                 if let overview = cell.program?.overview, !overview.isEmpty {
@@ -408,12 +425,12 @@ private struct GuideHeader: View {
         return "\(LiveTVText.time(start)) – \(LiveTVText.time(end)) · \(LiveTVText.channelLabel(channel))"
     }
 
-    /// "S1 E26 · Errand of Mercy · TV-PG"
+    /// "S1 E26 · Errand of Mercy". The rating is drawn beside it as a badge.
     static func episodeLine(_ cell: GuideCell) -> String? {
         guard let program = cell.program else {
             return String(localized: LiveTVText.noProgramInfo)
         }
-        let parts = [LiveTVText.episodeCode(program), program.episodeTitle, program.officialRating]
+        let parts = [LiveTVText.episodeCode(program), program.episodeTitle]
             .compactMap(\.self)
             .filter { !$0.isEmpty }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
