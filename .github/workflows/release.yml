@@ -62,20 +62,7 @@ jobs:
       - name: Compare
         env:
           RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
-        run: |
-          case "$RELEASE_TAG" in
-            v*) ;;
-            *) echo "::error::'$RELEASE_TAG' is not a v* release tag"; exit 1 ;;
-          esac
-          tag="${RELEASE_TAG#v}"
-          versions=$(grep -o 'MARKETING_VERSION = [^;]*' "Jelly Shark.xcodeproj/project.pbxproj" | awk '{print $3}' | sort -u)
-          echo "tag: $tag"
-          echo "MARKETING_VERSION values (app 1, test targets at template 1.0):"
-          echo "$versions"
-          if ! echo "$versions" | grep -qx "$tag"; then
-            echo "::error::tag v$tag has no matching MARKETING_VERSION — bump project.pbxproj first, then tag (docs/RELEASING.md)"
-            exit 1
-          fi
+        run: scripts/verify-release-version.sh "$RELEASE_TAG"
 
   upload:
     name: Archive + upload (${{ matrix.platform }})
