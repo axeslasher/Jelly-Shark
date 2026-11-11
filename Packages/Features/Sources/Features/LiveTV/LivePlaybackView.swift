@@ -153,6 +153,9 @@ struct LivePlaybackView: View {
 
         @MainActor
         final class Coordinator {
+            /// Seconds behind the newest video that playback starts
+            static let offsetFromLive: Double = 30
+
             let player = AVPlayer()
             var loadedURL: URL?
             /// The item handed to the player, held because the player's own
@@ -164,9 +167,39 @@ struct LivePlaybackView: View {
             var artworkData: Data?
             var artworkTask: Task<Void, Never>?
             var onFailure: (URL, String?) -> Void = { _, _ in }
+            var onSelectChannel: (LiveChannel) -> Void = { _ in }
+            weak var controller: AVPlayerViewController?
+
+            /// A channel was picked in the Guide tab: close the panel, then
+            /// switch.
+            ///
+            /// The panel is a presentation of its own, so it outlives the
+            /// player view a channel change replaces. Left up, it sat over
+            /// the new channel's controls until they timed out (seen on the
+            /// simulator, 2026-11-11). When nothing is presented the switch
+            /// goes ahead as it is.
+            func pick(_ channel: LiveChannel) {
+                guard let panel = controller?.presentedViewController else {
+                    onSelectChannel(channel)
+                    return
+                }
+                panel.dismiss(animated: true) { [weak self] in
+                    self?.onSelectChannel(channel)
+                }
+            }
 
             func load(_ url: URL) {
                 let item = AVPlayerItem(url: url)
+                // Start well back from the newest video. AVPlayer opens a
+                // live stream a few segments from its end, and some tuners
+                // deliver their first half minute in one burst and then
+                // nothing until real time catches up: ErsatzTV sent 32s at
+                // once, then no more for 24s (server transcode log,
+                // 2026-11-11). Starting at the end of that burst ran the
+                // player dry about 15s in. Thirty seconds back, it plays
+                // through the gap. A tuner with less than that on hand
+                // simply starts from the earliest video it has.
+                item.configuredTimeOffsetFromLive = CMTime(seconds: Self.offsetFromLive, preferredTimescale: 1)
                 // Set on the item itself, before it is handed over:
                 // `replaceCurrentItem` takes effect asynchronously, so
                 // `player.currentItem` can still be nil on the next line.
@@ -225,6 +258,7 @@ struct LivePlaybackView: View {
             let controller = AVPlayerViewController()
             let coordinator = context.coordinator
             controller.player = coordinator.player
+            coordinator.controller = controller
             // A live stream has nothing to scrub: there is no start to go
             // back to and no end to skip toward.
             controller.requiresLinearPlayback = true
@@ -241,7 +275,7 @@ struct LivePlaybackView: View {
                     guide: guide,
                     client: client,
                     channelId: channelId,
-                    onSelect: onSelectChannel,
+                    onSelect: { [weak coordinator] channel in coordinator?.pick(channel) },
                 ),
             ]
             sync(coordinator)
@@ -258,6 +292,7 @@ struct LivePlaybackView: View {
 
         private func sync(_ coordinator: Coordinator) {
             coordinator.onFailure = onFailure
+            coordinator.onSelectChannel = onSelectChannel
             let metadataChanged = coordinator.nowPlaying != nowPlaying
             coordinator.nowPlaying = nowPlaying
             if coordinator.loadedURL != url {
