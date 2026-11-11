@@ -498,6 +498,60 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         stopReports.append((itemId, positionTicks))
     }
 
+    // MARK: Live TV
+
+    var liveChannelsResult: Result<[LiveChannel], Error> = .success([])
+    var liveChannelsRequestCount = 0
+
+    func getLiveChannels() async throws -> [LiveChannel] {
+        let result = lock.withLock {
+            liveChannelsRequestCount += 1
+            return liveChannelsResult
+        }
+        return try result.get()
+    }
+
+    var liveProgramsResult: Result<[LiveProgram], Error> = .success([])
+    /// Programme fetches as (channel ids, window start, window end)
+    var liveProgramsRequests: [([String], Date, Date)] = []
+
+    func getLivePrograms(channelIds: [String], from start: Date, to end: Date) async throws -> [LiveProgram] {
+        let result = lock.withLock {
+            liveProgramsRequests.append((channelIds, start, end))
+            return liveProgramsResult
+        }
+        return try result.get()
+    }
+
+    /// Channel ids a live stream was opened for, in arrival order
+    var openLiveStreamRequests: [String] = []
+    /// Nil serves a distinct session per open, named after its ordinal
+    var openLiveStreamResult: Result<LiveStreamSession, Error>?
+    /// Suspension point inside `openLiveStream`, keyed by the 1-based ordinal
+    var openLiveStreamGate: (@Sendable (Int) async -> Void)?
+    var closedLiveStreams: [LiveStreamSession] = []
+
+    func openLiveStream(channelId: String, capabilities _: PlaybackCapabilities) async throws -> LiveStreamSession {
+        let (ordinal, result) = lock.withLock {
+            openLiveStreamRequests.append(channelId)
+            return (openLiveStreamRequests.count, openLiveStreamResult)
+        }
+        await openLiveStreamGate?(ordinal)
+        if let result {
+            return try result.get()
+        }
+        return LiveStreamSession(
+            url: URL(string: "https://example.com/videos/\(channelId)/master.m3u8?n=\(ordinal)")!,
+            playSessionId: "play\(ordinal)",
+            mediaSourceId: "source\(ordinal)",
+            liveStreamId: "live\(ordinal)",
+        )
+    }
+
+    func closeLiveStream(_ session: LiveStreamSession) async {
+        lock.withLock { closedLiveStreams.append(session) }
+    }
+
     var playbackExtrasRequests: [String] = []
     var playbackExtrasResult: Result<PlaybackExtras, Error> = .success(PlaybackExtras())
 
