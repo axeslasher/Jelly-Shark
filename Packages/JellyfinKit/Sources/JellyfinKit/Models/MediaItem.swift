@@ -213,6 +213,9 @@ public enum MediaType: String, Sendable, Hashable, Codable {
     case video = "Video"
     case folder = "Folder"
     case collectionFolder = "CollectionFolder"
+    /// A Live TV channel. Only made by `LiveChannel.asMediaItem`, to launch
+    /// playback; server item lists still map channels to `.unknown`.
+    case tvChannel = "TvChannel"
     case unknown
 }
 

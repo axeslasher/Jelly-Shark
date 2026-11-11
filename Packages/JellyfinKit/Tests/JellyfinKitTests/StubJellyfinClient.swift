@@ -200,6 +200,22 @@ final class StubJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         fatalError("unstubbed getMediaItems")
     }
 
+    func getLiveChannels() async throws -> [LiveChannel] {
+        fatalError("unstubbed getLiveChannels")
+    }
+
+    func getLivePrograms(channelIds _: [String], from _: Date, to _: Date) async throws -> [LiveProgram] {
+        fatalError("unstubbed getLivePrograms")
+    }
+
+    func openLiveStream(channelId _: String, capabilities _: PlaybackCapabilities) async throws -> LiveStreamSession {
+        fatalError("unstubbed openLiveStream")
+    }
+
+    func closeLiveStream(_: LiveStreamSession) async {
+        fatalError("unstubbed closeLiveStream")
+    }
+
     func getPlaybackInfo(
         itemId _: String,
         mediaSourceId _: String?,

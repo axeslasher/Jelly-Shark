@@ -358,6 +358,24 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
         )
     }
 
+    // MARK: - Live TV (never cached: a guide goes stale by the minute)
+
+    public func getLiveChannels() async throws -> [LiveChannel] {
+        try await inner.getLiveChannels()
+    }
+
+    public func getLivePrograms(channelIds: [String], from start: Date, to end: Date) async throws -> [LiveProgram] {
+        try await inner.getLivePrograms(channelIds: channelIds, from: start, to: end)
+    }
+
+    public func openLiveStream(channelId: String, capabilities: PlaybackCapabilities) async throws -> LiveStreamSession {
+        try await inner.openLiveStream(channelId: channelId, capabilities: capabilities)
+    }
+
+    public func closeLiveStream(_ session: LiveStreamSession) async {
+        await inner.closeLiveStream(session)
+    }
+
     public func getPlaybackExtras(itemId: String) async throws -> PlaybackExtras {
         let extras = try await inner.getPlaybackExtras(itemId: itemId)
         // Not an item-returning fetch, but it carries the freshest user data
