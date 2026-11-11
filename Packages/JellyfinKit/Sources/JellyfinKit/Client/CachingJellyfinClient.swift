@@ -225,8 +225,8 @@ public final class CachingJellyfinClient: JellyfinClientProtocol, Sendable {
 
     // MARK: - Images
 
-    public func getImageURL(itemId: String, imageType: ImageType, maxWidth: Int?, maxHeight: Int?) -> URL {
-        inner.getImageURL(itemId: itemId, imageType: imageType, maxWidth: maxWidth, maxHeight: maxHeight)
+    public func getImageURL(itemId: String, imageType: ImageType, tag: String?, maxWidth: Int?, maxHeight: Int?) -> URL {
+        inner.getImageURL(itemId: itemId, imageType: imageType, tag: tag, maxWidth: maxWidth, maxHeight: maxHeight)
     }
 
     public func getImageInfo(itemId: String) async throws -> [ItemImageInfo] {

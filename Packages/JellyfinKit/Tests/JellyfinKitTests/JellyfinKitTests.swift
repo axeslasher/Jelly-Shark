@@ -601,6 +601,13 @@ struct JellyfinKitTests {
             #expect(url.absoluteString == "https://jellyfin.example.com/Items/abc/Images/Backdrop")
         }
 
+        @Test("Item image URL carries the image tag when given")
+        func itemImageURLWithTag() {
+            let client = makeClient(serverURL: "https://jellyfin.example.com")
+            let url = client.getImageURL(itemId: "abc", imageType: .primary, tag: "t1", maxWidth: 600, maxHeight: nil)
+            #expect(url.absoluteString == "https://jellyfin.example.com/Items/abc/Images/Primary?maxWidth=600&tag=t1")
+        }
+
         @Test("User image URL")
         func userImageURL() {
             let client = makeClient(serverURL: "https://jellyfin.example.com")
