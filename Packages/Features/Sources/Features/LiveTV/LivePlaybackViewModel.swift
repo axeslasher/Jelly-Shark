@@ -87,6 +87,9 @@ final class LivePlaybackViewModel {
     ///   session has already left is that stream being closed, not an error.
     func playerFailed(url: URL, reason: String?) {
         guard url == session?.url, state == .playing else { return }
+        // The player's own wording can quote the stream address, which
+        // carries the access token: redacted for the log and the screen alike.
+        let reason = reason.map(PlaybackLog.redacting)
         Self.logger.error("[live] player failed on \"\(self.channel.name, privacy: .public)\": \(reason ?? "unknown", privacy: .public)")
         state = .failed(reason ?? String(
             localized: "liveTV.player.streamStopped",

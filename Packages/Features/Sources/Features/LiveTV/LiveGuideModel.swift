@@ -54,6 +54,15 @@ final class LiveGuideModel {
         self.client = client
     }
 
+    /// Forget everything, for a sign-out or a server without Live TV.
+    func reset() {
+        loadGeneration += 1
+        client = nil
+        channels = []
+        programsByChannel = [:]
+        status = .idle
+    }
+
     /// Whether the server has any channels to show. False until a load says so.
     var hasChannels: Bool {
         !channels.isEmpty
@@ -123,3 +132,40 @@ final class LiveGuideModel {
         return Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / halfHour).rounded(.down) * halfHour)
     }
 }
+
+#if DEBUG
+    extension LiveGuideModel {
+        /// A loaded guide for previews: a scheduled channel, one of short
+        /// items, and one the guide knows nothing about.
+        static func preview() -> LiveGuideModel {
+            let model = LiveGuideModel()
+            let start = model.windowStart
+            func program(_ channel: String, _ name: String, _ episode: String?, from: Double, minutes: Double) -> LiveProgram {
+                LiveProgram(
+                    id: "\(channel)-\(from)",
+                    channelId: channel,
+                    name: name,
+                    episodeTitle: episode,
+                    overview: "A preview programme, here so the guide's header has a description to lay out across more than one line.",
+                    startDate: start.addingTimeInterval(from * 60),
+                    endDate: start.addingTimeInterval((from + minutes) * 60),
+                    genres: ["Science Fiction", "Adventure"],
+                    officialRating: "TV-PG",
+                    seasonNumber: 1,
+                    episodeNumber: 26,
+                )
+            }
+            model.channels = [
+                LiveChannel(id: "2", name: "Ashley TV", number: "2"),
+                LiveChannel(id: "3", name: "MTV", number: "3"),
+                LiveChannel(id: "4", name: "Star Trek", number: "4"),
+            ]
+            model.programsByChannel = [
+                "3": stride(from: -3.0, to: 720, by: 4).map { program("3", "Music Video", nil, from: $0, minutes: 4) },
+                "4": stride(from: -27.0, to: 720, by: 50).map { program("4", "Star Trek", "Errand of Mercy", from: $0, minutes: 50) },
+            ]
+            model.status = .loaded
+            return model
+        }
+    }
+#endif

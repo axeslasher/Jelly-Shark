@@ -193,6 +193,102 @@
         }
       }
     },
+    "liveTV.card.channelNext %@ %@ %@": {
+      "comment": "Second line of a live TV card in the player's guide. Values: the channel, the next programme, and when it starts.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · Next: %2$@ %3$@"
+          }
+        }
+      }
+    },
+    "liveTV.card.channelUntil %@ %@": {
+      "comment": "Second line of a live TV card. First value is the channel, second is when the programme ends.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ · until %2$@"
+          }
+        }
+      }
+    },
+    "liveTV.guide.minutesLeft %lld": {
+      "comment": "How many minutes remain of the live TV programme that has focus.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld min left"
+          }
+        }
+      }
+    },
+    "liveTV.guide.noChannels": {
+      "comment": "Shown on the live TV guide when the server has no channels.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No channels available"
+          }
+        }
+      }
+    },
+    "liveTV.noProgramInfo": {
+      "comment": "Shown for a live TV channel when the guide has no programme for the time in question.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No program information"
+          }
+        }
+      }
+    },
+    "liveTV.player.streamStopped": {
+      "comment": "Error shown when a live TV stream stops unexpectedly.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The stream stopped."
+          }
+        }
+      }
+    },
+    "liveTV.player.tab.guide": {
+      "comment": "Player info-panel tab listing live TV channels and what each is showing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guide"
+          }
+        }
+      }
+    },
+    "liveTV.shelf.onAirNow": {
+      "comment": "Home shelf listing what each live TV channel is showing right now.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "On Air Now"
+          }
+        }
+      }
+    },
     "player.failed.title": {
       "comment": "Heading shown when a video can't be played.",
       "extractionState": "manual",

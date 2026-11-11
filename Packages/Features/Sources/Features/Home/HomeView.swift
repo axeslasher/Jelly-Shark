@@ -22,6 +22,7 @@ struct HomeView: View {
     @Environment(HomePreferences.self) private var homePreferences
     @Environment(PlaybackPreferences.self) private var playbackPreferences
     @Environment(ContentRefreshCoordinator.self) private var refreshCoordinator
+    @Environment(LiveGuideModel.self) private var liveGuide
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.pushMediaDetail) private var pushMediaDetail
 
@@ -474,6 +475,12 @@ struct HomeView: View {
                         focusBinding: $focusedCard,
                     )
 
+                    // tvOS only: the live player is not built for visionOS.
+                    // Renders nothing when the server has no channels.
+                    #if os(tvOS)
+                        OnAirNowShelf(guide: liveGuide, focusBinding: $focusedCard)
+                    #endif
+
                     // Above the genre row: curated picks outrank a generic
                     // browse affordance (#86 § 11). Renders nothing at all
                     // when nothing qualified.
@@ -657,6 +664,13 @@ struct HomeView: View {
         rows.append(contentsOf: viewModel.latestShelves.map {
             .init(id: HomeShelfRowID.latest($0.library.id), itemIDs: $0.items.map(\.id))
         })
+        #if os(tvOS)
+            // Listed only while it draws, like every row here: an empty row
+            // would be a landing spot no view has bound.
+            if liveGuide.hasChannels {
+                rows.append(.init(id: HomeShelfRowID.onAirNow, itemIDs: liveGuide.channels.map(\.id)))
+            }
+        #endif
         rows.append(contentsOf: affinityShelves.shelves.map {
             .init(
                 id: HomeShelfRowID.affinity($0.descriptor.kind.identity),

@@ -27,6 +27,7 @@ import SwiftUI
                 .environment(HomePreferences())
                 .environment(PlaybackPreferences())
                 .environment(ContentRefreshCoordinator())
+                .environment(LiveGuideModel())
         }
     }
 

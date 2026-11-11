@@ -21,6 +21,10 @@ public struct RootView: View {
     @State private var affinityShelves = AffinityShelvesViewModel()
     @State private var homeUI = HomeUIState()
 
+    /// The Live TV schedule, owned here so the guide tab and Home's On Air
+    /// Now shelf read one copy, and so it survives tvOS tearing either down.
+    @State private var liveGuide = LiveGuideModel()
+
     /// Collects the reasons Home's content has gone stale, so a mutation
     /// made anywhere in the app is not lost while Home is off screen.
     @State private var refreshCoordinator = ContentRefreshCoordinator()
@@ -156,9 +160,12 @@ public struct RootView: View {
             // lives behind one Libraries tab, which fixes the ornament at four
             // entries no matter what the server exposes.
             #if os(tvOS)
-                if !connectionViewModel.libraries.isEmpty {
+                if !connectionViewModel.libraries.isEmpty || connectionViewModel.liveTVLibrary != nil {
                     TabSection(LocalizedStringResource("tab.libraries", bundle: #bundle, comment: "Tab and sidebar section listing the user's media libraries.")) {
                         libraryTabs
+                        if let liveTV = connectionViewModel.liveTVLibrary {
+                            liveTVTab(liveTV)
+                        }
                     }
                 }
 
@@ -198,198 +205,216 @@ public struct RootView: View {
         .tabViewStyle(.sidebarAdaptable)
         #endif
         .withThemeEnvironment(themeManager)
-        .environment(session)
-        .environment(connectionViewModel)
-        .environment(homePreferences)
-        .environment(playbackPreferences)
-        .environment(refreshCoordinator)
-        .environment(\.openSettings, OpenSettingsAction {
-            tabSelection.wrappedValue = .settings
-        })
-        .environment(\.pushMediaDetail, PushMediaDetailAction { item in
-            var path = tabPaths[selectedTab, default: NavigationPath()]
-            path.append(item)
-            tabPaths[selectedTab] = path
-        })
-        .task {
-            // Attach here (not just in Settings) so a restored client is
-            // published app-wide even if the user never opens Settings
-            connectionViewModel.attach(session: session)
-            await connectionViewModel.restoreSession()
-
-            #if DEBUG
-                // Test hook: auto-connect to a server from the environment
-                // (pass via `simctl launch` with SIMCTL_CHILD_-prefixed vars)
-                // so UI automation can reach a connected state without
-                // driving the connection form
-                if case .disconnected = connectionViewModel.state,
-                   let server = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_SERVER"]
-                {
-                    connectionViewModel.serverURL = server
-                    connectionViewModel.username = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_USER"] ?? ""
-                    connectionViewModel.password = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_PASSWORD"] ?? ""
-                    await connectionViewModel.connect()
+        .environment(liveGuide)
+        #if os(tvOS)
+            // Keyed on both: a restore publishes the cached library list
+            // before the client, and either arriving second must start the load.
+            .task(id: LiveTVLoadKey(libraryID: connectionViewModel.liveTVLibrary?.id, isConnected: session.isConnected)) {
+                guard connectionViewModel.liveTVLibrary != nil, let client = session.client else {
+                    liveGuide.reset()
+                    return
                 }
-            #endif
-        }
-        // Home's initial load is owned here, with the view models, not by
-        // `HomeView`'s own `.task`. On device that task was cancelled about a
-        // second after connect, mid fan-out, and never restarted, so every
-        // cold launch's first load died and the drain redid it (#236 device
-        // row 1). The likely trigger — unverified — is the tab set changing as
-        // libraries and counts arrive, which rebuilds the tab's content and
-        // cancels the old task while its replacement finds `needsLoad` already
-        // consumed. A task on the root survives whatever the tab does.
-        .task(id: session.isConnected) {
-            // The update that flips `isConnected` can also change `libraries`
-            // (restore publishes the cached list, then the fresh one, in one
-            // turn). Its `onChange` posts `.libraries` in that same update, and
-            // this task's first synchronous stretch can run before it does —
-            // reading a revision the post has not reached yet, so the load
-            // covers the change but never retires the reason, and the drain
-            // redoes the whole load (#236 device row 1). One yield lets every
-            // handler of this update land before anything here is read.
-            await Task.yield()
-            guard !Task.isCancelled else { return }
-            homeViewModel.attach(
-                client: session.client,
-                libraries: connectionViewModel.libraries,
-                cache: session.scopedCache,
-                userState: session.userState,
-            )
-            // Read now, not after the awaits below: a restore can publish the
-            // client while this pass is still running without one (#338).
-            let loadedWithClient = session.client != nil
-            // Read before the load: reasons raised before it are covered by
-            // it, anything posted while it ran is not (§ 8).
-            let revisionAtStart = refreshCoordinator.revision
-            let didLoad = await homeViewModel.load()
-
-            // Before any affinity fetch: a saved-off preference must not
-            // spend a request at launch. `HomeView`'s toggle task runs later.
-            await affinityShelves.setEnabled(homePreferences.showsDiscoveryShelves)
-            affinityShelves.attach(
-                client: session.client,
-                libraries: connectionViewModel.libraries,
-                cache: session.scopedCache,
-            )
-            // Cached rows first, with no fingerprint check and no network, so
-            // they are in the focus graph from the first frame they could be
-            // — and never queued behind the genre fetch below (#86 § 9.1).
-            await affinityShelves.hydrate()
-
-            genreShelves.attach(client: session.client, libraries: connectionViewModel.libraries)
-            // Concurrent: neither has anything to say to the other. Only the
-            // genre load is awaited before the gate below — affinity is
-            // decoration that must be allowed to be absent, and that means
-            // not holding Home's drain for it either. Awaited last, after the
-            // gate, so the child stays structured; the no-client early return
-            // below cancels a pass that had nothing to fetch anyway.
-            async let genres: Void = genreShelves.load()
-            async let affinity: Void = affinityShelves.validate()
-            await genres
-
-            // Flipping this is what releases Home's drain — so only a pass
-            // that had a client may flip it. This task runs once with
-            // `isConnected == false` on every cold launch; that pass takes
-            // `load()`'s no-client branch and settles nothing, and opening the
-            // gate for it let the drain supersede the real load (#236 § 8.1).
-            refreshCoordinator.isInitialLoadSettled = loadedWithClient
-            // Seed the floor only if a load actually ran; stamping the
-            // timestamp for a guarded-out call would disable the
-            // external-client fallback forever.
-            guard didLoad else { return }
-            refreshCoordinator.completeInitialLoad(
-                revisionAtStart: revisionAtStart,
-                succeeded: homeViewModel.lastLoadOutcome == .succeeded,
-                now: .now,
-            )
-            await affinity
-        }
-        // The hoisted page state now outlives a disconnect, so a signed-out
-        // Home no longer gets torn down with it: without this, a sign-out
-        // while Home is unmounted (tvOS tears its view down on tab switch)
-        // leaves the previous user's shelves sitting in `homeViewModel` and
-        // `genreShelves`, and the next signed-in user's Home paints them for
-        // one frame before its own load replaces them (#236 § 14.1). A fresh
-        // instance carries no data to leak and no scroll/focus memory to
-        // misapply to a different library. Not gated on the *new* session
-        // connecting — nothing observes `isConnected` going true here, so
-        // resetting exactly on the false edge is enough and avoids
-        // discarding a session's state while it's still active.
-        .onChange(of: session.isConnected) { _, isConnected in
-            guard !isConnected else { return }
-            homeViewModel = HomeViewModel()
-            genreShelves = GenreShelvesViewModel()
-            affinityShelves = AffinityShelvesViewModel()
-            homeUI = HomeUIState()
-            // The fresh page owes its own initial load, and the § 8.1 gate is
-            // what keeps a drain from superseding it.
-            refreshCoordinator.isInitialLoadSettled = false
-            // The disconnect tore down any presented player with it, so a
-            // ticket registered at presentation may never get its stop task.
-            // One of those blocks every future drain for the process.
-            refreshCoordinator.clearPlaybackSessions()
-        }
-        // `UserStateStore` lives in JellyfinKit and cannot know about the
-        // coordinator, so it publishes a counter and the translation happens at
-        // the Features boundary. Every successful mutation from every surface
-        // already funnels through `confirm`/`recordPosition`, so no producer can
-        // silently forget to post (#236 § 5.2). Not only surfaces:
-        // `UserStateStore`'s position guard expires about 30s after playback
-        // and bumps the revision too, so that expiry posts as well.
-        .onChange(of: isHomeRefreshEligible) { _, eligible in
-            // Marks a real departure, so Home's next appearance can tell a
-            // tab return from an in-place rebuild (see `HomeUIState`).
-            if !eligible {
-                homeUI.wasOffScreen = true
+                liveGuide.attach(client: client)
+                await liveGuide.load()
             }
-        }
-        .onChange(of: session.userState.mutationRevision) { _, _ in
-            refreshCoordinator.post(.watchState)
-        }
-        // Nothing else changes when the app comes back from the background,
-        // so Home's drain would sit on content from whenever it last ran —
-        // hours, overnight. The floor decides whether a wake is worth a check.
-        .onChange(of: scenePhase) { _, phase in
-            guard phase == .active else { return }
-            refreshCoordinator.wake()
-        }
-        // If the selected library tab disappears (disconnect clears the list,
-        // or the server removed a library), fall back to Home rather than
-        // leaving the selection pointing at a tab that no longer exists.
-        //
-        // The `.libraries` arm is unreachable on tvOS, which never selects that
-        // tab; it costs that platform nothing and keeps the rule in one place.
-        .onChange(of: connectionViewModel.libraries) { _, libraries in
-            refreshCoordinator.post(.libraries)
-            switch selectedTab {
-            case let .library(id) where !libraries.contains(where: { $0.id == id }):
-                selectedTab = .home
-            case .libraries where libraries.isEmpty:
-                selectedTab = .home
-            default:
-                break
+            .onChange(of: connectionViewModel.liveTVLibrary) { _, library in
+                if library == nil, selectedTab == .liveTV {
+                    selectedTab = .home
+                }
             }
+        #endif
+            .environment(session)
+            .environment(connectionViewModel)
+            .environment(homePreferences)
+            .environment(playbackPreferences)
+            .environment(refreshCoordinator)
+            .environment(\.openSettings, OpenSettingsAction {
+                tabSelection.wrappedValue = .settings
+            })
+            .environment(\.pushMediaDetail, PushMediaDetailAction { item in
+                var path = tabPaths[selectedTab, default: NavigationPath()]
+                path.append(item)
+                tabPaths[selectedTab] = path
+            })
+            .task {
+                // Attach here (not just in Settings) so a restored client is
+                // published app-wide even if the user never opens Settings
+                connectionViewModel.attach(session: session)
+                await connectionViewModel.restoreSession()
 
-            #if !os(tvOS)
-                // The grid is the Libraries stack's root, so a changed library
-                // set invalidates whatever was pushed from it: a profile
-                // switch or a server swap would otherwise leave that tab
-                // sitting inside a `LibraryItemsView` for a library the new
-                // session has never heard of, which the viewer only discovers
-                // on returning to the tab. Any change resets it, not just an
-                // emptying one — `onChange` fires only when the set actually
-                // differs, so a refresh that returns the same libraries leaves
-                // a pushed grid alone.
-                //
-                // tvOS is deliberately outside this: its libraries are tabs,
-                // each with its own stack that the switch above already
-                // handles, and writing this key there would put an entry in
-                // `tabPaths` for a tab that platform never declares.
-                tabPaths[.libraries] = NavigationPath()
-            #endif
-        }
+                #if DEBUG
+                    // Test hook: auto-connect to a server from the environment
+                    // (pass via `simctl launch` with SIMCTL_CHILD_-prefixed vars)
+                    // so UI automation can reach a connected state without
+                    // driving the connection form
+                    if case .disconnected = connectionViewModel.state,
+                       let server = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_SERVER"]
+                    {
+                        connectionViewModel.serverURL = server
+                        connectionViewModel.username = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_USER"] ?? ""
+                        connectionViewModel.password = ProcessInfo.processInfo.environment["JS_AUTOCONNECT_PASSWORD"] ?? ""
+                        await connectionViewModel.connect()
+                    }
+                #endif
+            }
+            // Home's initial load is owned here, with the view models, not by
+            // `HomeView`'s own `.task`. On device that task was cancelled about a
+            // second after connect, mid fan-out, and never restarted, so every
+            // cold launch's first load died and the drain redid it (#236 device
+            // row 1). The likely trigger — unverified — is the tab set changing as
+            // libraries and counts arrive, which rebuilds the tab's content and
+            // cancels the old task while its replacement finds `needsLoad` already
+            // consumed. A task on the root survives whatever the tab does.
+            .task(id: session.isConnected) {
+                // The update that flips `isConnected` can also change `libraries`
+                // (restore publishes the cached list, then the fresh one, in one
+                // turn). Its `onChange` posts `.libraries` in that same update, and
+                // this task's first synchronous stretch can run before it does —
+                // reading a revision the post has not reached yet, so the load
+                // covers the change but never retires the reason, and the drain
+                // redoes the whole load (#236 device row 1). One yield lets every
+                // handler of this update land before anything here is read.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
+                homeViewModel.attach(
+                    client: session.client,
+                    libraries: connectionViewModel.libraries,
+                    cache: session.scopedCache,
+                    userState: session.userState,
+                )
+                // Read now, not after the awaits below: a restore can publish the
+                // client while this pass is still running without one (#338).
+                let loadedWithClient = session.client != nil
+                // Read before the load: reasons raised before it are covered by
+                // it, anything posted while it ran is not (§ 8).
+                let revisionAtStart = refreshCoordinator.revision
+                let didLoad = await homeViewModel.load()
+
+                // Before any affinity fetch: a saved-off preference must not
+                // spend a request at launch. `HomeView`'s toggle task runs later.
+                await affinityShelves.setEnabled(homePreferences.showsDiscoveryShelves)
+                affinityShelves.attach(
+                    client: session.client,
+                    libraries: connectionViewModel.libraries,
+                    cache: session.scopedCache,
+                )
+                // Cached rows first, with no fingerprint check and no network, so
+                // they are in the focus graph from the first frame they could be
+                // — and never queued behind the genre fetch below (#86 § 9.1).
+                await affinityShelves.hydrate()
+
+                genreShelves.attach(client: session.client, libraries: connectionViewModel.libraries)
+                // Concurrent: neither has anything to say to the other. Only the
+                // genre load is awaited before the gate below — affinity is
+                // decoration that must be allowed to be absent, and that means
+                // not holding Home's drain for it either. Awaited last, after the
+                // gate, so the child stays structured; the no-client early return
+                // below cancels a pass that had nothing to fetch anyway.
+                async let genres: Void = genreShelves.load()
+                async let affinity: Void = affinityShelves.validate()
+                await genres
+
+                // Flipping this is what releases Home's drain — so only a pass
+                // that had a client may flip it. This task runs once with
+                // `isConnected == false` on every cold launch; that pass takes
+                // `load()`'s no-client branch and settles nothing, and opening the
+                // gate for it let the drain supersede the real load (#236 § 8.1).
+                refreshCoordinator.isInitialLoadSettled = loadedWithClient
+                // Seed the floor only if a load actually ran; stamping the
+                // timestamp for a guarded-out call would disable the
+                // external-client fallback forever.
+                guard didLoad else { return }
+                refreshCoordinator.completeInitialLoad(
+                    revisionAtStart: revisionAtStart,
+                    succeeded: homeViewModel.lastLoadOutcome == .succeeded,
+                    now: .now,
+                )
+                await affinity
+            }
+            // The hoisted page state now outlives a disconnect, so a signed-out
+            // Home no longer gets torn down with it: without this, a sign-out
+            // while Home is unmounted (tvOS tears its view down on tab switch)
+            // leaves the previous user's shelves sitting in `homeViewModel` and
+            // `genreShelves`, and the next signed-in user's Home paints them for
+            // one frame before its own load replaces them (#236 § 14.1). A fresh
+            // instance carries no data to leak and no scroll/focus memory to
+            // misapply to a different library. Not gated on the *new* session
+            // connecting — nothing observes `isConnected` going true here, so
+            // resetting exactly on the false edge is enough and avoids
+            // discarding a session's state while it's still active.
+            .onChange(of: session.isConnected) { _, isConnected in
+                guard !isConnected else { return }
+                homeViewModel = HomeViewModel()
+                genreShelves = GenreShelvesViewModel()
+                affinityShelves = AffinityShelvesViewModel()
+                homeUI = HomeUIState()
+                // The fresh page owes its own initial load, and the § 8.1 gate is
+                // what keeps a drain from superseding it.
+                refreshCoordinator.isInitialLoadSettled = false
+                // The disconnect tore down any presented player with it, so a
+                // ticket registered at presentation may never get its stop task.
+                // One of those blocks every future drain for the process.
+                refreshCoordinator.clearPlaybackSessions()
+            }
+            // `UserStateStore` lives in JellyfinKit and cannot know about the
+            // coordinator, so it publishes a counter and the translation happens at
+            // the Features boundary. Every successful mutation from every surface
+            // already funnels through `confirm`/`recordPosition`, so no producer can
+            // silently forget to post (#236 § 5.2). Not only surfaces:
+            // `UserStateStore`'s position guard expires about 30s after playback
+            // and bumps the revision too, so that expiry posts as well.
+            .onChange(of: isHomeRefreshEligible) { _, eligible in
+                // Marks a real departure, so Home's next appearance can tell a
+                // tab return from an in-place rebuild (see `HomeUIState`).
+                if !eligible {
+                    homeUI.wasOffScreen = true
+                }
+            }
+            .onChange(of: session.userState.mutationRevision) { _, _ in
+                refreshCoordinator.post(.watchState)
+            }
+            // Nothing else changes when the app comes back from the background,
+            // so Home's drain would sit on content from whenever it last ran —
+            // hours, overnight. The floor decides whether a wake is worth a check.
+            .onChange(of: scenePhase) { _, phase in
+                guard phase == .active else { return }
+                refreshCoordinator.wake()
+            }
+            // If the selected library tab disappears (disconnect clears the list,
+            // or the server removed a library), fall back to Home rather than
+            // leaving the selection pointing at a tab that no longer exists.
+            //
+            // The `.libraries` arm is unreachable on tvOS, which never selects that
+            // tab; it costs that platform nothing and keeps the rule in one place.
+            .onChange(of: connectionViewModel.libraries) { _, libraries in
+                refreshCoordinator.post(.libraries)
+                switch selectedTab {
+                case let .library(id) where !libraries.contains(where: { $0.id == id }):
+                    selectedTab = .home
+                case .libraries where libraries.isEmpty:
+                    selectedTab = .home
+                default:
+                    break
+                }
+
+                #if !os(tvOS)
+                    // The grid is the Libraries stack's root, so a changed library
+                    // set invalidates whatever was pushed from it: a profile
+                    // switch or a server swap would otherwise leave that tab
+                    // sitting inside a `LibraryItemsView` for a library the new
+                    // session has never heard of, which the viewer only discovers
+                    // on returning to the tab. Any change resets it, not just an
+                    // emptying one — `onChange` fires only when the set actually
+                    // differs, so a refresh that returns the same libraries leaves
+                    // a pushed grid alone.
+                    //
+                    // tvOS is deliberately outside this: its libraries are tabs,
+                    // each with its own stack that the switch above already
+                    // handles, and writing this key there would put an entry in
+                    // `tabPaths` for a tab that platform never declares.
+                    tabPaths[.libraries] = NavigationPath()
+                #endif
+            }
     }
 
     // MARK: - Tab content
@@ -441,6 +466,17 @@ public struct RootView: View {
                         // label stays true.
                         LibraryItemsView(initialQuery: LibraryQuery(library: library))
                     }
+                }
+            }
+        }
+
+        /// The server's Live TV view, under the libraries it is listed with,
+        /// keeping the name the user gave it. It opens the guide rather than
+        /// a poster grid, which is why it is not one of `libraryTabs`.
+        private func liveTVTab(_ library: Library) -> some TabContent<AppTab> {
+            Tab(library.name, systemImage: library.systemImageName, value: AppTab.liveTV) {
+                navigationRoot(for: .liveTV) {
+                    LiveGuideView(guide: liveGuide)
                 }
             }
         }
@@ -627,10 +663,19 @@ extension RootView {
         case library(String)
         /// visionOS: every library behind one grid.
         case libraries
+        /// tvOS: the Live TV guide. Present only when the server has Live TV.
+        case liveTV
         case search
         case settings
     }
 }
+
+#if os(tvOS)
+    private struct LiveTVLoadKey: Equatable {
+        let libraryID: String?
+        let isConnected: Bool
+    }
+#endif
 
 // MARK: - Preview
 
