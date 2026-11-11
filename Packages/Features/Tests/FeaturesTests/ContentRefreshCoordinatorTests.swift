@@ -290,10 +290,22 @@ struct ContentRefreshCoordinatorTests {
         let before = coordinator.revision
 
         coordinator.unregisterAfterGrace(ticket)
-        try await Task.sleep(for: .milliseconds(300))
+        // Prove the grace has run before asserting it did nothing: a fixed
+        // sleep can end first when the suite keeps the main actor busy. An
+        // orphaned sentinel whose grace starts later is dropped after the
+        // ticket's grace has run, and its drop is observable.
+        let sentinel = coordinator.registerPlayback()
+        try await Task.sleep(for: .milliseconds(50))
+        coordinator.unregisterAfterGrace(sentinel)
+        for _ in 0 ..< 500 where coordinator.hasPlayingSession {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.hasPlayingSession == false)
 
         #expect(coordinator.hasPlaybackInFlight)
-        #expect(coordinator.revision == before)
+        // The sentinel's drop posts once; a second post means the ticket was
+        // dropped too.
+        #expect(coordinator.revision == before + 1)
         await gate.open()
     }
 
