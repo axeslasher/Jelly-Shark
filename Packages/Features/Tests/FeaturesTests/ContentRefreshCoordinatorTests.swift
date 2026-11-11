@@ -262,7 +262,12 @@ struct ContentRefreshCoordinatorTests {
         // Media Detail's wait, started at dismissal, must end with the grace.
         let waiter = Task { await coordinator.awaitPlaybackReporting() }
         defer { waiter.cancel() }
-        try await Task.sleep(for: .milliseconds(300))
+        // Poll rather than sleep a fixed time: the grace runs in a main-actor
+        // task, and under the full parallel suite the main actor can stay
+        // busy for well past 300ms, which failed this test intermittently.
+        for _ in 0 ..< 500 where coordinator.hasPlayingSession {
+            try await Task.sleep(for: .milliseconds(10))
+        }
 
         #expect(coordinator.hasPlayingSession == false)
         // `#require` stops here on a regression: the wait below would
