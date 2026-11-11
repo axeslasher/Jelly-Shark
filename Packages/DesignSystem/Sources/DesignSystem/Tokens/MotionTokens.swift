@@ -93,24 +93,6 @@ public enum MotionTokens {
     }
 }
 
-// MARK: - Animation Modifier
-
-/// View modifier to apply theme-appropriate animation
-public struct ThemeAnimationModifier: ViewModifier {
-    let animation: Animation
-
-    public func body(content: Content) -> some View {
-        content.animation(animation, value: UUID())
-    }
-}
-
-public extension View {
-    /// Apply the standard theme animation
-    func themeAnimation(_ animation: Animation = MotionTokens.standard) -> some View {
-        self.animation(animation, value: UUID())
-    }
-}
-
 private struct MotionTokenRow: View {
     @Environment(\.theme) private var theme
 

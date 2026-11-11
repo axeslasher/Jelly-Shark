@@ -118,6 +118,11 @@ public struct MediaDetailView: View {
     /// unregister; the player clears it once it has reported.
     @State private var playbackTicket: ContentRefreshCoordinator.PlaybackTicket?
 
+    /// Set on player dismiss and cleared once the refresh it asks for has
+    /// finished, so the refresh is cancelled with the page, and a refresh
+    /// cut short by a push re-runs when the page returns.
+    @State private var pendingPlaybackRefresh: UUID?
+
     @State private var isPresentingOverview = false
 
     let item: MediaItem
@@ -403,6 +408,14 @@ public struct MediaDetailView: View {
                 )
                 await viewModel.load()
             }
+            .task(id: pendingPlaybackRefresh) {
+                guard pendingPlaybackRefresh != nil else { return }
+                await viewModel.refreshAfterPlayback(waitingFor: refreshCoordinator)
+                // Left set when cancelled, so the page refreshes on its return.
+                guard !Task.isCancelled else { return }
+                refreshCoordinator.post(.watchState)
+                pendingPlaybackRefresh = nil
+            }
             .fullScreenCover(item: $playbackItem, onDismiss: refreshAfterPlayback) { target in
                 if let client = session.client {
                     PlaybackContainerView(
@@ -562,18 +575,15 @@ public struct MediaDetailView: View {
 
     // MARK: - Data
 
-    /// Watch state moves during playback; hand the in-place refresh to the
-    /// view model once the player dismisses.
+    /// Watch state moves during playback; ask for the in-place refresh once
+    /// the player dismisses. The `.task(id: pendingPlaybackRefresh)` runs it.
     private func refreshAfterPlayback() {
         // Backup to the player's own teardown, deferred because this can run
-        // before it: an orphaned ticket would hold the wait below open (#301).
+        // before it: an orphaned ticket would hold the refresh's wait open (#301).
         if let playbackTicket {
             refreshCoordinator.unregisterAfterGrace(playbackTicket)
         }
-        Task {
-            await viewModel.refreshAfterPlayback(waitingFor: refreshCoordinator)
-            refreshCoordinator.post(.watchState)
-        }
+        pendingPlaybackRefresh = UUID()
     }
 }
 
