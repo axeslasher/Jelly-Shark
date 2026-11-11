@@ -21,11 +21,34 @@ actor AsyncGate {
     private var nextID = 0
     private var waiters: [Int: CheckedContinuation<Void, any Error>] = [:]
     private var cancelledIDs: Set<Int> = []
+    private var arrivalCount = 0
+    private var arrivalWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
+
+    /// Suspends until at least `count` callers have parked here, so a test
+    /// can act once work has provably reached the gate instead of sleeping
+    /// and hoping it has. Only parked callers count: once the gate is open,
+    /// `wait()` returns at once and never arrives.
+    func arrivals(atLeast count: Int) async {
+        if arrivalCount >= count {
+            return
+        }
+        await withCheckedContinuation { arrivalWaiters.append((count, $0)) }
+    }
+
+    private func arrive() {
+        arrivalCount += 1
+        let ready = arrivalWaiters.filter { $0.count <= arrivalCount }
+        arrivalWaiters.removeAll { $0.count <= arrivalCount }
+        for waiter in ready {
+            waiter.continuation.resume()
+        }
+    }
 
     func wait() async throws {
         if isOpen {
             return
         }
+        arrive()
         let id = nextID
         nextID += 1
         try await withTaskCancellationHandler {
@@ -61,6 +84,7 @@ actor AsyncGate {
         if isOpen {
             return
         }
+        arrive()
         await withCheckedContinuation { cancelImmuneWaiters.append($0) }
     }
 

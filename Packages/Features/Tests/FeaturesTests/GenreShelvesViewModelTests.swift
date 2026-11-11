@@ -31,7 +31,7 @@ struct GenreShelvesViewModelTests {
         #expect(viewModel.status == .loaded)
     }
 
-    @Test("A cancelled reload keeps the last good shelves and reports superseded")
+    @Test("A cancelled reload keeps the last good shelves and reports superseded", .timeLimit(.minutes(1)))
     func cancelledReloadKeepsShelves() async {
         let client = MockJellyfinClient()
         client.filterOptionsResult = .success(LibraryFilterOptions(genres: ["Horror"], officialRatings: [], years: []))
@@ -45,7 +45,7 @@ struct GenreShelvesViewModelTests {
         let gate = AsyncGate()
         client.filterOptionsDelay = { try? await gate.wait() }
         let reload = Task { await viewModel.reload() }
-        try? await Task.sleep(for: .milliseconds(20))
+        await gate.arrivals(atLeast: 1)
         reload.cancel()
         await gate.open()
         let outcome = await reload.value
