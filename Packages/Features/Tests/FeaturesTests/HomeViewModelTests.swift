@@ -1473,7 +1473,7 @@ struct HomeViewModelTests {
         #expect(Outcome.combine(content: [.succeeded], enrichment: [.failed]) == .succeeded)
     }
 
-    @Test("Task cancellation leaves no failure in any lane")
+    @Test("Task cancellation leaves no failure in any lane", .timeLimit(.minutes(1)))
     func taskCancellationLeavesNoFailure() async {
         // Real clients emit APIError.networkError(URLError(.cancelled).localizedDescription),
         // not CancellationError. This test verifies the fix works against that shape.
@@ -1498,12 +1498,14 @@ struct HomeViewModelTests {
             await viewModel.load()
         }
 
-        // Let loaders reach the gate, then cancel the task.
-        try? await Task.sleep(for: .milliseconds(10))
+        // Cancel only once all four requests are parked: resume, next up, the
+        // hero's latest and the one library's latest.
+        await gate.arrivals(atLeast: 4)
         task.cancel()
 
-        // Release the gate: the requests that resumed will throw the
-        // cancellation-shaped error after the task saw isCancelled.
+        // The cancel resumes all four parked requests, which then return the
+        // cancellation-shaped error after the task saw isCancelled. Opening
+        // the gate is only cleanup.
         await gate.open()
         await task.value
 
@@ -1534,7 +1536,7 @@ struct HomeViewModelTests {
         #expect(viewModel.resumeItems[0].userData?.played == true)
     }
 
-    @Test func aSupersededLibraryRefreshReportsSupersededNotTheWinnersOutcome() async {
+    @Test(.timeLimit(.minutes(1))) func aSupersededLibraryRefreshReportsSupersededNotTheWinnersOutcome() async {
         let client = MockJellyfinClient()
         let viewModel = HomeViewModel()
         viewModel.attach(client: client, libraries: [Self.movies])
@@ -1543,11 +1545,11 @@ struct HomeViewModelTests {
         let gate = AsyncGate()
         client.resumeItemsDelay = { try? await gate.wait() }
         let first = Task { await viewModel.refresh(.libraries) }
-        try? await Task.sleep(for: .milliseconds(20))
+        await gate.arrivals(atLeast: 1)
         // A Retry during the warm refresh starts a newer generation.
         viewModel.forceReload()
         let second = Task { await viewModel.load() }
-        try? await Task.sleep(for: .milliseconds(20))
+        await gate.arrivals(atLeast: 2)
         await gate.open()
         _ = await second.value
 
