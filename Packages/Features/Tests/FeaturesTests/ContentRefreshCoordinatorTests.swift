@@ -262,9 +262,8 @@ struct ContentRefreshCoordinatorTests {
         // Media Detail's wait, started at dismissal, must end with the grace.
         let waiter = Task { await coordinator.awaitPlaybackReporting() }
         defer { waiter.cancel() }
-        // Poll rather than sleep a fixed time: the grace runs in a main-actor
-        // task, and under the full parallel suite the main actor can stay
-        // busy for well past 300ms, which failed this test intermittently.
+        // The grace runs in a main-actor task that the parallel suite can
+        // delay well past its 20ms, so poll for the drop.
         for _ in 0 ..< 500 where coordinator.hasPlayingSession {
             try await Task.sleep(for: .milliseconds(10))
         }
@@ -290,11 +289,13 @@ struct ContentRefreshCoordinatorTests {
         let before = coordinator.revision
 
         coordinator.unregisterAfterGrace(ticket)
-        // Prove the grace has run before asserting it did nothing: a fixed
-        // sleep can end first when the suite keeps the main actor busy. An
-        // orphaned sentinel whose grace starts later is dropped after the
-        // ticket's grace has run, and its drop is observable.
+        // The ticket's grace does nothing observable when it runs, and a busy
+        // main actor can delay it. An orphaned sentinel whose grace starts
+        // 50ms later shows when it has run: the earlier grace fires first.
+        // The yield lets the ticket's grace start its sleep before the 50ms
+        // begins, so a busy main actor can't erase the margin.
         let sentinel = coordinator.registerPlayback()
+        await Task.yield()
         try await Task.sleep(for: .milliseconds(50))
         coordinator.unregisterAfterGrace(sentinel)
         for _ in 0 ..< 500 where coordinator.hasPlayingSession {
