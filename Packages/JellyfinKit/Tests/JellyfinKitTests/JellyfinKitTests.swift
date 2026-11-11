@@ -623,6 +623,25 @@ struct JellyfinKitTests {
             let error = APIError.networkError("Connection timed out")
             #expect(error.errorDescription?.contains("Connection timed out") == true)
         }
+
+        /// Each message read from the package catalog. A key missing from the
+        /// catalog, or a lookup in the wrong bundle, shows the raw key instead.
+        @Test("Every error message resolves from the package catalog", arguments: [
+            (APIError.invalidURL, "Invalid server URL"),
+            (.httpError(statusCode: 418), "HTTP error: 418"),
+            (.unauthorized, "Invalid username or password"),
+            (.forbidden, "Access denied"),
+            (.notFound, "Resource not found"),
+            (.serverError(statusCode: 503), "Server error: 503"),
+            (.networkError("Connection timed out"), "Network error: Connection timed out"),
+            (.decodingError("bad JSON"), "Failed to parse response: bad JSON"),
+            (.unsupportedServerVersion("10.10.7"), "Server version 10.10.7 is not supported. Minimum required: \(ServerInfo.minimumVersion)"),
+            (.notAuthenticated, "Not authenticated. Please sign in."),
+            (.generic("Something specific"), "Something specific"),
+        ])
+        func messagesResolve(error: APIError, english: String) {
+            #expect(error.errorDescription == english)
+        }
     }
 
     @Suite("Configuration")

@@ -1,0 +1,126 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "error.api.decoding %@": {
+      "comment": "Error when the server's reply can't be read. The variable is a technical detail, often in English.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed to parse response: %@"
+          }
+        }
+      }
+    },
+    "error.api.forbidden": {
+      "comment": "Error shown when the server refuses this user access.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Access denied"
+          }
+        }
+      }
+    },
+    "error.api.http %lld": {
+      "comment": "Error for an unexpected server response. The variable is the HTTP status code, such as 418.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "HTTP error: %lld"
+          }
+        }
+      }
+    },
+    "error.api.invalidURL": {
+      "comment": "Error shown when the server address can't be read as a web address.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid server URL"
+          }
+        }
+      }
+    },
+    "error.api.network %@": {
+      "comment": "Error when the server can't be reached. The variable is the system's own description, usually already translated.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Network error: %@"
+          }
+        }
+      }
+    },
+    "error.api.notAuthenticated": {
+      "comment": "Error shown when an action needs a signed-in user.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not authenticated. Please sign in."
+          }
+        }
+      }
+    },
+    "error.api.notFound": {
+      "comment": "Error shown when the server has no such item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resource not found"
+          }
+        }
+      }
+    },
+    "error.api.server %lld": {
+      "comment": "Error when the server itself fails. The variable is the HTTP status code, such as 500.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server error: %lld"
+          }
+        }
+      }
+    },
+    "error.api.unauthorized": {
+      "comment": "Error shown when sign-in is rejected.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid username or password"
+          }
+        }
+      }
+    },
+    "error.api.unsupportedServerVersion %@ %@": {
+      "comment": "Error when the server is too old. The first variable is the server's version, the second the oldest supported version; both look like 10.11.11.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server version %1$@ is not supported. Minimum required: %2$@"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}
