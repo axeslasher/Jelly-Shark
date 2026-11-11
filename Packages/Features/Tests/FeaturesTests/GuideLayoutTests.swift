@@ -160,18 +160,19 @@ struct LiveTVPresentationTests {
         #expect(artworkPath(nil, channel: LiveChannel(id: "x", name: "Bare")) == nil)
     }
 
-    @Test("The player's title is the programme, and its second line opens with the live marker")
+    @Test("The player's title is the programme, with the episode and channel on its second line")
     func nowPlayingProgramme() {
         let item = LiveTVText.nowPlayingItem(channel: channel, program: program())
         #expect(item.name == "Star Trek: Voyager")
-        #expect(item.tagline == "LIVE · Ex Post Facto · S1 E8 · 4 Star Trek")
+        // No "LIVE" in the text: the system player draws its own badge.
+        #expect(item.tagline == "Ex Post Facto · S1 E8 · 4 Star Trek")
         #expect(item.id == "ch4")
     }
 
-    @Test("With no programme the player still has a title: the channel, marked live")
+    @Test("With no programme the player still has both lines its title view needs")
     func nowPlayingChannelOnly() {
         let item = LiveTVText.nowPlayingItem(channel: channel, program: nil)
         #expect(item.name == "Star Trek")
-        #expect(item.tagline == "LIVE · 4")
+        #expect(item.tagline == "No program information")
     }
 }

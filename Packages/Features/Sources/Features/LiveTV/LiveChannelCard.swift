@@ -34,19 +34,22 @@ enum LiveTVText {
     /// guide knows it, the bare channel otherwise. Built as a `MediaItem`
     /// because that is what the player's metadata is made from; the second
     /// line rides in `tagline`, which is where that code reads it for
-    /// anything that is not an episode. The line opens with the live
-    /// marker: the system player's title view takes text only.
+    /// anything that is not an episode.
+    ///
+    /// No live marker in the text: the system player adds its own LIVE badge
+    /// beside this line (seen on the tvOS simulator, 2026-11-11). There is
+    /// always a second line, because the player's title view needs both.
     static func nowPlayingItem(channel: LiveChannel, program: LiveProgram?) -> MediaItem {
         guard let program else {
             return MediaItem(
                 id: channel.id,
                 name: channel.name,
                 type: .tvChannel,
-                tagline: [live, channel.number].compactMap(\.self).joined(separator: " · "),
+                tagline: String(localized: noProgramInfo),
                 imageTags: ImageTags(primary: channel.imageTag),
             )
         }
-        let secondLine = [live, program.episodeTitle, episodeCode(program), channelLabel(channel)]
+        let secondLine = [program.episodeTitle, episodeCode(program), channelLabel(channel)]
             .compactMap(\.self)
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
