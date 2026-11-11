@@ -927,6 +927,7 @@ struct HomeViewModelTests {
         #expect(viewModel.heroItems.map(\.id) == ["e1"])
         let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
         #expect(url?.path() == "/Items/e1/Images/Primary")
+        #expect(url?.query() == "tag=tag")
     }
 
     @Test("A narrow primary falls back to the series backdrop")
@@ -938,6 +939,7 @@ struct HomeViewModelTests {
         #expect(viewModel.heroItems.map(\.id) == ["e1"])
         let url = viewModel.heroBackdropURL(for: viewModel.heroItems[0])
         #expect(url?.path() == "/Items/s1/Images/Backdrop")
+        #expect(url?.query() == "tag=tag")
     }
 
     @Test("A failed image-info lookup degrades to the series backdrop")

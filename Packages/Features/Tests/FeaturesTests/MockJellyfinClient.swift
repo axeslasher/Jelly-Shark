@@ -255,13 +255,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         return try result.get()
     }
 
-    func getImageURL(itemId: String, imageType: ImageType, maxWidth _: Int?, maxHeight _: Int?) -> URL {
-        // Real-shaped path so tests can assert WHICH image a view model chose
-        serverURL
+    func getImageURL(itemId: String, imageType: ImageType, tag: String?, maxWidth _: Int?, maxHeight _: Int?) -> URL {
+        // Real-shaped path so tests can assert WHICH image a view model chose,
+        // and the tag so they can assert it rides along
+        let url = serverURL
             .appendingPathComponent("Items")
             .appendingPathComponent(itemId)
             .appendingPathComponent("Images")
             .appendingPathComponent(imageType.rawValue)
+        guard let tag else { return url }
+        return url.appending(queryItems: [URLQueryItem(name: "tag", value: tag)])
     }
 
     /// Image-info responses by item id; ids absent from the map serve []

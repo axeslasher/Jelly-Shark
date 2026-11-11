@@ -11,6 +11,10 @@ import SwiftUI
 struct ArtworkSlot: Equatable, Sendable {
     let itemId: String
     let imageType: ImageType
+    /// Rides the URL so the image caches for a year rather than revalidating
+    /// on every read (#117). Persisted card choices deliberately don't keep
+    /// it: a remembered tag would pin artwork the server has since replaced.
+    var tag: String?
 }
 
 /// Artwork URL helpers for views
@@ -26,9 +30,9 @@ extension JellyfinClientProtocol {
             return own
         }
         guard let seriesId = item.seriesId,
-              item.parentArtwork?.seriesPrimaryImageTag != nil
+              let tag = item.parentArtwork?.seriesPrimaryImageTag
         else { return nil }
-        return getImageURL(itemId: seriesId, imageType: .primary, maxWidth: maxWidth, maxHeight: nil)
+        return getImageURL(itemId: seriesId, imageType: .primary, tag: tag, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// Hero backdrop: Backdrop, falling back to Thumb, then to the nearest
@@ -36,7 +40,7 @@ extension JellyfinClientProtocol {
     /// episode hero renders bare)
     func backdropURL(for item: MediaItem, maxWidth: Int = 1920) -> URL? {
         backdropSlot(for: item).map {
-            getImageURL(itemId: $0.itemId, imageType: $0.imageType, maxWidth: maxWidth, maxHeight: nil)
+            getImageURL(itemId: $0.itemId, imageType: $0.imageType, tag: $0.tag, maxWidth: maxWidth, maxHeight: nil)
         }
     }
 
@@ -48,9 +52,9 @@ extension JellyfinClientProtocol {
             return own
         }
         guard let parentId = item.parentArtwork?.backdropItemId,
-              item.parentArtwork?.backdropImageTag != nil
+              let tag = item.parentArtwork?.backdropImageTag
         else { return nil }
-        return ArtworkSlot(itemId: parentId, imageType: .backdrop)
+        return ArtworkSlot(itemId: parentId, imageType: .backdrop, tag: tag)
     }
 
     /// Landscape card image: Thumb, then Backdrop, then Primary
@@ -61,32 +65,32 @@ extension JellyfinClientProtocol {
     /// Logo (title treatment) image: the item's own, falling back to the
     /// nearest ancestor logo (episodes inherit the series title treatment)
     func logoURL(for item: MediaItem, maxWidth: Int = 800) -> URL? {
-        if item.imageTags?.logo != nil {
-            return getImageURL(itemId: item.id, imageType: .logo, maxWidth: maxWidth, maxHeight: nil)
+        if let tag = item.imageTags?.logo {
+            return getImageURL(itemId: item.id, imageType: .logo, tag: tag, maxWidth: maxWidth, maxHeight: nil)
         }
         guard let parentId = item.parentArtwork?.logoItemId,
-              item.parentArtwork?.logoImageTag != nil
+              let tag = item.parentArtwork?.logoImageTag
         else { return nil }
-        return getImageURL(itemId: parentId, imageType: .logo, maxWidth: maxWidth, maxHeight: nil)
+        return getImageURL(itemId: parentId, imageType: .logo, tag: tag, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// Library card image
     func imageURL(for library: Library, maxWidth: Int = 960) -> URL? {
-        guard library.primaryImageTag != nil else { return nil }
-        return getImageURL(itemId: library.id, imageType: .primary, maxWidth: maxWidth, maxHeight: nil)
+        guard let tag = library.primaryImageTag else { return nil }
+        return getImageURL(itemId: library.id, imageType: .primary, tag: tag, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// Headshot for a cast/crew member. Person IDs are item IDs in Jellyfin, so
     /// the standard image endpoint applies; returns nil when there's no photo.
     func headshotURL(for member: CastMember, maxWidth: Int = 300) -> URL? {
-        guard member.primaryImageTag != nil, !member.id.isEmpty else { return nil }
-        return getImageURL(itemId: member.id, imageType: .primary, maxWidth: maxWidth, maxHeight: nil)
+        guard let tag = member.primaryImageTag, !member.id.isEmpty else { return nil }
+        return getImageURL(itemId: member.id, imageType: .primary, tag: tag, maxWidth: maxWidth, maxHeight: nil)
     }
 
     /// URL for the first image type the item actually has a tag for
     private func firstImageURL(for item: MediaItem, types: [ImageType], maxWidth: Int) -> URL? {
         firstImageSlot(for: item, types: types).map {
-            getImageURL(itemId: $0.itemId, imageType: $0.imageType, maxWidth: maxWidth, maxHeight: nil)
+            getImageURL(itemId: $0.itemId, imageType: $0.imageType, tag: $0.tag, maxWidth: maxWidth, maxHeight: nil)
         }
     }
 
@@ -104,8 +108,8 @@ extension JellyfinClientProtocol {
             default: nil
             }
 
-            if tag != nil {
-                return ArtworkSlot(itemId: item.id, imageType: type)
+            if let tag {
+                return ArtworkSlot(itemId: item.id, imageType: type, tag: tag)
             }
         }
 
