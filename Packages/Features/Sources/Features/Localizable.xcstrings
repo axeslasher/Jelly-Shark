@@ -529,6 +529,30 @@
         }
       }
     },
+    "signIn.error.invalidURL": {
+      "comment": "Shown under the sign-in form when the server address can't be read as a web address.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid server URL"
+          }
+        }
+      }
+    },
+    "signIn.error.sessionExpired": {
+      "comment": "Shown on the sign-in form when the saved sign-in was revoked by the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your session has expired. Please sign in again."
+          }
+        }
+      }
+    },
     "signIn.password.label": {
       "comment": "Label above the password field.",
       "extractionState": "manual",

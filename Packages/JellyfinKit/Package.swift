@@ -4,6 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "JellyfinKit",
+    defaultLocalization: "en",
     platforms: [
         .tvOS(.v26),
         // Spelled as a string because `SupportedPlatform.VisionOSVersion` only
@@ -42,6 +43,9 @@ let package = Package(
             dependencies: [
                 .product(name: "JellyfinAPI", package: "jellyfin-sdk-swift"),
                 .product(name: "Get", package: "Get"),
+            ],
+            resources: [
+                .process("Localizable.xcstrings"),
             ],
         ),
         .testTarget(
