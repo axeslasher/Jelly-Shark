@@ -134,7 +134,7 @@ public final class ServerConnectionViewModel {
 
         // Validate URL
         guard let url = parseServerURL(serverURL) else {
-            errorMessage = "Invalid server URL"
+            errorMessage = String(localized: "signIn.error.invalidURL", bundle: #bundle, comment: "Shown under the sign-in form when the server address can't be read as a web address.")
             return
         }
 
@@ -249,7 +249,7 @@ public final class ServerConnectionViewModel {
     private static func endedSessionMessage(for error: any Error) -> String? {
         switch error as? APIError {
         case .unauthorized:
-            "Your session has expired. Please sign in again."
+            String(localized: "signIn.error.sessionExpired", bundle: #bundle, comment: "Shown on the sign-in form when the saved sign-in was revoked by the server.")
         case .unsupportedServerVersion:
             error.localizedDescription
         default:
