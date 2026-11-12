@@ -132,8 +132,10 @@ private enum GuideMetrics {
     /// The margin Home and the library screens keep
     static let leadingPadding = SpacingTokens.screenPadding
     static let topFadeLength = SpacingTokens.xxl
-    /// Short, so it reads as a shadow cast by the channel column
-    static let leadingFadeLength = SpacingTokens.sm
+    /// Short and never fully dark, so it reads as a shadow cast by the
+    /// channel column, not as programmes vanishing
+    static let leadingFadeLength = SpacingTokens.md
+    static let leadingFadeDepth = 0.6
 }
 
 @Observable
@@ -160,7 +162,8 @@ private struct GuideEdgeFade: View {
         let offset = edge == .leading ? scroll.offset : scroll.verticalOffset
         let length = edge == .leading ? GuideMetrics.leadingFadeLength : GuideMetrics.topFadeLength
         let hidden = min(max(offset, 0) / length, 1)
-        let colors: [Color] = [.black.opacity(1 - hidden), .black]
+        let depth = edge == .leading ? GuideMetrics.leadingFadeDepth : 1
+        let colors: [Color] = [.black.opacity(1 - hidden * depth), .black]
         switch edge {
         case .leading:
             HStack(spacing: 0) {
