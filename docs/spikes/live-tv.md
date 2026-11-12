@@ -202,7 +202,7 @@ Jellyfin:   Primary 200 (294x440)   Thumb 404   Backdrop 404
 
 ### E11 — Device soak (Apple TV, Jellyfin 10.11.11, user report 2026-11-12)
 
-- **Method:** Justin used the build on the Apple TV for an evening against the real
+- **Method:** The owner used the build on the Apple TV for an evening against the real
   server, and compared it with Swiftfin.
 - **Result:** Reported, not instrumented. Playback, the guide and channel switching
   worked throughout. One rebuffer during a session hours long; no hang. No start-up
@@ -234,7 +234,7 @@ Jellyfin: "Genres": [], "ImageTags": {}, no Overview, no IsSeries/IsMovie, "IsRe
 
 ### E13 — Guide and player polish (device, owner's eye, 2026-11-12)
 
-- **Method:** Built each change to the Apple TV; Justin judged it and sent screenshots.
+- **Method:** Built each change to the Apple TV; the owner judged it and sent screenshots.
 - **Result:** Approved on device: the header in the Home hero's order, progress on the
   artwork, the screen margin, the fact row, the episode title leading in the player, and
   both scroll-edge fades at the values in the table.
@@ -287,11 +287,11 @@ home focus going down: ["Static Season, 2023", "3, Night Shift Radio, 2022", "Dr
 
 ## Scaffolding
 
-Do not remove any of this until the spike is closed.
+The spike closes when its PR merges. The UI check went with that merge; the rest is listed for anyone rechecking a finding.
 
 | What | Where | Why it exists |
 |------|-------|---------------|
-| Throwaway UI check | `docs/spikes/live-tv/UICheckLiveTV.swift` | Drives guide, playback, the Guide tab switch and Home on the simulator. Copy into `Jelly SharkUITests/` to run it, and remove it again afterwards. |
+| Throwaway UI check | Removed when the feature merged. It is in this branch's history as `docs/spikes/live-tv/UICheckLiveTV.swift`. | Drove guide, playback past 20 seconds, the Guide tab switch, Back and Home on the simulator, and asked the server's session list whether the app was playing. |
 | Live TV step in the fixture script | `.claude/skills/sim-ui-check/server.sh` | Adds the tuner and guide when `UI_CHECK_LIVETV_M3U` and `UI_CHECK_LIVETV_XMLTV` are set. |
 | Fixture server | Docker container `js-ui-check-8097` | The server E1, E4, E5, E7 and E8 ran against. Its logs are the evidence; a restart loses them. |
 | Swiftfin clone | Session scratch folder, not in the repo | Source for E2. Re-clone at commit `30c2432` to recheck. |
@@ -354,7 +354,7 @@ each becomes an issue. The list of record is now `docs/experimental/live-tv.md`.
 
 ### Postponed
 
-**Filler shows as tiny guide cells (E12).** Waiting on Justin's look at ErsatzTV's guide
+**Filler shows as tiny guide cells (E12).** Waiting on the owner's look at ErsatzTV's guide
 mode options, which may hide filler at the source. If that does not pan out, the proposed
 app-side fix:
 
