@@ -230,6 +230,43 @@ Jellyfin: "Genres": [], "ImageTags": {}, no Overview, no IsSeries/IsMovie, "IsRe
   not a rule other guides promise to follow. Channel 3's music videos are as short
   (1.6 to 11.6 minutes) but carry a category, so the test leaves them alone.
 
+### E13 — Guide and player polish (device, owner's eye, 2026-11-12)
+
+- **Method:** Built each change to the Apple TV; Justin judged it and sent screenshots.
+- **Result:** Approved on device: the header in the Home hero's order, progress on the
+  artwork, the screen margin, the fact row, the episode title leading in the player, and
+  both scroll-edge fades at the values in the table.
+
+| Setting in `GuideMetrics` | Value | Finding |
+| --- | --- | --- |
+| `leadingFadeLength` | 24 points | 64 and 32 read as programmes vanishing. |
+| `leadingFadeDepth` | 0.4 | A partial dim reads as a shadow from the channel column. A full fade "goes full background colour too early". |
+| `topFadeLength` | 64 points | Approved. |
+| `topFadeDepth` | 1.0 | 0.8 was tried and put back. |
+| `topFadeRamp` | 8 points | See below. |
+
+- **The hard line under the ruler.** The top fade first came in over its own 64 points of
+  scroll. The grid often rests scrolled by less, so rows showed cut off at the grid's top
+  edge. Bringing the fade in over 8 points removed it (approved on device). An earlier
+  reading, that the depth setting caused the line, was wrong: the line was there at 1.0.
+- **The bottom edge.** The grid stopped at the bottom safe area, which showed as a line.
+  It now ignores that edge. Not confirmed: where the last row rests when focused.
+
+### E14 — What else the guide data carries (fixture, curl)
+
+- **Method:** `GET /LiveTv/Programs` for 400 programmes with every optional field asked
+  for, counting which fields were filled.
+- **Result:** Verified for this guide only.
+
+```
+400 programmes: RunTimeTicks 400, IsRepeat 400, Genres 351, EpisodeTitle 342,
+IsSeries 342, OfficialRating 114, Overview 114, ImageTags 114, IndexNumber 105,
+ProductionYear 9, IsMovie 9, IsNews 1. People, Studios, Taglines, ProviderIds: empty.
+```
+
+- **Reading:** Length and year were the only unused fields worth showing, and the header
+  now shows both. A real broadcast guide may fill more, such as new and live flags.
+
 ## Scaffolding
 
 Do not remove any of this until the spike is closed.
@@ -252,9 +289,12 @@ Do not remove any of this until the spike is closed.
 | Guide opens, focus moves, a channel plays past 20 seconds, the Guide tab switches channel and closes its panel, Back returns to the guide, Home shows the shelf. | Simulator |
 | Theming and guide traversal look right. | Simulator, by the owner |
 | The guide header's title holds one size. | Device, by the owner |
+| Hours of play with no hang and one rebuffer (E11). | Device, by the owner |
+| Guide header layout, margin, fades, and the player's title order (E13). | Device, by the owner |
 
-**Not verified anywhere**: how grid focus feels on the remote over time, a long play, the
-first minute of each channel on device, and all five themes on device.
+**Not verified anywhere**: all five themes on device, where the guide's last row rests
+now that the grid runs past the bottom safe area, and a guide with more channels than
+fit one screen.
 
 **Decisions made along the way**
 
@@ -264,15 +304,18 @@ first minute of each channel on device, and all five themes on device.
 | Always play the server's stream, never the tuner's address. | H1, and the device often cannot reach the tuner. |
 | Playback starts 30 seconds behind the newest video. | H7 and H11. |
 | The channel is in the card's caption, not a badge on the artwork. | The shelf card has no badge slot. |
+| The guide header copies the Home hero's order, tokens and spacing, with the detail page's fact row. | The owner's call (E13): similar views should read alike. |
+| The header does not show the time range or channel. | The grid already shows both for the focused cell. VoiceOver still reads them. |
+| For an episode the live player leads with the episode title. | Matches the library player. The guide header and shelf cards lead with the series, as the Home hero does. |
+| Episode codes are written `S1E26`. | The form the rest of the app uses. |
 | The live stream ID reaches playback reports through a registry inside the client. | No report call had to change its signature. |
 
 ## Open items
 
 ### Must settle before this merges
 
-1. **Device check of the soak polish (E11).** The header in the Home hero's order,
-   progress on the artwork, the screen margin, the scroll-edge fade, and the episode
-   title leading in the player. Flows pass on the simulator; appearance is unchecked.
+1. **The guide's last row on device.** Check it rests fully visible when focused (E13),
+   ideally with more channels than fit one screen.
 2. **A frozen or ended stream is not detected.** Only an outright player failure is. The
    live player has no stall watchdog and no reconnecting banner.
 3. **A server with Live TV and no other library** shows Home's "Nothing Here" and no shelf.
@@ -284,13 +327,6 @@ first minute of each channel on device, and all five themes on device.
 
 ### Worth doing, not blocking
 
-0. **Filler shows as tiny guide cells (E12). Postponed** while Justin looks at ErsatzTV's
-   guide mode options, which may hide filler at the source. Proposed app-side fix if
-   that does not pan out: when building guide rows, fold an entry into the programme
-   before it when it has no genre, overview, image or episode number, is neither series
-   nor movie, and runs under five minutes. Use the same folded list for now/next so the
-   player and shelf never name a filler clip. The rule is exact on this guide and a
-   guess for others.
 1. **Poster art is cropped to 16:9.** Proposed: show it whole over a blurred copy of
    itself. Needs an opt-in presentation on `ArtworkImage` and `ArtworkShelfItem`.
 2. **The Guide tab's second lines are cut off.** Channel, next programme and time do not
@@ -299,6 +335,20 @@ first minute of each channel on device, and all five themes on device.
 4. **Guide reloads can overlap** at the half hour, and the guide is only proven for tens of
    channels.
 5. **The live timeline can be scrubbed back** (H13). Decide whether that is wanted.
+
+### Postponed
+
+**Filler shows as tiny guide cells (E12).** Waiting on Justin's look at ErsatzTV's guide
+mode options, which may hide filler at the source. If that does not pan out, the proposed
+app-side fix:
+
+1. When building guide rows, fold an entry into the programme before it when it has no
+   genre, overview, image or episode number, is neither series nor movie, and runs under
+   five minutes.
+2. Use the same folded list for now and next, so the player and shelf never name a
+   filler clip.
+
+The rule is exact on this guide and a guess for others.
 
 ## Open questions
 
