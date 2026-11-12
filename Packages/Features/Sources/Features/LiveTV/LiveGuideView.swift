@@ -133,9 +133,10 @@ private enum GuideMetrics {
     static let leadingPadding = SpacingTokens.screenPadding
     static let topFadeLength = SpacingTokens.xxl
     /// Keep at 1. Nothing covers the grid's top edge, so any less leaves
-    /// rows partly visible where the scroll view cuts them off: a hard line
-    /// under the ruler (seen on device at 0.8, 2026-11-12).
+    /// rows partly visible where the scroll view cuts them off.
     static let topFadeDepth = 1.0
+    /// How far the grid scrolls before the top fade is fully in
+    static let topFadeRamp = SpacingTokens.xs
     /// Short and never fully dark, so it reads as a shadow cast by the
     /// channel column, not as programmes vanishing
     static let leadingFadeLength = SpacingTokens.md
@@ -165,7 +166,12 @@ private struct GuideEdgeFade: View {
     var body: some View {
         let offset = edge == .leading ? scroll.offset : scroll.verticalOffset
         let length = edge == .leading ? GuideMetrics.leadingFadeLength : GuideMetrics.topFadeLength
-        let hidden = min(max(offset, 0) / length, 1)
+        // The top fade comes in over the first few points of scroll, not
+        // over its own length: the grid often rests scrolled by less than
+        // that, and a half-arrived fade left rows visibly cut off under the
+        // ruler (seen on device, 2026-11-12).
+        let rampDistance = edge == .leading ? length : GuideMetrics.topFadeRamp
+        let hidden = min(max(offset, 0) / rampDistance, 1)
         let depth = edge == .leading ? GuideMetrics.leadingFadeDepth : GuideMetrics.topFadeDepth
         let colors: [Color] = [.black.opacity(1 - hidden * depth), .black]
         switch edge {
