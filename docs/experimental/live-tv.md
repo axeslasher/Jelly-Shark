@@ -36,6 +36,7 @@ decision log.
 | Guide, playback, channel change, Back, and the Home shelf complete as flows. | Simulator check |
 | With no Live TV on the server, there is no sidebar entry and no shelf, and Home's focus order is unchanged. | Simulator check |
 | The tuner is released on Back, on a channel change and on a player failure. | Server log |
+| Focus stays on its channel row when the guide reloads at the half hour. | Device, by the owner |
 
 ## Known limits
 

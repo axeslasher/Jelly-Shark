@@ -309,6 +309,7 @@ The spike closes when its PR merges. The UI check went with that merge; the rest
 | The guide header's title holds one size. | Device, by the owner |
 | Hours of play with no hang and one rebuffer (E11). | Device, by the owner |
 | Guide header layout, margin, fades, and the player's title order (E13). | Device, by the owner |
+| Focus stays on its channel row across the half-hour reload. Changing channel and backing out leaves the server showing the device idle. | Device, by the owner, on the PR's final app code |
 
 **Not verified anywhere**: all five themes on device, and a guide with more channels
 than fit one screen.

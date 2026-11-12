@@ -134,7 +134,7 @@ struct LiveGuideView: View {
                 // Focus did not leave: the half-hour reload removed the cell
                 // under it. Put focus on that channel's first cell, which is
                 // what it is showing now, instead of letting it fall to the
-                // sidebar. Unverified on device.
+                // sidebar (held across a reload on device, 2026-11-12).
                 describedCell = replacement
                 focusedCell = replacement
             }
