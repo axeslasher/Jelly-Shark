@@ -12,11 +12,10 @@ investigation; this is a feature spike, so "Symptom" became "What this is" and a
 - Update this file after every run, before reporting anything.
 -->
 
-**Status**: closing. Confirmed findings are in `docs/JELLYFIN_INTEGRATION.md`,
-`docs/ARCHITECTURE.md` and `docs/experimental/live-tv.md`. Scaffolding stays until the PR
-merges.
+**Status**: closed by PR #364. Confirmed findings are in `docs/JELLYFIN_INTEGRATION.md`,
+`docs/ARCHITECTURE.md` and `docs/experimental/live-tv.md`. Follow-ups: #365 to #369.
 **Issue**: none
-**Branch**: `spike/live-tv`, landing as one squashed PR
+**Branch**: `spike/live-tv`, squash-merged
 **Started**: 2026-11-11
 
 ## What this is
@@ -287,7 +286,7 @@ home focus going down: ["Static Season, 2023", "3, Night Shift Radio, 2022", "Dr
 
 ## Scaffolding
 
-The spike closes when its PR merges. The UI check went with that merge; the rest is listed for anyone rechecking a finding.
+The spike is closed. The UI check went with the merge; the rest is listed for anyone rechecking a finding.
 
 | What | Where | Why it exists |
 |------|-------|---------------|
