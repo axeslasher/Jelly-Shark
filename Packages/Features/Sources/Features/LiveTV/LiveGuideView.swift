@@ -135,7 +135,7 @@ private enum GuideMetrics {
     /// Short and never fully dark, so it reads as a shadow cast by the
     /// channel column, not as programmes vanishing
     static let leadingFadeLength = SpacingTokens.md
-    static let leadingFadeDepth = 0.6
+    static let leadingFadeDepth = 0.4
 }
 
 @Observable
