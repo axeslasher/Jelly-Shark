@@ -3,7 +3,9 @@ import Foundation
 import JellyfinKit
 import Testing
 
-@Suite("LivePlaybackViewModel")
+/// Waits here are on recorded calls, so one that never comes ends the test
+/// at its time limit.
+@Suite("LivePlaybackViewModel", .timeLimit(.minutes(1)))
 @MainActor
 struct LivePlaybackViewModelTests {
     private let trek = LiveChannel(id: "ch4", name: "Star Trek", number: "4")
@@ -19,19 +21,14 @@ struct LivePlaybackViewModelTests {
         )
     }
 
-    /// The start report is sent from a child task; wait for it rather than sleep.
+    /// The start report is sent from a child task; wait for the call itself.
     private func waitForStartReport(_ client: MockJellyfinClient, count: Int = 1) async {
-        for _ in 0 ..< 200 where client.startReports.count < count {
-            await Task.yield()
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await client.recorded { $0.startReports.count >= count }
     }
 
-    private func waitForStopReport(_ client: MockJellyfinClient, count: Int = 1) async {
-        for _ in 0 ..< 200 where client.stopReports.count < count {
-            await Task.yield()
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+    /// A release ends with the encode being stopped, after its stopped report.
+    private func waitForRelease(_ client: MockJellyfinClient, count: Int = 1) async {
+        await client.recorded { $0.stopReports.count >= count && $0.stopEncodingCalls.count >= count }
     }
 
     @Test("Starting opens the channel's stream and reports it as playing")
@@ -155,7 +152,7 @@ struct LivePlaybackViewModelTests {
         let url = try #require(model.session?.url)
 
         model.playerFailed(url: url, reason: "decode error")
-        await waitForStopReport(client)
+        await waitForRelease(client)
 
         #expect(client.stopReports.map(\.itemId) == ["ch4"])
         #expect(client.stopEncodingCalls == ["play1"])
@@ -219,9 +216,7 @@ struct LivePlaybackViewModelTests {
         caller.cancel()
         await model.stop()
         await gate.open()
-        for _ in 0 ..< 200 where client.closedLiveStreams.isEmpty {
-            try? await Task.sleep(for: .milliseconds(5))
-        }
+        await client.recorded { !$0.closedLiveStreams.isEmpty }
 
         #expect(!cancelledAtGate.value)
         #expect(client.closedLiveStreams.map(\.liveStreamId) == ["live1"])
@@ -236,7 +231,7 @@ struct LivePlaybackViewModelTests {
         model.playerFailed(url: url, reason: "decode error")
 
         await model.retry()
-        await waitForStopReport(client)
+        await waitForRelease(client)
 
         #expect(client.stopReports.map(\.itemId) == ["ch4"])
         #expect(client.openLiveStreamRequests == ["ch4", "ch4"])

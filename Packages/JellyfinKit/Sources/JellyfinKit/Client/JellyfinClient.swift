@@ -1511,20 +1511,25 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         }
 
         do {
-            var parameters = Paths.GetLiveTvProgramsParameters()
-            parameters.userID = userId
-            parameters.channelIDs = channelIds
-            // Overlap, not containment: ends after the window opens and
-            // starts before it closes, so a programme already under way is
-            // returned.
-            parameters.minEndDate = start
-            parameters.maxStartDate = end
-            parameters.sortBy = [.startDate]
-            parameters.fields = [.overview, .genres]
-            parameters.enableUserData = false
-            parameters.enableTotalRecordCount = false
+            // The POST form: the channel ids ride in the body. In a GET's
+            // query, a few hundred channels pass the server's limit on the
+            // request line. Both forms returned the same programmes on
+            // Jellyfin 10.11.11 (checked 2026-11-12).
+            let body = JellyfinAPI.GetProgramsDto(
+                channelIDs: channelIds,
+                enableTotalRecordCount: false,
+                enableUserData: false,
+                fields: [.overview, .genres],
+                // Overlap, not containment: ends after the window opens and
+                // starts before it closes, so a programme already under way
+                // is returned.
+                maxStartDate: end,
+                minEndDate: start,
+                sortBy: [.startDate],
+                userID: userId,
+            )
 
-            let response = try await sdkClient.send(Paths.getLiveTvPrograms(parameters: parameters))
+            let response = try await sdkClient.send(Paths.getPrograms(body))
             return response.value.items?.compactMap { LiveProgram(from: $0) } ?? []
         } catch let error as APIError {
             throw error
@@ -1555,6 +1560,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 throw APIError.generic("Playback not possible: \(errorCode.rawValue)")
             }
             guard let source = response.value.mediaSources?.first, let sourceId = source.id else {
+                // The request asked the server to open the tuner, so an
+                // answer this code cannot use may still have one running.
+                for liveStreamId in (response.value.mediaSources ?? []).compactMap(\.liveStreamID) {
+                    _ = try? await sdkClient.send(Paths.closeLiveStream(liveStreamID: liveStreamId))
+                }
                 throw APIError.generic("No playable media sources for this item")
             }
 

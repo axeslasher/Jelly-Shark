@@ -131,15 +131,26 @@
 
         /// The name of what the server says the app is playing, if anything.
         private func playingChannel() -> String? {
-            let sessions = (try? JSONSerialization.jsonObject(with: api("GET", "/Sessions").body)) as? [[String: Any]] ?? []
-            return sessions.first { $0["Client"] as? String == "Jelly Shark" && $0["NowPlayingItem"] != nil }
+            sessions().first { $0["Client"] as? String == "Jelly Shark" && $0["NowPlayingItem"] != nil }
                 .flatMap { ($0["NowPlayingItem"] as? [String: Any])?["Name"] as? String }
+        }
+
+        /// The server's session list. A query that fails stops the check: read
+        /// as an empty list, it would pass for "nothing is playing".
+        private func sessions() -> [[String: Any]] {
+            let answer = api("GET", "/Sessions")
+            guard answer.status == 200,
+                  let list = (try? JSONSerialization.jsonObject(with: answer.body)) as? [[String: Any]]
+            else {
+                XCTFail("GET /Sessions failed with status \(answer.status)")
+                return []
+            }
+            return list
         }
 
         /// Whether the server lists a Jelly Shark session with something playing.
         private func appIsPlaying() -> Bool {
-            let sessions = (try? JSONSerialization.jsonObject(with: api("GET", "/Sessions").body)) as? [[String: Any]] ?? []
-            return sessions.contains { $0["Client"] as? String == "Jelly Shark" && $0["NowPlayingItem"] != nil }
+            sessions().contains { $0["Client"] as? String == "Jelly Shark" && $0["NowPlayingItem"] != nil }
         }
 
         // MARK: - Flows

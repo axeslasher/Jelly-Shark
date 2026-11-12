@@ -12,6 +12,36 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// concurrently, so unsynchronized appends would race
     private let lock = NSLock()
 
+    /// Tests parked in `recorded(_:)`, each with the condition it waits for
+    private var recordWaiters: [(condition: @Sendable (MockJellyfinClient) -> Bool, continuation: CheckedContinuation<Void, Never>)] = []
+
+    /// Suspends until `condition` holds. Rechecked each time the mock records
+    /// a playback report, a stopped encode or a closed live stream, so a
+    /// test waits on the call itself and not on a clock.
+    func recorded(_ condition: @escaping @Sendable (MockJellyfinClient) -> Bool) async {
+        await withCheckedContinuation { continuation in
+            let alreadyTrue = lock.withLock {
+                if condition(self) {
+                    return true
+                }
+                recordWaiters.append((condition, continuation))
+                return false
+            }
+            if alreadyTrue {
+                continuation.resume()
+            }
+        }
+    }
+
+    private func signalRecorded() {
+        let ready = lock.withLock {
+            let ready = recordWaiters.filter { $0.condition(self) }
+            recordWaiters.removeAll { $0.condition(self) }
+            return ready
+        }
+        ready.forEach { $0.continuation.resume() }
+    }
+
     let serverURL = URL(string: "https://example.com")!
     var currentUser: User?
     var isAuthenticated: Bool {
@@ -418,6 +448,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func stopEncoding(playSessionId: String) async {
         lock.withLock { stopEncodingCalls.append(playSessionId) }
+        signalRecorded()
     }
 
     func resolveStream(
@@ -465,6 +496,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         subtitleStreamIndex _: Int?,
     ) async throws {
         startReports.append((itemId, positionTicks, playMethod))
+        signalRecorded()
     }
 
     func reportPlaybackProgress(
@@ -496,6 +528,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         positionTicks: Int64,
     ) async throws {
         stopReports.append((itemId, positionTicks))
+        signalRecorded()
         await stopReportGate?()
     }
 
@@ -557,6 +590,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func closeLiveStream(_ session: LiveStreamSession) async {
         lock.withLock { closedLiveStreams.append(session) }
+        signalRecorded()
     }
 
     var playbackExtrasRequests: [String] = []

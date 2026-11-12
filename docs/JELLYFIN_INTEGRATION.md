@@ -174,7 +174,7 @@ Exposed as `searchItems(query:itemTypes:limit:)` on `JellyfinClientProtocol`. It
 ### Live TV — 🧪 experimental, tvOS only
 ```
 GET    /LiveTv/Channels                  (getLiveChannels)
-GET    /LiveTv/Programs                  (getLivePrograms — MinEndDate / MaxStartDate window)
+POST   /LiveTv/Programs                  (getLivePrograms — MinEndDate / MaxStartDate window; POST so channel ids ride in the body)
 POST   /Items/{channelId}/PlaybackInfo   (openLiveStream — AutoOpenLiveStream)
 POST   /LiveStreams/Close                (closeLiveStream)
 ```
