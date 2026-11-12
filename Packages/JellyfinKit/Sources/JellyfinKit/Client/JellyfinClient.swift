@@ -312,6 +312,27 @@ public protocol JellyfinClientProtocol: Sendable {
         positionTicks: Int64,
     ) async throws
 
+    // MARK: - Live TV
+
+    /// Every Live TV channel the user can watch, in channel-number order
+    func getLiveChannels() async throws -> [LiveChannel]
+
+    /// Guide programmes that overlap the window, for the given channels,
+    /// ordered by start time. A programme already under way at `start` is
+    /// included.
+    func getLivePrograms(channelIds: [String], from start: Date, to end: Date) async throws -> [LiveProgram]
+
+    /// Open the server's stream for a channel. The server starts reading the
+    /// tuner here, so every session opened must end in a stopped report or
+    /// in `closeLiveStream`.
+    func openLiveStream(channelId: String, capabilities: PlaybackCapabilities) async throws -> LiveStreamSession
+
+    /// Release a live stream that was opened but never reported as started.
+    /// A session that did report its start is released by its stopped
+    /// report instead; closing it as well would drop the tuner for anyone
+    /// else sharing it.
+    func closeLiveStream(_ session: LiveStreamSession) async
+
     // MARK: - Playback Extras
 
     /// Fetch the ancillary playback data for an item: the trickplay
@@ -552,6 +573,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     /// Cached access token for URLs that authenticate via query parameter
     private var _accessToken: String?
+
+    /// Open live streams by play session, so reports can name their stream
+    /// Not private, so a test can seed it without a server to open a stream on
+    let liveStreams = LiveStreamRegistry()
 
     public var currentUser: User? {
         _currentUser
@@ -1379,6 +1404,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 canSeek: true,
                 isPaused: false,
                 itemID: itemId,
+                liveStreamID: liveStreams.liveStreamId(forPlaySession: playSessionId),
                 mediaSourceID: mediaSourceId,
                 playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
@@ -1410,6 +1436,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 canSeek: true,
                 isPaused: isPaused,
                 itemID: itemId,
+                liveStreamID: liveStreams.liveStreamId(forPlaySession: playSessionId),
                 mediaSourceID: mediaSourceId,
                 playMethod: JellyfinAPI.PlayMethod(from: playMethod),
                 playSessionID: playSessionId,
@@ -1434,17 +1461,147 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         do {
             let info = JellyfinAPI.PlaybackStopInfo(
                 itemID: itemId,
+                liveStreamID: liveStreams.liveStreamId(forPlaySession: playSessionId),
                 mediaSourceID: mediaSourceId,
                 playSessionID: playSessionId,
                 positionTicks: Int(positionTicks),
             )
 
+            // The session is over whether or not the report lands, so the
+            // entry goes either way.
+            defer { liveStreams.forget(playSession: playSessionId) }
             _ = try await sdkClient.send(Paths.reportPlaybackStopped(info))
         } catch let error as APIError {
             throw error
         } catch {
             throw Self.mapTransportError(error)
         }
+    }
+
+    // MARK: - Live TV
+
+    public func getLiveChannels() async throws -> [LiveChannel] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            var parameters = Paths.GetLiveTvChannelsParameters()
+            parameters.userID = userId
+            parameters.enableUserData = false
+            // Favourites-first is the server default; the guide wants plain
+            // channel order.
+            parameters.enableFavoriteSorting = false
+
+            let response = try await sdkClient.send(Paths.getLiveTvChannels(parameters: parameters))
+            return response.value.items?.compactMap { LiveChannel(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func getLivePrograms(channelIds: [String], from start: Date, to end: Date) async throws -> [LiveProgram] {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+        guard !channelIds.isEmpty else {
+            return []
+        }
+
+        do {
+            // The POST form: the channel ids ride in the body. In a GET's
+            // query, a few hundred channels pass the server's limit on the
+            // request line. Both forms returned the same programmes on
+            // Jellyfin 10.11.11 (checked 2026-11-12).
+            let body = JellyfinAPI.GetProgramsDto(
+                channelIDs: channelIds,
+                enableTotalRecordCount: false,
+                enableUserData: false,
+                fields: [.overview, .genres],
+                // Overlap, not containment: ends after the window opens and
+                // starts before it closes, so a programme already under way
+                // is returned.
+                maxStartDate: end,
+                minEndDate: start,
+                sortBy: [.startDate],
+                userID: userId,
+            )
+
+            let response = try await sdkClient.send(Paths.getPrograms(body))
+            return response.value.items?.compactMap { LiveProgram(from: $0) } ?? []
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    public func openLiveStream(channelId: String, capabilities: PlaybackCapabilities) async throws -> LiveStreamSession {
+        guard let userId = _userId else {
+            throw APIError.notAuthenticated
+        }
+
+        do {
+            let body = JellyfinAPI.PlaybackInfoDto(
+                isAutoOpenLiveStream: true,
+                deviceProfile: JellyfinAPI.DeviceProfile(liveCapabilities: capabilities),
+                enableDirectPlay: false,
+                enableDirectStream: true,
+                enableTranscoding: true,
+                maxStreamingBitrate: capabilities.maxStreamingBitrate,
+                userID: userId,
+            )
+
+            let response = try await sdkClient.send(Paths.getPostedPlaybackInfo(itemID: channelId, body))
+
+            if let errorCode = response.value.errorCode {
+                throw APIError.generic("Playback not possible: \(errorCode.rawValue)")
+            }
+            guard let source = response.value.mediaSources?.first, let sourceId = source.id else {
+                // The request asked the server to open the tuner, so an
+                // answer this code cannot use may still have one running.
+                for liveStreamId in (response.value.mediaSources ?? []).compactMap(\.liveStreamID) {
+                    _ = try? await sdkClient.send(Paths.closeLiveStream(liveStreamID: liveStreamId))
+                }
+                throw APIError.generic("No playable media sources for this item")
+            }
+
+            let opened = { (url: URL) in
+                LiveStreamSession(
+                    url: url,
+                    playSessionId: response.value.playSessionID,
+                    mediaSourceId: sourceId,
+                    liveStreamId: source.liveStreamID,
+                )
+            }
+            guard let path = source.transcodingURL,
+                  let url = LiveStreamURL.resolve(serverURL: serverURL, path: path)
+            else {
+                // The server opened the tuner but gave nothing playable:
+                // release it rather than leave it running.
+                if let liveStreamId = source.liveStreamID {
+                    _ = try? await sdkClient.send(Paths.closeLiveStream(liveStreamID: liveStreamId))
+                }
+                throw APIError.generic("The server did not provide a stream for this channel")
+            }
+
+            let session = opened(url)
+            liveStreams.register(session)
+            return session
+        } catch let error as APIError {
+            throw error
+        } catch {
+            throw Self.mapTransportError(error)
+        }
+    }
+
+    /// Fire-and-forget: failure only delays the server's own cleanup.
+    public func closeLiveStream(_ session: LiveStreamSession) async {
+        liveStreams.forget(playSession: session.playSessionId)
+        guard let liveStreamId = session.liveStreamId else { return }
+        _ = try? await sdkClient.send(Paths.closeLiveStream(liveStreamID: liveStreamId))
     }
 
     // MARK: - Playback Extras

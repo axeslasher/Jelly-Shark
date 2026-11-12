@@ -12,6 +12,56 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// concurrently, so unsynchronized appends would race
     private let lock = NSLock()
 
+    /// Tests parked in `recorded(_:)`, each with the condition it waits for
+    private var recordWaiters: [Int: (condition: @Sendable (MockJellyfinClient) -> Bool, continuation: CheckedContinuation<Void, Never>)] = [:]
+    private var nextRecordWaiterID = 0
+    /// Waiters cancelled before they parked, so parking returns at once
+    private var cancelledRecordWaiters: Set<Int> = []
+
+    /// Suspends until `condition` holds. Rechecked each time the mock records
+    /// a playback report, a stopped encode or a closed live stream, so a
+    /// test waits on the call itself and not on a clock.
+    ///
+    /// Cancellation returns early, so a call that never comes ends the test
+    /// at its time limit instead of leaving its task parked here.
+    func recorded(_ condition: @escaping @Sendable (MockJellyfinClient) -> Bool) async {
+        let id = lock.withLock {
+            nextRecordWaiterID += 1
+            return nextRecordWaiterID
+        }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock {
+                    if cancelledRecordWaiters.remove(id) != nil || condition(self) {
+                        return true
+                    }
+                    recordWaiters[id] = (condition, continuation)
+                    return false
+                }
+                if resumeNow {
+                    continuation.resume()
+                }
+            }
+        } onCancel: {
+            let parked = lock.withLock {
+                let parked = recordWaiters.removeValue(forKey: id)
+                if parked == nil {
+                    cancelledRecordWaiters.insert(id)
+                }
+                return parked
+            }
+            parked?.continuation.resume()
+        }
+    }
+
+    private func signalRecorded() {
+        let ready = lock.withLock {
+            let ids = recordWaiters.filter { $0.value.condition(self) }.map(\.key)
+            return ids.compactMap { recordWaiters.removeValue(forKey: $0) }
+        }
+        ready.forEach { $0.continuation.resume() }
+    }
+
     let serverURL = URL(string: "https://example.com")!
     var currentUser: User?
     var isAuthenticated: Bool {
@@ -418,6 +468,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func stopEncoding(playSessionId: String) async {
         lock.withLock { stopEncodingCalls.append(playSessionId) }
+        signalRecorded()
     }
 
     func resolveStream(
@@ -464,7 +515,8 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         audioStreamIndex _: Int?,
         subtitleStreamIndex _: Int?,
     ) async throws {
-        startReports.append((itemId, positionTicks, playMethod))
+        lock.withLock { startReports.append((itemId, positionTicks, playMethod)) }
+        signalRecorded()
     }
 
     func reportPlaybackProgress(
@@ -495,7 +547,70 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         playSessionId _: String?,
         positionTicks: Int64,
     ) async throws {
-        stopReports.append((itemId, positionTicks))
+        lock.withLock { stopReports.append((itemId, positionTicks)) }
+        signalRecorded()
+        await stopReportGate?()
+    }
+
+    /// Suspension point inside `reportPlaybackStopped`, after it is recorded
+    var stopReportGate: (@Sendable () async -> Void)?
+
+    // MARK: Live TV
+
+    var liveChannelsResult: Result<[LiveChannel], Error> = .success([])
+    var liveChannelsRequestCount = 0
+    /// Suspension point inside `getLiveChannels`
+    var liveChannelsGate: (@Sendable () async -> Void)?
+
+    func getLiveChannels() async throws -> [LiveChannel] {
+        let result = lock.withLock {
+            liveChannelsRequestCount += 1
+            return liveChannelsResult
+        }
+        await liveChannelsGate?()
+        return try result.get()
+    }
+
+    var liveProgramsResult: Result<[LiveProgram], Error> = .success([])
+    /// Programme fetches as (channel ids, window start, window end)
+    var liveProgramsRequests: [([String], Date, Date)] = []
+
+    func getLivePrograms(channelIds: [String], from start: Date, to end: Date) async throws -> [LiveProgram] {
+        let result = lock.withLock {
+            liveProgramsRequests.append((channelIds, start, end))
+            return liveProgramsResult
+        }
+        return try result.get()
+    }
+
+    /// Channel ids a live stream was opened for, in arrival order
+    var openLiveStreamRequests: [String] = []
+    /// Nil serves a distinct session per open, named after its ordinal
+    var openLiveStreamResult: Result<LiveStreamSession, Error>?
+    /// Suspension point inside `openLiveStream`, keyed by the 1-based ordinal
+    var openLiveStreamGate: (@Sendable (Int) async -> Void)?
+    var closedLiveStreams: [LiveStreamSession] = []
+
+    func openLiveStream(channelId: String, capabilities _: PlaybackCapabilities) async throws -> LiveStreamSession {
+        let (ordinal, result) = lock.withLock {
+            openLiveStreamRequests.append(channelId)
+            return (openLiveStreamRequests.count, openLiveStreamResult)
+        }
+        await openLiveStreamGate?(ordinal)
+        if let result {
+            return try result.get()
+        }
+        return LiveStreamSession(
+            url: URL(string: "https://example.com/videos/\(channelId)/master.m3u8?n=\(ordinal)")!,
+            playSessionId: "play\(ordinal)",
+            mediaSourceId: "source\(ordinal)",
+            liveStreamId: "live\(ordinal)",
+        )
+    }
+
+    func closeLiveStream(_ session: LiveStreamSession) async {
+        lock.withLock { closedLiveStreams.append(session) }
+        signalRecorded()
     }
 
     var playbackExtrasRequests: [String] = []

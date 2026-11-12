@@ -8,6 +8,17 @@
 #
 # Generated media is cached under ~/Library/Caches/jelly-shark-ui-check and
 # reused across runs; delete that folder to regenerate it.
+#
+# Live TV is off unless asked for, so ordinary checks need nothing else
+# running. Point it at an M3U channel list and an XMLTV guide (ErsatzTV
+# serves both) and the server gets a tuner and a guide:
+#
+#   UI_CHECK_LIVETV_M3U=http://host.docker.internal:8409/iptv/channels.m3u \
+#   UI_CHECK_LIVETV_XMLTV=http://host.docker.internal:8409/iptv/xmltv.xml \
+#       server.sh up 10.11.11 8097
+#
+# Use host.docker.internal, not localhost: the server fetches these from
+# inside the container.
 set -euo pipefail
 
 cmd=${1:-}
@@ -125,7 +136,34 @@ up() {
     done
     [[ $count -ge 6 ]] || fail "library scan found $count of 6 items"
 
-    echo "$base  (Jellyfin $version, user test / password test, 3 movies + 1 series of 3 episodes)"
+    local live=""
+    if [[ -n ${UI_CHECK_LIVETV_M3U:-} ]]; then
+        seed_live_tv
+        live=", $LIVE_CHANNELS live channels"
+    fi
+
+    echo "$base  (Jellyfin $version, user test / password test, 3 movies + 1 series of 3 episodes$live)"
+}
+
+seed_live_tv() {
+    [[ -n ${UI_CHECK_LIVETV_XMLTV:-} ]] || fail "UI_CHECK_LIVETV_M3U needs UI_CHECK_LIVETV_XMLTV as well"
+    api POST /LiveTv/TunerHosts "{\"Type\":\"m3u\",\"Url\":\"$UI_CHECK_LIVETV_M3U\",\"AllowStreamSharing\":true}" >/dev/null
+    # Adding the guide source starts the server's guide refresh.
+    api POST /LiveTv/ListingProviders "{\"Type\":\"xmltv\",\"Path\":\"$UI_CHECK_LIVETV_XMLTV\",\"EnableAllTuners\":true}" >/dev/null
+
+    # The refresh is asynchronous: wait until channels and programmes exist.
+    local i programs=0
+    LIVE_CHANNELS=0
+    for i in $(seq 1 90); do
+        LIVE_CHANNELS=$(api GET "/LiveTv/Channels?limit=1" |
+            python3 -c 'import sys,json;print(json.load(sys.stdin)["TotalRecordCount"])')
+        programs=$(api GET "/LiveTv/Programs?limit=1" |
+            python3 -c 'import sys,json;print(json.load(sys.stdin)["TotalRecordCount"])')
+        [[ $LIVE_CHANNELS -gt 0 && $programs -gt 0 ]] && break
+        sleep 2
+    done
+    [[ $LIVE_CHANNELS -gt 0 && $programs -gt 0 ]] ||
+        fail "live TV guide never loaded ($LIVE_CHANNELS channels, $programs programmes)"
 }
 
 down() {

@@ -83,7 +83,8 @@ Worth considering, roughly by payoff:
 ## Not worth mapping
 
 - Photo EXIF: camera make/model, aperture, ISO, GPS, orientation
-- Live TV: `channel*`, timers, program fields
+- Live TV: `channel*`, timers, program fields. Not mapped onto `MediaItem`; the guide's
+  own types, `LiveChannel` and `LiveProgram`, carry what Live TV shows
 - Music: `album*`, `artists`, `songCount` — revisit when music support lands
 - Server plumbing: `etag`, `path`, `lockedFields`, `playAccess`, `canDelete`,
   `sortName`, `displayPreferencesID`

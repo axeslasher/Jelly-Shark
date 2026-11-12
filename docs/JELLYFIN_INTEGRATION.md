@@ -171,6 +171,22 @@ Exposed as `searchItems(query:itemTypes:limit:)` on `JellyfinClientProtocol`. It
 
 **Result ordering is relevance, ranked client-side.** Exact title match first, then whole-title prefix, then word prefix, then substring; within a tier, alphabetical. The server cannot supply this: `ItemSortBy` has no relevance case, an unsorted `/Items` query returns an undefined order, and `/Search/Hints` is alphabetical too on every version this app supports (through 10.10.x, `SearchEngine` sets `OrderBy = [(SortName, Ascending)]`) while yielding a `SearchHint` with fewer fields than a `BaseItemDto`. So the request keeps `sortBy = [SortName]` purely as a deterministic fetch window and tie-breaker, over-fetches (4× the caller's limit, capped at 200) so the alphabet cannot cut the best match before ranking sees it, and `SearchRelevance` sorts and truncates. The tiers mirror the scoring provider Jellyfin added after 10.10 (`SqlSearchProvider`: exact 100 / prefix 80 / word-prefix 75 / contains 50), so the client will not disagree with the server once that ships in a release the app can rely on.
 
+### Live TV — 🧪 experimental, tvOS only
+```
+GET    /LiveTv/Channels                  (getLiveChannels)
+POST   /LiveTv/Programs                  (getLivePrograms — MinEndDate / MaxStartDate window; POST so channel ids ride in the body)
+POST   /Items/{channelId}/PlaybackInfo   (openLiveStream — AutoOpenLiveStream)
+POST   /LiveStreams/Close                (closeLiveStream)
+```
+Channels and programmes map onto `LiveChannel` and `LiveProgram`, not `MediaItem`. Neither is cached: a schedule goes stale by the minute. Limits and open items are in [experimental/live-tv.md](experimental/live-tv.md).
+
+Four rules, each verified against Jellyfin 10.11.11 with an M3U tuner (evidence in [spikes/live-tv.md](spikes/live-tv.md)):
+
+1. **"On now" is computed in the app.** The pinned SDK's `BaseItemDto` has no `currentProgram`, so the guide fetches programmes overlapping its window and finds the one airing.
+2. **The live device profile offers no direct play.** Offered direct play, the server answers with the tuner's own address, which the device often cannot reach.
+3. **The live profile asks for HLS in MPEG-TS segments, H.264 only.** Offered MP4 segments, a tuner with its default settings gets one endless progressive file, and AVPlayer stops on it within seconds.
+4. **Every playback report for a live session carries its `LiveStreamId`.** The server releases the tuner on the stopped report only when it does. `JellyfinClient` remembers the id per play session, so report callers did not change. A stream opened but never reported is released with `/LiveStreams/Close`.
+
 ---
 
 ## Data Models
@@ -661,7 +677,7 @@ JellyfinKit/Sources/JellyfinKit/
 ### v1.x Candidates
 - Multiple server support (switch between home/remote)
 - Offline downloads for travel
-- Live TV integration (if server supports)
+- Live TV recording and timers (viewing is experimental, see above)
 - Plugin support (intro skipper, theme music, etc.)
 - Cast/AirPlay support
 

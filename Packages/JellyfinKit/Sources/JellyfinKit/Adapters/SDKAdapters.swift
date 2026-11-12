@@ -355,6 +355,7 @@ extension MediaType {
         case .video: .video
         case .folder: .folder
         case .collectionFolder: .collectionFolder
+        case .tvChannel: .tvChannel
         case .unknown: nil
         }
     }

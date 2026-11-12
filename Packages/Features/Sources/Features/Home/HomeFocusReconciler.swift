@@ -10,6 +10,7 @@ enum HomeShelfRowID {
     /// the same row to the viewer, and only one is ever on screen.
     static let continueWatching = "continue"
     static let nextUp = "nextUp"
+    static let onAirNow = "onAirNow"
 
     static func latest(_ libraryID: String) -> String {
         "latest-\(libraryID)"

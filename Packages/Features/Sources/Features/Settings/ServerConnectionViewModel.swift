@@ -54,6 +54,10 @@ public final class ServerConnectionViewModel {
     /// Libraries fetched from the server
     public private(set) var libraries: [Library] = []
 
+    /// The server's Live TV view, when it has one. Kept out of `libraries`,
+    /// which holds only what opens as a poster grid; Live TV opens the guide.
+    public private(set) var liveTVLibrary: Library?
+
     /// Item counts per library ID for the Server page, fetched after the
     /// libraries publish — one `TotalRecordCount` query each, because the
     /// `ChildCount` the Views endpoint reports is noise on Jellyfin 10.11.
@@ -196,6 +200,7 @@ public final class ServerConnectionViewModel {
             {
                 // Instant connect: publish now, verify in the background
                 libraries = cachedLibraries.filter(\.isBrowsable)
+                liveTVLibrary = cachedLibraries.liveTV
                 connectedUser = await cache.read(User.self, scope: scope, key: .currentUser)
                 if let name = connectedUser?.name {
                     username = name
@@ -276,11 +281,13 @@ public final class ServerConnectionViewModel {
                 async let currentUser = client.fetchCurrentUser()
                 try await Self.requireSupported(serverInfo)
                 let user = try await currentUser
-                let fresh = try await client.getLibraries().filter(\.isBrowsable)
+                let all = try await client.getLibraries()
+                let fresh = all.filter(\.isBrowsable)
                 guard let self, !Task.isCancelled, state == .connected else { return }
                 connectedUser = user
                 username = user.name
                 libraries = fresh
+                liveTVLibrary = all.liveTV
                 refreshLibraryCounts(client: client)
                 isValidating = false
                 await cache.purgeStaleDetails(scope: scope)
@@ -303,6 +310,7 @@ public final class ServerConnectionViewModel {
                 state = .disconnected
                 connectedUser = nil
                 libraries = []
+                liveTVLibrary = nil
                 libraryCounts = [:]
                 isValidating = false
             }
@@ -347,6 +355,7 @@ public final class ServerConnectionViewModel {
         client = nil
         connectedUser = nil
         libraries = []
+        liveTVLibrary = nil
         libraryCounts = [:]
         state = .disconnected
         errorMessage = nil
@@ -428,7 +437,13 @@ public final class ServerConnectionViewModel {
     /// changed list into a `.libraries` refresh (#236).
     public func refreshLibraries() async {
         guard state == .connected, let client else { return }
-        guard let fresh = try? await client.getLibraries().filter(\.isBrowsable) else { return }
+        guard let all = try? await client.getLibraries() else { return }
+        // Written only on a change: `RootView` observes it, and this runs on
+        // every idle refresh.
+        if liveTVLibrary != all.liveTV {
+            liveTVLibrary = all.liveTV
+        }
+        let fresh = all.filter(\.isBrowsable)
         guard Set(fresh.map(\.id)) != Set(libraries.map(\.id)) else { return }
         libraries = fresh
         refreshLibraryCounts(client: client)
@@ -485,7 +500,9 @@ public final class ServerConnectionViewModel {
     /// Finish a successful authentication: prove the connection by fetching
     /// libraries, then surface the connected state and publish the client
     private func completeConnection(client: any JellyfinClientProtocol, user: User) async throws {
-        libraries = try await client.getLibraries().filter(\.isBrowsable)
+        let all = try await client.getLibraries()
+        libraries = all.filter(\.isBrowsable)
+        liveTVLibrary = all.liveTV
         connectedUser = user
         state = .connected
         let scopedCache = cache.map {
@@ -504,5 +521,11 @@ public final class ServerConnectionViewModel {
         try? sessionStore.save(
             SavedSession(serverURL: serverURL, userID: user.id, accessToken: accessToken),
         )
+    }
+}
+
+private extension [Library] {
+    var liveTV: Library? {
+        first { $0.collectionType == .livetv }
     }
 }
