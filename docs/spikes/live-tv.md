@@ -250,7 +250,8 @@ Jellyfin: "Genres": [], "ImageTags": {}, no Overview, no IsSeries/IsMovie, "IsRe
   edge. Bringing the fade in over 8 points removed it (approved on device). An earlier
   reading, that the depth setting caused the line, was wrong: the line was there at 1.0.
 - **The bottom edge.** The grid stopped at the bottom safe area, which showed as a line.
-  It now ignores that edge. Not confirmed: where the last row rests when focused.
+  It now ignores that edge. The focused last row stays in view (owner, on device, with
+  five channels).
 
 ### E14 — What else the guide data carries (fixture, curl)
 
@@ -292,9 +293,8 @@ Do not remove any of this until the spike is closed.
 | Hours of play with no hang and one rebuffer (E11). | Device, by the owner |
 | Guide header layout, margin, fades, and the player's title order (E13). | Device, by the owner |
 
-**Not verified anywhere**: all five themes on device, where the guide's last row rests
-now that the grid runs past the bottom safe area, and a guide with more channels than
-fit one screen.
+**Not verified anywhere**: all five themes on device, and a guide with more channels
+than fit one screen.
 
 **Decisions made along the way**
 
@@ -314,8 +314,8 @@ fit one screen.
 
 ### Must settle before this merges
 
-1. **The guide's last row on device.** Check it rests fully visible when focused (E13),
-   ideally with more channels than fit one screen.
+1. **A guide with more channels than fit one screen.** Every check so far had five.
+   Scrolling, the bottom edge and load time are unproven beyond that.
 2. **A frozen or ended stream is not detected.** Only an outright player failure is. The
    live player has no stall watchdog and no reconnecting banner.
 3. **A server with Live TV and no other library** shows Home's "Nothing Here" and no shelf.
