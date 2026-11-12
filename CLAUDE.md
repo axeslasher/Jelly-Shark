@@ -290,6 +290,7 @@ Full documentation is available in the `/docs` directory:
 - **RELEASING.md**: Versioning scheme, release naming, how to cut and tag a release
 - **FIGMA_TOKENS.md**: The Figma design file — variable collections mirroring the tokens, component↔code mapping, representation deviations, re-sync procedure
 - **MEDIA_DETAIL_DATA.md**: Which `BaseItemDto` fields are mapped onto `MediaItem`, where the UI uses them, and which are still unmapped
+- **experimental/**: One page per feature that ships before it is finished — what works, known limits, what graduating takes. Live TV is the first
 - **spikes/issue-template.md**: Ledger template for a root-cause investigation — copy to `docs/spikes/<issue-number>.md` when one starts
 
 API Documentation: https://api.jellyfin.org

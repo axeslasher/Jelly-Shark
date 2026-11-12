@@ -197,6 +197,36 @@ struct LivePlaybackViewModelTests {
         #expect(client.openLiveStreamRequests == ["ch4"])
     }
 
+    @Test("The open outlives the task that began it, so its stream can still be closed")
+    func openSurvivesCallerCancellation() async {
+        // A view's `.task` is cancelled when the view goes away. Were the
+        // open to run inside it, the request would be cancelled mid-flight
+        // and the stream the server had opened would never be closed.
+        let client = MockJellyfinClient()
+        let gate = AsyncGate()
+        let cancelledAtGate = LockedFlag()
+        client.openLiveStreamGate = { _ in
+            try? await gate.wait()
+            cancelledAtGate.set(Task.isCancelled)
+        }
+        let model = makeModel(client)
+
+        let caller = Task {
+            model.begin()
+            try? await Task.sleep(for: .seconds(3600))
+        }
+        await gate.arrivals(atLeast: 1)
+        caller.cancel()
+        await model.stop()
+        await gate.open()
+        for _ in 0 ..< 200 where client.closedLiveStreams.isEmpty {
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+
+        #expect(!cancelledAtGate.value)
+        #expect(client.closedLiveStreams.map(\.liveStreamId) == ["live1"])
+    }
+
     @Test("Try Again releases the failed stream and opens a fresh one")
     func retry() async throws {
         let client = MockJellyfinClient()
@@ -212,6 +242,19 @@ struct LivePlaybackViewModelTests {
         #expect(client.openLiveStreamRequests == ["ch4", "ch4"])
         #expect(model.session?.playSessionId == "play2")
         #expect(model.state == .playing)
+    }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var flag = false
+
+    var value: Bool {
+        lock.withLock { flag }
+    }
+
+    func set(_ newValue: Bool) {
+        lock.withLock { flag = newValue }
     }
 }
 

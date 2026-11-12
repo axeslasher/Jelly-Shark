@@ -192,4 +192,21 @@ struct LiveTVTests {
         registry.forget(playSession: "play1")
         #expect(registry.liveStreamId(forPlaySession: "play1") == nil)
     }
+
+    @Test("A stopped report that fails still forgets the live session")
+    func stoppedReportFailureForgetsSession() async throws {
+        // Nothing listens on port 1, so the report is refused at once. The
+        // session is over either way, and an entry left behind would tag a
+        // later report that reused the play session id.
+        let server = try #require(URL(string: "http://127.0.0.1:1"))
+        let client = JellyfinClient(configuration: JellyfinClientConfiguration(serverURL: server))
+        let url = try #require(URL(string: "http://127.0.0.1:1/x"))
+        client.liveStreams.register(LiveStreamSession(url: url, playSessionId: "play1", mediaSourceId: "src", liveStreamId: "live1"))
+
+        await #expect(throws: (any Error).self) {
+            try await client.reportPlaybackStopped(itemId: "ch4", mediaSourceId: "src", playSessionId: "play1", positionTicks: 0)
+        }
+
+        #expect(client.liveStreams.liveStreamId(forPlaySession: "play1") == nil)
+    }
 }

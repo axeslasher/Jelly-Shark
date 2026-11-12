@@ -12,9 +12,11 @@ investigation; this is a feature spike, so "Symptom" became "What this is" and a
 - Update this file after every run, before reporting anything.
 -->
 
-**Status**: open, on device for soak testing
-**Issue**: none yet
-**Branch**: `spike/live-tv` (pushed, no PR)
+**Status**: closing. Confirmed findings are in `docs/JELLYFIN_INTEGRATION.md`,
+`docs/ARCHITECTURE.md` and `docs/experimental/live-tv.md`. Scaffolding stays until the PR
+merges.
+**Issue**: none
+**Branch**: `spike/live-tv`, landing as one squashed PR
 **Started**: 2026-11-11
 
 ## What this is
@@ -63,7 +65,7 @@ Status is one of PROPOSED, TESTING, FALSIFIED, CONFIRMED.
 | H12 | A long play hangs after a few minutes, as Swiftfin's open issue #2100 reports on iOS. | TESTING | No hang in hours of play on device (E11). One rebuffer in that time, cause unknown. Read the ErsatzTV and Jellyfin logs for that moment if it recurs. |
 | H13 | The system player treats the stream as both live and not live because Jellyfin serves it as a growing playlist with a fixed start. | PROPOSED | Compare against a stream served as a sliding window. It showed a LIVE badge and also offered "From Beginning". |
 | H14 | An app killed mid-stream leaves the tuner counted as in use until the server restarts. | PROPOSED | Seen twice (E5 note); not tested on purpose, and no process was left running behind it. |
-| H15 | Backing out during the loading spinner no longer leaves a stream open. | PROPOSED | The fix has no test that simulates the cancelled request. Check the server log after backing out mid-load. |
+| H15 | Backing out during the loading spinner no longer leaves a stream open. | TESTING | A unit test now cancels the task that began the open and sees the stream closed. Not yet seen in a server log after backing out mid-load. |
 
 ## Experiments run
 
@@ -268,6 +270,21 @@ ProductionYear 9, IsMovie 9, IsNews 1. People, Studios, Taglines, ProviderIds: e
 - **Reading:** Length and year were the only unused fields worth showing, and the header
   now shows both. A real broadcast guide may fill more, such as new and live flags.
 
+### E15 — A server with no Live TV (simulator check, default fixture, 2026-11-12)
+
+- **Method:** A throwaway UI check against the default fixture, which has no tuner: sign
+  in, look for the sidebar entry and the shelf, walk focus down Home, open Movies.
+- **Result:** PASS (exit 0). No Live TV entry, no On Air Now shelf. Focus went Recently
+  Added, then straight to the genre shelves.
+
+```
+home focus going down: ["Static Season, 2023", "3, Night Shift Radio, 2022", "Drama", ...]
+```
+
+- **Also reported by the owner, on device with Live TV on:** library playback and Home
+  focus showed no regressions in about thirty minutes of use.
+- **Not checked:** the same on device. Nothing new is on screen in this state.
+
 ## Scaffolding
 
 Do not remove any of this until the spike is closed.
@@ -312,18 +329,16 @@ than fit one screen.
 
 ## Open items
 
-### Must settle before this merges
+### Known limits carried into the experimental page
 
 1. **A guide with more channels than fit one screen.** Every check so far had five.
    Scrolling, the bottom edge and load time are unproven beyond that.
 2. **A frozen or ended stream is not detected.** Only an outright player failure is. The
    live player has no stall watchdog and no reconnecting banner.
 3. **A server with Live TV and no other library** shows Home's "Nothing Here" and no shelf.
-4. **How the branch lands.** One PR or several, and the doc updates that go with it:
-   `JELLYFIN_INTEGRATION.md`, `MEDIA_DETAIL_DATA.md`, the PRD's Live TV non-goal, and an
-   `ARCHITECTURE.md` row for the separate player.
-5. **Tests for two fixes that have none**: the open that must survive dismissal (H15), and
-   the registry entry cleared when a stopped report fails.
+
+Decided 2026-11-12: these do not block the merge. The feature lands as experimental, and
+each becomes an issue. The list of record is now `docs/experimental/live-tv.md`.
 
 ### Worth doing, not blocking
 

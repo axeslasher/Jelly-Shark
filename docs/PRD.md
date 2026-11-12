@@ -187,7 +187,7 @@ Unlike existing Jellyfin clients that treat the interface as functional but forg
 - Social features
 - Content recommendation algorithms
 - Server management features
-- DVR or live TV functionality
+- DVR: recording, timers and series rules. Watching live TV is experimental on tvOS (docs/experimental/live-tv.md)
 
 ---
 

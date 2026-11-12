@@ -575,7 +575,8 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     private var _accessToken: String?
 
     /// Open live streams by play session, so reports can name their stream
-    private let liveStreams = LiveStreamRegistry()
+    /// Not private, so a test can seed it without a server to open a stream on
+    let liveStreams = LiveStreamRegistry()
 
     public var currentUser: User? {
         _currentUser
