@@ -128,7 +128,8 @@ private enum GuideMetrics {
     static let gap = SpacingTokens.xs
     /// The margin Home and the library screens keep
     static let leadingPadding = SpacingTokens.screenPadding
-    static let edgeFadeLength = SpacingTokens.xxl
+    static let topFadeLength = SpacingTokens.xxl
+    static let leadingFadeLength = SpacingTokens.lg
 }
 
 @Observable
@@ -153,19 +154,20 @@ private struct GuideEdgeFade: View {
 
     var body: some View {
         let offset = edge == .leading ? scroll.offset : scroll.verticalOffset
-        let hidden = min(max(offset, 0) / GuideMetrics.edgeFadeLength, 1)
+        let length = edge == .leading ? GuideMetrics.leadingFadeLength : GuideMetrics.topFadeLength
+        let hidden = min(max(offset, 0) / length, 1)
         let colors: [Color] = [.black.opacity(1 - hidden), .black]
         switch edge {
         case .leading:
             HStack(spacing: 0) {
                 LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-                    .frame(width: GuideMetrics.edgeFadeLength)
+                    .frame(width: length)
                 Color.black
             }
         case .top:
             VStack(spacing: 0) {
                 LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
-                    .frame(height: GuideMetrics.edgeFadeLength)
+                    .frame(height: length)
                 Color.black
             }
         }
