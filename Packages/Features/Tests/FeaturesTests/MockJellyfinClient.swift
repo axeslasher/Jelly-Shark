@@ -13,31 +13,51 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     private let lock = NSLock()
 
     /// Tests parked in `recorded(_:)`, each with the condition it waits for
-    private var recordWaiters: [(condition: @Sendable (MockJellyfinClient) -> Bool, continuation: CheckedContinuation<Void, Never>)] = []
+    private var recordWaiters: [Int: (condition: @Sendable (MockJellyfinClient) -> Bool, continuation: CheckedContinuation<Void, Never>)] = [:]
+    private var nextRecordWaiterID = 0
+    /// Waiters cancelled before they parked, so parking returns at once
+    private var cancelledRecordWaiters: Set<Int> = []
 
     /// Suspends until `condition` holds. Rechecked each time the mock records
     /// a playback report, a stopped encode or a closed live stream, so a
     /// test waits on the call itself and not on a clock.
+    ///
+    /// Cancellation returns early, so a call that never comes ends the test
+    /// at its time limit instead of leaving its task parked here.
     func recorded(_ condition: @escaping @Sendable (MockJellyfinClient) -> Bool) async {
-        await withCheckedContinuation { continuation in
-            let alreadyTrue = lock.withLock {
-                if condition(self) {
-                    return true
+        let id = lock.withLock {
+            nextRecordWaiterID += 1
+            return nextRecordWaiterID
+        }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let resumeNow = lock.withLock {
+                    if cancelledRecordWaiters.remove(id) != nil || condition(self) {
+                        return true
+                    }
+                    recordWaiters[id] = (condition, continuation)
+                    return false
                 }
-                recordWaiters.append((condition, continuation))
-                return false
+                if resumeNow {
+                    continuation.resume()
+                }
             }
-            if alreadyTrue {
-                continuation.resume()
+        } onCancel: {
+            let parked = lock.withLock {
+                let parked = recordWaiters.removeValue(forKey: id)
+                if parked == nil {
+                    cancelledRecordWaiters.insert(id)
+                }
+                return parked
             }
+            parked?.continuation.resume()
         }
     }
 
     private func signalRecorded() {
         let ready = lock.withLock {
-            let ready = recordWaiters.filter { $0.condition(self) }
-            recordWaiters.removeAll { $0.condition(self) }
-            return ready
+            let ids = recordWaiters.filter { $0.value.condition(self) }.map(\.key)
+            return ids.compactMap { recordWaiters.removeValue(forKey: $0) }
         }
         ready.forEach { $0.continuation.resume() }
     }
@@ -495,7 +515,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         audioStreamIndex _: Int?,
         subtitleStreamIndex _: Int?,
     ) async throws {
-        startReports.append((itemId, positionTicks, playMethod))
+        lock.withLock { startReports.append((itemId, positionTicks, playMethod)) }
         signalRecorded()
     }
 
@@ -527,7 +547,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         playSessionId _: String?,
         positionTicks: Int64,
     ) async throws {
-        stopReports.append((itemId, positionTicks))
+        lock.withLock { stopReports.append((itemId, positionTicks)) }
         signalRecorded()
         await stopReportGate?()
     }
