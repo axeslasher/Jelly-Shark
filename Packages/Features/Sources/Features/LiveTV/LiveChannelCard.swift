@@ -49,13 +49,22 @@ enum LiveTVText {
                 imageTags: ImageTags(primary: channel.imageTag),
             )
         }
-        let secondLine = [program.episodeTitle, episodeCode(program), channelLabel(channel)]
+        // An episode leads with its own title and names the series beneath,
+        // "Series · S4E4" as the library player writes it, so the two
+        // players read alike. Anything else leads with the programme.
+        let episodeTitle = program.episodeTitle.flatMap { $0.isEmpty ? nil : $0 }
+        let episodeNumber: String? = if let season = program.seasonNumber, let episode = program.episodeNumber {
+            "S\(season)E\(episode)"
+        } else {
+            nil
+        }
+        let secondLine = [episodeTitle == nil ? nil : program.name, episodeNumber, channelLabel(channel)]
             .compactMap(\.self)
             .filter { !$0.isEmpty }
             .joined(separator: " · ")
         return MediaItem(
             id: channel.id,
-            name: program.name,
+            name: episodeTitle ?? program.name,
             type: .tvChannel,
             overview: program.overview,
             officialRating: program.officialRating,

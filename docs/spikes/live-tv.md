@@ -270,8 +270,9 @@ first minute of each channel on device, and all five themes on device.
 
 ### Must settle before this merges
 
-1. **Guide and player polish from the device soak (E11):** header layout, left margin,
-   scroll-edge fade, filler cells (E12), and which title leads in the player.
+1. **Device check of the soak polish (E11).** The header in the Home hero's order,
+   progress on the artwork, the screen margin, the scroll-edge fade, and the episode
+   title leading in the player. Flows pass on the simulator; appearance is unchecked.
 2. **A frozen or ended stream is not detected.** Only an outright player failure is. The
    live player has no stall watchdog and no reconnecting banner.
 3. **A server with Live TV and no other library** shows Home's "Nothing Here" and no shelf.
@@ -283,6 +284,13 @@ first minute of each channel on device, and all five themes on device.
 
 ### Worth doing, not blocking
 
+0. **Filler shows as tiny guide cells (E12). Postponed** while Justin looks at ErsatzTV's
+   guide mode options, which may hide filler at the source. Proposed app-side fix if
+   that does not pan out: when building guide rows, fold an entry into the programme
+   before it when it has no genre, overview, image or episode number, is neither series
+   nor movie, and runs under five minutes. Use the same folded list for now/next so the
+   player and shelf never name a filler clip. The rule is exact on this guide and a
+   guess for others.
 1. **Poster art is cropped to 16:9.** Proposed: show it whole over a blurred copy of
    itself. Needs an opt-in presentation on `ArtworkImage` and `ArtworkShelfItem`.
 2. **The Guide tab's second lines are cut off.** Channel, next programme and time do not

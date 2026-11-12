@@ -92,7 +92,7 @@ struct LiveGuideView: View {
             if let described, let channel = guide.channels.first(where: { $0.id == described.channelId }) {
                 GuideHeader(cell: described, channel: channel, now: guide.now, client: session.client)
                     .padding(.leading, GuideMetrics.leadingPadding)
-                    .padding(.trailing, SpacingTokens.xxl)
+                    .padding(.trailing, SpacingTokens.screenPadding)
             }
 
             GuideRuler(windowStart: guide.windowStart, windowEnd: guide.windowEnd, scroll: scroll)
@@ -126,13 +126,31 @@ private enum GuideMetrics {
     static let rowHeight: CGFloat = 84
     static let rulerHeight: CGFloat = 32
     static let gap = SpacingTokens.xs
-    static let leadingPadding = SpacingTokens.xl
+    /// The margin Home and the library screens keep
+    static let leadingPadding = SpacingTokens.screenPadding
+    static let edgeFadeWidth = SpacingTokens.md
 }
 
 @Observable
 @MainActor
 private final class GuideScroll {
     var offset: CGFloat = 0
+}
+
+/// Softens the edge where programmes slide under the channel column. Opaque
+/// while the guide rests at its start, so the first cells are not dimmed. A
+/// view of its own, so scrolling redraws the mask and never the grid.
+private struct GuideEdgeFade: View {
+    let scroll: GuideScroll
+
+    var body: some View {
+        let hidden = min(max(scroll.offset, 0) / GuideMetrics.edgeFadeWidth, 1)
+        HStack(spacing: 0) {
+            LinearGradient(colors: [.black.opacity(1 - hidden), .black], startPoint: .leading, endPoint: .trailing)
+                .frame(width: GuideMetrics.edgeFadeWidth)
+            Color.black
+        }
+    }
 }
 
 /// The time ruler. It sits outside the grid's scroll view so it stays put
@@ -167,6 +185,7 @@ private struct GuideRuler: View {
                 .offset(x: -scroll.offset)
             }
             .clipped()
+            .mask { GuideEdgeFade(scroll: scroll) }
             .padding(.leading, GuideMetrics.leadingPadding + GuideMetrics.channelColumnWidth + GuideMetrics.gap)
             .accessibilityHidden(true)
     }
@@ -222,6 +241,8 @@ private struct GuideGrid: View, Equatable {
                 } action: { _, offset in
                     scroll.offset = offset
                 }
+                // A mask draws only: every cell stays focusable under it.
+                .mask { GuideEdgeFade(scroll: scroll) }
             }
             .padding(.leading, GuideMetrics.leadingPadding)
             .padding(.bottom, SpacingTokens.xl)
@@ -315,8 +336,8 @@ private struct GuideCellButtonStyle: ButtonStyle {
     }
 }
 
-/// What the focused cell is: when, on which channel, how far through, and
-/// the programme's details.
+/// What the focused cell is: the programme's details, and how far through
+/// it is when it is on now.
 private struct GuideHeader: View {
     @Environment(\.theme) private var theme
 
@@ -326,16 +347,16 @@ private struct GuideHeader: View {
     let client: (any JellyfinClientProtocol)?
 
     private static let artworkWidth: CGFloat = 480
-    private static let height: CGFloat = 300
+    /// Room for the lockup with a three-line overview
+    private static let height: CGFloat = 340
 
     var body: some View {
         HStack(alignment: .top, spacing: SpacingTokens.xl) {
-            VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                Text(Self.whenAndWhere(cell, channel: channel))
-                    .jsStyle(.caption)
-                    .foregroundStyle(theme.secondary)
-                    .monospacedDigit()
-
+            // The Home hero's lockup, in its order, tokens and spacing: the
+            // title, then the fact row, episode and overview as one tighter
+            // block, then one subdued line. When and where are left to the
+            // grid, which the focused cell already shows them on.
+            VStack(alignment: .leading, spacing: SpacingTokens.md) {
                 Text(cell.program?.name ?? channel.name)
                     .jsStyle(.display)
                     .foregroundStyle(theme.primary)
@@ -348,20 +369,8 @@ private struct GuideHeader: View {
                     // out of height, the overview gives up lines first.
                     .layoutPriority(1)
 
-                if let program = cell.program, program.isAiring(at: now) {
-                    progress(program)
-                }
-
-                HStack(alignment: .center, spacing: SpacingTokens.md) {
-                    if let line = Self.episodeLine(cell) {
-                        Text(line)
-                            .jsStyle(.body)
-                            .foregroundStyle(theme.secondary)
-                            .lineLimit(1)
-                    }
-                    // The same certificate badge the Home hero and the detail
-                    // page show, from the row that owns it. Draws nothing
-                    // when the guide carries no rating.
+                VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+                    // Draws nothing when the guide carries no rating.
                     MediaMetadataRow(
                         yearText: nil,
                         runtime: nil,
@@ -374,18 +383,23 @@ private struct GuideHeader: View {
                         videoRange: nil,
                         audioFormat: nil,
                     )
-                }
-
-                if let overview = cell.program?.overview, !overview.isEmpty {
-                    Text(overview)
-                        .jsStyle(.body)
-                        .foregroundStyle(theme.tertiary)
-                        .lineLimit(3)
+                    if let line = Self.episodeLine(cell) {
+                        Text(line)
+                            .jsStyle(.headline)
+                            .foregroundStyle(theme.primary)
+                            .lineLimit(1)
+                    }
+                    if let overview = cell.program?.overview, !overview.isEmpty {
+                        Text(overview)
+                            .jsStyle(.overview)
+                            .foregroundStyle(theme.primary)
+                            .lineLimit(3)
+                    }
                 }
 
                 if let genres = cell.program?.genres, !genres.isEmpty {
-                    Text(genres.prefix(4).joined(separator: " · "))
-                        .jsStyle(.caption)
+                    Text(genres.prefix(3).joined(separator: " · "))
+                        .jsStyle(.caption, .emphasized)
                         .foregroundStyle(theme.tertiary)
                         .lineLimit(1)
                 }
@@ -398,6 +412,12 @@ private struct GuideHeader: View {
                 cornerRadius: theme.cornerRadiusLarge,
             )
             .frame(width: Self.artworkWidth, height: Self.artworkWidth * 9 / 16)
+            .overlay(alignment: .bottom) {
+                if let program = cell.program, program.isAiring(at: now) {
+                    progress(program)
+                }
+            }
+            .clipShape(.rect(cornerRadius: theme.cornerRadiusLarge))
         }
         // Fixed, so the grid below does not jump as focus moves between a
         // programme with a long overview and one with none.
@@ -405,26 +425,39 @@ private struct GuideHeader: View {
         .accessibilityHidden(true)
     }
 
+    /// How far through the programme is, banding the foot of the artwork the
+    /// way Home's Continue Watching cards show progress.
     private func progress(_ program: LiveProgram) -> some View {
         let minutesLeft = max(Int((program.endDate.timeIntervalSince(now) / 60).rounded(.up)), 0)
-        return HStack(spacing: SpacingTokens.sm) {
+        return HStack(spacing: SpacingTokens.xs) {
             Capsule()
-                .fill(theme.surfaceElevated)
-                .frame(width: 220, height: 6)
+                .fill(theme.background.opacity(0.9))
+                .frame(height: 8)
                 .overlay(alignment: .leading) {
-                    Capsule()
-                        .fill(theme.accent)
-                        .frame(width: 220 * program.progress(at: now), height: 6)
+                    GeometryReader { geometry in
+                        Capsule()
+                            .fill(theme.accent)
+                            .frame(width: geometry.size.width * program.progress(at: now))
+                    }
                 }
             Text("liveTV.guide.minutesLeft \(minutesLeft)", bundle: #bundle, comment: "How many minutes remain of the live TV programme that has focus.")
-                .jsStyle(.caption, .emphasized)
-                .foregroundStyle(theme.accent)
                 .monospacedDigit()
+                .fixedSize()
+        }
+        .jsStyle(.body, .subtle)
+        .foregroundStyle(theme.primary.opacity(0.9))
+        .padding(SpacingTokens.sm)
+        .background {
+            LinearGradient(
+                colors: [theme.background.opacity(0.55), .clear],
+                startPoint: .bottom,
+                endPoint: .top,
+            )
         }
     }
 
-    /// "1:33 – 2:23 PM · 4 Star Trek". A programme cut at the guide's left
-    /// edge still shows when it really began.
+    /// "1:33 – 2:23 PM · 4 Star Trek", for VoiceOver. A programme cut at the
+    /// guide's left edge still gives when it really began.
     static func whenAndWhere(_ cell: GuideCell, channel: LiveChannel) -> String {
         let start = cell.program?.startDate ?? cell.start
         let end = cell.program?.endDate ?? cell.end
