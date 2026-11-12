@@ -132,7 +132,10 @@ private enum GuideMetrics {
     /// The margin Home and the library screens keep
     static let leadingPadding = SpacingTokens.screenPadding
     static let topFadeLength = SpacingTokens.xxl
-    static let topFadeDepth = 0.8
+    /// Keep at 1. Nothing covers the grid's top edge, so any less leaves
+    /// rows partly visible where the scroll view cuts them off: a hard line
+    /// under the ruler (seen on device at 0.8, 2026-11-12).
+    static let topFadeDepth = 1.0
     /// Short and never fully dark, so it reads as a shadow cast by the
     /// channel column, not as programmes vanishing
     static let leadingFadeLength = SpacingTokens.md
