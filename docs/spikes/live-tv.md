@@ -291,7 +291,7 @@ The spike closes when its PR merges. The UI check went with that merge; the rest
 
 | What | Where | Why it exists |
 |------|-------|---------------|
-| Throwaway UI check | Removed when the feature merged. It is in this branch's history as `docs/spikes/live-tv/UICheckLiveTV.swift`. | Drove guide, playback past 20 seconds, the Guide tab switch, Back and Home on the simulator, and asked the server's session list whether the app was playing. |
+| Throwaway UI check | Removed when the feature merged. The squash merge drops it from `main`; PR #364's commits still hold it as `docs/spikes/live-tv/UICheckLiveTV.swift`. | Drove guide, playback past 20 seconds, the Guide tab switch, Back and Home on the simulator, and asked the server's session list whether the app was playing. |
 | Live TV step in the fixture script | `.claude/skills/sim-ui-check/server.sh` | Adds the tuner and guide when `UI_CHECK_LIVETV_M3U` and `UI_CHECK_LIVETV_XMLTV` are set. |
 | Fixture server | Docker container `js-ui-check-8097` | The server E1, E4, E5, E7 and E8 ran against. Its logs are the evidence; a restart loses them. |
 | Swiftfin clone | Session scratch folder, not in the repo | Source for E2. Re-clone at commit `30c2432` to recheck. |
