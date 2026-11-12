@@ -302,7 +302,7 @@ Do not remove any of this until the spike is closed.
 
 | Claim | Venue |
 | --- | --- |
-| Both suites exit 0, with 32 Live TV tests in Features and a Live TV suite in JellyfinKit. | Host, simulator |
+| Both suites exit 0, with 37 Live TV tests in Features and a Live TV suite in JellyfinKit. | Host, simulator |
 | tvOS and visionOS builds exit 0. | Build |
 | Guide opens, focus moves, a channel plays past 20 seconds, the Guide tab switches channel and closes its panel, Back returns to the guide, Home shows the shelf. | Simulator |
 | Theming and guide traversal look right. | Simulator, by the owner |
@@ -349,7 +349,8 @@ each becomes an issue. The list of record is now `docs/experimental/live-tv.md`.
 3. **No badge slot on the shelf card.** The watched channel is marked with text "LIVE".
 4. **Guide reloads can overlap** at the half hour, and the guide is only proven for tens of
    channels.
-5. **The live timeline can be scrubbed back** (H13). Decide whether that is wanted.
+5. **Scrubbing is switched off** (`requiresLinearPlayback`). The stream itself keeps
+   its start (H13), so rewinding could be allowed. Decide whether that is wanted.
 
 ### Postponed
 

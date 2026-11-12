@@ -174,10 +174,10 @@ struct LivePlaybackView: View {
             /// switch.
             ///
             /// The panel is a presentation of its own, so it outlives the
-            /// player view a channel change replaces. Left up, it sat over
-            /// the new channel's controls until they timed out (seen on the
-            /// simulator, 2026-11-11). When nothing is presented the switch
-            /// goes ahead as it is.
+            /// player view a channel change replaces, and left up it covers
+            /// the new channel's controls (seen on the simulator,
+            /// 2026-11-11). When nothing is presented the switch goes ahead
+            /// as it is.
             func pick(_ channel: LiveChannel) {
                 guard let panel = controller?.presentedViewController else {
                     onSelectChannel(channel)

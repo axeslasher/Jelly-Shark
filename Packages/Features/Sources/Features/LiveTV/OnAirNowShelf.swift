@@ -16,7 +16,9 @@ struct OnAirNowShelf: View {
     @State private var playingChannel: LiveChannel?
 
     var body: some View {
-        if guide.hasChannels {
+        // Stays in place while its player is up, whatever a reload says:
+        // the player's cover hangs off this view and would go with it.
+        if guide.hasChannels || playingChannel != nil {
             ContentShelf(
                 String(localized: "liveTV.shelf.onAirNow", bundle: #bundle, comment: "Home shelf listing what each live TV channel is showing right now."),
                 icon: "antenna.radiowaves.left.and.right",

@@ -40,10 +40,10 @@ enum GuideLayout {
     static let visibleMinutes: Double = 120
 
     /// The guide's time scale: two hours across the grid's share of a
-    /// 1920-point tvOS screen. A constant, not a measurement. The grid was
-    /// first sized from its measured width, which changes on every frame of
-    /// the sidebar's animation; each change re-laid out every cell and the
-    /// main thread never caught up (seen on the simulator, 2026-11-11).
+    /// 1920-point tvOS screen. A constant, not a measurement: the grid's
+    /// measured width changes on every frame of the sidebar's animation, and
+    /// sizing from it re-lays out every cell each time, which froze the
+    /// guide on opening (seen on the simulator, 2026-11-11).
     static let pointsPerMinute: Double = 13
 
     /// The time ruler's spacing
@@ -96,9 +96,11 @@ enum GuideLayout {
             if program.startDate > cursor {
                 fill(until: min(program.startDate, windowEnd))
             }
-            // `max` also trims a programme the guide lists as overlapping
-            // the one before it.
-            let start = max(program.startDate, cursor)
+            // Always from the cursor, never the programme's own start. That
+            // trims a programme listed as overlapping the one before it, and
+            // lets it absorb a gap too short for a cell of its own: a hole
+            // there would slide the rest of the row off the ruler.
+            let start = cursor
             let end = min(program.endDate, windowEnd)
             guard end > start else { continue }
             cells.append(GuideCell(id: "\(channelId)|\(program.id)", channelId: channelId, program: program, start: start, end: end))

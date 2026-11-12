@@ -119,7 +119,6 @@ final class LivePlaybackViewModel {
         // and give the stream back now. Left running, the heartbeat would
         // hold it for as long as the error screen stayed up.
         progressTask?.cancel()
-        progressTask = nil
         Task { await releaseSession() }
     }
 
@@ -197,7 +196,8 @@ final class LivePlaybackViewModel {
     /// End the adopted session server-side: the stopped report releases the
     /// tuner, and the encode is stopped explicitly as the library player does.
     private func releaseSession() async {
-        progressTask?.cancel()
+        let reporting = progressTask
+        reporting?.cancel()
         progressTask = nil
         guard let session else { return }
         // Not `channel.id`: a channel change has already moved that on.
@@ -206,6 +206,11 @@ final class LivePlaybackViewModel {
         sessionChannelId = nil
         let position = elapsedTicks()
         startedAt = nil
+
+        // Let a report already on its way finish first. Arriving after the
+        // stopped report, it would tell the server the channel was playing
+        // again.
+        await reporting?.value
 
         do {
             try await client.reportPlaybackStopped(

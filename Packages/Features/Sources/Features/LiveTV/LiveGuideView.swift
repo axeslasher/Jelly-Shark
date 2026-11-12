@@ -11,6 +11,8 @@ import SwiftUI
 /// - Not focusable: the channel column, the time ruler and the header.
 /// - Default focus: the first channel's cell at the left edge, which is what
 ///   that channel is showing now.
+/// - When the half-hour reload removes the focused cell, focus moves to the
+///   same channel's first cell.
 /// - Left from a row's first cell leaves for the sidebar.
 ///
 /// Movement is the system's own: the grid is ordinary buttons in ordinary
@@ -74,6 +76,15 @@ struct LiveGuideView: View {
         }
     }
 
+    /// Where focus goes when a reload has removed the cell it was on: the
+    /// same channel's first cell. Nil when the cell still exists, which
+    /// means focus left the grid on its own.
+    nonisolated static func replacement(for cellId: String, in rows: [GuideRow]) -> String? {
+        guard !rows.contains(where: { $0.cells.contains { $0.id == cellId } }) else { return nil }
+        let channelId = cellId.split(separator: "|", maxSplits: 1).first.map(String.init)
+        return rows.first { $0.channel.id == channelId }?.cells.first?.id
+    }
+
     private func message(_ text: Text) -> some View {
         text
             .jsStyle(.headline)
@@ -116,9 +127,16 @@ struct LiveGuideView: View {
         // safe area's edge, so a long channel list reads as continuing.
         .ignoresSafeArea(.container, edges: .bottom)
         .defaultFocus($focusedCell, rows.first?.cells.first?.id)
-        .onChange(of: focusedCell) { _, focused in
+        .onChange(of: focusedCell) { previous, focused in
             if let focused {
                 describedCell = focused
+            } else if let previous, let replacement = Self.replacement(for: previous, in: guide.rows) {
+                // Focus did not leave: the half-hour reload removed the cell
+                // under it. Put focus on that channel's first cell, which is
+                // what it is showing now, instead of letting it fall to the
+                // sidebar. Unverified on device.
+                describedCell = replacement
+                focusedCell = replacement
             }
         }
     }
@@ -283,8 +301,8 @@ private struct GuideGrid: View, Equatable {
                 .mask { GuideEdgeFade(scroll: scroll, edge: .leading) }
             }
             .padding(.leading, GuideMetrics.leadingPadding)
-            // Enough that the last row scrolls clear of the screen's edge,
-            // now that the grid no longer stops at the safe area.
+            // The grid runs past the bottom safe area, so the last row needs
+            // this much to scroll clear of the screen's edge.
             .padding(.bottom, SpacingTokens.huge)
         }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
@@ -407,12 +425,12 @@ private struct GuideHeader: View {
                     .jsStyle(.display)
                     .foregroundStyle(theme.primary)
                     .lineLimit(1)
-                    // Always full size. It was allowed to shrink to fit, and
-                    // in this fixed-height header that let the same title
-                    // render at different sizes from one programme to the
-                    // next (seen on device, 2026-11-11). A title too long for
-                    // the line is cut with an ellipsis; when the header runs
-                    // out of height, the overview gives up lines first.
+                    // Always full size: shrink-to-fit in this fixed-height
+                    // header renders the same title at different sizes from
+                    // one programme to the next (seen on device, 2026-11-11).
+                    // A title too long for the line is cut with an ellipsis;
+                    // when the header runs out of height, the overview gives
+                    // up lines first.
                     .layoutPriority(1)
 
                 VStack(alignment: .leading, spacing: SpacingTokens.xs) {

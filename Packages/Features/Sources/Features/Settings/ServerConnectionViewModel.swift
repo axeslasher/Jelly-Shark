@@ -438,7 +438,11 @@ public final class ServerConnectionViewModel {
     public func refreshLibraries() async {
         guard state == .connected, let client else { return }
         guard let all = try? await client.getLibraries() else { return }
-        liveTVLibrary = all.liveTV
+        // Written only on a change: `RootView` observes it, and this runs on
+        // every idle refresh.
+        if liveTVLibrary != all.liveTV {
+            liveTVLibrary = all.liveTV
+        }
         let fresh = all.filter(\.isBrowsable)
         guard Set(fresh.map(\.id)) != Set(libraries.map(\.id)) else { return }
         libraries = fresh

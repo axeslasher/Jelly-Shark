@@ -57,7 +57,8 @@ decision log.
 2. The Guide tab's second caption line is cut off.
 3. Short filler clips show as tiny guide cells. A fix is proposed in the spike ledger and
    postponed.
-4. The live timeline can be scrubbed back, and whether that is wanted is undecided.
+4. Scrubbing is switched off in the live player. Whether viewers should be able to
+   rewind within what has already streamed is undecided.
 5. Themes other than Standard have not been looked at on a device.
 
 ## Graduating

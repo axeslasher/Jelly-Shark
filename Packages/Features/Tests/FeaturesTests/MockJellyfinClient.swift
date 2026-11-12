@@ -506,12 +506,15 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     var liveChannelsResult: Result<[LiveChannel], Error> = .success([])
     var liveChannelsRequestCount = 0
+    /// Suspension point inside `getLiveChannels`
+    var liveChannelsGate: (@Sendable () async -> Void)?
 
     func getLiveChannels() async throws -> [LiveChannel] {
         let result = lock.withLock {
             liveChannelsRequestCount += 1
             return liveChannelsResult
         }
+        await liveChannelsGate?()
         return try result.get()
     }
 

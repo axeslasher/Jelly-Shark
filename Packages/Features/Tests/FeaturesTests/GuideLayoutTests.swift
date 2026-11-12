@@ -75,6 +75,24 @@ struct GuideLayoutTests {
         #expect(row.map { $0.program?.id } == ["a", "b"])
     }
 
+    @Test("A sub-minute gap leaves no hole: the next programme starts where the last one ended")
+    func roundingGapsLeaveNoHole() {
+        let row = cells([
+            program("a", from: 0, to: 30),
+            program("b", from: 30.5, to: 60),
+            program("c", from: 60.5, to: 240),
+        ])
+        #expect(spans(row) == [[0, 30], [30, 60], [60, 240]])
+    }
+
+    @Test("A cell a reload removed is replaced by its channel's first cell; one still there is not")
+    func focusReplacement() {
+        let rows = [GuideRow(channel: LiveChannel(id: "c", name: "C"), cells: cells([program("b", from: 0, to: 240)]))]
+        #expect(LiveGuideView.replacement(for: "c|gone", in: rows) == "c|b")
+        #expect(LiveGuideView.replacement(for: "c|b", in: rows) == nil)
+        #expect(LiveGuideView.replacement(for: "other|gone", in: rows) == nil)
+    }
+
     @Test("Programmes outside the window, or listed out of order or overlapping, do not break the row")
     func tolerantOfMessyGuides() {
         let row = cells([

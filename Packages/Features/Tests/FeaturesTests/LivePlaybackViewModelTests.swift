@@ -261,7 +261,7 @@ private final class LockedFlag: @unchecked Sendable {
 @Suite("LiveGuideModel")
 @MainActor
 struct LiveGuideModelTests {
-    /// 14:05:00 UTC on a half-hour-aligned day
+    /// A half-hour boundary. Tests add their own minutes past it.
     private static let base = Date(timeIntervalSinceReferenceDate: 800_000_000 - 800_000_000.truncatingRemainder(dividingBy: 1800))
     private let trek = LiveChannel(id: "ch4", name: "Star Trek", number: "4")
     private let quiet = LiveChannel(id: "ch2", name: "Ashley TV", number: "2")
@@ -343,6 +343,27 @@ struct LiveGuideModelTests {
         #expect(client.liveChannelsRequestCount == 1)
     }
 
+    @Test("Ticks past the half hour while a reload is under way do not start another")
+    func tickDoesNotPileUpReloads() async {
+        let client = MockJellyfinClient()
+        client.liveChannelsResult = .success([trek])
+        let clock = Clock(Self.base.addingTimeInterval(300))
+        let model = makeModel(client, clock: clock)
+        await model.load()
+        let gate = AsyncGate()
+        client.liveChannelsGate = { try? await gate.wait() }
+
+        clock.now = Self.base.addingTimeInterval(1860)
+        let first = Task { await model.tick() }
+        await gate.arrivals(atLeast: 1)
+        await model.tick()
+        await gate.open()
+        await first.value
+
+        #expect(client.liveChannelsRequestCount == 2)
+        #expect(model.windowStart == Self.base.addingTimeInterval(1800))
+    }
+
     @Test("A tick past the half hour reloads so the guide never opens in the past")
     func tickReloadsPastHalfHour() async {
         let client = MockJellyfinClient()
@@ -367,7 +388,7 @@ struct LiveGuideModelTests {
 
         #expect(model.status == .empty)
         #expect(!model.hasChannels)
-        // No channels, so no programme fetch is worth sending
+        // The programme fetch still goes out, for no channels
         #expect(client.liveProgramsRequests.first?.0 == [])
     }
 

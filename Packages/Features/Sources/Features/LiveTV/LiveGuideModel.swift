@@ -46,6 +46,7 @@ final class LiveGuideModel {
     private let clock: () -> Date
     private var client: (any JellyfinClientProtocol)?
     private var loadGeneration = 0
+    private var loadsInFlight = 0
 
     /// - Parameters:
     ///   - horizon: How far past the opening half hour to load
@@ -99,6 +100,8 @@ final class LiveGuideModel {
         guard let client else { return }
         loadGeneration += 1
         let generation = loadGeneration
+        loadsInFlight += 1
+        defer { loadsInFlight -= 1 }
         if channels.isEmpty {
             status = .loading
         }
@@ -127,10 +130,14 @@ final class LiveGuideModel {
 
     /// Move `now` forward, and reload once the opening half hour has passed
     /// so the guide never starts in the past.
+    ///
+    /// A reload already under way is left to finish. Several screens tick
+    /// this model, and each new load supersedes the last, so on a slow
+    /// server starting one per tick would mean none ever landed.
     func tick() async {
         let now = clock()
         self.now = now
-        if Self.halfHourFloor(now) > windowStart {
+        if Self.halfHourFloor(now) > windowStart, loadsInFlight == 0 {
             await load()
         }
     }
