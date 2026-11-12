@@ -340,7 +340,13 @@ private struct GuideHeader: View {
                     .jsStyle(.display)
                     .foregroundStyle(theme.primary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    // Always full size. It was allowed to shrink to fit, and
+                    // in this fixed-height header that let the same title
+                    // render at different sizes from one programme to the
+                    // next (seen on device, 2026-11-11). A title too long for
+                    // the line is cut with an ellipsis; when the header runs
+                    // out of height, the overview gives up lines first.
+                    .layoutPriority(1)
 
                 if let program = cell.program, program.isAiring(at: now) {
                     progress(program)
