@@ -59,8 +59,8 @@ Status is one of PROPOSED, TESTING, FALSIFIED, CONFIRMED.
 
 | ID | Hypothesis | Status | What would settle it |
 |----|-----------|--------|----------------------|
-| H11 | The rebuffer about 15 seconds in happens because AVPlayer opens near the end of H7's burst and runs dry. Starting 30 seconds back removes it. | TESTING | Several channel starts on device with no stall in the first minute. One simulator run looked clean (E7). |
-| H12 | A long play hangs after a few minutes, as Swiftfin's open issue #2100 reports on iOS. | PROPOSED | An hour on one channel on device. |
+| H11 | The rebuffer about 15 seconds in happens because AVPlayer opens near the end of H7's burst and runs dry. Starting 30 seconds back removes it. | TESTING | Several channel starts on device with no stall in the first minute. One simulator run looked clean (E7). The device soak reported no start-up stall (E11), but nobody counted starts. |
+| H12 | A long play hangs after a few minutes, as Swiftfin's open issue #2100 reports on iOS. | TESTING | No hang in hours of play on device (E11). One rebuffer in that time, cause unknown. Read the ErsatzTV and Jellyfin logs for that moment if it recurs. |
 | H13 | The system player treats the stream as both live and not live because Jellyfin serves it as a growing playlist with a fixed start. | PROPOSED | Compare against a stream served as a sliding window. It showed a LIVE badge and also offered "From Beginning". |
 | H14 | An app killed mid-stream leaves the tuner counted as in use until the server restarts. | PROPOSED | Seen twice (E5 note); not tested on purpose, and no process was left running behind it. |
 | H15 | Backing out during the loading spinner no longer leaves a stream open. | PROPOSED | The fix has no test that simulates the cancelled request. Check the server log after backing out mid-load. |
@@ -198,6 +198,38 @@ Jellyfin:   Primary 200 (294x440)   Thumb 404   Backdrop 404
 - **Result**: H10 → CONFIRMED by the owner on device ("fix is much better"). Unexplained:
   the title was larger when the description was longer, the reverse of a squeeze.
 
+### E11 — Device soak (Apple TV, Jellyfin 10.11.11, user report 2026-11-12)
+
+- **Method:** Justin used the build on the Apple TV for an evening against the real
+  server, and compared it with Swiftfin.
+- **Result:** Reported, not instrumented. Playback, the guide and channel switching
+  worked throughout. One rebuffer during a session hours long; no hang. No start-up
+  stall was reported.
+- **Not checked:** which channel or time the rebuffer happened at, so no log was read.
+
+### E12 — Is ErsatzTV filler marked in the guide (ErsatzTV XMLTV, fixture, curl)
+
+- **Method:** Read `/iptv/xmltv.xml` from ErsatzTV and `GET /LiveTv/Programs` from the
+  fixture, and compared filler entries with ordinary ones.
+- **Result:** Verified: nothing marks filler, in either place. Filler entries are bare.
+
+```
+<programme start="20261110231450 -0700" stop="20261110231506 -0700" ...>
+  <title lang="en">Attention_Ricky_Gervais</title><previously-shown /></programme>
+
+Jellyfin: "Genres": [], "ImageTags": {}, no Overview, no IsSeries/IsMovie, "IsRepeat": true
+```
+
+| Channel | Bare entries | Longest bare | Shortest full entry |
+| --- | --- | --- | --- |
+| 5 Comfort | 71 | 0.5 min | 5.0 min |
+| 6 Horror | 387 | 2.7 min | 24.0 min |
+
+- **Reading:** On this guide, "no genre, no overview, no image, not a series or movie,
+  under five minutes" picks out filler exactly. That is a guess about one server's data,
+  not a rule other guides promise to follow. Channel 3's music videos are as short
+  (1.6 to 11.6 minutes) but carry a category, so the test leaves them alone.
+
 ## Scaffolding
 
 Do not remove any of this until the spike is closed.
@@ -238,8 +270,8 @@ first minute of each channel on device, and all five themes on device.
 
 ### Must settle before this merges
 
-1. **Device soak results.** Focus feel, the first minute of each channel, Back from the
-   player, a long play.
+1. **Guide and player polish from the device soak (E11):** header layout, left margin,
+   scroll-edge fade, filler cells (E12), and which title leads in the player.
 2. **A frozen or ended stream is not detected.** Only an outright player failure is. The
    live player has no stall watchdog and no reconnecting banner.
 3. **A server with Live TV and no other library** shows Home's "Nothing Here" and no shelf.
