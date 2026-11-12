@@ -42,10 +42,10 @@ decision log.
 **Will bite a real user**
 
 1. **A frozen or ended stream is not noticed.** Only an outright player failure shows an
-   error. There is no stall watchdog and no reconnecting state.
-2. **A server with Live TV and no other library** shows Home's "Nothing Here".
+   error. There is no stall watchdog and no reconnecting state (#365).
+2. **A server with Live TV and no other library** shows Home's "Nothing Here" (#366).
 3. **Only small guides are proven.** Every check had five channels. Rows are not built
-   lazily, so load time and scrolling with hundreds of channels are unknown.
+   lazily, so load time and scrolling with hundreds of channels are unknown (#367).
 4. **Other tuner types are untested.** HDHomeRun, and M3U tuners with fMP4 segments
    allowed, may behave differently from what the stream rules assume.
 5. **Playback starts 30 seconds behind live.** That covers a tuner that delivers in
@@ -55,8 +55,7 @@ decision log.
 
 1. Portrait poster art is cropped to fit 16:9 slots.
 2. The Guide tab's second caption line is cut off.
-3. Short filler clips show as tiny guide cells. A fix is proposed in the spike ledger and
-   postponed.
+3. Short filler clips show as tiny guide cells. A fix is proposed and postponed (#368).
 4. Scrubbing is switched off in the live player. Whether viewers should be able to
    rewind within what has already streamed is undecided.
 5. Themes other than Standard have not been looked at on a device.
