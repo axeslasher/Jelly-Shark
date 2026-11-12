@@ -112,6 +112,9 @@ struct LiveGuideView: View {
             .equatable()
         }
         .padding(.top, SpacingTokens.lg)
+        // Rows run off the bottom of the screen instead of stopping at the
+        // safe area's edge, so a long channel list reads as continuing.
+        .ignoresSafeArea(.container, edges: .bottom)
         .defaultFocus($focusedCell, rows.first?.cells.first?.id)
         .onChange(of: focusedCell) { _, focused in
             if let focused {
@@ -129,7 +132,8 @@ private enum GuideMetrics {
     /// The margin Home and the library screens keep
     static let leadingPadding = SpacingTokens.screenPadding
     static let topFadeLength = SpacingTokens.xxl
-    static let leadingFadeLength = SpacingTokens.lg
+    /// Short, so it reads as a shadow cast by the channel column
+    static let leadingFadeLength = SpacingTokens.sm
 }
 
 @Observable
@@ -266,7 +270,9 @@ private struct GuideGrid: View, Equatable {
                 .mask { GuideEdgeFade(scroll: scroll, edge: .leading) }
             }
             .padding(.leading, GuideMetrics.leadingPadding)
-            .padding(.bottom, SpacingTokens.xl)
+            // Enough that the last row scrolls clear of the screen's edge,
+            // now that the grid no longer stops at the safe area.
+            .padding(.bottom, SpacingTokens.huge)
         }
         .onScrollGeometryChange(for: CGFloat.self) { geometry in
             geometry.contentOffset.y + geometry.contentInsets.top
