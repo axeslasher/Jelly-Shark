@@ -9,10 +9,11 @@ enum LiveTVText {
         [channel.number, channel.name].compactMap(\.self).filter { !$0.isEmpty }.joined(separator: " ")
     }
 
-    /// "S1 E26", when the guide carries both numbers
+    /// "S1E26", when the guide carries both numbers. The form the rest of
+    /// the app writes episode codes in.
     static func episodeCode(_ program: LiveProgram) -> String? {
         guard let season = program.seasonNumber, let episode = program.episodeNumber else { return nil }
-        return "S\(season) E\(episode)"
+        return "S\(season)E\(episode)"
     }
 
     static func time(_ date: Date) -> String {
@@ -53,12 +54,7 @@ enum LiveTVText {
         // "Series · S4E4" as the library player writes it, so the two
         // players read alike. Anything else leads with the programme.
         let episodeTitle = program.episodeTitle.flatMap { $0.isEmpty ? nil : $0 }
-        let episodeNumber: String? = if let season = program.seasonNumber, let episode = program.episodeNumber {
-            "S\(season)E\(episode)"
-        } else {
-            nil
-        }
-        let secondLine = [episodeTitle == nil ? nil : program.name, episodeNumber, channelLabel(channel)]
+        let secondLine = [episodeTitle == nil ? nil : program.name, episodeCode(program), channelLabel(channel)]
             .compactMap(\.self)
             .filter { !$0.isEmpty }
             .joined(separator: " · ")

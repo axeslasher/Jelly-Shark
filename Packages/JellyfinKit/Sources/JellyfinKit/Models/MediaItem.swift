@@ -506,7 +506,7 @@ public extension MediaItem {
         return Self.runtimeText(total - position)
     }
 
-    private static func runtimeText(_ ticks: Int64) -> String {
+    internal static func runtimeText(_ ticks: Int64) -> String {
         let totalMinutes = Int(ticks / 10_000_000 / 60)
         let hours = totalMinutes / 60
         let minutes = totalMinutes % 60

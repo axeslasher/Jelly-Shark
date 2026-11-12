@@ -128,27 +128,46 @@ private enum GuideMetrics {
     static let gap = SpacingTokens.xs
     /// The margin Home and the library screens keep
     static let leadingPadding = SpacingTokens.screenPadding
-    static let edgeFadeWidth = SpacingTokens.md
+    static let edgeFadeLength = SpacingTokens.xxl
 }
 
 @Observable
 @MainActor
 private final class GuideScroll {
     var offset: CGFloat = 0
+    var verticalOffset: CGFloat = 0
 }
 
-/// Softens the edge where programmes slide under the channel column. Opaque
-/// while the guide rests at its start, so the first cells are not dimmed. A
-/// view of its own, so scrolling redraws the mask and never the grid.
+/// Softens an edge that guide content scrolls under: the leading edge,
+/// where programmes pass beneath the channel column, or the top, where rows
+/// pass beneath the time ruler. Opaque while the guide rests at its start,
+/// so the first cells are not dimmed. A view of its own, so scrolling
+/// redraws the mask and never the grid.
 private struct GuideEdgeFade: View {
+    enum Edge {
+        case leading, top
+    }
+
     let scroll: GuideScroll
+    let edge: Edge
 
     var body: some View {
-        let hidden = min(max(scroll.offset, 0) / GuideMetrics.edgeFadeWidth, 1)
-        HStack(spacing: 0) {
-            LinearGradient(colors: [.black.opacity(1 - hidden), .black], startPoint: .leading, endPoint: .trailing)
-                .frame(width: GuideMetrics.edgeFadeWidth)
-            Color.black
+        let offset = edge == .leading ? scroll.offset : scroll.verticalOffset
+        let hidden = min(max(offset, 0) / GuideMetrics.edgeFadeLength, 1)
+        let colors: [Color] = [.black.opacity(1 - hidden), .black]
+        switch edge {
+        case .leading:
+            HStack(spacing: 0) {
+                LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+                    .frame(width: GuideMetrics.edgeFadeLength)
+                Color.black
+            }
+        case .top:
+            VStack(spacing: 0) {
+                LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+                    .frame(height: GuideMetrics.edgeFadeLength)
+                Color.black
+            }
         }
     }
 }
@@ -185,7 +204,7 @@ private struct GuideRuler: View {
                 .offset(x: -scroll.offset)
             }
             .clipped()
-            .mask { GuideEdgeFade(scroll: scroll) }
+            .mask { GuideEdgeFade(scroll: scroll, edge: .leading) }
             .padding(.leading, GuideMetrics.leadingPadding + GuideMetrics.channelColumnWidth + GuideMetrics.gap)
             .accessibilityHidden(true)
     }
@@ -242,11 +261,17 @@ private struct GuideGrid: View, Equatable {
                     scroll.offset = offset
                 }
                 // A mask draws only: every cell stays focusable under it.
-                .mask { GuideEdgeFade(scroll: scroll) }
+                .mask { GuideEdgeFade(scroll: scroll, edge: .leading) }
             }
             .padding(.leading, GuideMetrics.leadingPadding)
             .padding(.bottom, SpacingTokens.xl)
         }
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y + geometry.contentInsets.top
+        } action: { _, offset in
+            scroll.verticalOffset = offset
+        }
+        .mask { GuideEdgeFade(scroll: scroll, edge: .top) }
     }
 
     private func channelLabel(_ channel: LiveChannel) -> some View {
@@ -370,10 +395,10 @@ private struct GuideHeader: View {
                     .layoutPriority(1)
 
                 VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                    // Draws nothing when the guide carries no rating.
+                    // The detail page's fact row: year, length, certificate.
                     MediaMetadataRow(
-                        yearText: nil,
-                        runtime: nil,
+                        yearText: cell.program?.productionYear.map { String($0) },
+                        runtime: cell.program?.formattedRuntime,
                         seasons: nil,
                         seasonsIcon: "tv",
                         communityRating: nil,
@@ -464,7 +489,7 @@ private struct GuideHeader: View {
         return "\(LiveTVText.time(start)) – \(LiveTVText.time(end)) · \(LiveTVText.channelLabel(channel))"
     }
 
-    /// "S1 E26 · Errand of Mercy". The rating is drawn beside it as a badge.
+    /// "S1E26 · Errand of Mercy". The rating is drawn beside it as a badge.
     static func episodeLine(_ cell: GuideCell) -> String? {
         guard let program = cell.program else {
             return String(localized: LiveTVText.noProgramInfo)

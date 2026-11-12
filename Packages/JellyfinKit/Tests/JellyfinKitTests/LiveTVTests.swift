@@ -57,6 +57,7 @@ struct LiveTVTests {
             officialRating: "TV-PG",
             overview: "Kirk and Spock go undercover.",
             parentIndexNumber: 1,
+            productionYear: 1967,
             startDate: start,
         )
         let program = try #require(LiveProgram(from: dto))
@@ -72,6 +73,8 @@ struct LiveTVTests {
         #expect(program.thumbImageTag == nil)
         #expect(program.backdropImageTag == nil)
         #expect(program.endDate.timeIntervalSince(program.startDate) == 3000)
+        #expect(program.productionYear == 1967)
+        #expect(program.formattedRuntime == "50m")
     }
 
     @Test("A programme maps landscape artwork when the guide source supplies it")

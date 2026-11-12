@@ -48,6 +48,9 @@ public struct LiveProgram: Identifiable, Sendable, Equatable, Hashable {
 
     public let officialRating: String?
 
+    /// Release year, which guides carry for films
+    public let productionYear: Int?
+
     public let seasonNumber: Int?
 
     public let episodeNumber: Int?
@@ -72,6 +75,7 @@ public struct LiveProgram: Identifiable, Sendable, Equatable, Hashable {
         endDate: Date,
         genres: [String] = [],
         officialRating: String? = nil,
+        productionYear: Int? = nil,
         seasonNumber: Int? = nil,
         episodeNumber: Int? = nil,
         imageTag: String? = nil,
@@ -89,6 +93,7 @@ public struct LiveProgram: Identifiable, Sendable, Equatable, Hashable {
         self.endDate = endDate
         self.genres = genres
         self.officialRating = officialRating
+        self.productionYear = productionYear
         self.seasonNumber = seasonNumber
         self.episodeNumber = episodeNumber
         self.imageTag = imageTag
@@ -98,6 +103,13 @@ public struct LiveProgram: Identifiable, Sendable, Equatable, Hashable {
     /// back-to-back programmes never both claim the same instant.
     public func isAiring(at date: Date) -> Bool {
         startDate <= date && date < endDate
+    }
+
+    /// Scheduled length in the "1h 5m" style library items use, to the
+    /// nearest minute
+    public var formattedRuntime: String {
+        let minutes = Int64((endDate.timeIntervalSince(startDate) / 60).rounded())
+        return MediaItem.runtimeText(minutes * 60 * 10_000_000)
     }
 
     /// How far through the programme `date` is, from 0 to 1

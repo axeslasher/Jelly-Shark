@@ -34,6 +34,7 @@ extension LiveProgram {
             endDate: endDate,
             genres: dto.genres ?? [],
             officialRating: dto.officialRating,
+            productionYear: dto.productionYear,
             seasonNumber: dto.parentIndexNumber,
             episodeNumber: dto.indexNumber,
             imageTag: dto.imageTags?["Primary"],
