@@ -70,6 +70,29 @@ struct JellyfinKitTests {
             #expect(shortVideo.formattedRuntime == "30m")
         }
 
+        @Test("Runtime text keeps today's English shape", arguments: [
+            (5, "5m"), (59, "59m"), (60, "1h 0m"), (65, "1h 5m"), (120, "2h 0m"), (185, "3h 5m"),
+        ])
+        func runtimeTextEnglish(minutes: Int64, expected: String) {
+            #expect(MediaItem.runtimeText(minutes * 60 * 10_000_000, locale: Locale(identifier: "en_US")) == expected)
+        }
+
+        @Test("Runtime text rounds down to whole minutes")
+        func runtimeTextRoundsDown() {
+            // 65 minutes and 59 seconds
+            #expect(MediaItem.runtimeText((65 * 60 + 59) * 10_000_000, locale: Locale(identifier: "en_US")) == "1h 5m")
+        }
+
+        @Test("Runtime text uses the locale's own units")
+        func runtimeTextLocalized() {
+            let ticks: Int64 = 65 * 60 * 10_000_000
+            let german = MediaItem.runtimeText(ticks, locale: Locale(identifier: "de_DE"))
+            let japanese = MediaItem.runtimeText(ticks, locale: Locale(identifier: "ja_JP"))
+            #expect(german != "1h 5m")
+            #expect(german.contains("5"))
+            #expect(japanese.contains("時間"))
+        }
+
         @Test("Remaining runtime formats what's left")
         func formattedRemainingRuntime() {
             let item = MediaItem(
@@ -644,6 +667,9 @@ struct JellyfinKitTests {
             (.decodingError("bad JSON"), "Failed to parse response: bad JSON"),
             (.unsupportedServerVersion("10.10.7"), "Server version 10.10.7 is not supported. Minimum required: \(ServerInfo.minimumVersion)"),
             (.notAuthenticated, "Not authenticated. Please sign in."),
+            (.playbackNotPossible("NotAllowed"), "Playback not possible: NotAllowed"),
+            (.noPlayableMediaSources, "No playable media sources for this item"),
+            (.noLiveStream, "The server did not provide a stream for this channel"),
             (.generic("Something specific"), "Something specific"),
         ])
         func messagesResolve(error: APIError, english: String) {
