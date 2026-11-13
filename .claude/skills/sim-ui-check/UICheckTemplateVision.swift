@@ -79,19 +79,14 @@
         @discardableResult
         private func signIn(url: String, username: String, password: String, expectError: Bool = false) -> String? {
             let form = app.textFields.firstMatch
-            let disconnect = app.buttons["Sign Out"].firstMatch
-            if !form.exists, !disconnect.exists {
+            if !form.exists, !serverPage.exists {
                 openServerScreen()
             }
             // Wait for either screen: waiting on the form alone costs its whole
             // timeout whenever the simulator starts signed in.
-            XCTAssertNotNil(firstToExist([form, disconnect], timeout: 20), dump("No server screen"))
-            if disconnect.exists {
-                disconnect.tap()
-                // Sign-out awaits the server's logout call, so a server that
-                // accepts connections but never answers holds this screen.
-                XCTAssertTrue(form.waitForExistence(timeout: 20),
-                              dump("Sign-out did not return to the form — is the saved server answering?"))
+            XCTAssertNotNil(firstToExist([form, serverPage], timeout: 20), dump("No server screen"))
+            if serverPage.exists {
+                signOut()
             }
 
             let fields = app.textFields.allElementsBoundByIndex
@@ -114,7 +109,7 @@
             }
             // Keep the outcome: re-reading `disconnect.exists` afterwards can
             // land while the Save Password sheet has emptied the tree.
-            let outcome = firstToExist([disconnect, error], timeout: 30)
+            let outcome = firstToExist([serverPage, error], timeout: 30)
             XCTAssertNotNil(outcome, dump("Still signing in after 30s — is the server answering?"))
             let message = outcome == error ? error.label : nil
             if expectError {
@@ -139,19 +134,35 @@
             _ = notNow.waitForNonExistence(timeout: 3)
         }
 
-        /// Settings → Server → Sign Out. Returns at once when the sign-in form
-        /// is already showing, as after `signIn(expectError: true)`.
+        /// Settings → Server → Sign Out, once per saved profile. Returns at
+        /// once when the sign-in form is already showing, as after
+        /// `signIn(expectError: true)`.
         private func signOut() {
             let disconnect = app.buttons["Sign Out"].firstMatch
-            if app.textFields.firstMatch.exists, !disconnect.exists {
+            if app.textFields.firstMatch.exists, !serverPage.exists {
                 return
             }
-            if !disconnect.exists {
+            if !serverPage.exists {
                 openServerScreen()
             }
-            XCTAssertTrue(disconnect.waitForExistence(timeout: 20), dump("No Sign Out button"))
-            disconnect.tap()
-            XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 20), dump("Sign-out did not return to the form"))
+            // Signing out of one saved profile switches to the next one, so
+            // repeat until the form shows: every saved profile is signed out.
+            // Sign-out awaits the server's logout call, so a server that
+            // accepts connections but never answers holds this screen.
+            let form = app.textFields.firstMatch
+            for _ in 0 ..< 5 where !form.exists {
+                XCTAssertTrue(serverPage.waitForExistence(timeout: 20), dump("No Server page"))
+                // Sign Out is the page's last row, below the fold. Swipe on a
+                // row: visionOS refuses a swipe on the app itself.
+                for _ in 0 ..< 4 where !disconnect.exists {
+                    serverPage.swipeUp()
+                }
+                XCTAssertTrue(disconnect.waitForExistence(timeout: 5), dump("No Sign Out button"))
+                disconnect.tap()
+                _ = form.waitForExistence(timeout: 5)
+            }
+            XCTAssertTrue(form.waitForExistence(timeout: 20),
+                          dump("Sign-out did not return to the form — is the saved server answering?"))
         }
 
         /// Quits and relaunches the app. The Keychain survives, so a signed-in
@@ -214,10 +225,17 @@
 
         // MARK: - Navigation
 
+        /// The signed-in Server page. Its Sign Out button sits below the fold,
+        /// and the List leaves off-screen rows out of the tree, so the Add
+        /// Profile row near the top stands for the page.
+        private var serverPage: XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Add Profile'")).firstMatch
+        }
+
         /// Settings → Server, from wherever the app is, unless the sign-in
-        /// form or Sign Out is already showing.
+        /// form or the signed-in Server page is already showing.
         private func openServerScreen() {
-            if app.textFields.firstMatch.exists || app.buttons["Sign Out"].firstMatch.exists {
+            if app.textFields.firstMatch.exists || serverPage.exists {
                 return
             }
             open(tab: "Settings")

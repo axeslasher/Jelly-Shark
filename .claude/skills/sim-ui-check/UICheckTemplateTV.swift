@@ -85,12 +85,7 @@
             // timeout whenever the simulator starts signed in.
             XCTAssertNotNil(firstToExist([form, disconnect], timeout: 20), dump("No server screen"))
             if disconnect.exists {
-                focus(disconnect, trying: [.down, .up])
-                remote.press(.select)
-                // Sign-out awaits the server's logout call, so a server that
-                // accepts connections but never answers holds this screen.
-                XCTAssertTrue(form.waitForExistence(timeout: 20),
-                              dump("Sign-out did not return to the form — is the saved server answering?"))
+                signOut()
             }
 
             let fields = app.textFields.allElementsBoundByIndex
@@ -126,8 +121,9 @@
             return message
         }
 
-        /// Settings → Server → Sign Out. Returns at once when the sign-in form
-        /// is already showing, as after `signIn(expectError: true)`.
+        /// Settings → Server → Sign Out, once per saved profile. Returns at
+        /// once when the sign-in form is already showing, as after
+        /// `signIn(expectError: true)`.
         private func signOut() {
             let disconnect = app.buttons["Sign Out"].firstMatch
             if app.textFields.firstMatch.exists, !disconnect.exists {
@@ -136,10 +132,19 @@
             if !disconnect.exists {
                 openServerScreen()
             }
-            XCTAssertTrue(disconnect.waitForExistence(timeout: 20), dump("No Sign Out button"))
-            focus(disconnect, trying: [.down, .up])
-            remote.press(.select)
-            XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 20), dump("Sign-out did not return to the form"))
+            // Signing out of one saved profile switches to the next one, so
+            // repeat until the form shows: every saved profile is signed out.
+            // Sign-out awaits the server's logout call, so a server that
+            // accepts connections but never answers holds this screen.
+            let form = app.textFields.firstMatch
+            for _ in 0 ..< 5 where !form.exists {
+                XCTAssertTrue(disconnect.waitForExistence(timeout: 20), dump("No Sign Out button"))
+                focus(disconnect, trying: [.down, .up])
+                remote.press(.select)
+                _ = form.waitForExistence(timeout: 5)
+            }
+            XCTAssertTrue(form.waitForExistence(timeout: 20),
+                          dump("Sign-out did not return to the form — is the saved server answering?"))
         }
 
         /// Quits and relaunches the app. The Keychain survives, so a signed-in
