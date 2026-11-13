@@ -1,7 +1,20 @@
 import Foundation
 
-/// A persisted Jellyfin session that can be restored on a later launch
-public struct SavedSession: Codable, Sendable, Equatable {
+/// Identifies a saved profile: one user on one server. Two sign-ins for the
+/// same user on the same server are the same profile.
+public struct ProfileID: Codable, Hashable, Sendable {
+    public let serverURL: URL
+    public let userID: String
+
+    public init(serverURL: URL, userID: String) {
+        self.serverURL = serverURL
+        self.userID = userID
+    }
+}
+
+/// A persisted Jellyfin session that can be restored on a later launch: one
+/// saved profile
+public struct SavedSession: Codable, Sendable, Equatable, Identifiable {
     /// The server URL the session belongs to
     public let serverURL: URL
 
@@ -11,23 +24,55 @@ public struct SavedSession: Codable, Sendable, Equatable {
     /// The access token issued by the server
     public let accessToken: String
 
-    public init(serverURL: URL, userID: String, accessToken: String) {
+    /// The user's display name, for labelling the profile. Nil for a session
+    /// saved before profiles existed.
+    public let userName: String?
+
+    /// The server's display name, for labelling the profile. Nil for a session
+    /// saved before profiles existed.
+    public let serverName: String?
+
+    public init(
+        serverURL: URL,
+        userID: String,
+        accessToken: String,
+        userName: String? = nil,
+        serverName: String? = nil,
+    ) {
         self.serverURL = serverURL
         self.userID = userID
         self.accessToken = accessToken
+        self.userName = userName
+        self.serverName = serverName
+    }
+
+    public var id: ProfileID {
+        ProfileID(serverURL: serverURL, userID: userID)
     }
 }
 
 /// Abstraction over session persistence so consumers can be tested
 /// with an in-memory double
 public protocol SessionStoring: Sendable {
-    /// Persist the session, replacing any existing one
+    /// Save the session as a profile and make it the active one. A profile
+    /// for the same server and user is replaced, token included.
     func save(_ session: SavedSession) throws
 
-    /// Load the saved session, if any
+    /// The active profile's session, if one is active
     func load() -> SavedSession?
 
-    /// Remove the saved session (does NOT remove the device ID)
+    /// Every saved profile, most recently used first
+    func profiles() -> [SavedSession]
+
+    /// Make a saved profile the active one, keeping its token
+    func activate(_ id: ProfileID) throws
+
+    /// Delete one profile and its token. Deleting the active profile leaves
+    /// no profile active.
+    func remove(_ id: ProfileID) throws
+
+    /// Delete the active profile and its token. Other profiles and the
+    /// device ID are kept.
     func clearSession() throws
 
     /// A stable device identifier, generated once and reused forever
@@ -36,14 +81,30 @@ public protocol SessionStoring: Sendable {
 
 /// Keychain-backed session store
 ///
-/// The session (token, user ID, server URL) is stored as a single item so it
-/// is saved and cleared atomically. The device ID lives under its own key so
-/// it survives `clearSession()` and the server sees one consistent device.
+/// Every profile, and which one is active, is stored as a single item so a
+/// change is saved atomically: no write can leave the active profile
+/// pointing at a token that isn't there. The device ID lives under its own
+/// key so it survives every profile change and the server sees one device
+/// for all of them.
+///
+/// The device ID is shared on purpose. Jellyfin identifies a client
+/// installation by it, and keeps each user's token on a shared device ID
+/// valid when another user signs in (verified on 10.11.11 and 12.4).
 public struct SessionStore: SessionStoring, Sendable {
     private let keychain: KeychainStore
 
-    private static let sessionKey = "session"
+    private static let profilesKey = "profiles"
     private static let deviceIDKey = "deviceID"
+
+    /// Where a single session lived before profiles. Read once to adopt it
+    /// as the first profile, then deleted.
+    private static let legacySessionKey = "session"
+
+    /// The stored shape: profiles most recently used first
+    private struct ProfileList: Codable {
+        var profiles: [SavedSession] = []
+        var activeID: ProfileID?
+    }
 
     public init(service: String = "com.jellyshark.app") {
         self.keychain = KeychainStore(service: service)
@@ -54,21 +115,47 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func save(_ session: SavedSession) throws {
-        let data = try JSONEncoder().encode(session)
-        try keychain.setData(data, for: Self.sessionKey)
+        var list = readList()
+        list.profiles.removeAll { $0.id == session.id }
+        list.profiles.insert(session, at: 0)
+        list.activeID = session.id
+        try write(list)
     }
 
     public func load() -> SavedSession? {
-        // A missing or unreadable session behaves like "no session" so the
-        // app falls back to the connection form instead of failing at launch
-        guard let data = try? keychain.data(for: Self.sessionKey) else {
-            return nil
+        let list = readList()
+        guard let activeID = list.activeID else { return nil }
+        return list.profiles.first { $0.id == activeID }
+    }
+
+    public func profiles() -> [SavedSession] {
+        readList().profiles
+    }
+
+    public func activate(_ id: ProfileID) throws {
+        var list = readList()
+        guard let index = list.profiles.firstIndex(where: { $0.id == id }) else { return }
+        let profile = list.profiles.remove(at: index)
+        list.profiles.insert(profile, at: 0)
+        list.activeID = id
+        try write(list)
+    }
+
+    public func remove(_ id: ProfileID) throws {
+        var list = readList()
+        list.profiles.removeAll { $0.id == id }
+        if list.activeID == id {
+            list.activeID = nil
         }
-        return try? JSONDecoder().decode(SavedSession.self, from: data)
+        try write(list)
     }
 
     public func clearSession() throws {
-        try keychain.delete(Self.sessionKey)
+        var list = readList()
+        guard let activeID = list.activeID else { return }
+        list.profiles.removeAll { $0.id == activeID }
+        list.activeID = nil
+        try write(list)
     }
 
     public func deviceID() -> String {
@@ -81,5 +168,50 @@ public struct SessionStore: SessionStoring, Sendable {
         let newID = UUID().uuidString
         try? keychain.setString(newID, for: Self.deviceIDKey)
         return newID
+    }
+
+    // MARK: - Storage
+
+    /// The saved profiles. Missing, unreadable or corrupt storage reads as no
+    /// profiles, so the app falls back to the sign-in form instead of failing
+    /// at launch.
+    private func readList() -> ProfileList {
+        let stored: Data?
+        do {
+            stored = try keychain.data(for: Self.profilesKey)
+        } catch {
+            // A Keychain failure is not "nothing saved": adopting the legacy
+            // session here could overwrite profiles that do exist
+            return ProfileList()
+        }
+        if let stored {
+            return (try? JSONDecoder().decode(ProfileList.self, from: stored)) ?? ProfileList()
+        }
+        return adoptLegacySession()
+    }
+
+    /// First launch after profiles shipped: the session saved by an earlier
+    /// version becomes the active profile, so nobody is signed out by the
+    /// upgrade.
+    private func adoptLegacySession() -> ProfileList {
+        guard let data = try? keychain.data(for: Self.legacySessionKey),
+              let legacy = try? JSONDecoder().decode(SavedSession.self, from: data)
+        else {
+            return ProfileList()
+        }
+        let list = ProfileList(profiles: [legacy], activeID: legacy.id)
+        // If this write fails the legacy item stays, and the next read adopts
+        // it again
+        try? write(list)
+        return list
+    }
+
+    private func write(_ list: ProfileList) throws {
+        let data = try JSONEncoder().encode(list)
+        try keychain.setData(data, for: Self.profilesKey)
+        // Once the profile list exists the legacy item must not outlive it:
+        // a forgotten profile's token would otherwise sit there, and be
+        // adopted again if the list were ever lost
+        try? keychain.delete(Self.legacySessionKey)
     }
 }
