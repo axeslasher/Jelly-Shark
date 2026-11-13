@@ -306,10 +306,13 @@ struct AddProfileView: View {
                 SignInFields()
 
                 Button {
-                    // Presses while one is running are ignored by the view
-                    // model. Not `.disabled`: disabling the focused button
+                    // Presses while one is running are ignored here, so the
+                    // handle `onDisappear` cancels is always the running
+                    // sign-in. Not `.disabled`: disabling the focused button
                     // would throw tvOS focus somewhere else on the page.
+                    guard signIn == nil else { return }
                     signIn = Task {
+                        defer { signIn = nil }
                         if await viewModel.addProfile(), !Task.isCancelled {
                             dismiss()
                         }

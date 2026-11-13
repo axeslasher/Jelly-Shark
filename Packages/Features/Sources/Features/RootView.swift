@@ -348,6 +348,15 @@ public struct RootView: View {
             // never while a session is still active.
             .onChange(of: session.connectionID) { endedSession, _ in
                 guard endedSession != nil else { return }
+                // A screen pushed under the ended session names an item on its
+                // server. visionOS keeps each tab's stack (tvOS pops it on the
+                // way to Settings), so returning to Home after a profile switch
+                // would reopen it against the next server. Settings keeps its
+                // stack: the switch is running there. Only stacks that exist are
+                // touched, so no tab gains an entry it never declared.
+                for (tab, path) in tabPaths where tab != .settings && !path.isEmpty {
+                    tabPaths[tab] = NavigationPath()
+                }
                 homeViewModel = HomeViewModel()
                 genreShelves = GenreShelvesViewModel()
                 affinityShelves = AffinityShelvesViewModel()
