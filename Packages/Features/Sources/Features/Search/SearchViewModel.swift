@@ -124,7 +124,15 @@ public final class SearchViewModel {
     /// keeps the tab mounted across a disconnect, so without this the next
     /// account to sign in would be shown the previous account's library. Two
     /// Jellyfin users on one server do not necessarily see the same libraries.
-    public func attach(client: (any JellyfinClientProtocol)?) {
+    /// - Parameter session: The published session's identity. A different
+    ///   one (a sign-out, or a profile switch that replaced the client in one
+    ///   update) drops the previous account's results and seed terms. The same
+    ///   one, as on a return to the tab, keeps the query.
+    public func attach(client: (any JellyfinClientProtocol)?, session: UUID? = nil) {
+        if session != attachedSession, attachedSession != nil {
+            resetForSignOut()
+        }
+        attachedSession = session
         self.client = client
 
         guard let client else {
@@ -137,6 +145,9 @@ public final class SearchViewModel {
             await self?.fetchSeedTerms(client: client)
         }
     }
+
+    /// The session the current client belongs to
+    private var attachedSession: UUID?
 
     /// Drop every trace of the signed-out account and re-arm the seed fetch.
     private func resetForSignOut() {

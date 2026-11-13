@@ -61,6 +61,43 @@ struct SearchViewModelTests {
         #expect(viewModel.state == .results)
     }
 
+    @Test("A profile switch that replaces the client drops the previous account's results")
+    func sessionChangeDropsResults() async {
+        let first = MockJellyfinClient()
+        first.searchResult = .success([movie("1", "Batman")])
+        let viewModel = SearchViewModel(debounce: .zero)
+        let firstSession = UUID()
+        viewModel.attach(client: first, session: firstSession)
+        // As the view does: the field binds `query`, then reports the change
+        viewModel.query = "bat"
+        viewModel.updateQuery("bat")
+        await viewModel.awaitPendingSearch()
+        #expect(viewModel.movies.count == 1)
+
+        viewModel.attach(client: MockJellyfinClient(), session: UUID())
+
+        #expect(viewModel.movies.isEmpty)
+        #expect(viewModel.query.isEmpty)
+        #expect(viewModel.state == .idle)
+    }
+
+    @Test("Attaching again for the same session keeps the query and results")
+    func sameSessionKeepsResults() async {
+        let client = MockJellyfinClient()
+        client.searchResult = .success([movie("1", "Batman")])
+        let viewModel = SearchViewModel(debounce: .zero)
+        let session = UUID()
+        viewModel.attach(client: client, session: session)
+        viewModel.query = "bat"
+        viewModel.updateQuery("bat")
+        await viewModel.awaitPendingSearch()
+
+        viewModel.attach(client: client, session: session)
+
+        #expect(viewModel.movies.count == 1)
+        #expect(viewModel.query == "bat")
+    }
+
     @Test("Results are grouped into their own shelves, in section order")
     func groupsResultsByType() async {
         let client = MockJellyfinClient()

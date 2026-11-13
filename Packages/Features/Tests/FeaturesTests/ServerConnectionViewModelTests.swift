@@ -45,7 +45,13 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
         savedProfiles
     }
 
+    /// Thrown by `activate` when set, as an unreadable Keychain would
+    var activateError: (any Error)?
+
     func activate(_ id: ProfileID) throws {
+        if let activateError {
+            throw activateError
+        }
         guard let index = savedProfiles.firstIndex(where: { $0.id == id }) else { return }
         savedProfiles.insert(savedProfiles.remove(at: index), at: 0)
         activeID = id

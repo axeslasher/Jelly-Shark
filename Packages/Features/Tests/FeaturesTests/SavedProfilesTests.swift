@@ -165,6 +165,20 @@ struct SavedProfilesTests {
         #expect(rig.viewModel.activeProfileID == first.id)
     }
 
+    @Test("A switch the Keychain refuses keeps the current session")
+    func failedSwitchKeepsSession() async {
+        let (rig, first, second) = await twoProfileRig()
+        let connection = rig.session.connectionID
+        rig.store.activateError = KeychainError.unexpectedStatus(-25308)
+
+        await rig.viewModel.switchToProfile(first.id)
+
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.session.connectionID == connection)
+        #expect(rig.viewModel.activeProfileID == second.id)
+        #expect(rig.viewModel.errorMessage != nil)
+    }
+
     @Test("Switching to the active connected profile does nothing")
     func switchToActiveIsNoOp() async {
         let rig = Rig()

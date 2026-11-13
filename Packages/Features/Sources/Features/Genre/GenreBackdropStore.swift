@@ -177,6 +177,12 @@ final class GenreBackdropStore {
     /// would be adopted — and persisted — by whichever profile activates next.
     /// The card keeps rendering its own `selection`; only the memory of it
     /// dies, which is the cold-start path.
+    /// The profile the store is bound to, so a caller whose fetch outlived
+    /// a profile switch can tell before writing
+    var boundScope: CacheScope? {
+        cache?.scope
+    }
+
     func setSelection(_ selection: GenreBackdropSelection?, for key: GenreBackdropKey) {
         guard cache != nil else { return }
         selections[key.storageKey] = selection

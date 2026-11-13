@@ -297,14 +297,15 @@ public final class ServerConnectionViewModel {
         guard id != liveProfileID || state == .disconnected else { return }
         guard state != .connecting, state != .authenticating else { return }
 
-        endSessionLocally()
+        // Before the current session ends: a Keychain failure here leaves the
+        // viewer where they were, instead of signed out with nothing listed
         do {
             try sessionStore.activate(id)
         } catch {
             errorMessage = error.localizedDescription
-            reloadProfiles()
             return
         }
+        endSessionLocally()
         reloadProfiles()
         await restoreSession()
     }

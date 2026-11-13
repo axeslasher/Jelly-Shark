@@ -357,6 +357,9 @@ public struct RootView: View {
                 for (tab, path) in tabPaths where tab != .settings && !path.isEmpty {
                     tabPaths[tab] = NavigationPath()
                 }
+                // The guide keeps its rows across reloads of one session; a
+                // new session must not open on the previous one's channels
+                liveGuide.reset()
                 homeViewModel = HomeViewModel()
                 genreShelves = GenreShelvesViewModel()
                 affinityShelves = AffinityShelvesViewModel()

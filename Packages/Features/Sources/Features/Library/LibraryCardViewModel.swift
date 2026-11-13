@@ -142,6 +142,8 @@ final class LibraryCardViewModel {
         // drawn from exactly the pool the card opens — asked for its
         // `itemTypes` rather than restating the movie/series rule here.
         let query = LibraryQuery(library: library)
+        // A profile switch can re-bind the store while this fetch is out
+        let scopeAtStart = store?.boundScope
         guard let page = try? await client.getLibraryItems(
             libraryId: library.id,
             itemTypes: query.itemTypes,
@@ -174,6 +176,9 @@ final class LibraryCardViewModel {
             poolCount: page.totalRecordCount,
         )
         selection = chosenSelection
+        // The pick belongs to the profile that asked; a switch since then
+        // must not hand it to the next one
+        guard store?.boundScope == scopeAtStart else { return false }
         store?.setSelection(chosenSelection, for: Self.key(library: library))
         return true
     }

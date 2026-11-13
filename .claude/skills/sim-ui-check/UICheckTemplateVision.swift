@@ -150,7 +150,8 @@
             // Sign-out awaits the server's logout call, so a server that
             // accepts connections but never answers holds this screen.
             let form = app.textFields.firstMatch
-            for _ in 0 ..< 5 where !form.exists {
+            let deadline = Date.now.addingTimeInterval(90)
+            while !form.exists, Date.now < deadline {
                 XCTAssertTrue(serverPage.waitForExistence(timeout: 20), dump("No Server page"))
                 // Sign Out is the page's last row, below the fold. Swipe on a
                 // row: visionOS refuses a swipe on the app itself.
@@ -159,6 +160,8 @@
                 }
                 XCTAssertTrue(disconnect.waitForExistence(timeout: 5), dump("No Sign Out button"))
                 disconnect.tap()
+                // A press while a sign-out is still running is ignored, so
+                // the deadline, not a press count, bounds this
                 _ = form.waitForExistence(timeout: 5)
             }
             XCTAssertTrue(form.waitForExistence(timeout: 20),
