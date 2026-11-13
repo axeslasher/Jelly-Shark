@@ -433,6 +433,18 @@
         }
       }
     },
+    "library.headline.listPair %@ %@": {
+      "comment": "Two values in a library heading, such as “Horror & Comedy”. %1$@ and %2$@ are genres, decades or age ratings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ & %2$@"
+          }
+        }
+      }
+    },
     "library.headline.rating %@ %@": {
       "comment": "Heading over a library filtered by age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
       "extractionState": "manual",

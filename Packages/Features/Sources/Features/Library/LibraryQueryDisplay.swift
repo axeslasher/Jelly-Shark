@@ -157,12 +157,14 @@ extension LibraryQuery {
         String(localized: "library.headline.decadeName \(decade.formatted(.number.grouping(.never)))", bundle: #bundle, comment: "One decade in a library heading. %@ is the decade’s first year, such as 1980.")
     }
 
-    /// "Horror", "Horror & Comedy", or "Horror, Comedy & More". Two values
-    /// use the locale’s short list style; more are cut to the first two.
+    /// "Horror", "Horror & Comedy", or "Horror, Comedy & More"; more than two
+    /// are cut to the first two. Pairs come from the catalog too, not a list
+    /// style: that would follow the device's region, putting "and" (en_GB) or
+    /// "et" (fr_FR) inside a sentence the catalog wrote in another language.
     private static func shortList(_ values: [String]) -> String {
         switch values.count {
         case 1: values[0]
-        case 2: values.formatted(.list(type: .and, width: .short))
+        case 2: String(localized: "library.headline.listPair \(values[0]) \(values[1])", bundle: #bundle, comment: "Two values in a library heading, such as “Horror & Comedy”. %1$@ and %2$@ are genres, decades or age ratings.")
         default: String(localized: "library.headline.listAndMore \(values[0]) \(values[1])", bundle: #bundle, comment: "A list cut short in a library heading, such as “Horror, Comedy & More”. %1$@ and %2$@ are the first two genres, decades or age ratings.")
         }
     }
