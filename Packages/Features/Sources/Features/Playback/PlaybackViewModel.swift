@@ -278,7 +278,7 @@ public final class PlaybackViewModel {
             }
 
             guard let source = chosenMediaSource(in: session) else {
-                state = .failed("No playable media sources for this item")
+                state = .failed(APIError.noPlayableMediaSources.localizedDescription)
                 return
             }
 
@@ -1134,7 +1134,7 @@ public final class PlaybackViewModel {
             }
 
             guard let source = chosenMediaSource(in: session) else {
-                state = .failed("No playable media sources for this item")
+                state = .failed(APIError.noPlayableMediaSources.localizedDescription)
                 return
             }
 

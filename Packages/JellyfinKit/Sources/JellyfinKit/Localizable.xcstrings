@@ -61,6 +61,30 @@
         }
       }
     },
+    "error.api.noLiveStream": {
+      "comment": "Error when the server tunes a live TV channel but sends no video for it.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server did not provide a stream for this channel"
+          }
+        }
+      }
+    },
+    "error.api.noPlayableMediaSources": {
+      "comment": "Error when the server has nothing the app can play for a film, episode or channel.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No playable media sources for this item"
+          }
+        }
+      }
+    },
     "error.api.notAuthenticated": {
       "comment": "Error shown when an action needs a signed-in user.",
       "extractionState": "manual",
@@ -81,6 +105,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Resource not found"
+          }
+        }
+      }
+    },
+    "error.api.playbackNotPossible %@": {
+      "comment": "Error when the server refuses to play an item. The variable is the server's error code in English, such as NotAllowed.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback not possible: %@"
           }
         }
       }
