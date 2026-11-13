@@ -316,6 +316,8 @@ struct HomeView: View {
             // shelf is not in the hierarchy yet in the update that adds it.
             Task { @MainActor in
                 await Task.yield()
+                // A tab return may already have restored another card.
+                guard focusedCard == nil else { return }
                 focusedCard = ShelfFocusID(row: HomeShelfRowID.onAirNow, item: first.id)
             }
         }
