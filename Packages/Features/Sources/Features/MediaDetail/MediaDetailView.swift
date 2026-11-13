@@ -21,7 +21,7 @@ enum HeroPlayLabel {
         }
         return hasProgress
             ? (title: LocalizedStringResource("detail.play.resume", bundle: #bundle, comment: "Play button for a title the viewer has started."), systemImage: "play.fill")
-            : (title: LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page or the Home hero."), systemImage: "play.fill")
+            : (title: LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page."), systemImage: "play.fill")
     }
 }
 
@@ -194,9 +194,9 @@ public struct MediaDetailView: View {
     private var playButtonLabel: (title: LocalizedStringResource, systemImage: String) {
         switch item.type {
         case .series:
-            guard let episode = playableItem, episode.type == .episode else { return (LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page or the Home hero."), "play.fill") }
+            guard let episode = playableItem, episode.type == .episode else { return (LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page."), "play.fill") }
             guard let code = episode.episodeCode else {
-                return (episode.hasProgress ? LocalizedStringResource("detail.play.resume", bundle: #bundle, comment: "Play button for a title the viewer has started.") : LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page or the Home hero."), "play.fill")
+                return (episode.hasProgress ? LocalizedStringResource("detail.play.resume", bundle: #bundle, comment: "Play button for a title the viewer has started.") : LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page."), "play.fill")
             }
             return (episode.hasProgress ? LocalizedStringResource("detail.play.resumeEpisode \(code)", bundle: #bundle, comment: "Play button on a series page for an episode the viewer has started. %@ is the episode’s code, such as S1E4.") : LocalizedStringResource("detail.play.playEpisode \(code)", bundle: #bundle, comment: "Play button on a series page. %@ is the episode’s code, such as S1E4."), "play.fill")
         case .boxSet:
@@ -475,7 +475,7 @@ public struct MediaDetailView: View {
         // And the rest of the season leads on episode pages, parked on
         // the page's own episode. Renders nothing for other types.
         SeasonEpisodesSection(
-            title: displayItem.seasonName ?? "Episodes",
+            title: displayItem.seasonName,
             episodes: viewModel.seasonEpisodes,
             currentEpisodeId: item.id,
             isRegionFocused: focusedRegion == .shelves,

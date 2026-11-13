@@ -470,7 +470,7 @@
       }
     },
     "detail.play.play": {
-      "comment": "Play button on a detail page or the Home hero.",
+      "comment": "Play button on a detail page.",
       "extractionState": "manual",
       "localizations": {
         "en": {
@@ -573,6 +573,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cast & Crew"
+          }
+        }
+      }
+    },
+    "detail.shelf.episodes": {
+      "comment": "Heading of the episode shelf on an episode's detail page, when the season has no name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Episodes"
           }
         }
       }
