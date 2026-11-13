@@ -109,6 +109,23 @@ struct HomeView: View {
             + HomeHeroMotion.heroToShelvesGap
     }
 
+    /// The sections came back empty and the Live TV guide hasn't answered yet.
+    /// Its channels alone are enough for a Home, so Nothing Here waits for it.
+    private var isAwaitingGuide: Bool {
+        viewModel.isEmptyServer && liveGuide.status == .loading
+    }
+
+    /// Nothing to show: every section empty and no live channels (#366).
+    private var isEmptyServer: Bool {
+        viewModel.isEmptyServer && !liveGuide.hasChannels && !isAwaitingGuide
+    }
+
+    /// Every section empty, but the server has live channels: the On Air Now
+    /// shelf is the whole page.
+    private var isLiveTVOnly: Bool {
+        viewModel.isEmptyServer && liveGuide.hasChannels
+    }
+
     /// No NavigationStack here: RootView owns each tab's stack (with a path
     /// binding) so it can pop to root before a tab switch — see RootView's
     /// `tabSelection` for the tvOS bug this works around.
@@ -121,9 +138,9 @@ struct HomeView: View {
             // requires the restore to have settled with no connection, and
             // Nothing Here requires every section to have come back empty.
             if session.isConnected {
-                if viewModel.isInitialLoading {
+                if viewModel.isInitialLoading || isAwaitingGuide {
                     HomeSkeleton()
-                } else if viewModel.isEmptyServer {
+                } else if isEmptyServer {
                     HomeEmptyState(
                         isConnected: true,
                         userName: connection.connectedUser?.name,
@@ -157,6 +174,11 @@ struct HomeView: View {
                       !refreshCoordinator.hasPlayingSession
                 else { continue }
                 await checkForNewContent()
+                #if os(tvOS)
+                    // The shelf's own clock runs only while it draws, so a
+                    // guide that found no channels would never ask again.
+                    await liveGuide.retryIfEmpty()
+                #endif
             }
         }
         .task(id: DrainKey(
@@ -283,7 +305,22 @@ struct HomeView: View {
         // The empty state is reachable mid-session now, not only at launch: a
         // refresh can empty Home while the viewer is standing in it. If this
         // button does not take focus, the remote is dead (#69).
-        .onChange(of: viewModel.isEmptyServer) { _, isEmpty in
+        #if os(tvOS)
+        // With every section empty, On Air Now sits alone below an empty
+        // hero, and the engine leaves focus on nothing: a dead remote, the
+        // #69 class. Covers the first load and channels arriving on the
+        // empty state, whose Settings button goes away under the remote.
+        .onChange(of: isLiveTVOnly, initial: true) { _, isLiveTVOnly in
+            guard isLiveTVOnly, let first = liveGuide.channels.first else { return }
+            // Deferred a tick, like the empty state's focus below: the
+            // shelf is not in the hierarchy yet in the update that adds it.
+            Task { @MainActor in
+                await Task.yield()
+                focusedCard = ShelfFocusID(row: HomeShelfRowID.onAirNow, item: first.id)
+            }
+        }
+        #endif
+        .onChange(of: isEmptyServer) { _, isEmpty in
             guard isEmpty else { return }
             // Deferred a tick on purpose: this fires in the same update that
             // swaps the tree, so the Settings button is not in the hierarchy
