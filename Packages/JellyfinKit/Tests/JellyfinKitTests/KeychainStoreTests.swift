@@ -315,6 +315,35 @@ struct SessionStoreTests {
         #expect(SessionStore(keychain: keychain).profiles().isEmpty)
     }
 
+    @Test("A session an older version saved after the profile list emptied is adopted")
+    func legacySessionAfterEmptyListIsAdopted() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let store = SessionStore(keychain: keychain)
+        try store.save(makeSavedSession(server: serverB, user: "user-2", token: "token-2"))
+        try store.clearSession()
+
+        // A downgrade signs in with the old single-session format
+        try writeLegacySession(to: keychain)
+
+        #expect(store.load()?.accessToken == "legacy-token")
+    }
+
+    @Test("A session an older version saved beside existing profiles becomes the active one")
+    func legacySessionBesideProfilesIsAdopted() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let store = SessionStore(keychain: keychain)
+        let other = makeSavedSession(server: serverB, user: "user-2", token: "token-2")
+        try store.save(other)
+
+        try writeLegacySession(to: keychain)
+
+        #expect(store.load()?.accessToken == "legacy-token")
+        #expect(store.profiles().map(\.accessToken) == ["legacy-token", "token-2"])
+        #expect(try keychain.data(for: "session") == nil)
+    }
+
     @Test("Saving a new profile on an upgraded install keeps the adopted one")
     func savingAfterUpgradeKeepsLegacyProfile() throws {
         let keychain = makeTestKeychain()

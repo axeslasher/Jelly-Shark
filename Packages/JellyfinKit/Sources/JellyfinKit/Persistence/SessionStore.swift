@@ -84,12 +84,13 @@ public protocol SessionStoring: Sendable {
 /// Every profile, and which one is active, is stored as a single item so a
 /// change is saved atomically: no write can leave the active profile
 /// pointing at a token that isn't there. The device ID lives under its own
-/// key so it survives every profile change and the server sees one device
-/// for all of them.
+/// key so it survives every profile change.
 ///
-/// The device ID is shared on purpose. Jellyfin identifies a client
-/// installation by it, and keeps each user's token on a shared device ID
-/// valid when another user signs in (verified on 10.11.11 and 12.4).
+/// The device ID is shared across profiles on purpose: it identifies this
+/// installation, not a user. Jellyfin keeps each user's token on a shared
+/// device ID valid when another user signs in (verified on 10.11.11 and
+/// 12.4), and its device list shows one row per signed-in user, all under
+/// this one ID (verified on 10.11.11).
 public struct SessionStore: SessionStoring, Sendable {
     private let keychain: KeychainStore
 
@@ -184,26 +185,31 @@ public struct SessionStore: SessionStoring, Sendable {
             // session here could overwrite profiles that do exist
             return ProfileList()
         }
-        if let stored {
-            return (try? JSONDecoder().decode(ProfileList.self, from: stored)) ?? ProfileList()
-        }
-        return adoptLegacySession()
+        let list = stored.flatMap { try? JSONDecoder().decode(ProfileList.self, from: $0) } ?? ProfileList()
+        return adoptingLegacySession(into: list)
     }
 
-    /// First launch after profiles shipped: the session saved by an earlier
-    /// version becomes the active profile, so nobody is signed out by the
-    /// upgrade.
-    private func adoptLegacySession() -> ProfileList {
+    /// A session saved by a version from before profiles becomes the active
+    /// profile, so nobody is signed out by the upgrade.
+    ///
+    /// Every write deletes the legacy item, so one that exists was saved by an
+    /// older version after this one last wrote: the first launch after the
+    /// upgrade, or after a downgrade and a sign-in there. Either way it is the
+    /// newest sign-in, so it is adopted even when profiles already exist.
+    private func adoptingLegacySession(into list: ProfileList) -> ProfileList {
         guard let data = try? keychain.data(for: Self.legacySessionKey),
               let legacy = try? JSONDecoder().decode(SavedSession.self, from: data)
         else {
-            return ProfileList()
+            return list
         }
-        let list = ProfileList(profiles: [legacy], activeID: legacy.id)
+        var adopted = list
+        adopted.profiles.removeAll { $0.id == legacy.id }
+        adopted.profiles.insert(legacy, at: 0)
+        adopted.activeID = legacy.id
         // If this write fails the legacy item stays, and the next read adopts
         // it again
-        try? write(list)
-        return list
+        try? write(adopted)
+        return adopted
     }
 
     private func write(_ list: ProfileList) throws {
