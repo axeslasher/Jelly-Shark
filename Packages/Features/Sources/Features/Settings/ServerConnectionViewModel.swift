@@ -193,6 +193,9 @@ public final class ServerConnectionViewModel {
             persistSession(for: newClient, serverURL: url, user: user, serverName: serverName)
             password = ""
         } catch {
+            // A typed password never outlives its sign-in, success or not:
+            // left in the form, it would sign the next person in as this one
+            password = ""
             errorMessage = error.localizedDescription
             state = .disconnected
             client = nil
@@ -232,6 +235,7 @@ public final class ServerConnectionViewModel {
         do {
             (user, serverName) = try await signIn(with: newClient)
         } catch {
+            password = ""
             if !Task.isCancelled {
                 errorMessage = error.localizedDescription
             }
@@ -245,8 +249,11 @@ public final class ServerConnectionViewModel {
             libraries = try await newClient.getLibraries()
             try Task.checkCancellation()
         } catch {
-            // The server issued a token nothing will save; end it there
-            await newClient.signOut()
+            // The server issued a token nothing will save; end it there. In
+            // a task of its own: run in this one, a cancel (the viewer backed
+            // out) would fail the logout request before it is sent.
+            await Task { await newClient.signOut() }.value
+            password = ""
             if !Task.isCancelled {
                 errorMessage = error.localizedDescription
             }
@@ -268,6 +275,11 @@ public final class ServerConnectionViewModel {
         username = ""
         password = ""
         errorMessage = nil
+    }
+
+    /// Leaving Add Profile, by any route: the typed password goes with it
+    public func endAddProfile() {
+        password = ""
     }
 
     /// Make a saved profile the active one and restore its session. The
@@ -322,6 +334,9 @@ public final class ServerConnectionViewModel {
         if let cache {
             await cache.purge(scope: CacheScope(serverURL: profile.serverURL, userID: profile.userID))
         }
+        // Some artwork URLs (trickplay tiles) carry the profile's token, and
+        // the URL cache keeps them on disk
+        await clearArtworkCaches()
         // Best effort, like sign-out: a server that can't be reached still
         // has the profile forgotten here
         let profileClient = makeClient(makeConfiguration(serverURL: profile.serverURL), profile)
@@ -395,6 +410,7 @@ public final class ServerConnectionViewModel {
                 if let cache {
                     await cache.purge(scope: scope)
                 }
+                await clearArtworkCaches()
                 errorMessage = message
             } else {
                 // Transient failure (network, server down): keep the saved session

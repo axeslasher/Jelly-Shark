@@ -340,6 +340,7 @@ struct AddProfileView: View {
         }
         .onDisappear {
             signIn?.cancel()
+            viewModel.endAddProfile()
         }
     }
 }

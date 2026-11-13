@@ -444,4 +444,61 @@ struct SavedProfilesTests {
         #expect(await cachedLibraries(cache, second) == nil)
         #expect(await cachedLibraries(cache, first) != nil)
     }
+
+    // MARK: - Secrets left behind
+
+    @Test("A failed sign-in clears the typed password")
+    func failedSignInClearsPassword() async {
+        let rig = Rig()
+        let failing = MockJellyfinClient()
+        failing.authenticateError = APIError.unauthorized
+        rig.queuedSignIns = [failing]
+        rig.viewModel.password = "secret"
+
+        await rig.viewModel.connect()
+
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.viewModel.password.isEmpty)
+    }
+
+    @Test("A failed Add Profile sign-in, and leaving the screen, clear the typed password")
+    func addProfileClearsPassword() async {
+        let rig = await signedInRig()
+        let failing = MockJellyfinClient()
+        failing.authenticateError = APIError.unauthorized
+        rig.queuedSignIns = [failing]
+        rig.viewModel.password = "secret"
+
+        await rig.viewModel.addProfile()
+        #expect(rig.viewModel.password.isEmpty)
+
+        rig.viewModel.password = "typed but abandoned"
+        rig.viewModel.endAddProfile()
+        #expect(rig.viewModel.password.isEmpty)
+    }
+
+    @Test("Forgetting a profile empties the URL cache, whose artwork URLs can carry its token")
+    func forgetClearsURLCache() async throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let urlCache = URLCache(memoryCapacity: 1024 * 1024, diskCapacity: 1024 * 1024, directory: directory)
+        let request = URLRequest(url: URL(string: "https://b.example.com/Videos/1/Trickplay/320/0.jpg?ApiKey=token-1")!)
+        let url = try #require(request.url)
+        let response = try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil))
+        urlCache.storeCachedResponse(CachedURLResponse(response: response, data: Data([1, 2, 3])), for: request)
+
+        let store = InMemorySessionStore()
+        let first = profile(serverA, user: "user-1", token: "token-1")
+        let second = profile(serverB, user: "user-2", token: "token-2")
+        store.session = first
+        store.session = second
+        let viewModel = ServerConnectionViewModel(sessionStore: store, makeClient: { _, _ in MockJellyfinClient() }, urlCache: urlCache)
+        await viewModel.restoreSession()
+        #expect(urlCache.cachedResponse(for: request) != nil)
+
+        await viewModel.forgetProfile(first.id)
+
+        #expect(urlCache.cachedResponse(for: request) == nil)
+    }
 }
