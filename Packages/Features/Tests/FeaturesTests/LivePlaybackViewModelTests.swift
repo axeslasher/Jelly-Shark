@@ -406,4 +406,64 @@ struct LiveGuideModelTests {
         #expect(model.status == .loaded)
         #expect(model.channels == [trek])
     }
+
+    @Test("A retry after an empty or failed load picks up channels added since (#366)")
+    func retryAfterEmptyOrFailed() async {
+        let client = MockJellyfinClient()
+        let model = makeModel(client, clock: Clock(Self.base))
+        await model.load()
+        #expect(model.status == .empty)
+
+        client.liveChannelsResult = .failure(APIError.generic("offline"))
+        await model.retryIfEmpty()
+        #expect(model.status == .failed(APIError.generic("offline").localizedDescription))
+
+        client.liveChannelsResult = .success([trek])
+        await model.retryIfEmpty()
+        #expect(model.status == .loaded)
+        #expect(model.channels == [trek])
+        #expect(client.liveChannelsRequestCount == 3)
+    }
+
+    @Test("A retry does nothing once there are channels, before the first load, or while one runs")
+    func retryOnlyWhenEmpty() async {
+        let client = MockJellyfinClient()
+        client.liveChannelsResult = .success([trek])
+        let model = makeModel(client, clock: Clock(Self.base))
+
+        await model.retryIfEmpty()
+        #expect(client.liveChannelsRequestCount == 0)
+
+        await model.load()
+        await model.retryIfEmpty()
+        #expect(client.liveChannelsRequestCount == 1)
+
+        client.liveChannelsResult = .success([])
+        model.reset()
+        model.attach(client: client)
+        await model.load()
+        let gate = AsyncGate()
+        client.liveChannelsGate = { try? await gate.wait() }
+        let first = Task { await model.retryIfEmpty() }
+        await gate.arrivals(atLeast: 1)
+        await model.retryIfEmpty()
+        await gate.open()
+        await first.value
+        #expect(client.liveChannelsRequestCount == 3)
+    }
+
+    @Test("A retry keeps the empty verdict on screen until its answer lands")
+    func retryIsQuiet() async {
+        let client = MockJellyfinClient()
+        let model = makeModel(client, clock: Clock(Self.base))
+        await model.load()
+        let gate = AsyncGate()
+        client.liveChannelsGate = { try? await gate.wait() }
+
+        let retry = Task { await model.retryIfEmpty() }
+        await gate.arrivals(atLeast: 1)
+        #expect(model.status == .empty)
+        await gate.open()
+        await retry.value
+    }
 }
