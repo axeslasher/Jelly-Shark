@@ -137,7 +137,7 @@ public final class LibraryItemsViewModel {
     /// no library name to build on, so it says "Titles" — "All Titles",
     /// "Horror Titles from the 1980s".
     public var displayTitle: String {
-        query.displayTitle(libraryName: query.library?.name ?? "Titles")
+        query.displayTitle(libraryName: query.library?.name ?? String(localized: "library.headline.unnamedLibrary", bundle: #bundle, comment: "Stands in for a library's name in its heading when the server gave none."))
     }
 
     /// The options the control bar should offer: each menu narrowed to

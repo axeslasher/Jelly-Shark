@@ -78,6 +78,53 @@ struct LibraryQueryDisplayTests {
             )
         }
 
+        @Test("Every filter combination reads from the catalog, with nothing left unfilled")
+        func everyCombinationResolves() {
+            for watched in WatchedFilter.allCases {
+                for favorites in [false, true] {
+                    for genres: Set<String> in [[], ["Horror"]] {
+                        for decades: Set<Int> in [[], [1980]] {
+                            for ratings: Set<String> in [[], ["R"]] {
+                                let query = LibraryQuery(
+                                    genres: genres,
+                                    decades: decades,
+                                    watched: watched,
+                                    favoritesOnly: favorites,
+                                    officialRatings: ratings,
+                                )
+                                let title = query.displayTitle(libraryName: "Movies")
+                                #expect(!title.contains("library."), "Raw key: \(title)")
+                                #expect(!title.contains("%"), "Unfilled placeholder: \(title)")
+                                #expect(title.contains("Movies"))
+                                if !genres.isEmpty {
+                                    #expect(title.contains("Horror"))
+                                }
+                                if !decades.isEmpty {
+                                    #expect(title.contains("1980s"))
+                                }
+                                if !ratings.isEmpty {
+                                    #expect(title.contains("rated R"))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        @Test("Three decades cut to the first two & More")
+        func decadeTruncation() {
+            let query = LibraryQuery(decades: [1970, 1980, 1990])
+            #expect(query.displayTitle(libraryName: "Movies") == "Movies from the 1970s, 1980s & More")
+        }
+
+        @Test("Watched-status names read from the catalog")
+        func watchedNames() {
+            #expect(String(localized: WatchedFilter.any.displayName) == "Any")
+            #expect(String(localized: WatchedFilter.unplayed.displayName) == "Unwatched")
+            #expect(String(localized: WatchedFilter.played.displayName) == "Watched")
+        }
+
         @Test("Decade names never pick up grouping separators")
         func decadeFormatting() {
             let query = LibraryQuery(decades: [2020])
