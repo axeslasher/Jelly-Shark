@@ -77,7 +77,7 @@
         @discardableResult
         private func signIn(url: String, username: String, password: String, expectError: Bool = false) -> String? {
             let form = app.textFields.firstMatch
-            let disconnect = app.buttons["Disconnect"].firstMatch
+            let disconnect = app.buttons["Sign Out"].firstMatch
             if !form.exists, !disconnect.exists {
                 openServerScreen()
             }
@@ -102,7 +102,7 @@
             type(password, into: app.secureTextFields.firstMatch, secure: true, trying: [.down, .up])
 
             // The form shows a refused or rejected sign-in within a second or so;
-            // fail on it then rather than waiting out the caller's Disconnect wait.
+            // fail on it then rather than waiting out the caller's Sign Out wait.
             let error = app.staticTexts.matching(NSPredicate(
                 format: "label CONTAINS[c] 'error' OR label CONTAINS[c] 'invalid' OR label CONTAINS[c] 'could not' OR label CONTAINS[c] 'expired' OR label CONTAINS[c] 'not supported'",
             )).firstMatch
@@ -126,17 +126,17 @@
             return message
         }
 
-        /// Settings → Server → Disconnect. Returns at once when the sign-in form
+        /// Settings → Server → Sign Out. Returns at once when the sign-in form
         /// is already showing, as after `signIn(expectError: true)`.
         private func signOut() {
-            let disconnect = app.buttons["Disconnect"].firstMatch
+            let disconnect = app.buttons["Sign Out"].firstMatch
             if app.textFields.firstMatch.exists, !disconnect.exists {
                 return
             }
             if !disconnect.exists {
                 openServerScreen()
             }
-            XCTAssertTrue(disconnect.waitForExistence(timeout: 20), dump("No Disconnect button"))
+            XCTAssertTrue(disconnect.waitForExistence(timeout: 20), dump("No Sign Out button"))
             focus(disconnect, trying: [.down, .up])
             remote.press(.select)
             XCTAssertTrue(app.textFields.firstMatch.waitForExistence(timeout: 20), dump("Sign-out did not return to the form"))
@@ -203,9 +203,9 @@
         // MARK: - Navigation
 
         /// Settings → Server, from wherever the app is, unless the sign-in
-        /// form or Disconnect is already showing.
+        /// form or Sign Out is already showing.
         private func openServerScreen() {
-            if app.textFields.firstMatch.exists || app.buttons["Disconnect"].firstMatch.exists {
+            if app.textFields.firstMatch.exists || app.buttons["Sign Out"].firstMatch.exists {
                 return
             }
             open(tab: "Settings")

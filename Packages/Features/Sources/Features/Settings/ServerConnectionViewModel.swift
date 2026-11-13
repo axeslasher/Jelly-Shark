@@ -229,6 +229,14 @@ public final class ServerConnectionViewModel {
         return true
     }
 
+    /// Reset the form for Add Profile. The server URL is kept, since a second
+    /// user on the same server is the common case; the credentials are not.
+    public func prepareAddProfile() {
+        username = ""
+        password = ""
+        errorMessage = nil
+    }
+
     /// Make a saved profile the active one and restore its session. The
     /// profile being left keeps its token and its cache: it is switched
     /// away from, not signed out.
@@ -322,10 +330,12 @@ public final class ServerConnectionViewModel {
             // before treating the session as live
             async let serverInfo = try? restoredClient.fetchPublicServerInfo()
             async let currentUser = restoredClient.fetchCurrentUser()
-            try await Self.requireSupported(serverInfo)
+            let info = await serverInfo
+            try Self.requireSupported(info)
             let user = try await currentUser
             try await completeConnection(client: restoredClient, user: user)
             username = user.name
+            refreshActiveProfileLabels(user: user, serverName: info?.serverName)
         } catch {
             if let message = Self.endedSessionMessage(for: error) {
                 // The session can never work again: forget the profile and
@@ -385,13 +395,15 @@ public final class ServerConnectionViewModel {
             do {
                 async let serverInfo = try? client.fetchPublicServerInfo()
                 async let currentUser = client.fetchCurrentUser()
-                try await Self.requireSupported(serverInfo)
+                let info = await serverInfo
+                try Self.requireSupported(info)
                 let user = try await currentUser
                 let all = try await client.getLibraries()
                 let fresh = all.filter(\.isBrowsable)
                 guard let self, !Task.isCancelled, state == .connected else { return }
                 connectedUser = user
                 username = user.name
+                refreshActiveProfileLabels(user: user, serverName: info?.serverName)
                 libraries = fresh
                 liveTVLibrary = all.liveTV
                 refreshLibraryCounts(client: client)
@@ -652,6 +664,25 @@ public final class ServerConnectionViewModel {
                 accessToken: accessToken,
                 userName: user.name,
                 serverName: serverName,
+            ),
+        )
+        reloadProfiles()
+    }
+
+    /// Bring the active profile's user and server names up to date once the
+    /// server has confirmed them. Profiles saved before names were stored get
+    /// them here, and a renamed user or server stops showing the old name.
+    private func refreshActiveProfileLabels(user: User, serverName: String?) {
+        guard let active = sessionStore.load(), active.userID == user.id else { return }
+        let resolvedServerName = serverName ?? active.serverName
+        guard active.userName != user.name || active.serverName != resolvedServerName else { return }
+        try? sessionStore.save(
+            SavedSession(
+                serverURL: active.serverURL,
+                userID: active.userID,
+                accessToken: active.accessToken,
+                userName: user.name,
+                serverName: resolvedServerName,
             ),
         )
         reloadProfiles()

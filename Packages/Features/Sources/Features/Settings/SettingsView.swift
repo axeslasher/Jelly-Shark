@@ -16,6 +16,7 @@ public struct SettingsView: View {
     /// pop-to-root covers Settings' stack too.
     enum Destination: Hashable {
         case serverConnection
+        case addProfile
         case themeSelection
         case streamingQuality
     }
@@ -125,6 +126,8 @@ public struct SettingsView: View {
             switch destination {
             case .serverConnection:
                 ServerConnectionView()
+            case .addProfile:
+                AddProfileView()
             case .themeSelection:
                 themeSelectionView
             case .streamingQuality:
@@ -255,7 +258,7 @@ private struct SettingsRowLabel: View {
             Image(systemName: icon)
                 .jsStyle(.title)
                 .foregroundStyle(theme.accent)
-                .frame(width: 32)
+                .frame(width: SpacingTokens.lg)
 
             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                 Text(title)

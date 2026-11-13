@@ -236,8 +236,23 @@ struct SavedProfilesTests {
         #expect(rig.client(forToken: "token-2").signOutCallCount == 1)
         #expect(rig.viewModel.state == .connected)
         #expect(rig.session.client as? MockJellyfinClient === rig.client(forToken: "token-1"))
-        #expect(rig.store.profiles() == [first])
+        #expect(rig.store.profiles().map(\.id) == [first.id])
         #expect(rig.viewModel.activeProfileID == first.id)
+    }
+
+    @Test("A restore fills in names a profile saved before profiles existed is missing")
+    func restoreRefreshesProfileLabels() async throws {
+        let rig = Rig()
+        let legacy = SavedSession(serverURL: serverA, userID: "user-1", accessToken: "token-1")
+        rig.store.session = legacy
+
+        await rig.viewModel.restoreSession()
+
+        let refreshed = try #require(rig.store.load())
+        #expect(refreshed.userName == "demo")
+        #expect(refreshed.serverName == "Mock")
+        #expect(refreshed.accessToken == "token-1")
+        #expect(rig.viewModel.activeProfile?.userName == "demo")
     }
 
     @Test("Forgetting the active profile is a sign-out")
