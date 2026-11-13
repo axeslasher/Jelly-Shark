@@ -98,6 +98,45 @@ struct SearchViewModelTests {
         #expect(viewModel.query == "bat")
     }
 
+    /// Switches profiles while the first account's seed request is held open,
+    /// then lets it answer. Returns the view model once the old fetch is done.
+    private func switchDuringSeedFetch(
+        oldAnswer: Result<[MediaItem], Error>,
+    ) async -> SearchViewModel {
+        let first = MockJellyfinClient()
+        first.searchSuggestionsResult = oldAnswer
+        let gate = AsyncGate()
+        first.searchSuggestionsDelay = { try? await gate.wait() }
+        let viewModel = SearchViewModel(debounce: .zero)
+        viewModel.attach(client: first, session: UUID())
+        let oldFetch = viewModel.seedTermsTask
+        await gate.arrivals(atLeast: 1)
+
+        let second = MockJellyfinClient()
+        second.searchSuggestionsResult = .success([movie("2", "Solaris")])
+        viewModel.attach(client: second, session: UUID())
+        await viewModel.awaitPendingSeedTerms()
+        #expect(viewModel.seedTerms.map(\.name) == ["Solaris"])
+
+        await gate.open()
+        await oldFetch?.value
+        return viewModel
+    }
+
+    @Test("A previous account's seed terms that answer after a switch are dropped")
+    func lateSeedTermsAfterSwitchAreDropped() async {
+        let viewModel = await switchDuringSeedFetch(oldAnswer: .success([movie("1", "Alien")]))
+
+        #expect(viewModel.seedTerms.map(\.name) == ["Solaris"])
+    }
+
+    @Test("A previous account's seed request failing after a switch keeps the new terms")
+    func lateSeedFailureAfterSwitchKeepsNewTerms() async {
+        let viewModel = await switchDuringSeedFetch(oldAnswer: .failure(APIError.notAuthenticated))
+
+        #expect(viewModel.seedTerms.map(\.name) == ["Solaris"])
+    }
+
     @Test("Results are grouped into their own shelves, in section order")
     func groupsResultsByType() async {
         let client = MockJellyfinClient()

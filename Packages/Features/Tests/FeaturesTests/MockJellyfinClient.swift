@@ -311,12 +311,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// exactly once per view-model lifetime, however many times it attaches
     var searchSuggestionsCallCount = 0
     var searchSuggestionsResult: Result<[MediaItem], Error> = .success([])
+    /// Optional gate awaited before answering, so a test can hold a request
+    /// open across a session change
+    var searchSuggestionsDelay: (() async -> Void)?
 
     func getSearchSuggestions(limit _: Int?) async throws -> [MediaItem] {
         let result: Result<[MediaItem], Error> = lock.withLock {
             searchSuggestionsCallCount += 1
             return searchSuggestionsResult
         }
+        await searchSuggestionsDelay?()
         return try result.get()
     }
 

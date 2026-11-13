@@ -75,9 +75,10 @@ public final class SearchViewModel {
     /// The in-flight (debounced) search task, retained so it can be cancelled.
     private var searchTask: Task<Void, Never>?
 
-    /// The seed-terms fetch. Non-nil once started, and never reset — it is
-    /// what makes the fetch once-per-lifetime rather than once-per-visit.
-    private var seedTermsTask: Task<Void, Never>?
+    /// The seed-terms fetch. Non-nil once started, and reset only when the
+    /// session changes: it is what makes the fetch once per session rather
+    /// than once per visit. Readable so tests can await a superseded fetch.
+    private(set) var seedTermsTask: Task<Void, Never>?
 
     public init(limit: Int = 25, debounce: Duration = .milliseconds(300)) {
         self.limit = limit
@@ -220,9 +221,15 @@ public final class SearchViewModel {
     }
 
     private func fetchSeedTerms(client: any JellyfinClientProtocol) async {
+        // A session change cancels this task, but the request can still
+        // answer. Both writes check first, or the previous account's titles
+        // (or its late failure) would land on the next account's screen.
         do {
-            seedTerms = try await client.getSearchSuggestions(limit: Self.seedTermLimit)
+            let terms = try await client.getSearchSuggestions(limit: Self.seedTermLimit)
+            guard !Task.isCancelled else { return }
+            seedTerms = terms
         } catch {
+            guard !Task.isCancelled else { return }
             // Seeded terms are a nicety, not a feature the screen owes anyone.
             // A server that declines to answer gets the plain prompt — no
             // banner, no retry, no state to explain.
