@@ -1,6 +1,6 @@
 ---
 name: issue
-description: Take a GitHub issue from ticket to merged PR — scope gate, branch, implement, tiered verification, PR, branch cleanup. Use when asked to pick up, plan, or implement a numbered issue (e.g. "/issue 62", "implement #62", "pick a fun open issue and build it").
+description: 'Take a GitHub issue from ticket to merged PR — scope gate, branch, implement, tiered verification, PR, branch cleanup. Use when asked to pick up, plan, or implement a numbered issue (e.g. "/issue 62", "implement #62", "pick a fun open issue and build it").'
 ---
 
 # Issue → PR
