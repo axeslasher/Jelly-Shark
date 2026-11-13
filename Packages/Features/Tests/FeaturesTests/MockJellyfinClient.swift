@@ -157,6 +157,9 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// Thrown by `authenticate` when set, as wrong credentials would
     var authenticateError: (any Error)?
     var signOutCallCount = 0
+    /// Optional gate awaited before signing out, so a test can hold a
+    /// sign-out on the network while it tries something else
+    var signOutDelay: (() async -> Void)?
 
     func fetchPublicServerInfo() async throws -> ServerInfo {
         await serverInfoDelay?()
@@ -176,6 +179,7 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func signOut() async {
         signOutCallCount += 1
+        await signOutDelay?()
         currentUser = nil
         accessToken = nil
     }

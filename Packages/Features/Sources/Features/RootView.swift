@@ -313,6 +313,10 @@ public struct RootView: View {
                 async let genres: Void = genreShelves.load()
                 async let affinity: Void = affinityShelves.validate()
                 await genres
+                // A pass cancelled because the session changed must not touch
+                // the gate below: the reset for the new session has already
+                // closed it, and the new session's own pass owns it now.
+                guard !Task.isCancelled else { return }
 
                 // Flipping this is what releases Home's drain — so only a pass
                 // that had a client may flip it. This task runs once with

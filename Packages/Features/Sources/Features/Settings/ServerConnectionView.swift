@@ -290,6 +290,10 @@ struct AddProfileView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ServerConnectionViewModel.self) private var viewModel
 
+    /// The sign-in started by Connect, cancelled if the viewer backs out so
+    /// a sign-in that finishes later doesn't switch profiles behind them
+    @State private var signIn: Task<Void, Never>?
+
     var body: some View {
         ScrollView {
             VStack(spacing: SpacingTokens.xl) {
@@ -302,8 +306,11 @@ struct AddProfileView: View {
                 SignInFields()
 
                 Button {
-                    Task {
-                        if await viewModel.addProfile() {
+                    // Presses while one is running are ignored by the view
+                    // model. Not `.disabled`: disabling the focused button
+                    // would throw tvOS focus somewhere else on the page.
+                    signIn = Task {
+                        if await viewModel.addProfile(), !Task.isCancelled {
                             dismiss()
                         }
                     }
@@ -321,7 +328,6 @@ struct AddProfileView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(theme.accent)
-                .disabled(viewModel.isAddingProfile)
                 .padding(.horizontal, SpacingTokens.xl)
 
                 Spacer()
@@ -331,6 +337,9 @@ struct AddProfileView: View {
         .navigationTitle(LocalizedStringResource("addProfile.navigationTitle", bundle: #bundle, comment: "Title of the screen for signing in to another server or user."))
         .onAppear {
             viewModel.prepareAddProfile()
+        }
+        .onDisappear {
+            signIn?.cancel()
         }
     }
 }

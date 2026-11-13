@@ -14,7 +14,8 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
     var savedProfiles: [SavedSession] = []
     var activeID: ProfileID?
     var storedDeviceID: String?
-    var clearSessionCallCount = 0
+    /// Profiles deleted, through either `remove` or `clearSession`
+    var forgetCallCount = 0
 
     /// The active profile. Setting it saves it as the active profile, as a
     /// launch with one saved session would find it; nil clears the active
@@ -51,6 +52,7 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
     }
 
     func remove(_ id: ProfileID) throws {
+        forgetCallCount += 1
         savedProfiles.removeAll { $0.id == id }
         if activeID == id {
             activeID = nil
@@ -58,7 +60,7 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
     }
 
     func clearSession() throws {
-        clearSessionCallCount += 1
+        forgetCallCount += 1
         guard let activeID else { return }
         savedProfiles.removeAll { $0.id == activeID }
         self.activeID = nil
@@ -213,7 +215,7 @@ struct ServerConnectionViewModelTests {
         await viewModel.restoreSession()
 
         #expect(store.session == nil)
-        #expect(store.clearSessionCallCount == 1)
+        #expect(store.forgetCallCount == 1)
         #expect(store.deviceID() == deviceID)
         #expect(viewModel.state == .disconnected)
         #expect(viewModel.errorMessage != nil)
@@ -249,7 +251,7 @@ struct ServerConnectionViewModelTests {
         await viewModel.restoreSession()
 
         #expect(store.session != nil)
-        #expect(store.clearSessionCallCount == 0)
+        #expect(store.forgetCallCount == 0)
         #expect(viewModel.state == .disconnected)
         #expect(viewModel.hasAttemptedRestore)
         #expect(viewModel.connectedUser == nil)

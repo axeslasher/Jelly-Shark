@@ -116,7 +116,7 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func save(_ session: SavedSession) throws {
-        var list = readList()
+        var list = try readListForWriting()
         list.profiles.removeAll { $0.id == session.id }
         list.profiles.insert(session, at: 0)
         list.activeID = session.id
@@ -134,7 +134,7 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func activate(_ id: ProfileID) throws {
-        var list = readList()
+        var list = try readListForWriting()
         guard let index = list.profiles.firstIndex(where: { $0.id == id }) else { return }
         let profile = list.profiles.remove(at: index)
         list.profiles.insert(profile, at: 0)
@@ -143,7 +143,7 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func remove(_ id: ProfileID) throws {
-        var list = readList()
+        var list = try readListForWriting()
         list.profiles.removeAll { $0.id == id }
         if list.activeID == id {
             list.activeID = nil
@@ -152,7 +152,7 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func clearSession() throws {
-        var list = readList()
+        var list = try readListForWriting()
         guard let activeID = list.activeID else { return }
         list.profiles.removeAll { $0.id == activeID }
         list.activeID = nil
@@ -177,14 +177,17 @@ public struct SessionStore: SessionStoring, Sendable {
     /// profiles, so the app falls back to the sign-in form instead of failing
     /// at launch.
     private func readList() -> ProfileList {
-        let stored: Data?
-        do {
-            stored = try keychain.data(for: Self.profilesKey)
-        } catch {
-            // A Keychain failure is not "nothing saved": adopting the legacy
-            // session here could overwrite profiles that do exist
-            return ProfileList()
-        }
+        (try? readListForWriting()) ?? ProfileList()
+    }
+
+    /// The saved profiles, for a change that writes them back. A Keychain
+    /// failure throws instead of reading as empty: writing a list built from
+    /// nothing would delete every other profile's token. Corrupt data still
+    /// reads as empty, since nothing in it can be recovered.
+    private func readListForWriting() throws -> ProfileList {
+        // A Keychain failure is not "nothing saved": adopting the legacy
+        // session here could overwrite profiles that do exist
+        let stored = try keychain.data(for: Self.profilesKey)
         let list = stored.flatMap { try? JSONDecoder().decode(ProfileList.self, from: $0) } ?? ProfileList()
         return adoptingLegacySession(into: list)
     }
