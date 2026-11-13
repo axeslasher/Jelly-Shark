@@ -176,7 +176,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t load details — check your connection"
+            "value": "Couldn't load details — check your connection"
           }
         }
       }
@@ -1640,7 +1640,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Couldn’t load filmography — check your connection"
+            "value": "Couldn't load filmography — check your connection"
           }
         }
       }
@@ -2120,7 +2120,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Shelves built from what you’ve watched and favorited"
+            "value": "Shelves built from what you've watched and favorited"
           }
         }
       }
