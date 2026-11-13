@@ -193,6 +193,654 @@
         }
       }
     },
+    "library.filter.watched.any": {
+      "comment": "Watched-status filter option that shows every item.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Any"
+          }
+        }
+      }
+    },
+    "library.filter.watched.played": {
+      "comment": "Watched-status filter option that shows only items already watched.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched"
+          }
+        }
+      }
+    },
+    "library.filter.watched.unplayed": {
+      "comment": "Watched-status filter option that shows only items not yet watched.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched"
+          }
+        }
+      }
+    },
+    "library.headline.all %@": {
+      "comment": "Heading over an unfiltered library. %@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All %@"
+          }
+        }
+      }
+    },
+    "library.headline.decade %@ %@": {
+      "comment": "Heading over a library filtered by decade. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ from the %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.decade.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by decade and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ from the %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.decadeName %@": {
+      "comment": "One decade in a library heading. %@ is the decade’s first year, such as 1980.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@s"
+          }
+        }
+      }
+    },
+    "library.headline.favorite %@": {
+      "comment": "Heading over a library filtered by favorites only. %1$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.decade %@ %@": {
+      "comment": "Heading over a library filtered by favorites only and decade. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ from the %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.decade.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by favorites only, decade and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ from the %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.genre %@ %@": {
+      "comment": "Heading over a library filtered by favorites only and genre. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.genre.decade %@ %@ %@": {
+      "comment": "Heading over a library filtered by favorites only, genre and decade. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ %2$@ from the %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.genre.decade.rating %@ %@ %@ %@": {
+      "comment": "Heading over a library filtered by favorites only, genre, decade and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”. %4$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ %2$@ from the %3$@ rated %4$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.genre.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by favorites only, genre and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.favorite.rating %@ %@": {
+      "comment": "Heading over a library filtered by favorites only and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite %1$@ rated %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.genre %@ %@": {
+      "comment": "Heading over a library filtered by genre. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.genre.decade %@ %@ %@": {
+      "comment": "Heading over a library filtered by genre and decade. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ from the %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.genre.decade.rating %@ %@ %@ %@": {
+      "comment": "Heading over a library filtered by genre, decade and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”. %4$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ from the %3$@ rated %4$@"
+          }
+        }
+      }
+    },
+    "library.headline.genre.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by genre and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.listAndMore %@ %@": {
+      "comment": "A list cut short in a library heading, such as “Horror, Comedy & More”. %1$@ and %2$@ are the first two genres, decades or age ratings.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@, %2$@ & More"
+          }
+        }
+      }
+    },
+    "library.headline.rating %@ %@": {
+      "comment": "Heading over a library filtered by age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ rated %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.unnamedLibrary": {
+      "comment": "Stands in for a library's name in its heading when the server gave none.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Titles"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched %@": {
+      "comment": "Heading over a library filtered by unwatched only. %1$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.decade %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only and decade. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ from the %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.decade.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, decade and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ from the %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite %@": {
+      "comment": "Heading over a library filtered by unwatched only and favorites only. %1$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.decade %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only and decade. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ from the %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.decade.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only, decade and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ from the %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.genre %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only and genre. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.genre.decade %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only, genre and decade. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ %2$@ from the %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.genre.decade.rating %@ %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only, genre, decade and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”. %4$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ %2$@ from the %3$@ rated %4$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.genre.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only, genre and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.favorite.rating %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, favorites only and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched Favorite %1$@ rated %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.genre %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only and genre. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.genre.decade %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, genre and decade. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ %2$@ from the %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.genre.decade.rating %@ %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, genre, decade and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”. %4$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ %2$@ from the %3$@ rated %4$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.genre.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only, genre and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.unwatched.rating %@ %@": {
+      "comment": "Heading over a library filtered by unwatched only and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unwatched %1$@ rated %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched %@": {
+      "comment": "Heading over a library filtered by watched only. %1$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.decade %@ %@": {
+      "comment": "Heading over a library filtered by watched only and decade. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ from the %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.decade.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, decade and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ from the %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite %@": {
+      "comment": "Heading over a library filtered by watched only and favorites only. %1$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.decade %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only and decade. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ from the %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.decade.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only, decade and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the decades, such as “1980s” or “1980s & 1990s”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ from the %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.genre %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only and genre. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.genre.decade %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only, genre and decade. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ %2$@ from the %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.genre.decade.rating %@ %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only, genre, decade and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”. %4$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ %2$@ from the %3$@ rated %4$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.genre.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only, genre and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.favorite.rating %@ %@": {
+      "comment": "Heading over a library filtered by watched only, favorites only and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched Favorite %1$@ rated %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.genre %@ %@": {
+      "comment": "Heading over a library filtered by watched only and genre. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ %2$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.genre.decade %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, genre and decade. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ %2$@ from the %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.genre.decade.rating %@ %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, genre, decade and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the decades, such as “1980s” or “1980s & 1990s”. %4$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ %2$@ from the %3$@ rated %4$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.genre.rating %@ %@ %@": {
+      "comment": "Heading over a library filtered by watched only, genre and age rating. %1$@ is the genres, such as “Horror” or “Horror & Comedy”. %2$@ is the library’s name from the server, such as “Movies”. %3$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ %2$@ rated %3$@"
+          }
+        }
+      }
+    },
+    "library.headline.watched.rating %@ %@": {
+      "comment": "Heading over a library filtered by watched only and age rating. %1$@ is the library’s name from the server, such as “Movies”. %2$@ is the age ratings, such as “R” or “PG & PG-13”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched %1$@ rated %2$@"
+          }
+        }
+      }
+    },
     "liveTV.card.channelNext %@ %@ %@": {
       "comment": "Second line of a live TV card in the player's guide. Values: the channel, the next programme, and when it starts.",
       "extractionState": "manual",
