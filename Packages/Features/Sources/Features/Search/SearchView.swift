@@ -63,7 +63,7 @@ struct SearchView: View {
                 #endif
                 viewModel.updateQuery(newValue)
             }
-            .task(id: session.isConnected) {
+            .task(id: session.connectionID) {
                 viewModel.attach(client: session.client)
             }
         #if os(tvOS)

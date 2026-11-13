@@ -96,7 +96,7 @@ public struct PersonDetailView: View {
         .background(theme.background)
         // Keyed on the session as well as the person: a sign-out must drop this
         // page rather than leave it for whoever signs in next.
-        .task(id: SessionScopedID(content: member.id, isConnected: session.isConnected)) {
+        .task(id: SessionScopedID(content: member.id, session: session.connectionID)) {
             viewModel.attach(client: session.client, member: member, userState: session.userState)
             await viewModel.load()
         }

@@ -209,7 +209,7 @@ public struct RootView: View {
         #if os(tvOS)
             // Keyed on both: a restore publishes the cached library list
             // before the client, and either arriving second must start the load.
-            .task(id: LiveTVLoadKey(libraryID: connectionViewModel.liveTVLibrary?.id, isConnected: session.isConnected)) {
+            .task(id: LiveTVLoadKey(libraryID: connectionViewModel.liveTVLibrary?.id, session: session.connectionID)) {
                 guard connectionViewModel.liveTVLibrary != nil, let client = session.client else {
                     liveGuide.reset()
                     return
@@ -265,8 +265,8 @@ public struct RootView: View {
             // libraries and counts arrive, which rebuilds the tab's content and
             // cancels the old task while its replacement finds `needsLoad` already
             // consumed. A task on the root survives whatever the tab does.
-            .task(id: session.isConnected) {
-                // The update that flips `isConnected` can also change `libraries`
+            .task(id: session.connectionID) {
+                // The update that publishes a session can also change `libraries`
                 // (restore publishes the cached list, then the fresh one, in one
                 // turn). Its `onChange` posts `.libraries` in that same update, and
                 // this task's first synchronous stretch can run before it does —
@@ -316,7 +316,7 @@ public struct RootView: View {
 
                 // Flipping this is what releases Home's drain — so only a pass
                 // that had a client may flip it. This task runs once with
-                // `isConnected == false` on every cold launch; that pass takes
+                // no session on every cold launch; that pass takes
                 // `load()`'s no-client branch and settles nothing, and opening the
                 // gate for it let the drain supersede the real load (#236 § 8.1).
                 refreshCoordinator.isInitialLoadSettled = loadedWithClient
@@ -338,12 +338,12 @@ public struct RootView: View {
             // `genreShelves`, and the next signed-in user's Home paints them for
             // one frame before its own load replaces them (#236 § 14.1). A fresh
             // instance carries no data to leak and no scroll/focus memory to
-            // misapply to a different library. Not gated on the *new* session
-            // connecting — nothing observes `isConnected` going true here, so
-            // resetting exactly on the false edge is enough and avoids
-            // discarding a session's state while it's still active.
-            .onChange(of: session.isConnected) { _, isConnected in
-                guard !isConnected else { return }
+            // misapply to a different library. Resets whenever a session ends,
+            // which includes a profile switch that publishes the next session
+            // in the same update (so `isConnected` never reads false), and
+            // never while a session is still active.
+            .onChange(of: session.connectionID) { endedSession, _ in
+                guard endedSession != nil else { return }
                 homeViewModel = HomeViewModel()
                 genreShelves = GenreShelvesViewModel()
                 affinityShelves = AffinityShelvesViewModel()
@@ -673,7 +673,7 @@ extension RootView {
 #if os(tvOS)
     private struct LiveTVLoadKey: Equatable {
         let libraryID: String?
-        let isConnected: Bool
+        let session: UUID?
     }
 #endif
 
