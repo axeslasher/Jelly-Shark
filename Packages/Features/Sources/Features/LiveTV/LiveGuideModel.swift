@@ -97,12 +97,33 @@ final class LiveGuideModel {
     /// failed reload keeps it altogether: a guide a few minutes old is more
     /// use than an error screen.
     func load() async {
+        await load(reportsLoading: true)
+    }
+
+    /// Ask again after a load that found no channels or failed, so channels
+    /// added on the server later still arrive. A guide with channels keeps
+    /// itself current through `tick()`.
+    ///
+    /// Quiet: the status stays `.empty` or `.failed` until the answer lands,
+    /// so a screen showing that verdict doesn't flash a loading state on
+    /// every retry.
+    func retryIfEmpty() async {
+        guard client != nil, channels.isEmpty, loadsInFlight == 0 else { return }
+        switch status {
+        case .empty, .failed:
+            await load(reportsLoading: false)
+        case .idle, .loading, .loaded:
+            return
+        }
+    }
+
+    private func load(reportsLoading: Bool) async {
         guard let client else { return }
         loadGeneration += 1
         let generation = loadGeneration
         loadsInFlight += 1
         defer { loadsInFlight -= 1 }
-        if channels.isEmpty {
+        if channels.isEmpty, reportsLoading {
             status = .loading
         }
 
