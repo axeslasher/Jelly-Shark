@@ -32,6 +32,16 @@ public enum APIError: Error, Sendable {
     /// No authenticated user
     case notAuthenticated
 
+    /// The server refused to play the item. The value is the server's
+    /// error code, such as `NotAllowed`.
+    case playbackNotPossible(String)
+
+    /// The server answered with no source the app can play
+    case noPlayableMediaSources
+
+    /// The server opened a live channel but gave no stream for it
+    case noLiveStream
+
     /// Generic error with message
     case generic(String)
 }
@@ -71,6 +81,15 @@ extension APIError: LocalizedError {
         case .notAuthenticated:
             String(localized: "error.api.notAuthenticated", bundle: #bundle,
                    comment: "Error shown when an action needs a signed-in user.")
+        case let .playbackNotPossible(code):
+            String(localized: "error.api.playbackNotPossible \(code)", bundle: #bundle,
+                   comment: "Error when the server refuses to play an item. The variable is the server's error code in English, such as NotAllowed.")
+        case .noPlayableMediaSources:
+            String(localized: "error.api.noPlayableMediaSources", bundle: #bundle,
+                   comment: "Error when the server has nothing the app can play for a film, episode or channel.")
+        case .noLiveStream:
+            String(localized: "error.api.noLiveStream", bundle: #bundle,
+                   comment: "Error when the server tunes a live TV channel but sends no video for it.")
         case let .generic(message):
             // Already a runtime message, not our copy.
             message

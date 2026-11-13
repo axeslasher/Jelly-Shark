@@ -493,7 +493,7 @@ public extension MediaItem {
 public extension MediaItem {
     /// Runtime formatted as hours and minutes
     var formattedRuntime: String? {
-        runTimeTicks.map(Self.runtimeText)
+        runTimeTicks.map { Self.runtimeText($0) }
     }
 
     /// Time left in an in-progress item, in the same "1h 5m" style as
@@ -506,16 +506,14 @@ public extension MediaItem {
         return Self.runtimeText(total - position)
     }
 
-    internal static func runtimeText(_ ticks: Int64) -> String {
+    /// "1h 5m" in English, in the locale's own units elsewhere. Whole
+    /// minutes, rounded down; hours only from an hour up, and "2h 0m" keeps
+    /// its minutes so runtimes in a row line up.
+    internal static func runtimeText(_ ticks: Int64, locale: Locale = .autoupdatingCurrent) -> String {
         let totalMinutes = Int(ticks / 10_000_000 / 60)
-        let hours = totalMinutes / 60
-        let minutes = totalMinutes % 60
-
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
-        }
+        let units: Set<Duration.UnitsFormatStyle.Unit> = totalMinutes >= 60 ? [.hours, .minutes] : [.minutes]
+        return Duration.seconds(totalMinutes * 60)
+            .formatted(.units(allowed: units, width: .narrow, zeroValueUnits: .show(length: 1)).locale(locale))
     }
 
     /// Progress percentage (0.0 - 1.0)

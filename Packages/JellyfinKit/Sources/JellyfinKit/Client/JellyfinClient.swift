@@ -1276,13 +1276,13 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             )
 
             if let errorCode = response.value.errorCode {
-                throw APIError.generic("Playback not possible: \(errorCode.rawValue)")
+                throw APIError.playbackNotPossible(errorCode.rawValue)
             }
 
             let sessionInfo = PlaybackSessionInfo(from: response.value)
 
             guard !sessionInfo.mediaSources.isEmpty else {
-                throw APIError.generic("No playable media sources for this item")
+                throw APIError.noPlayableMediaSources
             }
 
             return sessionInfo
@@ -1557,7 +1557,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             let response = try await sdkClient.send(Paths.getPostedPlaybackInfo(itemID: channelId, body))
 
             if let errorCode = response.value.errorCode {
-                throw APIError.generic("Playback not possible: \(errorCode.rawValue)")
+                throw APIError.playbackNotPossible(errorCode.rawValue)
             }
             guard let source = response.value.mediaSources?.first, let sourceId = source.id else {
                 // The request asked the server to open the tuner, so an
@@ -1565,7 +1565,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 for liveStreamId in (response.value.mediaSources ?? []).compactMap(\.liveStreamID) {
                     _ = try? await sdkClient.send(Paths.closeLiveStream(liveStreamID: liveStreamId))
                 }
-                throw APIError.generic("No playable media sources for this item")
+                throw APIError.noPlayableMediaSources
             }
 
             let opened = { (url: URL) in
@@ -1584,7 +1584,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
                 if let liveStreamId = source.liveStreamID {
                     _ = try? await sdkClient.send(Paths.closeLiveStream(liveStreamID: liveStreamId))
                 }
-                throw APIError.generic("The server did not provide a stream for this channel")
+                throw APIError.noLiveStream
             }
 
             let session = opened(url)

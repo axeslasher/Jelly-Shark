@@ -63,6 +63,18 @@ struct LivePlaybackViewModelTests {
         #expect(model.session == nil)
     }
 
+    @Test("A channel with no playable source reads as library playback does")
+    func noPlayableSourceWording() async {
+        let client = MockJellyfinClient()
+        client.openLiveStreamResult = .failure(APIError.noPlayableMediaSources)
+        let model = makeModel(client)
+
+        await model.start()
+
+        #expect(model.state == .failed("No playable media sources for this item"))
+        await model.stop()
+    }
+
     @Test("A failed open shows the error and leaves nothing to release")
     func openFailure() async {
         let client = MockJellyfinClient()

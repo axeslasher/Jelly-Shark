@@ -177,6 +177,8 @@ struct PlaybackViewModelTests {
         await viewModel.start()
 
         #expect(viewModel.state == .failed("No playable media sources for this item"))
+        // The same catalog text live playback shows for the same failure
+        #expect(viewModel.state == .failed(APIError.noPlayableMediaSources.localizedDescription))
     }
 
     @Test("stop() reports stopped, tears the engine down, and is idempotent")
