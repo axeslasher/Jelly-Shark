@@ -56,7 +56,9 @@ struct JellyfinKitTests {
                 type: .movie,
                 runTimeTicks: 72_000_000_000, // 2 hours
             )
-            #expect(twoHourMovie.formattedRuntime == "2h 0m")
+            // The English shape is pinned in runtimeTextEnglish; this checks the
+            // wiring, in whatever locale the test machine runs
+            #expect(twoHourMovie.formattedRuntime == MediaItem.runtimeText(72_000_000_000))
         }
 
         @Test("Runtime formatting - minutes only")
@@ -67,7 +69,7 @@ struct JellyfinKitTests {
                 type: .video,
                 runTimeTicks: 18_000_000_000, // 30 minutes
             )
-            #expect(shortVideo.formattedRuntime == "30m")
+            #expect(shortVideo.formattedRuntime == MediaItem.runtimeText(18_000_000_000))
         }
 
         @Test("Runtime text keeps today's English shape", arguments: [
@@ -100,7 +102,7 @@ struct JellyfinKitTests {
                 runTimeTicks: 72_000_000_000, // 2h
                 userData: UserData(playbackPositionTicks: 27_000_000_000), // 45m in
             )
-            #expect(item.formattedRemainingRuntime == "1h 15m")
+            #expect(item.formattedRemainingRuntime == MediaItem.runtimeText(72_000_000_000 - 27_000_000_000))
 
             let unstarted = MediaItem(
                 id: "2", name: "Movie", type: .movie, runTimeTicks: 72_000_000_000,

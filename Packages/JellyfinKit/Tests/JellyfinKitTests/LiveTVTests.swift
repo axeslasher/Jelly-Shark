@@ -74,7 +74,7 @@ struct LiveTVTests {
         #expect(program.backdropImageTag == nil)
         #expect(program.endDate.timeIntervalSince(program.startDate) == 3000)
         #expect(program.productionYear == 1967)
-        #expect(program.formattedRuntime == "50m")
+        #expect(program.formattedRuntime == MediaItem.runtimeText(50 * 60 * 10_000_000))
     }
 
     @Test("A programme maps landscape artwork when the guide source supplies it")
