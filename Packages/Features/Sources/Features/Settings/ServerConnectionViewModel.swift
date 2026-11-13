@@ -65,6 +65,29 @@ public final class ServerConnectionViewModel {
     /// count line rather than a wrong one.
     public private(set) var libraryCounts: [String: Int] = [:]
 
+    // MARK: - Profiles
+
+    /// Every saved profile, most recently used first
+    public private(set) var profiles: [SavedSession] = []
+
+    /// The profile the app restores on launch; nil when none is active
+    public private(set) var activeProfileID: ProfileID?
+
+    /// Whether an Add Profile sign-in is in flight. The current session stays
+    /// connected while it runs, so this is separate from `state`.
+    public private(set) var isAddingProfile = false
+
+    /// The active profile, when it is saved
+    public var activeProfile: SavedSession? {
+        profiles.first { $0.id == activeProfileID }
+    }
+
+    /// Saved profiles other than the active one: the ones a viewer can
+    /// switch to
+    public var otherProfiles: [SavedSession] {
+        profiles.filter { $0.id != activeProfileID }
+    }
+
     // MARK: - Private
 
     /// The Jellyfin client instance
@@ -119,6 +142,7 @@ public final class ServerConnectionViewModel {
         self.cache = cache
         self.urlCache = urlCache
         self.artworkLoader = artworkLoader
+        reloadProfiles()
     }
 
     /// Attach the shared session so the connected client can be published app-wide
@@ -136,11 +160,7 @@ public final class ServerConnectionViewModel {
         // Clear previous error
         errorMessage = nil
 
-        // Validate URL
-        guard let url = parseServerURL(serverURL) else {
-            errorMessage = String(localized: "signIn.error.invalidURL", bundle: #bundle, comment: "Shown under the sign-in form when the server address can't be read as a web address.")
-            return
-        }
+        guard let url = validatedServerURL() else { return }
 
         // Start connecting
         state = .connecting
@@ -153,20 +173,103 @@ public final class ServerConnectionViewModel {
         state = .authenticating
 
         do {
-            // Refuse a too-old server before sending credentials, so it
-            // never gets a session to save
-            let serverInfo = try await newClient.fetchPublicServerInfo()
-            guard serverInfo.isSupported else {
-                throw APIError.unsupportedServerVersion(serverInfo.version)
-            }
-            let user = try await newClient.authenticate(username: username, password: password)
+            let (user, serverName) = try await signIn(with: newClient)
             try await completeConnection(client: newClient, user: user)
-            persistSession(for: newClient, serverURL: url, user: user)
+            persistSession(for: newClient, serverURL: url, user: user, serverName: serverName)
+            password = ""
         } catch {
             errorMessage = error.localizedDescription
             state = .disconnected
             client = nil
         }
+    }
+
+    /// Sign in to another server or user while the current session stays
+    /// up, then make the new profile the active one. The current profile is
+    /// kept, token and cache included, so the viewer can switch back.
+    ///
+    /// - Returns: Whether the new profile is now connected. On failure the
+    ///   current session is untouched and `errorMessage` says why.
+    @discardableResult
+    public func addProfile() async -> Bool {
+        guard !isAddingProfile, state == .connected else { return false }
+        errorMessage = nil
+        guard let url = validatedServerURL() else { return false }
+
+        isAddingProfile = true
+        defer { isAddingProfile = false }
+
+        let newClient = wrapped(makeClient(makeConfiguration(serverURL: url), nil))
+        let user: User
+        let serverName: String
+        do {
+            (user, serverName) = try await signIn(with: newClient)
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        // Proved before the current session is retired, so a failure here
+        // leaves the viewer exactly where they were
+        let libraries: [Library]
+        do {
+            libraries = try await newClient.getLibraries()
+        } catch {
+            // The server issued a token nothing will save; end it there
+            await newClient.signOut()
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        endSessionLocally()
+        client = newClient
+        publishConnection(client: newClient, user: user, libraries: libraries)
+        persistSession(for: newClient, serverURL: url, user: user, serverName: serverName)
+        password = ""
+        return true
+    }
+
+    /// Make a saved profile the active one and restore its session. The
+    /// profile being left keeps its token and its cache: it is switched
+    /// away from, not signed out.
+    public func switchToProfile(_ id: ProfileID) async {
+        guard profiles.contains(where: { $0.id == id }) else { return }
+        guard id != activeProfileID || state == .disconnected else { return }
+        guard state != .connecting, state != .authenticating, !isAddingProfile else { return }
+
+        endSessionLocally()
+        do {
+            try sessionStore.activate(id)
+        } catch {
+            errorMessage = error.localizedDescription
+            reloadProfiles()
+            return
+        }
+        reloadProfiles()
+        await restoreSession()
+    }
+
+    /// Forget a saved profile: end its session on the server, delete its
+    /// token, and purge its cache. Forgetting the active profile signs out
+    /// and then switches to the most recently used remaining profile, so a
+    /// household's other sign-ins are never lost to one sign-out.
+    public func forgetProfile(_ id: ProfileID) async {
+        if id == activeProfileID {
+            await disconnect()
+            return
+        }
+        guard let profile = profiles.first(where: { $0.id == id }) else { return }
+
+        // Best effort, like sign-out: a server that can't be reached still
+        // has the profile forgotten here
+        let profileClient = makeClient(makeConfiguration(serverURL: profile.serverURL), profile)
+        await profileClient.signOut()
+
+        try? sessionStore.remove(id)
+        if let cache {
+            await cache.purge(scope: CacheScope(serverURL: profile.serverURL, userID: profile.userID))
+        }
+        reloadProfiles()
     }
 
     /// Restore a previously saved session from the Keychain, if any.
@@ -179,6 +282,7 @@ public final class ServerConnectionViewModel {
     public func restoreSession() async {
         defer { hasAttemptedRestore = true }
         guard state == .disconnected else { return }
+        reloadProfiles()
         guard let saved = sessionStore.load() else { return }
 
         errorMessage = nil
@@ -224,8 +328,10 @@ public final class ServerConnectionViewModel {
             username = user.name
         } catch {
             if let message = Self.endedSessionMessage(for: error) {
-                // The session can never work again: clear it and fall back to the form
+                // The session can never work again: forget the profile and
+                // fall back to the form, which lists any others still saved
                 try? sessionStore.clearSession()
+                reloadProfiles()
                 if let cache {
                     await cache.purge(scope: scope)
                 }
@@ -304,6 +410,7 @@ public final class ServerConnectionViewModel {
                 session?.clearClient()
                 self.client = nil
                 try? sessionStore.clearSession()
+                reloadProfiles()
                 await cache.purge(scope: scope)
                 await clearArtworkCaches()
                 errorMessage = message
@@ -317,7 +424,9 @@ public final class ServerConnectionViewModel {
         }
     }
 
-    /// Disconnect from the server
+    /// Sign out of the active profile: end its session on the server, forget
+    /// it, and purge its cache. Switches to the most recently used remaining
+    /// profile when there is one.
     public func disconnect() async {
         validationTask?.cancel()
         validationTask = nil
@@ -360,6 +469,13 @@ public final class ServerConnectionViewModel {
         state = .disconnected
         errorMessage = nil
         session?.clearClient()
+        reloadProfiles()
+
+        // Signing out of one profile must not lose the household's other
+        // sign-ins: carry on as the most recently used one that remains
+        if let next = profiles.first {
+            await switchToProfile(next.id)
+        }
     }
 
     // MARK: - Helpers
@@ -501,6 +617,11 @@ public final class ServerConnectionViewModel {
     /// libraries, then surface the connected state and publish the client
     private func completeConnection(client: any JellyfinClientProtocol, user: User) async throws {
         let all = try await client.getLibraries()
+        publishConnection(client: client, user: user, libraries: all)
+    }
+
+    /// Surface the connected state and publish the client app-wide
+    private func publishConnection(client: any JellyfinClientProtocol, user: User, libraries all: [Library]) {
         libraries = all.filter(\.isBrowsable)
         liveTVLibrary = all.liveTV
         connectedUser = user
@@ -512,15 +633,74 @@ public final class ServerConnectionViewModel {
         refreshLibraryCounts(client: client)
     }
 
-    /// Save the session to the Keychain so it can be restored on next launch
-    private func persistSession(for client: any JellyfinClientProtocol, serverURL: URL, user: User) {
+    /// Save the session to the Keychain as the active profile, so it can be
+    /// restored on next launch and switched back to later
+    private func persistSession(
+        for client: any JellyfinClientProtocol,
+        serverURL: URL,
+        user: User,
+        serverName: String,
+    ) {
         guard let accessToken = client.accessToken else { return }
 
         // A failed Keychain write should not fail a live connection; the
         // session simply won't be restored on the next launch
         try? sessionStore.save(
-            SavedSession(serverURL: serverURL, userID: user.id, accessToken: accessToken),
+            SavedSession(
+                serverURL: serverURL,
+                userID: user.id,
+                accessToken: accessToken,
+                userName: user.name,
+                serverName: serverName,
+            ),
         )
+        reloadProfiles()
+    }
+
+    /// Re-read the saved profiles after the store changes
+    private func reloadProfiles() {
+        profiles = sessionStore.profiles()
+        activeProfileID = sessionStore.load()?.id
+    }
+
+    /// The form's server URL, or nil with `errorMessage` set when it can't be
+    /// read as a web address
+    private func validatedServerURL() -> URL? {
+        guard let url = parseServerURL(serverURL) else {
+            errorMessage = String(localized: "signIn.error.invalidURL", bundle: #bundle, comment: "Shown under the sign-in form when the server address can't be read as a web address.")
+            return nil
+        }
+        return url
+    }
+
+    /// Sign in with the form's credentials. A too-old server is refused
+    /// before credentials are sent, so it never gets a session to save.
+    private func signIn(with client: any JellyfinClientProtocol) async throws -> (User, serverName: String) {
+        let serverInfo = try await client.fetchPublicServerInfo()
+        guard serverInfo.isSupported else {
+            throw APIError.unsupportedServerVersion(serverInfo.version)
+        }
+        let user = try await client.authenticate(username: username, password: password)
+        return (user, serverInfo.serverName)
+    }
+
+    /// End the current session in this app only: no sign-out request, no
+    /// cache purge, and the saved token is kept. Used to leave a profile
+    /// that stays saved.
+    private func endSessionLocally() {
+        validationTask?.cancel()
+        validationTask = nil
+        countsTask?.cancel()
+        countsTask = nil
+        isValidating = false
+        session?.clearClient()
+        client = nil
+        connectedUser = nil
+        libraries = []
+        liveTVLibrary = nil
+        libraryCounts = [:]
+        state = .disconnected
+        errorMessage = nil
     }
 }
 

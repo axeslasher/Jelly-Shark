@@ -150,6 +150,13 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// can show the instant connect doesn't wait on the version check
     var serverInfoDelay: (() async -> Void)?
     var authenticateCallCount = 0
+    /// The user and token a sign-in issues, so profile tests can sign in as
+    /// a second user
+    var authenticatedUserID = "user-1"
+    var issuedAccessToken = "token-1"
+    /// Thrown by `authenticate` when set, as wrong credentials would
+    var authenticateError: (any Error)?
+    var signOutCallCount = 0
 
     func fetchPublicServerInfo() async throws -> ServerInfo {
         await serverInfoDelay?()
@@ -158,13 +165,17 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func authenticate(username: String, password _: String) async throws -> User {
         authenticateCallCount += 1
-        let user = User(id: "user-1", name: username)
+        if let authenticateError {
+            throw authenticateError
+        }
+        let user = User(id: authenticatedUserID, name: username)
         currentUser = user
-        accessToken = "token-1"
+        accessToken = issuedAccessToken
         return user
     }
 
     func signOut() async {
+        signOutCallCount += 1
         currentUser = nil
         accessToken = nil
     }

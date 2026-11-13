@@ -10,21 +10,58 @@ import Testing
 
 /// In-memory session store that records calls for assertions
 final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
-    var session: SavedSession?
+    /// Saved profiles, most recently used first
+    var savedProfiles: [SavedSession] = []
+    var activeID: ProfileID?
     var storedDeviceID: String?
     var clearSessionCallCount = 0
 
+    /// The active profile. Setting it saves it as the active profile, as a
+    /// launch with one saved session would find it; nil clears the active
+    /// profile.
+    var session: SavedSession? {
+        get { load() }
+        set {
+            if let newValue {
+                try? save(newValue)
+            } else {
+                try? clearSession()
+            }
+        }
+    }
+
     func save(_ session: SavedSession) throws {
-        self.session = session
+        savedProfiles.removeAll { $0.id == session.id }
+        savedProfiles.insert(session, at: 0)
+        activeID = session.id
     }
 
     func load() -> SavedSession? {
-        session
+        savedProfiles.first { $0.id == activeID }
+    }
+
+    func profiles() -> [SavedSession] {
+        savedProfiles
+    }
+
+    func activate(_ id: ProfileID) throws {
+        guard let index = savedProfiles.firstIndex(where: { $0.id == id }) else { return }
+        savedProfiles.insert(savedProfiles.remove(at: index), at: 0)
+        activeID = id
+    }
+
+    func remove(_ id: ProfileID) throws {
+        savedProfiles.removeAll { $0.id == id }
+        if activeID == id {
+            activeID = nil
+        }
     }
 
     func clearSession() throws {
         clearSessionCallCount += 1
-        session = nil
+        guard let activeID else { return }
+        savedProfiles.removeAll { $0.id == activeID }
+        self.activeID = nil
     }
 
     func deviceID() -> String {
@@ -231,7 +268,20 @@ struct ServerConnectionViewModelTests {
             serverURL: URL(string: "https://demo.jellyfin.org/stable")!,
             userID: "user-1",
             accessToken: "token-1",
+            userName: "demo",
+            serverName: "Mock",
         ))
+    }
+
+    @Test("connect() clears the password once signed in")
+    func connectClearsPassword() async {
+        let viewModel = makeViewModel(store: InMemorySessionStore(), client: MockJellyfinClient(), recorder: FactoryRecorder())
+        viewModel.password = "secret"
+
+        await viewModel.connect()
+
+        #expect(viewModel.state == .connected)
+        #expect(viewModel.password.isEmpty)
     }
 
     @Test("The client reports the app's version, not the JellyfinKit placeholder")
