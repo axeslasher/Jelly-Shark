@@ -27,15 +27,23 @@ public struct ProfileID: Codable, Hashable, Sendable {
 
 public extension URL {
     /// The server address in one canonical spelling: lowercase scheme and
-    /// host, no trailing slash. A path such as `/jellyfin` is kept.
+    /// host, no default port, no trailing slash. A path such as `/jellyfin`
+    /// is kept, percent escapes included.
     var normalizedServerURL: URL {
         guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
             return self
         }
-        components.scheme = components.scheme?.lowercased()
+        let scheme = components.scheme?.lowercased()
+        components.scheme = scheme
         components.host = components.host?.lowercased()
-        while components.path.hasSuffix("/") {
-            components.path.removeLast()
+        // Matches `CacheScope`, so one profile never shares its cache with a
+        // twin spelled with the default port
+        if (scheme == "http" && components.port == 80) || (scheme == "https" && components.port == 443) {
+            components.port = nil
+        }
+        // The encoded path: the decoded one would turn `%2F` into a real slash
+        while components.percentEncodedPath.hasSuffix("/") {
+            components.percentEncodedPath.removeLast()
         }
         return components.url ?? self
     }

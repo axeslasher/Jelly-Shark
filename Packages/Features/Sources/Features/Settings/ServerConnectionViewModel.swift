@@ -90,6 +90,10 @@ public final class ServerConnectionViewModel {
         }
     }
 
+    /// The profile to go back to if a switch's target, opened from its
+    /// cache, then fails its background check
+    private var switchFallback: (target: ProfileID, previous: ProfileID)?
+
     /// Whether a press was ignored because a profile change is running.
     /// Clears when that change ends, so the viewer knows to try again.
     public private(set) var showsBusyNotice = false
@@ -290,6 +294,9 @@ public final class ServerConnectionViewModel {
     /// Leaving Add Profile, by any route: the typed password goes with it
     public func endAddProfile() {
         password = ""
+        // A failed add's error belongs to the form being left, not the
+        // Server page it returns to
+        errorMessage = nil
     }
 
     /// Make a saved profile the active one and restore its session. The
@@ -322,6 +329,13 @@ public final class ServerConnectionViewModel {
         reloadProfiles()
         await restoreSession()
 
+        // Opened from its cache, the target is only checked in the
+        // background; a failed check goes back to `previous` from there
+        if state == .connected {
+            switchFallback = previous.map { (target: id, previous: $0) }
+            return
+        }
+
         // A target that couldn't restore (server unreachable, no cache to
         // open on) must not leave the viewer signed out: go back to the
         // profile they were on, whose cache lets it open at once
@@ -336,8 +350,15 @@ public final class ServerConnectionViewModel {
         }
         reloadProfiles()
         await restoreSession()
-        errorMessage = String(
-            localized: "server.profile.switchFailed \(targetName) \(reason)",
+        // Going back failed too: that restore's own error says why the
+        // viewer is signed out, and this message would claim they weren't
+        guard state == .connected else { return }
+        errorMessage = Self.switchFailedMessage(name: targetName, reason: reason)
+    }
+
+    private static func switchFailedMessage(name: String, reason: String) -> String {
+        String(
+            localized: "server.profile.switchFailed \(name) \(reason)",
             bundle: #bundle,
             comment: "Shown when switching to a saved profile failed and the app went back to the previous one. The first variable is the profile's name, the second the reason.",
         )
@@ -523,6 +544,9 @@ public final class ServerConnectionViewModel {
                 liveTVLibrary = all.liveTV
                 refreshLibraryCounts(client: client)
                 isValidating = false
+                if switchFallback?.target == profileID {
+                    switchFallback = nil
+                }
                 await cache.purgeStaleDetails(scope: scope)
             } catch {
                 guard let self, !Task.isCancelled else { return }
@@ -540,6 +564,16 @@ public final class ServerConnectionViewModel {
                 if holdsChanges {
                     isChangingProfile = true
                 }
+                // Held through the fallback below too, so nothing else can
+                // change profiles while it restores
+                defer {
+                    if holdsChanges {
+                        isChangingProfile = false
+                    }
+                }
+                let name = profiles.first { $0.id == profileID }.map(Self.displayName) ?? ""
+                let fallback = switchFallback?.target == profileID ? switchFallback?.previous : nil
+                switchFallback = nil
                 session?.clearClient()
                 self.client = nil
                 liveProfileID = nil
@@ -547,9 +581,6 @@ public final class ServerConnectionViewModel {
                 reloadProfiles()
                 await cache.purge(scope: scope)
                 await clearArtworkCaches()
-                if holdsChanges {
-                    isChangingProfile = false
-                }
                 isValidating = false
                 // Cancelled while it waited (a switch or sign-in took over),
                 // or a session published meanwhile: that is the viewer's now
@@ -560,6 +591,16 @@ public final class ServerConnectionViewModel {
                 libraries = []
                 liveTVLibrary = nil
                 libraryCounts = [:]
+
+                // Reached by switching here from another profile: go back to
+                // it rather than leave the viewer signed out
+                guard let fallback, profiles.contains(where: { $0.id == fallback }),
+                      (try? sessionStore.activate(fallback)) != nil
+                else { return }
+                reloadProfiles()
+                await restoreSession()
+                guard state == .connected else { return }
+                errorMessage = Self.switchFailedMessage(name: name, reason: message)
             }
         }
     }

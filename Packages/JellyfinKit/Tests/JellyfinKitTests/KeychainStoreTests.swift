@@ -392,6 +392,19 @@ struct SessionStoreTests {
         #expect(url.normalizedServerURL.absoluteString == "https://media.example.com:8920/jellyfin")
     }
 
+    @Test("Normalising drops a default port, so it can't save a twin profile")
+    func normalisingDropsDefaultPorts() {
+        #expect(URL(string: "http://nas:80")!.normalizedServerURL.absoluteString == "http://nas")
+        #expect(URL(string: "https://nas:443/")!.normalizedServerURL.absoluteString == "https://nas")
+        #expect(URL(string: "http://nas:443")!.normalizedServerURL.absoluteString == "http://nas:443")
+    }
+
+    @Test("Normalising keeps an encoded slash in the server path")
+    func normalisingKeepsPercentEscapes() {
+        let url = URL(string: "https://host/jelly%2Ffin/")!
+        #expect(url.normalizedServerURL.absoluteString == "https://host/jelly%2Ffin")
+    }
+
     @Test("An active profile saved with a trailing slash stays active after the upgrade")
     func unnormalisedActiveIDStillMatches() throws {
         let keychain = makeTestKeychain()

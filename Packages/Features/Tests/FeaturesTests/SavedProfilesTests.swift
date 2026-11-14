@@ -386,6 +386,51 @@ struct SavedProfilesTests {
         #expect(rig.viewModel.errorMessage?.contains("Couldn't switch to user-1") == true)
     }
 
+    @Test("A switch whose way back fails too keeps that failure's message")
+    func failedSwitchBackKeepsItsOwnError() async {
+        let (rig, first, _) = await twoProfileRig()
+        rig.client(forToken: "token-1").fetchCurrentUserResult = .failure(URLError(.notConnectedToInternet))
+        rig.client(forToken: "token-2").fetchCurrentUserResult = .failure(APIError.unauthorized)
+
+        await rig.viewModel.switchToProfile(first.id)
+
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.viewModel.errorMessage?.contains("Couldn't switch") == false)
+    }
+
+    @Test("A switched-to profile that opens from cache, then fails its check, goes back")
+    func failedBackgroundCheckSwitchesBack() async {
+        let cache = MediaCacheStore.makeInMemory()
+        let first = profile(serverA, user: "user-1", token: "token-1")
+        let second = profile(serverB, user: "user-2", token: "token-2")
+        await seed(cache, first)
+        let (rig, _, _) = await twoProfileRig(cache: cache)
+        rig.client(forToken: "token-1").fetchCurrentUserResult = .failure(APIError.unauthorized)
+
+        await rig.viewModel.switchToProfile(first.id)
+        await rig.viewModel.awaitValidation()
+
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.viewModel.activeProfileID == second.id)
+        #expect(rig.store.profiles().map(\.id) == [second.id])
+        #expect(rig.viewModel.errorMessage?.contains("Couldn't switch to user-1") == true)
+        #expect(!rig.viewModel.isChangingProfile)
+    }
+
+    @Test("Leaving Add Profile clears its error, so the Server page doesn't show it")
+    func leavingAddProfileClearsError() async {
+        let rig = await signedInRig()
+        let failing = MockJellyfinClient()
+        failing.authenticateError = APIError.unauthorized
+        rig.queuedSignIns = [failing]
+        await rig.viewModel.addProfile()
+        #expect(rig.viewModel.errorMessage != nil)
+
+        rig.viewModel.endAddProfile()
+
+        #expect(rig.viewModel.errorMessage == nil)
+    }
+
     @Test("A library list that answers after a switch doesn't replace the new profile's")
     func lateLibraryRefreshIsDropped() async {
         let (rig, first, _) = await twoProfileRig()
