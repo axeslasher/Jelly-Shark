@@ -89,10 +89,8 @@ public struct ServerConnectionView: View {
                     Text("signIn.connect", bundle: #bundle, comment: "Button that signs in to the server.")
                         .jsStyle(.body, .emphasized)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, SpacingTokens.md)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.accent)
+                .glassButtonStyle(tint: theme.focusFill)
                 .padding(.horizontal, SpacingTokens.xl)
 
                 Spacer()
@@ -231,24 +229,11 @@ public struct ServerConnectionView: View {
                         await viewModel.disconnect()
                     }
                 } label: {
-                    HStack {
-                        Spacer()
-                        Text("server.signOut", bundle: #bundle, comment: "Button that signs out of the current server account and forgets it. If other accounts are saved, the app switches to one of them.")
-                            // Explicit colors so the label ignores the
-                            // destructive role's red text, which is illegible
-                            // on the themed background at rest. The system
-                            // focus platter respects explicit label styles,
-                            // so the pill reads the same focused.
-                            .jsStyle(.body)
-                            .foregroundStyle(theme.primary)
-                        Spacer()
-                    }
-                    .padding(.vertical, SpacingTokens.sm)
-                    .background(theme.error, in: .capsule)
+                    Text("server.signOut", bundle: #bundle, comment: "Button that signs out of the current server account and forgets it. If other accounts are saved, the app switches to one of them.")
+                        .jsStyle(.body, .emphasized)
+                        .frame(maxWidth: .infinity)
                 }
-                #if os(tvOS)
-                .buttonStyle(DestructiveFillButtonStyle())
-                #endif
+                .glassButtonStyle(tint: theme.focusFill)
             }
         }
         .background(theme.background)
@@ -338,10 +323,8 @@ struct AddProfileView: View {
                         }
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, SpacingTokens.md)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.accent)
+                .glassButtonStyle(tint: theme.focusFill)
                 .padding(.horizontal, SpacingTokens.xl)
 
                 Spacer()
@@ -538,27 +521,6 @@ private struct ProfileChoiceDialog: ViewModifier {
         }
     }
 }
-
-#if os(tvOS)
-    /// The Sign Out pill presents focus itself: under the system list style
-    /// its error fill sat lifted on the white focus platter — a pill on a
-    /// platter. A custom style means no system platter, and focus is the
-    /// theme's focus scale alone — the capsule is the page's only filled
-    /// control, so the grow reads without a ring (a ring was tried and read
-    /// as clutter on device).
-    private struct DestructiveFillButtonStyle: ButtonStyle {
-        @Environment(\.theme) private var theme
-        @Environment(\.isFocused) private var isFocused
-
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .scaleEffect(isFocused ? theme.focusScale : 1)
-                .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
-                .animation(theme.animation, value: isFocused)
-                .animation(MotionTokens.fast, value: configuration.isPressed)
-        }
-    }
-#endif
 
 #if DEBUG
     #Preview("Standard", traits: .featuresEnvironment) {
