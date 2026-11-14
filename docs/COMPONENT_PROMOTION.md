@@ -11,7 +11,7 @@ A Features view moves to DesignSystem when it depends only on `Theme` and tokens
 | # | Promote | Evidence |
 |---|---|---|
 | 1 | `CircleNavigationLink` into `CircleActionButton` as a `value:` init | Private copy in `HomeHeroSection.swift`; its comment says "matches CircleActionButton", and it already uses DesignSystem's `hangingActionLabel` |
-| 2 | A `CountBadge` view | `LibraryFilterBar` repeats `ArtworkShelfItem`'s count badge exactly (`padding(xxs)`, 32 minimum, `theme.accent` circle); Figma has `base/countBadge` |
+| 2 | A `CountBadge` view | `LibraryFilterBar` repeats `ArtworkShelfItem`'s count badge styling (`padding(xxs)`, 32 minimum, `theme.accent` circle); `ArtworkShelfItem` adds an outer `padding(xs)` corner inset, which stays at its call site; Figma has `base/countBadge` |
 | 3 | A `ShelfHeader` view | `ContentShelf` and `FailedShelfNotice` inline the same icon + headline `HStack`; Figma has `base/shelfHeader` |
 | 4 | `MediaMetadataRow` | 3 call sites on 3 screens (Home hero, Live guide, Media Detail hero); takes plain strings; built on `MetadataLabelStyle` |
 | 5 | `OverviewLabel` with `OverviewOverlay` | Media Detail and Person Detail; theme-only; `OverviewLabel` is the label `plainFocusButtonStyle` exists for |
@@ -29,7 +29,7 @@ A Features view moves to DesignSystem when it depends only on `Theme` and tokens
 **Clean up in Features (no promotion)**
 
 1. `HomeSkeleton` keeps a private `skeletonShelf(…)` that nothing calls, plus a private `ghostBlock` that duplicates `GhostBlock`. Delete both.
-2. `HeroBackdropBridge` and `HeroExitDrift` are defined in both `HomeView.swift` and `MediaDetailView.swift`, differing only in the scroll-state type.
+2. `HeroExitDrift` is defined in both `HomeView.swift` and `MediaDetailView.swift`, differing only in the scroll-state type. Share one copy, generic over the scroll state. (`HeroBackdropBridge` is also defined in both, but each wraps a different backdrop with different inputs, so it stays.)
 
 **Stay in Features:** `LiveChannelCard`, `OnAirNowShelf`, `EpisodeShelfStack`, `PersonDetailHeader`, `HomeHeroBackdrop` (paging is tied to `HomeViewModel`), `HomeEmptyState`, `ReconnectingBanner`, `CreditsColumn`, and the Live guide's private views.
 

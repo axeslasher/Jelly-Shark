@@ -506,7 +506,7 @@ All themes must maintain:
 
 ## Design Tools (WIP - not final)
 
-**Figma Library**: TBD (for designing new components/themes)  
+**Figma Library**: [Jelly-Shark-DS](https://www.figma.com/design/Q8aV4lenWHPqPdwtoPKpvc/Jelly-Shark-DS); see FIGMA_COMPONENTS.md and FIGMA_TOKENS.md  
 **Asset Export**: SF Symbols for icons, custom assets per theme  
 **Documentation**: Living style guide in-app (developer mode)
 

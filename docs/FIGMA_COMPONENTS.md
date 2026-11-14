@@ -61,18 +61,21 @@ Connect can show Swift snippets (see below).
 4. **Don't model what tvOS does for free.** Behaviour the system adds at runtime, such as a
    symbol growing with its focus platter, stays out of the design file rather than gaining a
    variable to imitate it. Note it as a deviation in the component description instead.
-5. **Previews.** Each component gets a `tvOS Theme Specimens — <name>` frame: one column per
+5. **Structure.** `ArtworkShelfItem`'s artwork and caption lines are flat siblings of the button
+   label — the tvOS borderless focus lockup breaks if they're wrapped in a stack.
+
+### Documentation and binding
+
+1. **Previews.** Each component gets a `tvOS Theme Specimens — <name>` frame: one column per
    theme, each with an explicit `Theme` mode on a `color/background` ground, resting row above
    focused row. (CircleActionButton's frame is the unsuffixed `tvOS Theme Specimens`.)
    Components with no drawn focus state show a resting row only. Turn clipping off on specimen
    rows: new auto-layout frames clip, which hides a platter's bleed.
-7. **Fades to `.clear`.** SwiftUI interpolates gradients in premultiplied colour, so a fade
+2. **Fades to `.clear`.** SwiftUI interpolates gradients in premultiplied colour, so a fade
    holds its hue. End a Figma gradient on the same colour at 0%, through a `-clear` variable
    (`color/artwork-scrim-clear`, `color/accent-clear`), never on transparent black.
-8. **Copy.** Text that code reads from a string catalog binds to the `Copy` variable named
+3. **Copy.** Text that code reads from a string catalog binds to the `Copy` variable named
    after its key (see FIGMA_TOKENS.md); a semantic placeholder string otherwise.
-6. **Structure.** `ArtworkShelfItem`'s artwork and caption lines are flat siblings of the button
-   label — the tvOS borderless focus lockup breaks if they're wrapped in a stack.
 
 ## Liquid Glass calibration
 

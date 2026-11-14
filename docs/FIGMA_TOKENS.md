@@ -14,7 +14,7 @@ in [FIGMA_COMPONENTS.md](FIGMA_COMPONENTS.md).
 | `Platform` | tvOS, visionOS | 16 `spacing/…` + `spacing/platform-scale`, 9 `type/base-size/…`, 9 `type/base-weight/…`, 4 `type/tracking/…`, 3 `type/line-height/…`, `type/platform-scale` | `Tokens/SpacingTokens.swift`, `Tokens/TypographyTokens.swift` |
 | `Motion` | Value | 4 `duration/…`, 6 `easing/…`, `focus-scale`, `pressed-scale`, `caption-idle-opacity` | `Tokens/MotionTokens.swift` |
 | `System` | Mode 1 | 7 `tvOS/glass/…` (frost, light angle and strength, refraction, depth, dispersion, splay) — tuned by eye against Apple's UI kits | **Design-only.** tvOS draws the glass; these drive the Materials page. Bound to the glass effect in the app; the plugin API only sees the `frost` binding. |
-| `Copy` | en | 13 STRINGs, one per DesignSystem string-catalog key other than `#Preview` samples (`shelf.failed.retry` → `shelf/failed/retry`), and `failedShelfNotice/message` | `Localizable.xcstrings` in DesignSystem; key-named variables carry the key and translator comment. `failedShelfNotice/message` is still an inline literal, `FailedShelfNotice(message:)`'s default. Change code first, then Figma. |
+| `Copy` | en | 14 STRINGs: 13 named after DesignSystem string-catalog keys (every key but the `#Preview` samples; `shelf.failed.retry` → `shelf/failed/retry`), plus `failedShelfNotice/message` | `Localizable.xcstrings` in DesignSystem; key-named variables carry the key and translator comment. `failedShelfNotice/message` is still an inline literal, `FailedShelfNotice(message:)`'s default. Change code first, then Figma. |
 
 Switching a frame's `Theme` mode flips every bound color/type/motion value to that theme.
 Every variable carries iOS code syntax (`theme.accent`, `SpacingTokens.md`,
@@ -25,8 +25,8 @@ with the exact code formula in the variable description (Figma variables cannot 
 
 ## Representation deviations from code
 
-- **Two `Theme` variables are design-only**, derived from code rather than mirroring a Swift
-  token. `focus/system-platter` (BOOLEAN) is true where `theme.focusFill == nil` (Standard),
+- **Two `focus/…` `Theme` variables are design-only**, derived from code rather than mirroring
+  a Swift token (the `-clear` colours are the other design-only set; see the table). `focus/system-platter` (BOOLEAN) is true where `theme.focusFill == nil` (Standard),
   so glass buttons can show the white system platter. `focus/platter-padding` (FLOAT) sizes
   the focused glass circle: `SpacingTokens.sm × focusScale` = 16.8, except Standard's system
   glass lift, measured on the tvOS simulator at 18.25 (an 82.7pt circle).
@@ -68,14 +68,13 @@ with the exact code formula in the variable description (Figma variables cannot 
 - Component text uses semantic strings ("Item Title", "Item Subtitle", "Time Left",
   "Episode Description"), never mock titles.
 - **SF Pro does not render server-side** (verified 2026-10-30): every SF Pro / SF Compact
-  style lists and "loads" but lays out at zero width, so text overrides on components drawn
-  in SF Pro (the visionOS fields) fail over MCP. Edit that text by hand in the Figma app;
-  states, variants, and layout still automate.
+  style lists and "loads" but lays out at zero width, so it never shows in MCP screenshots
+  and hugging layouts measure it as empty. `setProperties` on an SF Pro text property fails;
+  writing `characters` on the layer after loading SF Pro works (verified 2026-11-13).
 - SF Symbols are SF Pro text in components (FIGMA_COMPONENTS.md, convention 3). The vector
   `icon` set that `scripts/figma/sf-symbols/` generated for ⮑ Icons is outdated.
-
-- **Copy variables bind to a text property's default, never to the text layer.** Binding a
-  layer's `characters` drops its component-property link, and instance overrides are then
+- **Copy variables bind to a text property's default, never to a property-linked text layer.**
+  Binding that layer's `characters` drops its component-property link, and instance overrides are then
   silently ignored. Bound as the property's default (`editComponentProperty(key,
   { defaultValue: alias })`), instances without an override follow the variable, overrides
   stick, and an instance can bind its own property to a variable (verified 2026-11-04).
