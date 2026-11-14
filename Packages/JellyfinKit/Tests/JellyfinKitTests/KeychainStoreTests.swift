@@ -355,4 +355,53 @@ struct SessionStoreTests {
 
         #expect(store.profiles().map(\.accessToken) == ["token-2", "legacy-token"])
     }
+
+    @Test("A legacy item whose delete failed does not bring a forgotten profile back")
+    func adoptedLegacyItemIsNotAdoptedTwice() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        try writeLegacySession(to: keychain)
+        let store = SessionStore(keychain: keychain)
+        try store.clearSession()
+
+        // The same item reappearing is what a failed delete leaves behind
+        try writeLegacySession(to: keychain)
+
+        #expect(SessionStore(keychain: keychain).load() == nil)
+        #expect(SessionStore(keychain: keychain).profiles().isEmpty)
+        #expect(try keychain.data(for: "session") == nil)
+    }
+
+    // MARK: - Server URL spelling
+
+    @Test("A trailing slash or uppercase host is the same profile")
+    func urlSpellingsAreOneProfile() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let store = SessionStore(keychain: keychain)
+        try store.save(makeSavedSession(server: URL(string: "http://NAS.local:8096/")!, token: "old"))
+
+        try store.save(makeSavedSession(server: URL(string: "http://nas.local:8096")!, token: "new"))
+
+        #expect(store.profiles().map(\.accessToken) == ["new"])
+    }
+
+    @Test("Normalising keeps a server path and its port")
+    func normalisingKeepsPathAndPort() {
+        let url = URL(string: "HTTPS://Media.Example.com:8920/jellyfin/")!
+        #expect(url.normalizedServerURL.absoluteString == "https://media.example.com:8920/jellyfin")
+    }
+
+    @Test("An active profile saved with a trailing slash stays active after the upgrade")
+    func unnormalisedActiveIDStillMatches() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let stored = #"""
+        {"profiles":[{"serverURL":"http:\/\/NAS.local:8096\/","userID":"user-1","accessToken":"token-1"}],
+         "activeID":{"serverURL":"http:\/\/NAS.local:8096\/","userID":"user-1"}}
+        """#
+        try keychain.setData(Data(stored.utf8), for: "profiles")
+
+        #expect(SessionStore(keychain: keychain).load()?.accessToken == "token-1")
+    }
 }

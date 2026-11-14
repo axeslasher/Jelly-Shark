@@ -187,6 +187,10 @@ public struct ServerConnectionView: View {
                 }
             } header: {
                 SettingsSectionHeader(Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to."))
+            } footer: {
+                // A failed switch, or a press ignored mid-change, would
+                // otherwise leave this page with no word of what happened
+                ProfileChangeNotices()
             }
 
             // Libraries Section
@@ -399,14 +403,29 @@ private struct SignInFields: View {
             }
             .padding(.horizontal, SpacingTokens.xl)
 
-            // Error Message
-            if let error = viewModel.errorMessage {
-                Text(error)
-                    .jsStyle(.caption)
-                    .foregroundStyle(theme.error)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, SpacingTokens.xl)
-            }
+            ProfileChangeNotices()
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, SpacingTokens.xl)
+        }
+    }
+}
+
+/// The error from the last profile change or sign-in, and the notice that a
+/// press was ignored while a change finishes. Plain text, never focusable.
+private struct ProfileChangeNotices: View {
+    @Environment(\.theme) private var theme
+    @Environment(ServerConnectionViewModel.self) private var viewModel
+
+    var body: some View {
+        if viewModel.showsBusyNotice {
+            Text("server.profile.busy", bundle: #bundle, comment: "Shown when a press is ignored because a profile change is still finishing.")
+                .jsStyle(.caption)
+                .foregroundStyle(theme.secondary)
+        }
+        if let error = viewModel.errorMessage {
+            Text(error)
+                .jsStyle(.caption)
+                .foregroundStyle(theme.error)
         }
     }
 }

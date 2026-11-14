@@ -355,6 +355,55 @@ struct SavedProfilesTests {
         #expect(!rig.viewModel.isChangingProfile)
     }
 
+    @Test("A press ignored during a profile change shows the busy notice until it ends")
+    func ignoredPressShowsBusyNotice() async {
+        let (rig, first, _) = await twoProfileRig()
+        let gate = AsyncGate()
+        rig.client(forToken: "token-2").signOutDelay = { await gate.waitIgnoringCancellation() }
+
+        let signOut = Task { await rig.viewModel.disconnect() }
+        await gate.arrivals(atLeast: 1)
+        #expect(!rig.viewModel.showsBusyNotice)
+        await rig.viewModel.switchToProfile(first.id)
+        #expect(rig.viewModel.showsBusyNotice)
+        await gate.open()
+        await signOut.value
+
+        #expect(!rig.viewModel.showsBusyNotice)
+    }
+
+    @Test("A switch whose profile can't restore goes back to the one the viewer was on")
+    func failedRestoreSwitchesBack() async {
+        let (rig, first, second) = await twoProfileRig()
+        rig.client(forToken: "token-1").fetchCurrentUserResult = .failure(URLError(.notConnectedToInternet))
+
+        await rig.viewModel.switchToProfile(first.id)
+
+        #expect(rig.viewModel.state == .connected)
+        #expect(rig.viewModel.activeProfileID == second.id)
+        #expect(rig.session.client as? MockJellyfinClient === rig.client(forToken: "token-2"))
+        #expect(rig.store.profiles().map(\.id).sorted { $0.userID < $1.userID } == [first.id, second.id])
+        #expect(rig.viewModel.errorMessage?.contains("Couldn't switch to user-1") == true)
+    }
+
+    @Test("A library list that answers after a switch doesn't replace the new profile's")
+    func lateLibraryRefreshIsDropped() async {
+        let (rig, first, _) = await twoProfileRig()
+        let oldClient = rig.client(forToken: "token-2")
+        oldClient.librariesResult = .success([Library(id: "old-lib", name: "Old", collectionType: .movies)])
+        let gate = AsyncGate()
+        oldClient.librariesDelay = { await gate.waitIgnoringCancellation() }
+        rig.client(forToken: "token-1").librariesResult = .success([Library(id: "new-lib", name: "New", collectionType: .movies)])
+
+        let refresh = Task { await rig.viewModel.refreshLibraries() }
+        await gate.arrivals(atLeast: 1)
+        await rig.viewModel.switchToProfile(first.id)
+        await gate.open()
+        await refresh.value
+
+        #expect(rig.viewModel.libraries.map(\.id) == ["new-lib"])
+    }
+
     @Test("A forgotten profile leaves the list before its server is asked to sign it out")
     func forgetRemovesBeforeNetwork() async {
         let (rig, first, second) = await twoProfileRig()

@@ -565,6 +565,18 @@
         }
       }
     },
+    "server.profile.busy": {
+      "comment": "Shown when a press is ignored because a profile change is still finishing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finishing the last profile change. Try again in a moment."
+          }
+        }
+      }
+    },
     "server.profile.forget": {
       "comment": "Dialog button that signs the chosen saved account out and removes it from this device.",
       "extractionState": "manual",
@@ -585,6 +597,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Switch to This Profile"
+          }
+        }
+      }
+    },
+    "server.profile.switchFailed %@ %@": {
+      "comment": "Shown when switching to a saved profile failed and the app went back to the previous one. The first variable is the profile's name, the second the reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't switch to %1$@. %2$@"
           }
         }
       }

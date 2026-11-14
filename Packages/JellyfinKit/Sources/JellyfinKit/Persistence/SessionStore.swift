@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Identifies a saved profile: one user on one server. Two sign-ins for the
@@ -6,9 +7,37 @@ public struct ProfileID: Codable, Hashable, Sendable {
     public let serverURL: URL
     public let userID: String
 
+    /// The URL is normalised so that two spellings of one server, such as a
+    /// trailing slash or an uppercase host, are one profile
     public init(serverURL: URL, userID: String) {
-        self.serverURL = serverURL
+        self.serverURL = serverURL.normalizedServerURL
         self.userID = userID
+    }
+
+    /// Decoded IDs are normalised too: an active ID saved before
+    /// normalisation must still match its profile, or the upgrade signs out
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            serverURL: container.decode(URL.self, forKey: .serverURL),
+            userID: container.decode(String.self, forKey: .userID),
+        )
+    }
+}
+
+public extension URL {
+    /// The server address in one canonical spelling: lowercase scheme and
+    /// host, no trailing slash. A path such as `/jellyfin` is kept.
+    var normalizedServerURL: URL {
+        guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else {
+            return self
+        }
+        components.scheme = components.scheme?.lowercased()
+        components.host = components.host?.lowercased()
+        while components.path.hasSuffix("/") {
+            components.path.removeLast()
+        }
+        return components.url ?? self
     }
 }
 
@@ -105,6 +134,10 @@ public struct SessionStore: SessionStoring, Sendable {
     private struct ProfileList: Codable {
         var profiles: [SavedSession] = []
         var activeID: ProfileID?
+        /// A hash of the legacy item last adopted, so one whose delete failed
+        /// isn't adopted again and can't bring back a profile forgotten since.
+        /// A hash, not the item: a forgotten token must not stay stored.
+        var adoptedLegacyFingerprint: String?
     }
 
     public init(service: String = "com.jellyshark.app") {
@@ -205,10 +238,17 @@ public struct SessionStore: SessionStoring, Sendable {
         else {
             return list
         }
+        let fingerprint = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard fingerprint != list.adoptedLegacyFingerprint else {
+            // Adopted already, and only its delete failed: try that again
+            try? keychain.delete(Self.legacySessionKey)
+            return list
+        }
         var adopted = list
         adopted.profiles.removeAll { $0.id == legacy.id }
         adopted.profiles.insert(legacy, at: 0)
         adopted.activeID = legacy.id
+        adopted.adoptedLegacyFingerprint = fingerprint
         // If this write fails the legacy item stays, and the next read adopts
         // it again
         try? write(adopted)

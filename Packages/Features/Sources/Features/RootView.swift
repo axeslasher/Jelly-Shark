@@ -302,6 +302,10 @@ public struct RootView: View {
                 // it, anything posted while it ran is not (§ 8).
                 let revisionAtStart = refreshCoordinator.revision
                 let didLoad = await homeViewModel.load()
+                // Cancelled by a session change: everything below reads the
+                // view models live, and the reset has already replaced them
+                // with the next session's, which its own pass sets up
+                guard !Task.isCancelled else { return }
 
                 // Before any affinity fetch: a saved-off preference must not
                 // spend a request at launch. `HomeView`'s toggle task runs later.

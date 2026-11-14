@@ -82,7 +82,17 @@ public final class ServerConnectionViewModel {
     /// usable, so the others are ignored until it finishes: a second one
     /// started in that window could remove a profile that had just become
     /// active.
-    public private(set) var isChangingProfile = false
+    public private(set) var isChangingProfile = false {
+        didSet {
+            if !isChangingProfile {
+                showsBusyNotice = false
+            }
+        }
+    }
+
+    /// Whether a press was ignored because a profile change is running.
+    /// Clears when that change ends, so the viewer knows to try again.
+    public private(set) var showsBusyNotice = false
 
     /// The active profile, when it is saved
     public var activeProfile: SavedSession? {
@@ -169,7 +179,7 @@ public final class ServerConnectionViewModel {
     public func connect() async {
         // Ignore re-entrant taps while a connection attempt is in flight, and
         // while a sign-out or teardown is still purging a cache scope
-        guard state != .connecting, state != .authenticating, !isChangingProfile else { return }
+        guard state != .connecting, state != .authenticating, !ignoredWhileChangingProfile() else { return }
 
         // Clear previous error
         errorMessage = nil
@@ -218,7 +228,7 @@ public final class ServerConnectionViewModel {
             await connect()
             return state == .connected
         }
-        guard !isChangingProfile else { return false }
+        guard !ignoredWhileChangingProfile() else { return false }
         errorMessage = nil
         guard let url = validatedServerURL() else { return false }
 
@@ -286,7 +296,7 @@ public final class ServerConnectionViewModel {
     /// profile being left keeps its token and its cache: it is switched
     /// away from, not signed out.
     public func switchToProfile(_ id: ProfileID) async {
-        guard !isChangingProfile else { return }
+        guard !ignoredWhileChangingProfile() else { return }
         isChangingProfile = true
         defer { isChangingProfile = false }
         await performSwitch(to: id)
@@ -296,6 +306,9 @@ public final class ServerConnectionViewModel {
         guard profiles.contains(where: { $0.id == id }) else { return }
         guard id != liveProfileID || state == .disconnected else { return }
         guard state != .connecting, state != .authenticating else { return }
+
+        let previous = state == .connected ? liveProfileID : nil
+        let targetName = profiles.first { $0.id == id }.map(Self.displayName) ?? ""
 
         // Before the current session ends: a Keychain failure here leaves the
         // viewer where they were, instead of signed out with nothing listed
@@ -308,6 +321,40 @@ public final class ServerConnectionViewModel {
         endSessionLocally()
         reloadProfiles()
         await restoreSession()
+
+        // A target that couldn't restore (server unreachable, no cache to
+        // open on) must not leave the viewer signed out: go back to the
+        // profile they were on, whose cache lets it open at once
+        guard state == .disconnected, let previous,
+              profiles.contains(where: { $0.id == previous })
+        else { return }
+        let reason = errorMessage ?? ""
+        do {
+            try sessionStore.activate(previous)
+        } catch {
+            return
+        }
+        reloadProfiles()
+        await restoreSession()
+        errorMessage = String(
+            localized: "server.profile.switchFailed \(targetName) \(reason)",
+            bundle: #bundle,
+            comment: "Shown when switching to a saved profile failed and the app went back to the previous one. The first variable is the profile's name, the second the reason.",
+        )
+    }
+
+    /// A profile's label: the user's name, or the server's host for a
+    /// profile saved before names were stored
+    private static func displayName(_ profile: SavedSession) -> String {
+        profile.userName ?? profile.serverURL.host() ?? profile.serverURL.absoluteString
+    }
+
+    /// True, and the busy notice shown, when a profile change is running
+    /// and this press must be ignored
+    private func ignoredWhileChangingProfile() -> Bool {
+        guard isChangingProfile else { return false }
+        showsBusyNotice = true
+        return true
     }
 
     /// Forget a saved profile: delete its token, purge its cache, and end its
@@ -315,7 +362,7 @@ public final class ServerConnectionViewModel {
     /// which then switches to the most recently used remaining profile, so a
     /// household's other sign-ins are never lost to one sign-out.
     public func forgetProfile(_ id: ProfileID) async {
-        guard !isChangingProfile else { return }
+        guard !ignoredWhileChangingProfile() else { return }
         if id == liveProfileID, state == .connected {
             await disconnect()
             return
@@ -504,8 +551,9 @@ public final class ServerConnectionViewModel {
                     isChangingProfile = false
                 }
                 isValidating = false
-                // A session published while this waited is the viewer's now
-                guard session?.connectionID == nil else { return }
+                // Cancelled while it waited (a switch or sign-in took over),
+                // or a session published meanwhile: that is the viewer's now
+                guard !Task.isCancelled, session?.connectionID == nil else { return }
                 errorMessage = message
                 state = .disconnected
                 connectedUser = nil
@@ -520,7 +568,7 @@ public final class ServerConnectionViewModel {
     /// it, and purge its cache. Switches to the most recently used remaining
     /// profile when there is one.
     public func disconnect() async {
-        guard !isChangingProfile else { return }
+        guard !ignoredWhileChangingProfile() else { return }
         isChangingProfile = true
         defer { isChangingProfile = false }
 
@@ -606,7 +654,9 @@ public final class ServerConnectionViewModel {
             return nil
         }
 
-        return url
+        // One spelling per server, so a trailing slash can't save a twin
+        // profile
+        return url.normalizedServerURL
     }
 
     /// Device name based on platform
@@ -653,7 +703,14 @@ public final class ServerConnectionViewModel {
     /// changed list into a `.libraries` refresh (#236).
     public func refreshLibraries() async {
         guard state == .connected, let client else { return }
+        let profileAtStart = liveProfileID
+        let connectionAtStart = session?.connectionID
         guard let all = try? await client.getLibraries() else { return }
+        // A switch keeps the old token valid, so this can answer after
+        // another profile is live; its list must not replace that one's
+        guard state == .connected, liveProfileID == profileAtStart,
+              session?.connectionID == connectionAtStart
+        else { return }
         // Written only on a change: `RootView` observes it, and this runs on
         // every idle refresh.
         if liveTVLibrary != all.liveTV {
