@@ -157,11 +157,12 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func save(_ session: SavedSession) throws {
-        var list = try readListForWriting()
+        let (stored, legacyRead) = try readListForWriting()
+        var list = stored
         list.profiles.removeAll { $0.id == session.id }
         list.profiles.insert(session, at: 0)
         list.activeID = session.id
-        try write(list)
+        try write(list, deletingLegacy: legacyRead)
     }
 
     public func load() -> SavedSession? {
@@ -175,29 +176,32 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func activate(_ id: ProfileID) throws {
-        var list = try readListForWriting()
+        let (stored, legacyRead) = try readListForWriting()
+        var list = stored
         guard let index = list.profiles.firstIndex(where: { $0.id == id }) else { return }
         let profile = list.profiles.remove(at: index)
         list.profiles.insert(profile, at: 0)
         list.activeID = id
-        try write(list)
+        try write(list, deletingLegacy: legacyRead)
     }
 
     public func remove(_ id: ProfileID) throws {
-        var list = try readListForWriting()
+        let (stored, legacyRead) = try readListForWriting()
+        var list = stored
         list.profiles.removeAll { $0.id == id }
         if list.activeID == id {
             list.activeID = nil
         }
-        try write(list)
+        try write(list, deletingLegacy: legacyRead)
     }
 
     public func clearSession() throws {
-        var list = try readListForWriting()
+        let (stored, legacyRead) = try readListForWriting()
+        var list = stored
         guard let activeID = list.activeID else { return }
         list.profiles.removeAll { $0.id == activeID }
         list.activeID = nil
-        try write(list)
+        try write(list, deletingLegacy: legacyRead)
     }
 
     public func deviceID() -> String {
@@ -218,20 +222,19 @@ public struct SessionStore: SessionStoring, Sendable {
     /// profiles, so the app falls back to the sign-in form instead of failing
     /// at launch.
     private func readList() -> ProfileList {
-        (try? storedList(throwingOnLegacyReadFailure: false)) ?? ProfileList()
+        (try? readListForWriting().list) ?? ProfileList()
     }
 
     /// The saved profiles, for a change that writes them back. A Keychain
     /// failure throws instead of reading as empty: writing a list built from
-    /// nothing would delete every other profile's token, and every write
-    /// deletes the legacy session, so one that couldn't be read would be lost
-    /// without being adopted. Corrupt data still reads as empty, since
-    /// nothing in it can be recovered.
-    private func readListForWriting() throws -> ProfileList {
-        try storedList(throwingOnLegacyReadFailure: true)
-    }
-
-    private func storedList(throwingOnLegacyReadFailure: Bool) throws -> ProfileList {
+    /// nothing would delete every other profile's token. Corrupt data still
+    /// reads as empty, since nothing in it can be recovered.
+    ///
+    /// `legacyRead` is false when the legacy session couldn't be read. The
+    /// write still goes ahead, so a sign-out or forget isn't blocked by an
+    /// unrelated item, but leaves the legacy session in place: deleting one
+    /// that was never read would lose it without adopting it.
+    private func readListForWriting() throws -> (list: ProfileList, legacyRead: Bool) {
         // A Keychain failure is not "nothing saved": adopting the legacy
         // session here could overwrite profiles that do exist
         let stored = try keychain.data(for: Self.profilesKey)
@@ -240,22 +243,19 @@ public struct SessionStore: SessionStoring, Sendable {
         do {
             legacyData = try keychain.data(for: Self.legacySessionKey)
         } catch {
-            if throwingOnLegacyReadFailure {
-                throw error
-            }
-            // Launch still shows the profiles that could be read
-            return list
+            return (list, false)
         }
-        return adoptingLegacySession(legacyData, into: list)
+        return (adoptingLegacySession(legacyData, into: list), true)
     }
 
     /// A session saved by a version from before profiles becomes the active
     /// profile, so nobody is signed out by the upgrade.
     ///
-    /// Every write deletes the legacy item, so one that exists was saved by an
-    /// older version after this one last wrote: the first launch after the
-    /// upgrade, or after a downgrade and a sign-in there. Either way it is the
-    /// newest sign-in, so it is adopted even when profiles already exist.
+    /// Every write that could read the legacy item deletes it, so one that
+    /// exists was saved by an older version after this one last wrote (the
+    /// first launch after the upgrade, or after a downgrade and a sign-in
+    /// there), or was unreadable then. Either way it hasn't been adopted, so it
+    /// is adopted even when profiles already exist.
     private func adoptingLegacySession(_ data: Data?, into list: ProfileList) -> ProfileList {
         guard let data,
               let legacy = try? JSONDecoder().decode(SavedSession.self, from: data)
@@ -275,16 +275,18 @@ public struct SessionStore: SessionStoring, Sendable {
         adopted.adoptedLegacyFingerprint = fingerprint
         // If this write fails the legacy item stays, and the next read adopts
         // it again
-        try? write(adopted)
+        try? write(adopted, deletingLegacy: true)
         return adopted
     }
 
-    private func write(_ list: ProfileList) throws {
+    private func write(_ list: ProfileList, deletingLegacy: Bool) throws {
         let data = try JSONEncoder().encode(list)
         try keychain.setData(data, for: Self.profilesKey)
         // Once the profile list exists the legacy item must not outlive it:
         // a forgotten profile's token would otherwise sit there, and be
         // adopted again if the list were ever lost
-        try? keychain.delete(Self.legacySessionKey)
+        if deletingLegacy {
+            try? keychain.delete(Self.legacySessionKey)
+        }
     }
 }
