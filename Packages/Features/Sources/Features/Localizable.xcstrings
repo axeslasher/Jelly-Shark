@@ -1,6 +1,30 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "addProfile.navigationTitle": {
+      "comment": "Title of the screen for signing in to another server or user.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Profile"
+          }
+        }
+      }
+    },
+    "addProfile.subtitle": {
+      "comment": "Subheading of the screen for signing in to another server or user. The current sign-in is kept.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to another server or user. You'll stay signed in here too, so you can switch back."
+          }
+        }
+      }
+    },
     "common.cancel": {
       "comment": "Button that dismisses a prompt without choosing anything.",
       "extractionState": "manual",
@@ -1141,18 +1165,6 @@
         }
       }
     },
-    "server.disconnect": {
-      "comment": "Button that signs out of the server.",
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disconnect"
-          }
-        }
-      }
-    },
     "server.libraries.header %lld": {
       "comment": "Section heading over the server's libraries. The variable is how many there are.",
       "extractionState": "manual",
@@ -1213,6 +1225,90 @@
         }
       }
     },
+    "server.profile.busy": {
+      "comment": "Shown when a press is ignored because a profile change is still finishing.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finishing the last profile change. Try again in a moment."
+          }
+        }
+      }
+    },
+    "server.profile.forget": {
+      "comment": "Dialog button that signs the chosen saved account out and removes it from this device.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Forget This Profile"
+          }
+        }
+      }
+    },
+    "server.profile.switch": {
+      "comment": "Dialog button that switches the app to the chosen saved server sign-in.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch to This Profile"
+          }
+        }
+      }
+    },
+    "server.profile.switchFailed %@ %@": {
+      "comment": "Shown when switching to a saved profile failed and the app went back to the previous one. The first variable is the profile's name, the second the reason.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't switch to %1$@. %2$@"
+          }
+        }
+      }
+    },
+    "server.profiles.add": {
+      "comment": "Row that opens the form for signing in to another server or user.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add Profile"
+          }
+        }
+      }
+    },
+    "server.profiles.add.subtitle": {
+      "comment": "Explains the Add Profile row: the current sign-in is kept so the viewer can switch back.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to another server or user and keep this one"
+          }
+        }
+      }
+    },
+    "server.profiles.header": {
+      "comment": "Heading over the list of saved server sign-ins the viewer can switch to.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved Profiles"
+          }
+        }
+      }
+    },
     "server.row.server": {
       "comment": "Label for the row showing the connected server's address.",
       "extractionState": "manual",
@@ -1221,6 +1317,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Server"
+          }
+        }
+      }
+    },
+    "server.signOut": {
+      "comment": "Button that signs out of the current server account and forgets it. If other accounts are saved, the app switches to one of them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign Out"
           }
         }
       }

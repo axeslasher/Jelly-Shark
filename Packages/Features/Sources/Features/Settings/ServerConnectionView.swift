@@ -8,6 +8,9 @@ public struct ServerConnectionView: View {
     @Environment(AppSession.self) private var session
     @Environment(ServerConnectionViewModel.self) private var viewModel
 
+    /// The saved profile whose Switch / Forget choice is showing
+    @State private var chosenProfile: SavedSession?
+
     public init() {}
 
     public var body: some View {
@@ -21,7 +24,11 @@ public struct ServerConnectionView: View {
                 connectedView
             }
         }
+        // tvOS can't restyle navigationTitle; each state shows SettingsPageTitle
+        #if os(visionOS)
         .navigationTitle(LocalizedStringResource("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
+        #endif
+        .profileChoiceDialog(for: $chosenProfile)
         .onAppear {
             viewModel.attach(session: session)
         }
@@ -30,13 +37,16 @@ public struct ServerConnectionView: View {
     // MARK: - Connection Form
 
     private var connectionForm: some View {
-        @Bindable var viewModel = viewModel
-        return ScrollView {
+        ScrollView {
             VStack(spacing: SpacingTokens.xl) {
+                SettingsPageTitle(Text("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SpacingTokens.xl)
+
                 // Header
                 VStack(spacing: SpacingTokens.md) {
                     Image(systemName: "server.rack")
-                        .font(.system(size: 64))
+                        .font(.system(size: SpacingTokens.xxl))
                         .foregroundStyle(theme.accent)
 
                     Text("signIn.title", bundle: #bundle, comment: "Heading of the sign-in screen. Jellyfin is a product name.")
@@ -50,59 +60,25 @@ public struct ServerConnectionView: View {
                 }
                 .padding(.top, SpacingTokens.xxl)
 
-                // Form Fields
-                VStack(spacing: SpacingTokens.lg) {
-                    // Server URL
+                // Profiles still saved after a sign-out or a revoked token:
+                // one press reconnects instead of retyping credentials
+                if !viewModel.profiles.isEmpty {
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("signIn.serverURL.label", bundle: #bundle, comment: "Label above the field for the server's web address.")
-                            .jsStyle(.caption)
-                            .foregroundStyle(theme.secondary)
+                        SettingsSectionHeader(Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to."))
 
-                        TextField(LocalizedStringResource("signIn.serverURL.placeholder", bundle: #bundle, comment: "Example address shown in the empty server field. Keep it a valid web address."), text: $viewModel.serverURL)
-                        #if os(visionOS)
-                            .textFieldStyle(.roundedBorder)
-                        #endif
-                            .autocorrectionDisabled()
-                        #if os(tvOS)
-                            .keyboardType(.URL)
-                        #endif
+                        ForEach(viewModel.profiles) { profile in
+                            Button {
+                                chosenProfile = profile
+                            } label: {
+                                SavedProfileRowLabel(profile: profile)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
                     }
-
-                    // Username
-                    VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("signIn.username.label", bundle: #bundle, comment: "Label above the username field.")
-                            .jsStyle(.caption)
-                            .foregroundStyle(theme.secondary)
-
-                        TextField(LocalizedStringResource("signIn.username.placeholder", bundle: #bundle, comment: "Example username shown in the empty field; it signs in to the public demo server."), text: $viewModel.username)
-                        #if os(visionOS)
-                            .textFieldStyle(.roundedBorder)
-                        #endif
-                            .autocorrectionDisabled()
-                    }
-
-                    // Password
-                    VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("signIn.password.label", bundle: #bundle, comment: "Label above the password field.")
-                            .jsStyle(.caption)
-                            .foregroundStyle(theme.secondary)
-
-                        SecureField(LocalizedStringResource("signIn.password.placeholder", bundle: #bundle, comment: "Placeholder in the empty password field."), text: $viewModel.password)
-                        #if os(visionOS)
-                            .textFieldStyle(.roundedBorder)
-                        #endif
-                    }
+                    .padding(.horizontal, SpacingTokens.xl)
                 }
-                .padding(.horizontal, SpacingTokens.xl)
 
-                // Error Message
-                if let error = viewModel.errorMessage {
-                    Text(error)
-                        .jsStyle(.caption)
-                        .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, SpacingTokens.xl)
-                }
+                SignInFields()
 
                 // Connect Button
                 Button {
@@ -113,10 +89,8 @@ public struct ServerConnectionView: View {
                     Text("signIn.connect", bundle: #bundle, comment: "Button that signs in to the server.")
                         .jsStyle(.body, .emphasized)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, SpacingTokens.md)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(theme.accent)
+                .glassButtonStyle(tint: theme.focusFill)
                 .padding(.horizontal, SpacingTokens.xl)
 
                 Spacer()
@@ -144,17 +118,20 @@ public struct ServerConnectionView: View {
 
     private var connectedView: some View {
         List {
+            SettingsPageTitle(Text("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
+
             // User Info Section
             Section {
                 if let user = viewModel.connectedUser {
                     HStack(spacing: SpacingTokens.md) {
                         if let client = session.client, user.primaryImageTag != nil {
-                            ArtworkImage(url: client.getUserImageURL(userId: user.id, maxWidth: 120))
-                                .frame(width: 40, height: 40)
+                            // Requested at 3x so the avatar stays sharp
+                            ArtworkImage(url: client.getUserImageURL(userId: user.id, maxWidth: Int(SpacingTokens.xl * 3)))
+                                .frame(width: SpacingTokens.xl, height: SpacingTokens.xl)
                                 .clipShape(Circle())
                         } else {
                             Image(systemName: "person.circle.fill")
-                                .font(.system(size: 40))
+                                .font(.system(size: SpacingTokens.xl))
                                 .foregroundStyle(theme.accent)
                         }
 
@@ -171,7 +148,7 @@ public struct ServerConnectionView: View {
                         Spacer()
 
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(theme.success)
                             .jsStyle(.title)
                     }
                     .padding(.vertical, SpacingTokens.xs)
@@ -184,13 +161,36 @@ public struct ServerConnectionView: View {
 
                     Spacer()
 
-                    Text(viewModel.serverURL)
+                    // The active profile, not the form's field: Add Profile
+                    // edits the field while this session stays connected
+                    Text(viewModel.activeProfile?.serverURL.absoluteString ?? viewModel.serverURL)
                         .jsStyle(.caption)
                         .foregroundStyle(theme.primary)
                         .lineLimit(1)
                 }
             } header: {
-                Text("server.connected", bundle: #bundle, comment: "Status shown once signed in to the server.")
+                SettingsSectionHeader(Text("server.connected", bundle: #bundle, comment: "Status shown once signed in to the server."))
+            }
+
+            // Saved Profiles Section
+            Section {
+                ForEach(viewModel.otherProfiles) { profile in
+                    Button {
+                        chosenProfile = profile
+                    } label: {
+                        SavedProfileRowLabel(profile: profile)
+                    }
+                }
+
+                NavigationLink(value: SettingsView.Destination.addProfile) {
+                    AddProfileRowLabel()
+                }
+            } header: {
+                SettingsSectionHeader(Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to."))
+            } footer: {
+                // A failed switch, or a press ignored mid-change, would
+                // otherwise leave this page with no word of what happened
+                ProfileChangeNotices()
             }
 
             // Libraries Section
@@ -205,7 +205,7 @@ public struct ServerConnectionView: View {
                             Image(systemName: iconForLibrary(library))
                                 .jsStyle(.title)
                                 .foregroundStyle(theme.accent)
-                                .frame(width: 32)
+                                .frame(width: SpacingTokens.lg)
 
                             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                                 Text(library.name)
@@ -223,34 +223,21 @@ public struct ServerConnectionView: View {
                     }
                 }
             } header: {
-                Text("server.libraries.header \(viewModel.libraries.count)", bundle: #bundle, comment: "Section heading over the server's libraries. The variable is how many there are.")
+                SettingsSectionHeader(Text("server.libraries.header \(viewModel.libraries.count)", bundle: #bundle, comment: "Section heading over the server's libraries. The variable is how many there are."))
             }
 
-            // Disconnect Section
+            // Sign Out Section
             Section {
                 Button(role: .destructive) {
                     Task {
                         await viewModel.disconnect()
                     }
                 } label: {
-                    HStack {
-                        Spacer()
-                        Text("server.disconnect", bundle: #bundle, comment: "Button that signs out of the server.")
-                            // Explicit colors so the label ignores the
-                            // destructive role's red text, which is illegible
-                            // on the themed background at rest. The system
-                            // focus platter respects explicit label styles,
-                            // so the pill reads the same focused.
-                            .jsStyle(.body)
-                            .foregroundStyle(theme.primary)
-                        Spacer()
-                    }
-                    .padding(.vertical, SpacingTokens.sm)
-                    .background(theme.error, in: .capsule)
+                    Text("server.signOut", bundle: #bundle, comment: "Button that signs out of the current server account and forgets it. If other accounts are saved, the app switches to one of them.")
+                        .jsStyle(.body, .emphasized)
+                        .frame(maxWidth: .infinity)
                 }
-                #if os(tvOS)
-                .buttonStyle(DestructiveFillButtonStyle())
-                #endif
+                .glassButtonStyle(tint: theme.focusFill)
             }
         }
         .background(theme.background)
@@ -290,26 +277,269 @@ public struct ServerConnectionView: View {
     }
 }
 
-#if os(tvOS)
-    /// The Disconnect pill presents focus itself: under the system list style
-    /// its error fill sat lifted on the white focus platter — a pill on a
-    /// platter. A custom style means no system platter, and focus is the
-    /// theme's focus scale alone — the capsule is the page's only filled
-    /// control, so the grow reads without a ring (a ring was tried and read
-    /// as clutter on device).
-    private struct DestructiveFillButtonStyle: ButtonStyle {
-        @Environment(\.theme) private var theme
-        @Environment(\.isFocused) private var isFocused
+// MARK: - Add Profile
 
-        func makeBody(configuration: Configuration) -> some View {
-            configuration.label
-                .scaleEffect(isFocused ? theme.focusScale : 1)
-                .scaleEffect(configuration.isPressed ? MotionTokens.pressedScale : 1)
-                .animation(theme.animation, value: isFocused)
-                .animation(MotionTokens.fast, value: configuration.isPressed)
+/// Sign in to another server or user while the current session stays
+/// connected. Pops back to the Server page once the new profile is active.
+struct AddProfileView: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.dismiss) private var dismiss
+    @Environment(ServerConnectionViewModel.self) private var viewModel
+
+    /// The sign-in started by Connect, cancelled if the viewer backs out so
+    /// a sign-in that finishes later doesn't switch profiles behind them
+    @State private var signIn: Task<Void, Never>?
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: SpacingTokens.xl) {
+                SettingsPageTitle(Text("addProfile.navigationTitle", bundle: #bundle, comment: "Title of the screen for signing in to another server or user."))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SpacingTokens.xl)
+
+                Text("addProfile.subtitle", bundle: #bundle, comment: "Subheading of the screen for signing in to another server or user. The current sign-in is kept.")
+                    .jsStyle(.body)
+                    .foregroundStyle(theme.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, SpacingTokens.xl)
+
+                SignInFields()
+
+                Button {
+                    // Presses while one is running are ignored here, so the
+                    // handle `onDisappear` cancels is always the running
+                    // sign-in. Not `.disabled`: disabling the focused button
+                    // would throw tvOS focus somewhere else on the page.
+                    guard signIn == nil else { return }
+                    signIn = Task {
+                        defer { signIn = nil }
+                        if await viewModel.addProfile(), !Task.isCancelled {
+                            dismiss()
+                        }
+                    }
+                } label: {
+                    Group {
+                        if viewModel.isAddingProfile {
+                            ProgressView()
+                        } else {
+                            Text("signIn.connect", bundle: #bundle, comment: "Button that signs in to the server.")
+                                .jsStyle(.body, .emphasized)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .glassButtonStyle(tint: theme.focusFill)
+                .padding(.horizontal, SpacingTokens.xl)
+
+                Spacer()
+            }
+        }
+        .background(theme.background)
+        #if os(visionOS)
+            .navigationTitle(LocalizedStringResource("addProfile.navigationTitle", bundle: #bundle, comment: "Title of the screen for signing in to another server or user."))
+        #endif
+            .onAppear {
+                viewModel.prepareAddProfile()
+            }
+            .onDisappear {
+                signIn?.cancel()
+                viewModel.endAddProfile()
+            }
+    }
+}
+
+// MARK: - Shared pieces
+
+/// Server URL, username and password fields with the sign-in error under
+/// them; shared by the first sign-in and Add Profile
+private struct SignInFields: View {
+    @Environment(\.theme) private var theme
+    @Environment(ServerConnectionViewModel.self) private var viewModel
+
+    var body: some View {
+        @Bindable var viewModel = viewModel
+        VStack(spacing: SpacingTokens.xl) {
+            VStack(spacing: SpacingTokens.lg) {
+                // Server URL
+                VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+                    Text("signIn.serverURL.label", bundle: #bundle, comment: "Label above the field for the server's web address.")
+                        .jsStyle(.caption)
+                        .foregroundStyle(theme.secondary)
+
+                    TextField(LocalizedStringResource("signIn.serverURL.placeholder", bundle: #bundle, comment: "Example address shown in the empty server field. Keep it a valid web address."), text: $viewModel.serverURL)
+                    #if os(visionOS)
+                        .textFieldStyle(.roundedBorder)
+                    #endif
+                        .autocorrectionDisabled()
+                    #if os(tvOS)
+                        .keyboardType(.URL)
+                    #endif
+                }
+
+                // Username
+                VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+                    Text("signIn.username.label", bundle: #bundle, comment: "Label above the username field.")
+                        .jsStyle(.caption)
+                        .foregroundStyle(theme.secondary)
+
+                    TextField(LocalizedStringResource("signIn.username.placeholder", bundle: #bundle, comment: "Example username shown in the empty field; it signs in to the public demo server."), text: $viewModel.username)
+                    #if os(visionOS)
+                        .textFieldStyle(.roundedBorder)
+                    #endif
+                        .autocorrectionDisabled()
+                }
+
+                // Password
+                VStack(alignment: .leading, spacing: SpacingTokens.xs) {
+                    Text("signIn.password.label", bundle: #bundle, comment: "Label above the password field.")
+                        .jsStyle(.caption)
+                        .foregroundStyle(theme.secondary)
+
+                    SecureField(LocalizedStringResource("signIn.password.placeholder", bundle: #bundle, comment: "Placeholder in the empty password field."), text: $viewModel.password)
+                    #if os(visionOS)
+                        .textFieldStyle(.roundedBorder)
+                    #endif
+                }
+            }
+            .padding(.horizontal, SpacingTokens.xl)
+
+            ProfileChangeNotices()
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, SpacingTokens.xl)
         }
     }
-#endif
+}
+
+/// The error from the last profile change or sign-in, and the notice that a
+/// press was ignored while a change finishes. Plain text, never focusable.
+private struct ProfileChangeNotices: View {
+    @Environment(\.theme) private var theme
+    @Environment(ServerConnectionViewModel.self) private var viewModel
+
+    var body: some View {
+        if viewModel.showsBusyNotice {
+            Text("server.profile.busy", bundle: #bundle, comment: "Shown when a press is ignored because a profile change is still finishing.")
+                .jsStyle(.caption)
+                .foregroundStyle(theme.secondary)
+        }
+        if let error = viewModel.errorMessage {
+            Text(error)
+                .jsStyle(.caption)
+                .foregroundStyle(theme.error)
+        }
+    }
+}
+
+/// A saved profile: the user's name over the server's. Profiles saved
+/// before names were stored fall back to the server's host.
+private struct SavedProfileRowLabel: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    let profile: SavedSession
+
+    var body: some View {
+        HStack(spacing: SpacingTokens.md) {
+            Image(systemName: "person.crop.circle")
+                .jsStyle(.title)
+                .foregroundStyle(theme.accent)
+                .frame(width: SpacingTokens.lg)
+
+            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                Text(verbatim: profile.userName ?? host)
+                    .jsStyle(.body)
+                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+
+                Text(verbatim: profile.serverName ?? host)
+                    .jsStyle(.caption)
+                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+            }
+        }
+        .padding(.vertical, SpacingTokens.xs)
+        .animation(theme.animation, value: isFocused)
+    }
+
+    private var host: String {
+        profile.serverURL.host() ?? profile.serverURL.absoluteString
+    }
+}
+
+private struct AddProfileRowLabel: View {
+    @Environment(\.theme) private var theme
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+        HStack(spacing: SpacingTokens.md) {
+            Image(systemName: "person.crop.circle.badge.plus")
+                .jsStyle(.title)
+                .foregroundStyle(theme.accent)
+                .frame(width: SpacingTokens.lg)
+
+            VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
+                Text("server.profiles.add", bundle: #bundle, comment: "Row that opens the form for signing in to another server or user.")
+                    .jsStyle(.body)
+                    .foregroundStyle(isFocused ? theme.onPlatter : theme.primary)
+
+                Text("server.profiles.add.subtitle", bundle: #bundle, comment: "Explains the Add Profile row: the current sign-in is kept so the viewer can switch back.")
+                    .jsStyle(.caption)
+                    .foregroundStyle(isFocused ? theme.onPlatterSecondary : theme.secondary)
+            }
+        }
+        .padding(.vertical, SpacingTokens.xs)
+        .animation(theme.animation, value: isFocused)
+    }
+}
+
+private extension View {
+    /// Switch to or forget the chosen saved profile. A dialog rather than a
+    /// long-press menu, which is slow and unreliable on tvOS (#256).
+    func profileChoiceDialog(for profile: Binding<SavedSession?>) -> some View {
+        modifier(ProfileChoiceDialog(chosenProfile: profile))
+    }
+}
+
+private struct ProfileChoiceDialog: ViewModifier {
+    @Environment(ServerConnectionViewModel.self) private var viewModel
+    @Binding var chosenProfile: SavedSession?
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog(
+            Text(verbatim: chosenProfile.map { $0.userName ?? $0.serverURL.host() ?? $0.serverURL.absoluteString } ?? ""),
+            isPresented: Binding(
+                get: { chosenProfile != nil },
+                set: {
+                    if !$0 {
+                        chosenProfile = nil
+                    }
+                },
+            ),
+            titleVisibility: .visible,
+            presenting: chosenProfile,
+        ) { profile in
+            Button {
+                Task {
+                    await viewModel.switchToProfile(profile.id)
+                }
+            } label: {
+                Text("server.profile.switch", bundle: #bundle, comment: "Dialog button that switches the app to the chosen saved server sign-in.")
+            }
+
+            Button(role: .destructive) {
+                Task {
+                    await viewModel.forgetProfile(profile.id)
+                }
+            } label: {
+                Text("server.profile.forget", bundle: #bundle, comment: "Dialog button that signs the chosen saved account out and removes it from this device.")
+            }
+
+            Button(role: .cancel) {} label: {
+                Text("common.cancel", bundle: #bundle, comment: "Button that dismisses a prompt without choosing anything.")
+            }
+        } message: { profile in
+            Text(verbatim: profile.serverName ?? profile.serverURL.absoluteString)
+        }
+    }
+}
 
 #if DEBUG
     #Preview("Standard", traits: .featuresEnvironment) {
@@ -339,6 +569,36 @@ public struct ServerConnectionView: View {
     #Preview("Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
         NavigationStack {
             ServerConnectionView()
+        }
+    }
+
+    #Preview("Add Profile – Standard", traits: .featuresEnvironment) {
+        NavigationStack {
+            AddProfileView()
+        }
+    }
+
+    #Preview("Add Profile – Horror", traits: .featuresEnvironment(theme: .horror)) {
+        NavigationStack {
+            AddProfileView()
+        }
+    }
+
+    #Preview("Add Profile – Action", traits: .featuresEnvironment(theme: .action)) {
+        NavigationStack {
+            AddProfileView()
+        }
+    }
+
+    #Preview("Add Profile – Video Store", traits: .featuresEnvironment(theme: .videoStore)) {
+        NavigationStack {
+            AddProfileView()
+        }
+    }
+
+    #Preview("Add Profile – Sci-Fi", traits: .featuresEnvironment(theme: .sciFi)) {
+        NavigationStack {
+            AddProfileView()
         }
     }
 #endif

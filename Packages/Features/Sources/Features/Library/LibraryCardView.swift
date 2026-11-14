@@ -23,6 +23,9 @@ struct LibraryCardView: View {
 
     @State private var viewModel = LibraryCardViewModel()
 
+    /// The session the view model's backdrop was picked under
+    @State private var loadedSession: UUID?
+
     var body: some View {
         GenreShelfItem(
             title: library.name,
@@ -34,10 +37,19 @@ struct LibraryCardView: View {
                 Task { await viewModel.backdropUnavailable(client: session.client, library: library) }
             },
         )
-        .task {
+        // Keyed on the session: a profile switch can publish the next session
+        // in the same update, and this card must not keep a backdrop the
+        // previous account picked.
+        .task(id: session.connectionID) {
             // The store lives on the session, so the handover happens here
             // rather than at init — `@State` cannot read the environment when
             // it builds the view model.
+            if loadedSession != session.connectionID {
+                if loadedSession != nil {
+                    viewModel = LibraryCardViewModel()
+                }
+                loadedSession = session.connectionID
+            }
             viewModel.attach(store: session.genreBackdrops)
             await viewModel.load(client: session.client, library: library)
         }

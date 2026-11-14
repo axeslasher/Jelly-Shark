@@ -75,7 +75,7 @@ struct LibraryItemsView: View {
             }
         }
         #endif
-        .task(id: session.isConnected) {
+        .task(id: session.connectionID) {
             viewModel.attach(
                 client: session.client,
                 initialQuery: initialQuery,

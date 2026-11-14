@@ -75,9 +75,10 @@ public final class SearchViewModel {
     /// The in-flight (debounced) search task, retained so it can be cancelled.
     private var searchTask: Task<Void, Never>?
 
-    /// The seed-terms fetch. Non-nil once started, and never reset — it is
-    /// what makes the fetch once-per-lifetime rather than once-per-visit.
-    private var seedTermsTask: Task<Void, Never>?
+    /// The seed-terms fetch. Non-nil once started, and reset only when the
+    /// session changes: it is what makes the fetch once per session rather
+    /// than once per visit. Readable so tests can await a superseded fetch.
+    private(set) var seedTermsTask: Task<Void, Never>?
 
     public init(limit: Int = 25, debounce: Duration = .milliseconds(300)) {
         self.limit = limit
@@ -124,7 +125,15 @@ public final class SearchViewModel {
     /// keeps the tab mounted across a disconnect, so without this the next
     /// account to sign in would be shown the previous account's library. Two
     /// Jellyfin users on one server do not necessarily see the same libraries.
-    public func attach(client: (any JellyfinClientProtocol)?) {
+    /// - Parameter session: The published session's identity. A different
+    ///   one (a sign-out, or a profile switch that replaced the client in one
+    ///   update) drops the previous account's results and seed terms. The same
+    ///   one, as on a return to the tab, keeps the query.
+    public func attach(client: (any JellyfinClientProtocol)?, session: UUID? = nil) {
+        if session != attachedSession, attachedSession != nil {
+            resetForSignOut()
+        }
+        attachedSession = session
         self.client = client
 
         guard let client else {
@@ -137,6 +146,9 @@ public final class SearchViewModel {
             await self?.fetchSeedTerms(client: client)
         }
     }
+
+    /// The session the current client belongs to
+    private var attachedSession: UUID?
 
     /// Drop every trace of the signed-out account and re-arm the seed fetch.
     private func resetForSignOut() {
@@ -209,9 +221,15 @@ public final class SearchViewModel {
     }
 
     private func fetchSeedTerms(client: any JellyfinClientProtocol) async {
+        // A session change cancels this task, but the request can still
+        // answer. Both writes check first, or the previous account's titles
+        // (or its late failure) would land on the next account's screen.
         do {
-            seedTerms = try await client.getSearchSuggestions(limit: Self.seedTermLimit)
+            let terms = try await client.getSearchSuggestions(limit: Self.seedTermLimit)
+            guard !Task.isCancelled else { return }
+            seedTerms = terms
         } catch {
+            guard !Task.isCancelled else { return }
             // Seeded terms are a nicety, not a feature the screen owes anyone.
             // A server that declines to answer gets the plain prompt — no
             // banner, no retry, no state to explain.

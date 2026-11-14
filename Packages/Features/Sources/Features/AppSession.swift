@@ -44,6 +44,15 @@ public final class AppSession {
     /// `.task(id: session.isConnected)` in the app would miss the flip.
     public private(set) var isConnected = false
 
+    /// Identifies the published session: a new value on every `setClient`,
+    /// nil while none is published.
+    ///
+    /// Key session-bound work on this rather than `isConnected`. A profile
+    /// switch can end one session and publish the next in a single update,
+    /// and SwiftUI then never sees `isConnected` go false: a task keyed on it
+    /// would keep the previous profile's content.
+    public private(set) var connectionID: UUID?
+
     public init() {}
 
     /// The in-flight overlay activation, retained so a sign-out (or a
@@ -57,6 +66,7 @@ public final class AppSession {
         self.client = client
         self.scopedCache = scopedCache
         isConnected = true
+        connectionID = UUID()
         activationTask?.cancel()
         activationTask = nil
         if let scopedCache {
@@ -86,6 +96,7 @@ public final class AppSession {
         client = nil
         scopedCache = nil
         isConnected = false
+        connectionID = nil
         userState.deactivate()
         genreBackdrops.deactivate()
     }
@@ -110,5 +121,5 @@ public final class AppSession {
 /// double as a privacy boundary.
 struct SessionScopedID<ContentID: Hashable>: Equatable {
     let content: ContentID
-    let isConnected: Bool
+    let session: UUID?
 }

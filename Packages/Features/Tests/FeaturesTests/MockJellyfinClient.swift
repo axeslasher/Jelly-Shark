@@ -150,6 +150,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// can show the instant connect doesn't wait on the version check
     var serverInfoDelay: (() async -> Void)?
     var authenticateCallCount = 0
+    /// The user and token a sign-in issues, so profile tests can sign in as
+    /// a second user
+    var authenticatedUserID = "user-1"
+    var issuedAccessToken = "token-1"
+    /// Thrown by `authenticate` when set, as wrong credentials would
+    var authenticateError: (any Error)?
+    var signOutCallCount = 0
+    /// Optional gate awaited before signing out, so a test can hold a
+    /// sign-out on the network while it tries something else
+    var signOutDelay: (() async -> Void)?
 
     func fetchPublicServerInfo() async throws -> ServerInfo {
         await serverInfoDelay?()
@@ -158,13 +168,18 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
     func authenticate(username: String, password _: String) async throws -> User {
         authenticateCallCount += 1
-        let user = User(id: "user-1", name: username)
+        if let authenticateError {
+            throw authenticateError
+        }
+        let user = User(id: authenticatedUserID, name: username)
         currentUser = user
-        accessToken = "token-1"
+        accessToken = issuedAccessToken
         return user
     }
 
     func signOut() async {
+        signOutCallCount += 1
+        await signOutDelay?()
         currentUser = nil
         accessToken = nil
     }
@@ -296,12 +311,16 @@ final class MockJellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// exactly once per view-model lifetime, however many times it attaches
     var searchSuggestionsCallCount = 0
     var searchSuggestionsResult: Result<[MediaItem], Error> = .success([])
+    /// Optional gate awaited before answering, so a test can hold a request
+    /// open across a session change
+    var searchSuggestionsDelay: (() async -> Void)?
 
     func getSearchSuggestions(limit _: Int?) async throws -> [MediaItem] {
         let result: Result<[MediaItem], Error> = lock.withLock {
             searchSuggestionsCallCount += 1
             return searchSuggestionsResult
         }
+        await searchSuggestionsDelay?()
         return try result.get()
     }
 

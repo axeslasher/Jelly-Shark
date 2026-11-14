@@ -25,6 +25,10 @@ public struct RootView: View {
     /// Now shelf read one copy, and so it survives tvOS tearing either down.
     @State private var liveGuide = LiveGuideModel()
 
+    /// The session the guide last loaded for, so its load task can tell a
+    /// new session (start clean) from a reload of the same one (keep rows)
+    @State private var liveGuideSession: UUID?
+
     /// Collects the reasons Home's content has gone stale, so a mutation
     /// made anywhere in the app is not lost while Home is off screen.
     @State private var refreshCoordinator = ContentRefreshCoordinator()
@@ -209,10 +213,19 @@ public struct RootView: View {
         #if os(tvOS)
             // Keyed on both: a restore publishes the cached library list
             // before the client, and either arriving second must start the load.
-            .task(id: LiveTVLoadKey(libraryID: connectionViewModel.liveTVLibrary?.id, isConnected: session.isConnected)) {
+            .task(id: LiveTVLoadKey(libraryID: connectionViewModel.liveTVLibrary?.id, session: session.connectionID)) {
                 guard connectionViewModel.liveTVLibrary != nil, let client = session.client else {
                     liveGuide.reset()
+                    liveGuideSession = nil
                     return
+                }
+                // The reset for a new session lives here, not in the
+                // session-change handler: run from there, it could land after
+                // this load had started, drop its answer and clear its client,
+                // leaving the guide on a spinner until relaunch
+                if liveGuideSession != session.connectionID {
+                    liveGuide.reset()
+                    liveGuideSession = session.connectionID
                 }
                 liveGuide.attach(client: client)
                 await liveGuide.load()
@@ -265,8 +278,8 @@ public struct RootView: View {
             // libraries and counts arrive, which rebuilds the tab's content and
             // cancels the old task while its replacement finds `needsLoad` already
             // consumed. A task on the root survives whatever the tab does.
-            .task(id: session.isConnected) {
-                // The update that flips `isConnected` can also change `libraries`
+            .task(id: session.connectionID) {
+                // The update that publishes a session can also change `libraries`
                 // (restore publishes the cached list, then the fresh one, in one
                 // turn). Its `onChange` posts `.libraries` in that same update, and
                 // this task's first synchronous stretch can run before it does —
@@ -289,6 +302,10 @@ public struct RootView: View {
                 // it, anything posted while it ran is not (§ 8).
                 let revisionAtStart = refreshCoordinator.revision
                 let didLoad = await homeViewModel.load()
+                // Cancelled by a session change: everything below reads the
+                // view models live, and the reset has already replaced them
+                // with the next session's, which its own pass sets up
+                guard !Task.isCancelled else { return }
 
                 // Before any affinity fetch: a saved-off preference must not
                 // spend a request at launch. `HomeView`'s toggle task runs later.
@@ -313,10 +330,14 @@ public struct RootView: View {
                 async let genres: Void = genreShelves.load()
                 async let affinity: Void = affinityShelves.validate()
                 await genres
+                // A pass cancelled because the session changed must not touch
+                // the gate below: the reset for the new session has already
+                // closed it, and the new session's own pass owns it now.
+                guard !Task.isCancelled else { return }
 
                 // Flipping this is what releases Home's drain — so only a pass
                 // that had a client may flip it. This task runs once with
-                // `isConnected == false` on every cold launch; that pass takes
+                // no session on every cold launch; that pass takes
                 // `load()`'s no-client branch and settles nothing, and opening the
                 // gate for it let the drain supersede the real load (#236 § 8.1).
                 refreshCoordinator.isInitialLoadSettled = loadedWithClient
@@ -338,12 +359,23 @@ public struct RootView: View {
             // `genreShelves`, and the next signed-in user's Home paints them for
             // one frame before its own load replaces them (#236 § 14.1). A fresh
             // instance carries no data to leak and no scroll/focus memory to
-            // misapply to a different library. Not gated on the *new* session
-            // connecting — nothing observes `isConnected` going true here, so
-            // resetting exactly on the false edge is enough and avoids
-            // discarding a session's state while it's still active.
-            .onChange(of: session.isConnected) { _, isConnected in
-                guard !isConnected else { return }
+            // misapply to a different library. Resets whenever a session ends,
+            // which includes a profile switch that publishes the next session
+            // in the same update (so `isConnected` never reads false), and
+            // never while a session is still active.
+            .onChange(of: session.connectionID) { endedSession, _ in
+                guard endedSession != nil else { return }
+                // A screen pushed under the ended session names an item on its
+                // server. visionOS keeps each tab's stack (tvOS pops it on the
+                // way to Settings), so returning to Home after a profile switch
+                // would reopen it against the next server. Settings keeps its
+                // stack: the switch is running there. Only stacks that exist are
+                // touched, so no tab gains an entry it never declared.
+                for (tab, path) in tabPaths where tab != .settings && !path.isEmpty {
+                    tabPaths[tab] = NavigationPath()
+                }
+                // The guide resets in its own load task (above), which runs
+                // for every new session
                 homeViewModel = HomeViewModel()
                 genreShelves = GenreShelvesViewModel()
                 affinityShelves = AffinityShelvesViewModel()
@@ -673,7 +705,7 @@ extension RootView {
 #if os(tvOS)
     private struct LiveTVLoadKey: Equatable {
         let libraryID: String?
-        let isConnected: Bool
+        let session: UUID?
     }
 #endif
 

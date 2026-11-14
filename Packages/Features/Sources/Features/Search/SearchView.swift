@@ -63,8 +63,8 @@ struct SearchView: View {
                 #endif
                 viewModel.updateQuery(newValue)
             }
-            .task(id: session.isConnected) {
-                viewModel.attach(client: session.client)
+            .task(id: session.connectionID) {
+                viewModel.attach(client: session.client, session: session.connectionID)
             }
         #if os(tvOS)
             .onChange(of: focusedItem) { _, item in

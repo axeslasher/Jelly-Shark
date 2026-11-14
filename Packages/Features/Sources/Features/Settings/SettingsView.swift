@@ -16,6 +16,7 @@ public struct SettingsView: View {
     /// pop-to-root covers Settings' stack too.
     enum Destination: Hashable {
         case serverConnection
+        case addProfile
         case themeSelection
         case streamingQuality
     }
@@ -125,6 +126,8 @@ public struct SettingsView: View {
             switch destination {
             case .serverConnection:
                 ServerConnectionView()
+            case .addProfile:
+                AddProfileView()
             case .themeSelection:
                 themeSelectionView
             case .streamingQuality:
@@ -151,21 +154,12 @@ public struct SettingsView: View {
         }
     }
 
-    /// Page title rendered in the theme's display face — the loudest
-    /// typographic differentiator between themes. tvOS can't restyle
-    /// `navigationTitle`, so the title lives in the list instead.
     private func pageTitle(_ title: String) -> some View {
-        Text(title)
-            .jsStyle(.display)
-            .foregroundStyle(theme.primary)
-            .padding(.bottom, SpacingTokens.md)
-            .listRowBackground(Color.clear)
+        SettingsPageTitle(Text(title))
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .jsStyle(.caption)
-            .foregroundStyle(theme.secondary)
+        SettingsSectionHeader(Text(title))
     }
 
     private func settingsRow(icon: String, title: String, subtitle: String) -> some View {
@@ -255,7 +249,7 @@ private struct SettingsRowLabel: View {
             Image(systemName: icon)
                 .jsStyle(.title)
                 .foregroundStyle(theme.accent)
-                .frame(width: 32)
+                .frame(width: SpacingTokens.lg)
 
             VStack(alignment: .leading, spacing: SpacingTokens.xxs) {
                 Text(title)
@@ -343,6 +337,42 @@ private extension StreamingQualityTier {
         case .mbps4: "For a slow or metered connection"
         case .mbps2: "For a connection that stalls at anything higher"
         }
+    }
+}
+
+/// Page title in the theme's display face, the loudest typographic
+/// difference between themes. tvOS can't restyle `navigationTitle`, so
+/// Settings pages put the title in their content instead.
+struct SettingsPageTitle: View {
+    @Environment(\.theme) private var theme
+    private let text: Text
+
+    init(_ text: Text) {
+        self.text = text
+    }
+
+    var body: some View {
+        text
+            .jsStyle(.display)
+            .foregroundStyle(theme.primary)
+            .padding(.bottom, SpacingTokens.md)
+            .listRowBackground(Color.clear)
+    }
+}
+
+/// Section heading on Settings pages, in the theme's caption face.
+struct SettingsSectionHeader: View {
+    @Environment(\.theme) private var theme
+    private let text: Text
+
+    init(_ text: Text) {
+        self.text = text
+    }
+
+    var body: some View {
+        text
+            .jsStyle(.caption)
+            .foregroundStyle(theme.secondary)
     }
 }
 

@@ -167,6 +167,12 @@ final class GenreBackdropStore {
         selections[key.storageKey]
     }
 
+    /// The profile the store is bound to, so a caller whose fetch outlived
+    /// a profile switch can tell before writing
+    var boundScope: CacheScope? {
+        cache?.scope
+    }
+
     /// Store a choice, or clear it with `nil`. Writes the whole map — tens of
     /// short strings, so the write itself is cheap; what it costs is the
     /// hydration race `activate` compensates for.
