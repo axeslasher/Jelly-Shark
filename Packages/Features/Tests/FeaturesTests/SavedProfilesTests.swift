@@ -333,7 +333,7 @@ struct SavedProfilesTests {
         await rig.viewModel.forgetProfile(first.id)
 
         #expect(rig.client(forToken: "token-1").signOutCallCount == 1)
-        #expect(rig.viewModel.errorMessage != nil)
+        #expect(rig.viewModel.errorMessage == "Couldn't remove user-1 from this device.")
         #expect(rig.viewModel.state == .connected)
     }
 
@@ -346,19 +346,21 @@ struct SavedProfilesTests {
 
         #expect(rig.client(forToken: "token-2").signOutCallCount == 1)
         #expect(rig.session.client as? MockJellyfinClient === rig.client(forToken: "token-1"))
-        #expect(rig.viewModel.errorMessage != nil)
+        #expect(rig.viewModel.errorMessage == "Couldn't remove user-2 from this device.")
     }
 
     @Test("Signing out of the only profile when the Keychain won't delete it signs out and says so")
     func signOutOfOnlyProfileWithFailedRemoval() async {
         let rig = await signedInRig()
         rig.store.removeError = KeychainError.unexpectedStatus(-25308)
+        let name = rig.viewModel.activeProfile?.userName ?? ""
 
         await rig.viewModel.disconnect()
 
         #expect(rig.viewModel.state == .disconnected)
         #expect(rig.session.connectionID == nil)
-        #expect(rig.viewModel.errorMessage != nil)
+        #expect(!name.isEmpty)
+        #expect(rig.viewModel.errorMessage == "Couldn't remove \(name) from this device.")
     }
 
     @Test("Profiles saved on a previous launch are listed before any restore")

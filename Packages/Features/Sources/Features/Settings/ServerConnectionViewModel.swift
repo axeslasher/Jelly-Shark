@@ -371,6 +371,14 @@ public final class ServerConnectionViewModel {
         )
     }
 
+    private static func removeFailedMessage(name: String) -> String {
+        String(
+            localized: "server.profile.removeFailed \(name)",
+            bundle: #bundle,
+            comment: "Shown when signing out of or forgetting a saved profile ended its session but the device couldn't delete the saved sign-in. The variable is the profile's name.",
+        )
+    }
+
     /// A profile's label: the user's name, or the server's host for a
     /// profile saved before names were stored
     private static func displayName(_ profile: SavedSession) -> String {
@@ -408,12 +416,7 @@ public final class ServerConnectionViewModel {
         // A Keychain that won't delete it doesn't stop the rest: the token is
         // still ended on the server and the cache purged, and a profile left
         // behind with a dead token is forgotten when next opened
-        var removalError: (any Error)?
-        do {
-            try sessionStore.remove(id)
-        } catch {
-            removalError = error
-        }
+        let removed = (try? sessionStore.remove(id)) != nil
         reloadProfiles()
         if let cache {
             await cache.purge(scope: CacheScope(serverURL: profile.serverURL, userID: profile.userID))
@@ -425,8 +428,8 @@ public final class ServerConnectionViewModel {
         // has the profile forgotten here
         let profileClient = makeClient(makeConfiguration(serverURL: profile.serverURL), profile)
         await profileClient.signOut()
-        if let removalError {
-            errorMessage = removalError.localizedDescription
+        if !removed {
+            errorMessage = Self.removeFailedMessage(name: Self.displayName(profile))
         }
     }
 
@@ -641,6 +644,7 @@ public final class ServerConnectionViewModel {
         // the live session's, which a failed Keychain write at sign-in can't
         // mislead, and which nothing started during the wait can change.
         let profileToForget = liveProfileID
+        let nameToForget = profiles.first { $0.id == profileToForget }.map(Self.displayName) ?? connectedUser?.name ?? ""
         let scopeToPurge: CacheScope? = {
             if let published = session?.scopedCache?.scope {
                 return published
@@ -659,13 +663,9 @@ public final class ServerConnectionViewModel {
         // A Keychain that won't delete it doesn't stop the sign-out: the
         // token is already ended, so a profile left behind is forgotten when
         // next opened.
-        var removalError: (any Error)?
+        var removed = true
         if let profileToForget {
-            do {
-                try sessionStore.remove(profileToForget)
-            } catch {
-                removalError = error
-            }
+            removed = (try? sessionStore.remove(profileToForget)) != nil
         }
 
         // Sign-out is a privacy boundary: the next account on this device
@@ -694,8 +694,8 @@ public final class ServerConnectionViewModel {
         }
         // After the switch, which clears the error: a failed switch's own
         // message says more
-        if let removalError, errorMessage == nil {
-            errorMessage = removalError.localizedDescription
+        if !removed, errorMessage == nil {
+            errorMessage = Self.removeFailedMessage(name: nameToForget)
         }
     }
 
