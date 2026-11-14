@@ -421,19 +421,43 @@ struct SessionStoreTests {
 
     // MARK: - Keychain failures
 
-    @Test("A failed read of the legacy session keeps it, and the write still goes through")
-    func legacyReadFailureKeepsLegacyItem() throws {
+    @Test("A save while the legacy session can't be read keeps the newer token once it can")
+    func unreadLegacyCannotOverwriteNewerToken() throws {
         let keychain = makeTestKeychain()
         defer { cleanUp(keychain) }
+        // The legacy item holds user-1's old token; user-1 signs in again
         try writeLegacySession(to: keychain)
-        let store = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
-        let saved = makeSavedSession(server: serverB, user: "user-2", token: "token-2")
+        let failing = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
+        try failing.save(makeSavedSession(token: "token-new"))
 
-        try store.save(saved)
+        // The read recovers: the old token must not replace the new one
+        let readable = SessionStore(keychain: keychain)
+        #expect(readable.profiles().map(\.accessToken) == ["token-new"])
+        #expect(try keychain.data(for: "session") == nil)
+    }
 
-        #expect(store.profiles() == [saved])
-        // Never read, so never adopted: deleting it would lose that sign-in
-        #expect(try keychain.data(for: "session") != nil)
+    @Test("A removal the legacy session can't be deleted for throws, so the viewer is told")
+    func removalThrowsWhenLegacyDeleteFails() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let saved = makeSavedSession(token: "token-1")
+        try SessionStore(keychain: keychain).save(saved)
+        try writeLegacySession(to: keychain)
+        let store = SessionStore(keychain: FailingKeychain(
+            wrapping: keychain,
+            failingReads: ["session"],
+            failingDeletes: ["session"],
+        ))
+
+        // clearSession first: it needs the profile still active, and each call
+        // writes the list before its legacy delete fails
+        #expect(throws: KeychainError.self) {
+            try store.clearSession()
+        }
+        #expect(throws: KeychainError.self) {
+            try store.remove(saved.id)
+        }
+        #expect(store.profiles().isEmpty)
     }
 
     @Test("A failed read of the legacy session doesn't block removing a profile")
@@ -482,11 +506,12 @@ struct SessionStoreTests {
     }
 }
 
-/// A real test keychain whose reads of some keys fail, as a locked or
-/// broken Keychain would
+/// A real test keychain whose reads or deletes of some keys fail, as a
+/// locked or broken Keychain would
 private struct FailingKeychain: KeychainStoring {
     let wrapping: KeychainStore
     let failingReads: Set<String>
+    var failingDeletes: Set<String> = []
 
     func setData(_ data: Data, for key: String) throws {
         try wrapping.setData(data, for: key)
@@ -509,6 +534,9 @@ private struct FailingKeychain: KeychainStoring {
     }
 
     func delete(_ key: String) throws {
+        if failingDeletes.contains(key) {
+            throw KeychainError.unexpectedStatus(errSecInteractionNotAllowed)
+        }
         try wrapping.delete(key)
     }
 }
