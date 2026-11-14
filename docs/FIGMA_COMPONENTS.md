@@ -14,9 +14,9 @@ bind to are documented in [FIGMA_TOKENS.md](FIGMA_TOKENS.md).
 | `base/artworkShelf/playback` (+ `progressTrack`) | `PlaybackBadge` / `playbackBadgeContent` in ArtworkShelfItem.swift — all three cases through `iconSlot`, `showProgressBar` and `timeLeft`, shown in *tvOS Theme Specimens — PlaybackBadge*; mapping in the *ArtworkShelfItem* spec |
 | `base/countBadge` | the countBadge overlay in ArtworkShelfItem.swift |
 | `base/shelfHeader` (⮑ Shelf Items; `title`, `icon` text, `hasIcon`) | the icon + headline `HStack` that `ContentShelf.swift` and `FailedShelfNotice.swift` each inline — **design-only consolidation**, so a change lands in both Swift files; icon size unverified (default tvOS body font) |
-| `tvOS/FailedShelfNotice` (⮑ Shelf Items; `hasTitle`, `message`, `hasRetry`, exposed `header` and `retry`) | `Components/FailedShelfNotice.swift` — nests `base/shelfHeader` and `tvOS/GlassCapsuleButton`; Retry's label is bound to `shelf/failed/retry`, its glyph set by hand; visionOS not modelled |
+| `tvOS/FailedShelfNotice` (⮑ Shelf Items; `hasTitle`, `message`, `hasRetry`, exposed `header` and `retry`) | `Components/FailedShelfNotice.swift` — nests `base/shelfHeader` and `tvOS/GlassCapsuleButton`; Retry's label is bound to `shelf/failed/retry` and its glyph is `arrow.clockwise`; visionOS not modelled |
 | `base/watchedIndicator` | **design-only** — no code counterpart (code expresses watched via `PlaybackBadge.played`) |
-| `tvOS/CastCard` (⮑ Shelf Items; Focus × hasImage, `name`, `role`, `hasRole`) | `Components/CastCard.swift` — Focus is the caption fade only; placeholder glyph set by hand |
+| `tvOS/CastCard` (⮑ Shelf Items; Focus × hasImage, `name`, `role`, `hasRole`) | `Components/CastCard.swift` — Focus is the caption fade only |
 | `tvOS/GenreShelfItem` (⮑ Shelf Items; `title`, `hasBackdrop`) | `Components/GenreShelfItem.swift` — blobs drawn for the seed of "Genre Name"; the spec holds the recipe |
 | `tvOS/ContentShelf` (⮑ Shelf Items; headerVisible, exposed `header`, `content` slot) | `Components/ContentShelf.swift` — 1920-wide frame; header is `base/shelfHeader` |
 | `GhostBlock`, `GhostCard` (`shape` 2:3\|16:9\|circle), `SkeletonShelf` (`shape`, `showsHeader`) (⮑ Shelf Items) | `Components/Skeleton.swift` — the *Skeleton* spec covers all three; the pulse isn't drawn |
@@ -52,9 +52,10 @@ Connect can show Swift snippets (see below).
    bind to the role's type variables and the fill follows the variants, with nothing to scale.
 
    SF Pro lays out at 0 pt wide on Figma's servers (re-checked 2026-11-13), so MCP can't
-   measure, screenshot or override these glyphs; `setProperties` on an SF Pro text property
-   fails with "uses a font that isn't available". A person enters each non-default glyph in
-   the Figma app. In a fixed glyph box that costs nothing; in a
+   measure or screenshot these glyphs. The characters themselves can be set:
+   `setProperties` on an SF Pro text property fails ("uses a font that isn't available"), but
+   loading SF Pro and writing `characters` on the instance's text layer works (verified
+   2026-11-13). In a fixed glyph box the blank render costs nothing; in a
    hugging label (`GlassCapsuleButton`) the button comes out one glyph narrow until the glyph
    is re-entered in the app.
 4. **Don't model what tvOS does for free.** Behaviour the system adds at runtime, such as a
