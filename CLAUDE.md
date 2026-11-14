@@ -288,7 +288,9 @@ Full documentation is available in the `/docs` directory:
 - **JELLYFIN_INTEGRATION.md**: API endpoints, authentication, data models, caching strategy
 - **PLAYBACK_MATRIX.md**: what each delivery path does to a given source — codec tags, HDR/DV signalling, audio passthrough, subtitles — measured against a live server, with verification markers and re-verification method
 - **RELEASING.md**: Versioning scheme, release naming, how to cut and tag a release
-- **FIGMA_TOKENS.md**: The Figma design file — variable collections mirroring the tokens, component↔code mapping, representation deviations, re-sync procedure
+- **FIGMA_TOKENS.md**: The Figma variables — collections mirroring the tokens, representation deviations, re-sync procedure
+- **FIGMA_COMPONENTS.md**: The Figma components — component↔code map, building conventions, Liquid Glass calibration, Code Connect, Dev Mode annotations
+- **COMPONENT_PROMOTION.md**: Which Features views should move into DesignSystem, the rule for deciding, and which stay put
 - **MEDIA_DETAIL_DATA.md**: Which `BaseItemDto` fields are mapped onto `MediaItem`, where the UI uses them, and which are still unmapped
 - **experimental/**: One page per feature that ships before it is finished — what works, known limits, what graduating takes. Live TV is the first
 - **spikes/issue-template.md**: Ledger template for a root-cause investigation — copy to `docs/spikes/<issue-number>.md` when one starts

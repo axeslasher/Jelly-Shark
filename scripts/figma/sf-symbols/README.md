@@ -1,8 +1,12 @@
 # SF Symbols → Figma `icon` set
 
+**Outdated.** Figma components now draw every SF Symbol as SF Pro text
+(docs/FIGMA_COMPONENTS.md, convention 3). Don't regenerate this set for new work; it stays
+only because `base/artworkShelf/playback` and `ArtworkShelfItem` still nest it.
+
 Regenerates the Figma library's `icon` component set from the SF Symbols app, sized and placed
-exactly as SwiftUI lays out `Image(systemName:)` at 18pt. Re-run it when a symbol is added to the
-app, or when a new OS changes Apple's artwork.
+exactly as SwiftUI lays out `Image(systemName:)` at 18pt. Run it only to repair a symbol those
+two legacy components use, such as after a new OS changes Apple's artwork.
 
 ## Run it
 
