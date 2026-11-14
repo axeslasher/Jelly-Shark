@@ -152,11 +152,15 @@
             let form = app.textFields.firstMatch
             let deadline = Date.now.addingTimeInterval(90)
             while !form.exists, Date.now < deadline {
-                XCTAssertTrue(serverPage.waitForExistence(timeout: 20), dump("No Server page"))
-                // Sign Out is the page's last row, below the fold. Swipe on a
-                // row: visionOS refuses a swipe on the app itself.
-                for _ in 0 ..< 4 where !disconnect.exists {
-                    serverPage.swipeUp()
+                // Either end of the page: a switch can keep the list scrolled
+                // to the bottom, with Add Profile out of the tree
+                XCTAssertNotNil(firstToExist([serverPage, disconnect], timeout: 20), dump("No Server page"))
+                // Sign Out is the page's last row, below the fold. Swipe on the
+                // list, which stays in the tree however far it scrolls:
+                // visionOS refuses a swipe on the app itself, and a row can
+                // scroll out before Sign Out scrolls in.
+                for _ in 0 ..< 6 where !disconnect.exists {
+                    serverList.swipeUp()
                 }
                 XCTAssertTrue(disconnect.waitForExistence(timeout: 5), dump("No Sign Out button"))
                 disconnect.tap()
@@ -233,6 +237,11 @@
         /// Profile row near the top stands for the page.
         private var serverPage: XCUIElement {
             app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH 'Add Profile'")).firstMatch
+        }
+
+        /// The Server page's scrolling list, to swipe on
+        private var serverList: XCUIElement {
+            app.collectionViews.firstMatch
         }
 
         /// Settings → Server, from wherever the app is, unless the sign-in

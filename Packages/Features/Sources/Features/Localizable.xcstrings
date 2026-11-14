@@ -1261,6 +1261,18 @@
         }
       }
     },
+    "server.profile.removeFailed %@": {
+      "comment": "Shown when signing out of or forgetting a saved profile ended its session but the device couldn't delete the saved sign-in. The variable is the profile's name.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't remove %@ from this device."
+          }
+        }
+      }
+    },
     "server.profile.switchFailed %@ %@": {
       "comment": "Shown when switching to a saved profile failed and the app went back to the previous one. The first variable is the profile's name, the second the reason.",
       "extractionState": "manual",

@@ -1,5 +1,6 @@
 import Foundation
 @testable import JellyfinKit
+import Security
 import Testing
 
 /// Make a store with a unique, test-specific service so tests never touch
@@ -416,5 +417,98 @@ struct SessionStoreTests {
         try keychain.setData(Data(stored.utf8), for: "profiles")
 
         #expect(SessionStore(keychain: keychain).load()?.accessToken == "token-1")
+    }
+
+    // MARK: - Keychain failures
+
+    @Test("A failed read of the legacy session keeps it, and the write still goes through")
+    func legacyReadFailureKeepsLegacyItem() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        try writeLegacySession(to: keychain)
+        let store = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
+        let saved = makeSavedSession(server: serverB, user: "user-2", token: "token-2")
+
+        try store.save(saved)
+
+        #expect(store.profiles() == [saved])
+        // Never read, so never adopted: deleting it would lose that sign-in
+        #expect(try keychain.data(for: "session") != nil)
+    }
+
+    @Test("A failed read of the legacy session doesn't block removing a profile")
+    func legacyReadFailureAllowsRemove() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let saved = makeSavedSession(server: serverB, user: "user-2", token: "token-2")
+        try SessionStore(keychain: keychain).save(saved)
+        try writeLegacySession(to: keychain)
+        let store = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
+
+        try store.remove(saved.id)
+
+        #expect(store.profiles().isEmpty)
+        let raw = try #require(try keychain.data(for: "profiles"))
+        #expect(String(decoding: raw, as: UTF8.self).contains("token-2") == false)
+    }
+
+    @Test("A profile forgotten while the legacy session can't be read doesn't come back once it can")
+    func forgottenProfileStaysForgottenAfterUnreadLegacy() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        // The legacy item was never read, and the same user signed in again
+        try writeLegacySession(to: keychain)
+        let failing = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
+        let same = makeSavedSession(token: "token-1")
+        try failing.save(same)
+
+        try failing.remove(same.id)
+
+        #expect(try keychain.data(for: "session") == nil)
+        #expect(SessionStore(keychain: keychain).profiles().isEmpty)
+    }
+
+    @Test("A failed read of the legacy session still lets launch read the saved profiles")
+    func legacyReadFailureKeepsLaunchRead() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        let saved = makeSavedSession(server: serverB, user: "user-2", token: "token-2")
+        try SessionStore(keychain: keychain).save(saved)
+        try writeLegacySession(to: keychain)
+        let store = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
+
+        #expect(store.load() == saved)
+        #expect(store.profiles() == [saved])
+    }
+}
+
+/// A real test keychain whose reads of some keys fail, as a locked or
+/// broken Keychain would
+private struct FailingKeychain: KeychainStoring {
+    let wrapping: KeychainStore
+    let failingReads: Set<String>
+
+    func setData(_ data: Data, for key: String) throws {
+        try wrapping.setData(data, for: key)
+    }
+
+    func data(for key: String) throws -> Data? {
+        if failingReads.contains(key) {
+            throw KeychainError.unexpectedStatus(errSecInteractionNotAllowed)
+        }
+        return try wrapping.data(for: key)
+    }
+
+    func setString(_ value: String, for key: String) throws {
+        try wrapping.setString(value, for: key)
+    }
+
+    func string(for key: String) throws -> String? {
+        guard let data = try data(for: key) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    func delete(_ key: String) throws {
+        try wrapping.delete(key)
     }
 }
