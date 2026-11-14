@@ -25,6 +25,10 @@ public struct RootView: View {
     /// Now shelf read one copy, and so it survives tvOS tearing either down.
     @State private var liveGuide = LiveGuideModel()
 
+    /// The session the guide last loaded for, so its load task can tell a
+    /// new session (start clean) from a reload of the same one (keep rows)
+    @State private var liveGuideSession: UUID?
+
     /// Collects the reasons Home's content has gone stale, so a mutation
     /// made anywhere in the app is not lost while Home is off screen.
     @State private var refreshCoordinator = ContentRefreshCoordinator()
@@ -212,7 +216,16 @@ public struct RootView: View {
             .task(id: LiveTVLoadKey(libraryID: connectionViewModel.liveTVLibrary?.id, session: session.connectionID)) {
                 guard connectionViewModel.liveTVLibrary != nil, let client = session.client else {
                     liveGuide.reset()
+                    liveGuideSession = nil
                     return
+                }
+                // The reset for a new session lives here, not in the
+                // session-change handler: run from there, it could land after
+                // this load had started, drop its answer and clear its client,
+                // leaving the guide on a spinner until relaunch
+                if liveGuideSession != session.connectionID {
+                    liveGuide.reset()
+                    liveGuideSession = session.connectionID
                 }
                 liveGuide.attach(client: client)
                 await liveGuide.load()
@@ -357,9 +370,8 @@ public struct RootView: View {
                 for (tab, path) in tabPaths where tab != .settings && !path.isEmpty {
                     tabPaths[tab] = NavigationPath()
                 }
-                // The guide keeps its rows across reloads of one session; a
-                // new session must not open on the previous one's channels
-                liveGuide.reset()
+                // The guide resets in its own load task (above), which runs
+                // for every new session
                 homeViewModel = HomeViewModel()
                 genreShelves = GenreShelvesViewModel()
                 affinityShelves = AffinityShelvesViewModel()
