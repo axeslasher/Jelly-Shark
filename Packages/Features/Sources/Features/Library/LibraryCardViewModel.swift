@@ -154,6 +154,10 @@ final class LibraryCardViewModel {
             // is remembered, so a library is sampled once per profile anyway.
             startIndex: 0,
         ) else { return false }
+        // The pick belongs to the profile that asked; a switch since then
+        // must neither hand it to the next one nor, through the repair path's
+        // "no artwork" answer, clear the next one's pick
+        guard store?.boundScope == scopeAtStart else { return false }
 
         let candidates = page.items.compactMap { item in
             client.backdropSlot(for: item).map { (item: item, slot: $0) }
@@ -176,9 +180,6 @@ final class LibraryCardViewModel {
             poolCount: page.totalRecordCount,
         )
         selection = chosenSelection
-        // The pick belongs to the profile that asked; a switch since then
-        // must not hand it to the next one
-        guard store?.boundScope == scopeAtStart else { return false }
         store?.setSelection(chosenSelection, for: Self.key(library: library))
         return true
     }
