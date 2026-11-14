@@ -307,6 +307,60 @@ struct SavedProfilesTests {
         #expect(rig.viewModel.otherProfiles == [first])
     }
 
+    // MARK: - Keychain failures
+
+    @Test("An added profile the Keychain won't save leaves the previous one switchable")
+    func unsavedAddedProfileKeepsPreviousSwitchable() async {
+        let rig = await signedInRig()
+        rig.store.saveError = KeychainError.unexpectedStatus(-25308)
+        rig.queuedSignIns = [signInClient(user: "user-2", token: "token-2")]
+        rig.viewModel.serverURL = serverB.absoluteString
+        rig.viewModel.username = "user-2"
+
+        await rig.viewModel.addProfile()
+
+        #expect(rig.viewModel.connectedUser?.id == "user-2")
+        #expect(rig.viewModel.otherProfiles.map(\.userID) == ["user-1"])
+        // The connected row must not show user-1's server while user-2 is on
+        #expect(rig.viewModel.activeProfile == nil)
+    }
+
+    @Test("Forgetting a profile the Keychain won't delete still ends its session and says so")
+    func forgetWithFailedRemovalReportsIt() async {
+        let (rig, first, _) = await twoProfileRig()
+        rig.store.removeError = KeychainError.unexpectedStatus(-25308)
+
+        await rig.viewModel.forgetProfile(first.id)
+
+        #expect(rig.client(forToken: "token-1").signOutCallCount == 1)
+        #expect(rig.viewModel.errorMessage != nil)
+        #expect(rig.viewModel.state == .connected)
+    }
+
+    @Test("Signing out of a profile the Keychain won't delete switches to another, not back to it")
+    func signOutWithFailedRemovalSwitchesToAnother() async {
+        let (rig, _, _) = await twoProfileRig()
+        rig.store.removeError = KeychainError.unexpectedStatus(-25308)
+
+        await rig.viewModel.disconnect()
+
+        #expect(rig.client(forToken: "token-2").signOutCallCount == 1)
+        #expect(rig.session.client as? MockJellyfinClient === rig.client(forToken: "token-1"))
+        #expect(rig.viewModel.errorMessage != nil)
+    }
+
+    @Test("Signing out of the only profile when the Keychain won't delete it signs out and says so")
+    func signOutOfOnlyProfileWithFailedRemoval() async {
+        let rig = await signedInRig()
+        rig.store.removeError = KeychainError.unexpectedStatus(-25308)
+
+        await rig.viewModel.disconnect()
+
+        #expect(rig.viewModel.state == .disconnected)
+        #expect(rig.session.connectionID == nil)
+        #expect(rig.viewModel.errorMessage != nil)
+    }
+
     @Test("Profiles saved on a previous launch are listed before any restore")
     func profilesLoadAtInit() {
         let store = InMemorySessionStore()
