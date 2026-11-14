@@ -186,22 +186,23 @@ public struct SessionStore: SessionStoring, Sendable {
     }
 
     public func remove(_ id: ProfileID) throws {
-        let (stored, legacyRead) = try readListForWriting()
-        var list = stored
+        var list = try readListForWriting().list
         list.profiles.removeAll { $0.id == id }
         if list.activeID == id {
             list.activeID = nil
         }
-        try write(list, deletingLegacy: legacyRead)
+        // Forgetting wins over keeping an unread legacy session: it may hold
+        // this very profile's token, which a later read would adopt again
+        try write(list, deletingLegacy: true)
     }
 
     public func clearSession() throws {
-        let (stored, legacyRead) = try readListForWriting()
-        var list = stored
+        var list = try readListForWriting().list
         guard let activeID = list.activeID else { return }
         list.profiles.removeAll { $0.id == activeID }
         list.activeID = nil
-        try write(list, deletingLegacy: legacyRead)
+        // As in `remove`: a forgotten profile must not come back
+        try write(list, deletingLegacy: true)
     }
 
     public func deviceID() -> String {
@@ -231,9 +232,10 @@ public struct SessionStore: SessionStoring, Sendable {
     /// reads as empty, since nothing in it can be recovered.
     ///
     /// `legacyRead` is false when the legacy session couldn't be read. The
-    /// write still goes ahead, so a sign-out or forget isn't blocked by an
-    /// unrelated item, but leaves the legacy session in place: deleting one
-    /// that was never read would lose it without adopting it.
+    /// write still goes ahead, so no change is blocked by an unrelated item. A
+    /// save or switch then leaves the legacy session in place, since deleting
+    /// one that was never read would lose it without adopting it. A forget
+    /// deletes it anyway, since it may be the forgotten profile.
     private func readListForWriting() throws -> (list: ProfileList, legacyRead: Bool) {
         // A Keychain failure is not "nothing saved": adopting the legacy
         // session here could overwrite profiles that do exist

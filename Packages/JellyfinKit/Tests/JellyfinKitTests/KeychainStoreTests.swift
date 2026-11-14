@@ -452,6 +452,22 @@ struct SessionStoreTests {
         #expect(String(decoding: raw, as: UTF8.self).contains("token-2") == false)
     }
 
+    @Test("A profile forgotten while the legacy session can't be read doesn't come back once it can")
+    func forgottenProfileStaysForgottenAfterUnreadLegacy() throws {
+        let keychain = makeTestKeychain()
+        defer { cleanUp(keychain) }
+        // The legacy item was never read, and the same user signed in again
+        try writeLegacySession(to: keychain)
+        let failing = SessionStore(keychain: FailingKeychain(wrapping: keychain, failingReads: ["session"]))
+        let same = makeSavedSession(token: "token-1")
+        try failing.save(same)
+
+        try failing.remove(same.id)
+
+        #expect(try keychain.data(for: "session") == nil)
+        #expect(SessionStore(keychain: keychain).profiles().isEmpty)
+    }
+
     @Test("A failed read of the legacy session still lets launch read the saved profiles")
     func legacyReadFailureKeepsLaunchRead() throws {
         let keychain = makeTestKeychain()
