@@ -57,7 +57,7 @@ struct AffinityShelvesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             ForEach(shelves, id: \.descriptor.id) { shelf in
-                ContentShelf(shelf.descriptor.title, icon: Self.icon(for: shelf.descriptor.kind)) {
+                ContentShelf(verbatim: shelf.descriptor.title, icon: Self.icon(for: shelf.descriptor.kind)) {
                     ForEach(shelf.items) { item in
                         item.posterShelfItem(
                             client: session.client,
@@ -75,7 +75,7 @@ struct AffinityShelvesView: View {
                 .transition(rowTransition)
             }
             if shelves.isEmpty, status.isFailed {
-                FailedShelfNotice(title: "Picks for you", icon: "sparkles", retry: onRetry)
+                FailedShelfNotice(title: LocalizedStringResource("affinity.shelf.failed", bundle: #bundle, comment: "Heading of the Home shelves picked from the viewer’s history, when they failed to load."), icon: "sparkles", retry: onRetry)
             }
         }
         .onGeometryChange(for: CGFloat.self) { proxy in

@@ -93,7 +93,7 @@ struct HomeShelvesSection: View {
                 // notice only appears when nothing rendered and a source
                 // failed (mergedStatus's contract).
                 if !mergedItems.isEmpty {
-                    ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
+                    ContentShelf(LocalizedStringResource("home.shelf.continueWatching", bundle: #bundle, comment: "Home shelf of titles the viewer has started."), icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(mergedItems) { item in
                             item.playableShelfItem(
                                 client: session.client,
@@ -108,11 +108,11 @@ struct HomeShelvesSection: View {
                     }
                     .transition(rowTransition)
                 } else if mergedStatus.isFailed {
-                    FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
+                    FailedShelfNotice(title: LocalizedStringResource("home.shelf.continueWatching", bundle: #bundle, comment: "Home shelf of titles the viewer has started."), icon: "popcorn.fill", retry: onRetry)
                 }
             } else {
                 if !resumeItems.isEmpty {
-                    ContentShelf("Continue Watching", icon: "popcorn.fill", headerVisible: showsResumeHeader) {
+                    ContentShelf(LocalizedStringResource("home.shelf.continueWatching", bundle: #bundle, comment: "Home shelf of titles the viewer has started."), icon: "popcorn.fill", headerVisible: showsResumeHeader) {
                         ForEach(resumeItems) { item in
                             item.playableShelfItem(
                                 client: session.client,
@@ -127,11 +127,11 @@ struct HomeShelvesSection: View {
                     }
                     .transition(rowTransition)
                 } else if resumeStatus.isFailed {
-                    FailedShelfNotice(title: "Continue Watching", icon: "popcorn.fill", retry: onRetry)
+                    FailedShelfNotice(title: LocalizedStringResource("home.shelf.continueWatching", bundle: #bundle, comment: "Home shelf of titles the viewer has started."), icon: "popcorn.fill", retry: onRetry)
                 }
 
                 if !nextUpItems.isEmpty {
-                    ContentShelf("Next Up", icon: "play.square.stack") {
+                    ContentShelf(LocalizedStringResource("home.shelf.nextUp", bundle: #bundle, comment: "Home shelf of the next episode to watch in each series."), icon: "play.square.stack") {
                         ForEach(nextUpItems) { item in
                             item.playableShelfItem(
                                 client: session.client,
@@ -146,12 +146,12 @@ struct HomeShelvesSection: View {
                     }
                     .transition(rowTransition)
                 } else if nextUpStatus.isFailed {
-                    FailedShelfNotice(title: "Next Up", icon: "play.square.stack", retry: onRetry)
+                    FailedShelfNotice(title: LocalizedStringResource("home.shelf.nextUp", bundle: #bundle, comment: "Home shelf of the next episode to watch in each series."), icon: "play.square.stack", retry: onRetry)
                 }
             }
 
             ForEach(latestShelves) { shelf in
-                ContentShelf("Recently Added \(shelf.library.name)", icon: "sparkles") {
+                ContentShelf(LocalizedStringResource("home.shelf.recentlyAddedIn \(shelf.library.name)", bundle: #bundle, comment: "Home shelf of new arrivals in one library. %@ is the library’s name from the server, such as “Movies”."), icon: "sparkles") {
                     ForEach(shelf.items) { item in
                         item.posterShelfItem(
                             client: session.client,
@@ -167,7 +167,7 @@ struct HomeShelvesSection: View {
                 .transition(rowTransition)
             }
             if latestShelves.isEmpty, latestStatus.isFailed {
-                FailedShelfNotice(title: "Recently Added", icon: "sparkles", retry: onRetry)
+                FailedShelfNotice(title: LocalizedStringResource("home.shelf.recentlyAdded", bundle: #bundle, comment: "Heading of the Home shelf of new arrivals, when it failed to load."), icon: "sparkles", retry: onRetry)
             }
         }
         .onGeometryChange(for: CGFloat.self) { proxy in

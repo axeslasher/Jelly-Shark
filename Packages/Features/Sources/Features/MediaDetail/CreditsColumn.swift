@@ -12,13 +12,13 @@ struct CreditsColumn: View {
         VStack(alignment: .leading, spacing: SpacingTokens.sm) {
             if !directorNames.isEmpty {
                 CreditEntry(
-                    label: directorNames.count > 1 ? "Directed by" : "Director",
+                    label: directorNames.count > 1 ? LocalizedStringResource("detail.credit.directedBy", bundle: #bundle, comment: "Eyebrow over several directors’ names. Small capitals label over a fact on a detail page; write it in capitals if the language has them.") : LocalizedStringResource("detail.credit.director", bundle: #bundle, comment: "Eyebrow over one director’s name. Small capitals label over a fact on a detail page; write it in capitals if the language has them."),
                     value: directorNames.formatted(.list(type: .and)),
                 )
             }
             if !castNames.isEmpty {
                 CreditEntry(
-                    label: "Starring",
+                    label: LocalizedStringResource("detail.credit.starring", bundle: #bundle, comment: "Eyebrow over the lead cast’s names. Small capitals label over a fact on a detail page; write it in capitals if the language has them."),
                     value: castNames.formatted(.list(type: .and)),
                 )
             }

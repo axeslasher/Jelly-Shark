@@ -21,6 +21,16 @@
       "extractionState": "manual",
       "shouldTranslate": false
     },
+    "Continue Watching": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Favorite": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
     "Idle captions dim to this": {
       "comment": "Sample text in a #Preview. Never shown in the app.",
       "extractionState": "manual",
@@ -31,12 +41,22 @@
       "extractionState": "manual",
       "shouldTranslate": false
     },
+    "Mark Watched": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
     "Placeholder lines keep layout but stay invisible": {
       "comment": "Sample text in a #Preview. Never shown in the app.",
       "extractionState": "manual",
       "shouldTranslate": false
     },
     "Plain with themed platter": {
+      "comment": "Sample text in a #Preview. Never shown in the app.",
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Replay": {
       "comment": "Sample text in a #Preview. Never shown in the app.",
       "extractionState": "manual",
       "shouldTranslate": false
@@ -74,6 +94,18 @@
           "stringUnit": {
             "state": "translated",
             "value": "Coming Soon"
+          }
+        }
+      }
+    },
+    "shelf.failed.message": {
+      "comment": "Shown where a row of posters would be when it failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn't load — check your connection"
           }
         }
       }

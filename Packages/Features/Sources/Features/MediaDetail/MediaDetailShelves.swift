@@ -29,7 +29,7 @@ struct CastShelfSection: View {
 
     var body: some View {
         if !people.isEmpty {
-            ContentShelf("Cast & Crew", icon: "person.2.fill") {
+            ContentShelf(LocalizedStringResource("detail.shelf.castAndCrew", bundle: #bundle, comment: "Detail page shelf of the title’s cast and crew."), icon: "person.2.fill") {
                 ForEach(people) { member in
                     // People without a real server id can't be fetched, so
                     // their cards keep the focus lift but don't navigate.
@@ -70,7 +70,7 @@ struct CollectionItemsSection: View {
 
     var body: some View {
         if !items.isEmpty {
-            ContentShelf("In This Collection", icon: "film.stack.fill") {
+            ContentShelf(LocalizedStringResource("detail.shelf.inThisCollection", bundle: #bundle, comment: "Detail page shelf of the films in a collection."), icon: "film.stack.fill") {
                 ForEach(items) { item in
                     // The collection IS this page's content (like episodes on
                     // a series page), so its posters render a step larger
@@ -90,7 +90,7 @@ struct SimilarItemsSection: View {
 
     var body: some View {
         if !items.isEmpty {
-            ContentShelf("More Like This", icon: "rectangle.stack.fill") {
+            ContentShelf(LocalizedStringResource("detail.shelf.moreLikeThis", bundle: #bundle, comment: "Detail page shelf of similar titles."), icon: "rectangle.stack.fill") {
                 ForEach(items) { item in
                     item.posterShelfItem(client: session.client)
                 }
@@ -126,7 +126,7 @@ struct GenreShelfSection: View {
             // No library name in the title, unlike Home's "Browse {library} by
             // genre": these cards aren't scoped to one, so naming one would be
             // a claim the destination doesn't honour.
-            ContentShelf("Browse by Genre", icon: "theatermasks.fill") {
+            ContentShelf(LocalizedStringResource("detail.shelf.browseByGenre", bundle: #bundle, comment: "Detail page shelf of the title’s genres."), icon: "theatermasks.fill") {
                 ForEach(shownGenres, id: \.self) { genre in
                     // Unscoped deliberately (#108): from a detail page "more
                     // Horror" means everything in the collection, not one
