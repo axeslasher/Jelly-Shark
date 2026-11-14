@@ -24,7 +24,10 @@ public struct ServerConnectionView: View {
                 connectedView
             }
         }
+        // tvOS can't restyle navigationTitle; each state shows SettingsPageTitle
+        #if os(visionOS)
         .navigationTitle(LocalizedStringResource("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
+        #endif
         .profileChoiceDialog(for: $chosenProfile)
         .onAppear {
             viewModel.attach(session: session)
@@ -36,6 +39,10 @@ public struct ServerConnectionView: View {
     private var connectionForm: some View {
         ScrollView {
             VStack(spacing: SpacingTokens.xl) {
+                SettingsPageTitle(Text("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SpacingTokens.xl)
+
                 // Header
                 VStack(spacing: SpacingTokens.md) {
                     Image(systemName: "server.rack")
@@ -57,9 +64,7 @@ public struct ServerConnectionView: View {
                 // one press reconnects instead of retyping credentials
                 if !viewModel.profiles.isEmpty {
                     VStack(alignment: .leading, spacing: SpacingTokens.xs) {
-                        Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to.")
-                            .jsStyle(.caption)
-                            .foregroundStyle(theme.secondary)
+                        SettingsSectionHeader(Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to."))
 
                         ForEach(viewModel.profiles) { profile in
                             Button {
@@ -115,6 +120,8 @@ public struct ServerConnectionView: View {
 
     private var connectedView: some View {
         List {
+            SettingsPageTitle(Text("server.navigationTitle", bundle: #bundle, comment: "Title of the screen for connecting to a Jellyfin server."))
+
             // User Info Section
             Section {
                 if let user = viewModel.connectedUser {
@@ -164,7 +171,7 @@ public struct ServerConnectionView: View {
                         .lineLimit(1)
                 }
             } header: {
-                Text("server.connected", bundle: #bundle, comment: "Status shown once signed in to the server.")
+                SettingsSectionHeader(Text("server.connected", bundle: #bundle, comment: "Status shown once signed in to the server."))
             }
 
             // Saved Profiles Section
@@ -181,7 +188,7 @@ public struct ServerConnectionView: View {
                     AddProfileRowLabel()
                 }
             } header: {
-                Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to.")
+                SettingsSectionHeader(Text("server.profiles.header", bundle: #bundle, comment: "Heading over the list of saved server sign-ins the viewer can switch to."))
             }
 
             // Libraries Section
@@ -214,7 +221,7 @@ public struct ServerConnectionView: View {
                     }
                 }
             } header: {
-                Text("server.libraries.header \(viewModel.libraries.count)", bundle: #bundle, comment: "Section heading over the server's libraries. The variable is how many there are.")
+                SettingsSectionHeader(Text("server.libraries.header \(viewModel.libraries.count)", bundle: #bundle, comment: "Section heading over the server's libraries. The variable is how many there are."))
             }
 
             // Sign Out Section
@@ -297,6 +304,10 @@ struct AddProfileView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: SpacingTokens.xl) {
+                SettingsPageTitle(Text("addProfile.navigationTitle", bundle: #bundle, comment: "Title of the screen for signing in to another server or user."))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SpacingTokens.xl)
+
                 Text("addProfile.subtitle", bundle: #bundle, comment: "Subheading of the screen for signing in to another server or user. The current sign-in is kept.")
                     .jsStyle(.body)
                     .foregroundStyle(theme.secondary)
@@ -337,14 +348,16 @@ struct AddProfileView: View {
             }
         }
         .background(theme.background)
-        .navigationTitle(LocalizedStringResource("addProfile.navigationTitle", bundle: #bundle, comment: "Title of the screen for signing in to another server or user."))
-        .onAppear {
-            viewModel.prepareAddProfile()
-        }
-        .onDisappear {
-            signIn?.cancel()
-            viewModel.endAddProfile()
-        }
+        #if os(visionOS)
+            .navigationTitle(LocalizedStringResource("addProfile.navigationTitle", bundle: #bundle, comment: "Title of the screen for signing in to another server or user."))
+        #endif
+            .onAppear {
+                viewModel.prepareAddProfile()
+            }
+            .onDisappear {
+                signIn?.cancel()
+                viewModel.endAddProfile()
+            }
     }
 }
 
