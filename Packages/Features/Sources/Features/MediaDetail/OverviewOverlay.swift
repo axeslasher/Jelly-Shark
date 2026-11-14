@@ -11,7 +11,7 @@ struct OverviewOverlay: View {
 
     /// Small uppercase label over the tagline, matching `OverviewLabel` —
     /// the episode page's "Season 4 · Episode 1".
-    var eyebrow: String?
+    var eyebrow: LocalizedStringResource?
     let tagline: String?
     let overview: String?
     let backdropURL: URL?
@@ -30,7 +30,6 @@ struct OverviewOverlay: View {
                         Text(eyebrow)
                             .jsStyle(.eyebrow)
                             .foregroundStyle(theme.tertiary)
-                            .textCase(.uppercase)
                     }
                     if let tagline, !tagline.isEmpty {
                         Text(tagline)

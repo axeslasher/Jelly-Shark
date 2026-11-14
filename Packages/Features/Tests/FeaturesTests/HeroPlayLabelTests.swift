@@ -12,21 +12,21 @@ struct HeroPlayLabelTests {
     @Test("Fresh, unwatched item reads Play with the play glyph")
     func freshItemReadsPlay() {
         let label = HeroPlayLabel.label(played: false, hasProgress: false)
-        #expect(label.title == "Play")
+        #expect(String(localized: label.title) == "Play")
         #expect(label.systemImage == "play.fill")
     }
 
     @Test("In-progress item reads Resume with the play glyph")
     func inProgressReadsResume() {
         let label = HeroPlayLabel.label(played: false, hasProgress: true)
-        #expect(label.title == "Resume")
+        #expect(String(localized: label.title) == "Resume")
         #expect(label.systemImage == "play.fill")
     }
 
     @Test("Fully-watched item reads Replay with the circular-arrow glyph")
     func watchedReadsReplay() {
         let label = HeroPlayLabel.label(played: true, hasProgress: false)
-        #expect(label.title == "Replay")
+        #expect(String(localized: label.title) == "Replay")
         #expect(label.systemImage == "arrow.counterclockwise")
     }
 }

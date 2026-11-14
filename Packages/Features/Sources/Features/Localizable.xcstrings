@@ -25,6 +25,18 @@
         }
       }
     },
+    "affinity.shelf.failed": {
+      "comment": "Heading of the Home shelves picked from the viewer’s history, when they failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picks for you"
+          }
+        }
+      }
+    },
     "common.cancel": {
       "comment": "Button that dismisses a prompt without choosing anything.",
       "extractionState": "manual",
@@ -49,6 +61,546 @@
         }
       }
     },
+    "detail.action.favorite": {
+      "comment": "Round button that adds the title or person to favorites.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorite"
+          }
+        }
+      }
+    },
+    "detail.action.favorited": {
+      "comment": "Round button label once the title or person is a favorite; pressing it removes the favorite.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Favorited"
+          }
+        }
+      }
+    },
+    "detail.action.goToSeries": {
+      "comment": "Round button on an episode’s detail page that opens its series.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Go to Series"
+          }
+        }
+      }
+    },
+    "detail.action.markWatched": {
+      "comment": "Round button on a detail page that marks the title watched.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark Watched"
+          }
+        }
+      }
+    },
+    "detail.action.watched": {
+      "comment": "Round button label on a detail page once the title is marked watched; pressing it marks it unwatched.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Watched"
+          }
+        }
+      }
+    },
+    "detail.credit.directedBy": {
+      "comment": "Eyebrow over several directors’ names. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DIRECTED BY"
+          }
+        }
+      }
+    },
+    "detail.credit.director": {
+      "comment": "Eyebrow over one director’s name. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "DIRECTOR"
+          }
+        }
+      }
+    },
+    "detail.credit.starring": {
+      "comment": "Eyebrow over the lead cast’s names. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STARRING"
+          }
+        }
+      }
+    },
+    "detail.eyebrow.seasonEpisode %lld %lld": {
+      "comment": "Small capitals over an episode’s overview, such as “SEASON 2 · EPISODE 4”; write it in capitals if the language has them. %1$lld is the season number, %2$lld the episode number.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SEASON %1$lld · EPISODE %2$lld"
+          }
+        }
+      }
+    },
+    "detail.failed.message": {
+      "comment": "Shown on a detail page whose details failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load details — check your connection"
+          }
+        }
+      }
+    },
+    "detail.info.aired": {
+      "comment": "Eyebrow over an episode’s air date. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AIRED"
+          }
+        }
+      }
+    },
+    "detail.info.audio": {
+      "comment": "Eyebrow over the audio track languages. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AUDIO"
+          }
+        }
+      }
+    },
+    "detail.info.bitrate": {
+      "comment": "Eyebrow over the bitrate. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "BITRATE"
+          }
+        }
+      }
+    },
+    "detail.info.column.file": {
+      "comment": "Heading of the detail page column of media file facts.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File"
+          }
+        }
+      }
+    },
+    "detail.info.column.information": {
+      "comment": "Heading of the detail page column of general facts.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Information"
+          }
+        }
+      }
+    },
+    "detail.info.column.languages": {
+      "comment": "Heading of the detail page column of audio and subtitle languages.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Languages"
+          }
+        }
+      }
+    },
+    "detail.info.container": {
+      "comment": "Eyebrow over the file format, such as MKV. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CONTAINER"
+          }
+        }
+      }
+    },
+    "detail.info.episode": {
+      "comment": "Eyebrow over where an episode sits in its series. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EPISODE"
+          }
+        }
+      }
+    },
+    "detail.info.fileName": {
+      "comment": "Eyebrow over the media file’s name. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FILE NAME"
+          }
+        }
+      }
+    },
+    "detail.info.firstAired": {
+      "comment": "Eyebrow over a series’ first air date. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FIRST AIRED"
+          }
+        }
+      }
+    },
+    "detail.info.fps %@": {
+      "comment": "A frame rate in frames per second. %@ is the number, already formatted, such as 23.976.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ fps"
+          }
+        }
+      }
+    },
+    "detail.info.frameRate": {
+      "comment": "Eyebrow over the frame rate. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "FRAME RATE"
+          }
+        }
+      }
+    },
+    "detail.info.genres": {
+      "comment": "Eyebrow over the genre names. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "GENRES"
+          }
+        }
+      }
+    },
+    "detail.info.mbps %@": {
+      "comment": "A bitrate in megabits per second. %@ is the number, already formatted, such as 12.5.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ Mbps"
+          }
+        }
+      }
+    },
+    "detail.info.originalAudio": {
+      "comment": "Eyebrow over the original audio language. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ORIGINAL AUDIO"
+          }
+        }
+      }
+    },
+    "detail.info.released": {
+      "comment": "Eyebrow over a film’s release date. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "RELEASED"
+          }
+        }
+      }
+    },
+    "detail.info.seasonEpisode %lld %lld": {
+      "comment": "Where an episode sits in its series, such as “Season 2, Episode 4”. %1$lld is the season number, %2$lld the episode number.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Season %1$lld, Episode %2$lld"
+          }
+        }
+      }
+    },
+    "detail.info.series": {
+      "comment": "Eyebrow over the series an episode belongs to. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SERIES"
+          }
+        }
+      }
+    },
+    "detail.info.size": {
+      "comment": "Eyebrow over the file size. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SIZE"
+          }
+        }
+      }
+    },
+    "detail.info.status": {
+      "comment": "Eyebrow over whether a series is still running. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STATUS"
+          }
+        }
+      }
+    },
+    "detail.info.studio": {
+      "comment": "Eyebrow over one studio name. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STUDIO"
+          }
+        }
+      }
+    },
+    "detail.info.studios": {
+      "comment": "Eyebrow over several studio names. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STUDIOS"
+          }
+        }
+      }
+    },
+    "detail.info.subtitles": {
+      "comment": "Eyebrow over the subtitle languages. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SUBTITLES"
+          }
+        }
+      }
+    },
+    "detail.info.videoCodec": {
+      "comment": "Eyebrow over the video codec, such as HEVC. Small capitals label over a fact on a detail page; write it in capitals if the language has them.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VIDEO CODEC"
+          }
+        }
+      }
+    },
+    "detail.play.play": {
+      "comment": "Play button on a detail page or the Home hero.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play"
+          }
+        }
+      }
+    },
+    "detail.play.playEpisode %@": {
+      "comment": "Play button on a series page. %@ is the episode’s code, such as S1E4.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play %@"
+          }
+        }
+      }
+    },
+    "detail.play.playFirst": {
+      "comment": "Play button on a collection: plays its first film.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play First"
+          }
+        }
+      }
+    },
+    "detail.play.playNext": {
+      "comment": "Play button on a collection the viewer is partway through: plays the next film.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Play Next"
+          }
+        }
+      }
+    },
+    "detail.play.replay": {
+      "comment": "Play button for a title already watched to the end.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replay"
+          }
+        }
+      }
+    },
+    "detail.play.resume": {
+      "comment": "Play button for a title the viewer has started.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume"
+          }
+        }
+      }
+    },
+    "detail.play.resumeEpisode %@": {
+      "comment": "Play button on a series page for an episode the viewer has started. %@ is the episode’s code, such as S1E4.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume %@"
+          }
+        }
+      }
+    },
+    "detail.shelf.browseByGenre": {
+      "comment": "Detail page shelf of the title’s genres.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse by Genre"
+          }
+        }
+      }
+    },
+    "detail.shelf.castAndCrew": {
+      "comment": "Detail page shelf of the title’s cast and crew.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cast & Crew"
+          }
+        }
+      }
+    },
+    "detail.shelf.inThisCollection": {
+      "comment": "Detail page shelf of the films in a collection.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "In This Collection"
+          }
+        }
+      }
+    },
+    "detail.shelf.moreLikeThis": {
+      "comment": "Detail page shelf of similar titles.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More Like This"
+          }
+        }
+      }
+    },
     "genre.card.shuffleImage": {
       "comment": "Menu action that shows a different backdrop on a genre card.",
       "extractionState": "manual",
@@ -57,6 +609,30 @@
           "stringUnit": {
             "state": "translated",
             "value": "Shuffle image"
+          }
+        }
+      }
+    },
+    "genre.shelf.browseLibrary %@": {
+      "comment": "Home shelf of genre cards for one library. %@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse %@ by genre"
+          }
+        }
+      }
+    },
+    "genre.shelf.failed": {
+      "comment": "Heading of the Home genre shelf when it failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse by genre"
           }
         }
       }
@@ -85,6 +661,30 @@
         }
       }
     },
+    "home.hero.details": {
+      "comment": "Round button on the Home hero that opens the title’s detail page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Details"
+          }
+        }
+      }
+    },
+    "home.hero.next": {
+      "comment": "Round button on the Home hero that moves to the next featured title.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next"
+          }
+        }
+      }
+    },
     "home.hero.play": {
       "comment": "Home hero button that starts an item from the beginning.",
       "extractionState": "manual",
@@ -105,6 +705,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Resume"
+          }
+        }
+      }
+    },
+    "home.shelf.continueWatching": {
+      "comment": "Home shelf of titles the viewer has started.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue Watching"
+          }
+        }
+      }
+    },
+    "home.shelf.nextUp": {
+      "comment": "Home shelf of the next episode to watch in each series.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Next Up"
+          }
+        }
+      }
+    },
+    "home.shelf.recentlyAdded": {
+      "comment": "Heading of the Home shelf of new arrivals, when it failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added"
+          }
+        }
+      }
+    },
+    "home.shelf.recentlyAddedIn %@": {
+      "comment": "Home shelf of new arrivals in one library. %@ is the library’s name from the server, such as “Movies”.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recently Added %@"
           }
         }
       }
@@ -985,6 +1633,18 @@
         }
       }
     },
+    "person.failed.message": {
+      "comment": "Shown on a person’s page when their filmography failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load filmography — check your connection"
+          }
+        }
+      }
+    },
     "player.failed.title": {
       "comment": "Heading shown when a video can't be played.",
       "extractionState": "manual",
@@ -1357,6 +2017,30 @@
         }
       }
     },
+    "settings.about.unknownVersion": {
+      "comment": "Stands in for the app version when it can’t be read.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "unknown"
+          }
+        }
+      }
+    },
+    "settings.about.version %@": {
+      "comment": "The app version in Settings, such as “Version 0.13.0 (42)”. %@ is the version.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version %@"
+          }
+        }
+      }
+    },
     "settings.navigationTitle": {
       "comment": "Title of the settings screen.",
       "extractionState": "manual",
@@ -1365,6 +2049,318 @@
           "stringUnit": {
             "state": "translated",
             "value": "Settings"
+          }
+        }
+      }
+    },
+    "settings.row.askWhichVersion": {
+      "comment": "Settings switch that asks which version to play when a title has several.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask Which Version"
+          }
+        }
+      }
+    },
+    "settings.row.askWhichVersion.subtitle": {
+      "comment": "Explains the Ask Which Version switch.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When a title has several versions, ask before playing instead of a long-press menu"
+          }
+        }
+      }
+    },
+    "settings.row.combinedContinueWatching": {
+      "comment": "Settings switch that merges the Next Up shelf into Continue Watching.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Combined Continue Watching"
+          }
+        }
+      }
+    },
+    "settings.row.combinedContinueWatching.subtitle": {
+      "comment": "Explains the Combined Continue Watching switch.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fold Next Up into one shelf, sorted by recent activity"
+          }
+        }
+      }
+    },
+    "settings.row.picksForYou": {
+      "comment": "Settings switch that shows Home shelves picked from the viewer’s history.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Picks for you"
+          }
+        }
+      }
+    },
+    "settings.row.picksForYou.subtitle": {
+      "comment": "Explains the Picks for you switch.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shelves built from what you’ve watched and favorited"
+          }
+        }
+      }
+    },
+    "settings.row.server": {
+      "comment": "Settings row that opens the server and profiles page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Server"
+          }
+        }
+      }
+    },
+    "settings.row.streamingQuality": {
+      "comment": "Settings row that opens the streaming quality picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Quality"
+          }
+        }
+      }
+    },
+    "settings.row.theme": {
+      "comment": "Settings row that opens the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Theme"
+          }
+        }
+      }
+    },
+    "settings.section.about": {
+      "comment": "Settings section heading over the app version.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "About"
+          }
+        }
+      }
+    },
+    "settings.section.appearance": {
+      "comment": "Settings section heading over the theme row.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appearance"
+          }
+        }
+      }
+    },
+    "settings.section.connection": {
+      "comment": "Settings section heading over the server row.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection"
+          }
+        }
+      }
+    },
+    "settings.section.home": {
+      "comment": "Settings section heading over the Home screen options.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Home"
+          }
+        }
+      }
+    },
+    "settings.section.playback": {
+      "comment": "Settings section heading over the playback options.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playback"
+          }
+        }
+      }
+    },
+    "settings.server.connected": {
+      "comment": "Server row subtitle once signed in, when the user’s name isn’t known yet.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected"
+          }
+        }
+      }
+    },
+    "settings.server.connectedAs %@": {
+      "comment": "Server row subtitle once signed in. %@ is the user’s name from the server.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connected as %@"
+          }
+        }
+      }
+    },
+    "settings.server.connecting": {
+      "comment": "Server row subtitle while signing in.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connecting..."
+          }
+        }
+      }
+    },
+    "settings.server.notConnected": {
+      "comment": "Server row subtitle when signed out.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not connected"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.maximum": {
+      "comment": "Streaming quality option with no limit below the player’s own ceiling.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Maximum"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.maximum.summary %lld": {
+      "comment": "Explains the Maximum streaming quality. %lld is the player’s ceiling in megabits per second, such as 120.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to %lld Mbps, best quality on a fast network"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.mbps %lld": {
+      "comment": "A streaming bitrate limit in megabits per second. %lld is the number, such as 40.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld Mbps"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.mbps2.summary": {
+      "comment": "Explains the 2 Mbps streaming limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For a connection that stalls at anything higher"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.mbps20.summary": {
+      "comment": "Explains the 20 Mbps streaming limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A comfortable ceiling for most home networks"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.mbps4.summary": {
+      "comment": "Explains the 4 Mbps streaming limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For a slow or metered connection"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.mbps40.summary": {
+      "comment": "Explains the 40 Mbps streaming limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plenty of room for large files on a strong home network"
+          }
+        }
+      }
+    },
+    "settings.streamingQuality.mbps8.summary": {
+      "comment": "Explains the 8 Mbps streaming limit.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "For a shared or busy connection"
           }
         }
       }
@@ -1381,6 +2377,42 @@
         }
       }
     },
+    "settings.streamingQuality.title": {
+      "comment": "Big title at the top of the streaming quality picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streaming Quality"
+          }
+        }
+      }
+    },
+    "settings.theme.action.summary": {
+      "comment": "One-line summary of the Action theme in the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kinetic energy, technological precision"
+          }
+        }
+      }
+    },
+    "settings.theme.horror.summary": {
+      "comment": "One-line summary of the Horror theme in the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Atmospheric dread, visceral intensity"
+          }
+        }
+      }
+    },
     "settings.theme.navigationTitle": {
       "comment": "Title of the screen for choosing a visual theme.",
       "extractionState": "manual",
@@ -1389,6 +2421,102 @@
           "stringUnit": {
             "state": "translated",
             "value": "Theme"
+          }
+        }
+      }
+    },
+    "settings.theme.sciFi.summary": {
+      "comment": "One-line summary of the Sci-Fi theme in the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deep-space greens, engineered precision"
+          }
+        }
+      }
+    },
+    "settings.theme.standard.summary": {
+      "comment": "One-line summary of the Standard theme in the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegant, timeless baseline"
+          }
+        }
+      }
+    },
+    "settings.theme.title": {
+      "comment": "Big title at the top of the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Theme"
+          }
+        }
+      }
+    },
+    "settings.theme.videoStore.summary": {
+      "comment": "One-line summary of the Video Store theme in the theme picker.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "90s nostalgia, Friday night vibes"
+          }
+        }
+      }
+    },
+    "settings.title": {
+      "comment": "Big title at the top of the Settings screen.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings"
+          }
+        }
+      }
+    },
+    "shelf.episodes": {
+      "comment": "Shelf of single episodes on a search or person page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Episodes"
+          }
+        }
+      }
+    },
+    "shelf.movies": {
+      "comment": "Shelf of films on a search or person page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Movies"
+          }
+        }
+      }
+    },
+    "shelf.tvSeries": {
+      "comment": "Shelf of TV series on a search or person page.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TV Series"
           }
         }
       }

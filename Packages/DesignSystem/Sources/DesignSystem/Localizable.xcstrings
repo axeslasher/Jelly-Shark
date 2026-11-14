@@ -78,6 +78,18 @@
         }
       }
     },
+    "shelf.failed.message": {
+      "comment": "Shown where a row of posters would be when it failed to load.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t load — check your connection"
+          }
+        }
+      }
+    },
     "shelf.failed.retry": {
       "comment": "Button that reloads a row of posters that failed to load.",
       "extractionState": "manual",

@@ -30,19 +30,19 @@ public struct SettingsView: View {
         @Bindable var playbackPreferences = playbackPreferences
 
         List {
-            pageTitle("Settings")
+            pageTitle(LocalizedStringResource("settings.title", bundle: #bundle, comment: "Big title at the top of the Settings screen."))
 
             // Server Section
             Section {
                 NavigationLink(value: Destination.serverConnection) {
                     settingsRow(
                         icon: "server.rack",
-                        title: "Server",
+                        title: LocalizedStringResource("settings.row.server", bundle: #bundle, comment: "Settings row that opens the server and profiles page."),
                         subtitle: serverSubtitle,
                     )
                 }
             } header: {
-                sectionHeader("Connection")
+                sectionHeader(LocalizedStringResource("settings.section.connection", bundle: #bundle, comment: "Settings section heading over the server row."))
             }
 
             // Appearance Section
@@ -50,12 +50,12 @@ public struct SettingsView: View {
                 NavigationLink(value: Destination.themeSelection) {
                     settingsRow(
                         icon: "paintpalette.fill",
-                        title: "Theme",
-                        subtitle: String(localized: themeManager.currentTheme.name),
+                        title: LocalizedStringResource("settings.row.theme", bundle: #bundle, comment: "Settings row that opens the theme picker."),
+                        subtitle: themeManager.currentTheme.name,
                     )
                 }
             } header: {
-                sectionHeader("Appearance")
+                sectionHeader(LocalizedStringResource("settings.section.appearance", bundle: #bundle, comment: "Settings section heading over the theme row."))
             }
 
             // Home Section
@@ -63,8 +63,8 @@ public struct SettingsView: View {
                 Toggle(isOn: $homePreferences.mergesContinueWatching) {
                     settingsRow(
                         icon: "popcorn.fill",
-                        title: "Combined Continue Watching",
-                        subtitle: "Fold Next Up into one shelf, sorted by recent activity",
+                        title: LocalizedStringResource("settings.row.combinedContinueWatching", bundle: #bundle, comment: "Settings switch that merges the Next Up shelf into Continue Watching."),
+                        subtitle: LocalizedStringResource("settings.row.combinedContinueWatching.subtitle", bundle: #bundle, comment: "Explains the Combined Continue Watching switch."),
                     )
                 }
                 .tint(theme.accent)
@@ -72,13 +72,13 @@ public struct SettingsView: View {
                 Toggle(isOn: $homePreferences.showsDiscoveryShelves) {
                     settingsRow(
                         icon: "sparkles",
-                        title: "Picks for you",
-                        subtitle: "Shelves built from what you've watched and favorited",
+                        title: LocalizedStringResource("settings.row.picksForYou", bundle: #bundle, comment: "Settings switch that shows Home shelves picked from the viewer’s history."),
+                        subtitle: LocalizedStringResource("settings.row.picksForYou.subtitle", bundle: #bundle, comment: "Explains the Picks for you switch."),
                     )
                 }
                 .tint(theme.accent)
             } header: {
-                sectionHeader("Home")
+                sectionHeader(LocalizedStringResource("settings.section.home", bundle: #bundle, comment: "Settings section heading over the Home screen options."))
             }
 
             // Playback Section
@@ -86,7 +86,7 @@ public struct SettingsView: View {
                 NavigationLink(value: Destination.streamingQuality) {
                     settingsRow(
                         icon: "gauge.with.dots.needle.67percent",
-                        title: "Streaming Quality",
+                        title: LocalizedStringResource("settings.row.streamingQuality", bundle: #bundle, comment: "Settings row that opens the streaming quality picker."),
                         subtitle: playbackPreferences.streamingQuality.displayName,
                     )
                 }
@@ -94,13 +94,13 @@ public struct SettingsView: View {
                 Toggle(isOn: $playbackPreferences.asksVersionBeforePlaying) {
                     settingsRow(
                         icon: "square.stack.3d.up.fill",
-                        title: "Ask Which Version",
-                        subtitle: "When a title has several versions, ask before playing instead of a long-press menu",
+                        title: LocalizedStringResource("settings.row.askWhichVersion", bundle: #bundle, comment: "Settings switch that asks which version to play when a title has several."),
+                        subtitle: LocalizedStringResource("settings.row.askWhichVersion.subtitle", bundle: #bundle, comment: "Explains the Ask Which Version switch."),
                     )
                 }
                 .tint(theme.accent)
             } header: {
-                sectionHeader("Playback")
+                sectionHeader(LocalizedStringResource("settings.section.playback", bundle: #bundle, comment: "Settings section heading over the playback options."))
             }
 
             // About Section — informational only, deliberately unfocusable: no
@@ -112,7 +112,7 @@ public struct SettingsView: View {
                     .foregroundStyle(theme.secondary)
                     .listRowBackground(Color.clear)
             } header: {
-                sectionHeader("About")
+                sectionHeader(LocalizedStringResource("settings.section.about", bundle: #bundle, comment: "Settings section heading over the app version."))
             }
         }
         // tvOS List is already transparent (and lacks this modifier); visionOS
@@ -136,46 +136,48 @@ public struct SettingsView: View {
         }
     }
 
-    private var versionText: String {
-        "Version \(AppVersion.text() ?? "unknown")"
+    private var versionText: LocalizedStringResource {
+        let version = AppVersion.text() ?? String(localized: LocalizedStringResource("settings.about.unknownVersion", bundle: #bundle, comment: "Stands in for the app version when it can’t be read."))
+        return LocalizedStringResource("settings.about.version \(version)", bundle: #bundle, comment: "The app version in Settings, such as “Version 0.13.0 (42)”. %@ is the version.")
     }
 
-    private var serverSubtitle: String {
+    private var serverSubtitle: LocalizedStringResource {
         switch connection.state {
         case .connected:
             if let user = connection.connectedUser {
-                return "Connected as \(user.name)"
+                let name = user.name
+                return LocalizedStringResource("settings.server.connectedAs \(name)", bundle: #bundle, comment: "Server row subtitle once signed in. %@ is the user’s name from the server.")
             }
-            return "Connected"
+            return LocalizedStringResource("settings.server.connected", bundle: #bundle, comment: "Server row subtitle once signed in, when the user’s name isn’t known yet.")
         case .connecting, .authenticating:
-            return "Connecting..."
+            return LocalizedStringResource("settings.server.connecting", bundle: #bundle, comment: "Server row subtitle while signing in.")
         case .disconnected:
-            return "Not connected"
+            return LocalizedStringResource("settings.server.notConnected", bundle: #bundle, comment: "Server row subtitle when signed out.")
         }
     }
 
-    private func pageTitle(_ title: String) -> some View {
+    private func pageTitle(_ title: LocalizedStringResource) -> some View {
         SettingsPageTitle(Text(title))
     }
 
-    private func sectionHeader(_ title: String) -> some View {
+    private func sectionHeader(_ title: LocalizedStringResource) -> some View {
         SettingsSectionHeader(Text(title))
     }
 
-    private func settingsRow(icon: String, title: String, subtitle: String) -> some View {
+    private func settingsRow(icon: String, title: LocalizedStringResource, subtitle: LocalizedStringResource) -> some View {
         SettingsRowLabel(icon: icon, title: title, subtitle: subtitle)
     }
 
     private var themeSelectionView: some View {
         List {
-            pageTitle("Theme")
+            pageTitle(LocalizedStringResource("settings.theme.title", bundle: #bundle, comment: "Big title at the top of the theme picker."))
 
             ForEach(themeManager.availableThemes, id: \.self) { (themeId: ThemeIdentifier) in
                 Button {
                     themeManager.switchTheme(to: themeId)
                 } label: {
                     SelectionRowLabel(
-                        name: String(localized: themeId.displayName),
+                        name: themeId.displayName,
                         description: themeDescription(for: themeId),
                         isSelected: themeManager.currentThemeId == themeId,
                     )
@@ -196,7 +198,7 @@ public struct SettingsView: View {
     /// platter behavior is proven on device here.
     private var streamingQualityView: some View {
         List {
-            pageTitle("Streaming Quality")
+            pageTitle(LocalizedStringResource("settings.streamingQuality.title", bundle: #bundle, comment: "Big title at the top of the streaming quality picker."))
 
             ForEach(StreamingQualityTier.allCases, id: \.self) { tier in
                 Button {
@@ -218,18 +220,18 @@ public struct SettingsView: View {
         .background(theme.background)
     }
 
-    private func themeDescription(for themeId: ThemeIdentifier) -> String {
+    private func themeDescription(for themeId: ThemeIdentifier) -> LocalizedStringResource {
         switch themeId {
         case .standard:
-            "Elegant, timeless baseline"
+            LocalizedStringResource("settings.theme.standard.summary", bundle: #bundle, comment: "One-line summary of the Standard theme in the theme picker.")
         case .horror:
-            "Atmospheric dread, visceral intensity"
+            LocalizedStringResource("settings.theme.horror.summary", bundle: #bundle, comment: "One-line summary of the Horror theme in the theme picker.")
         case .action:
-            "Kinetic energy, technological precision"
+            LocalizedStringResource("settings.theme.action.summary", bundle: #bundle, comment: "One-line summary of the Action theme in the theme picker.")
         case .videoStore:
-            "90s nostalgia, Friday night vibes"
+            LocalizedStringResource("settings.theme.videoStore.summary", bundle: #bundle, comment: "One-line summary of the Video Store theme in the theme picker.")
         case .sciFi:
-            "Deep-space greens, engineered precision"
+            LocalizedStringResource("settings.theme.sciFi.summary", bundle: #bundle, comment: "One-line summary of the Sci-Fi theme in the theme picker.")
         }
     }
 }
@@ -241,8 +243,8 @@ private struct SettingsRowLabel: View {
     @Environment(\.isFocused) private var isFocused
 
     let icon: String
-    let title: String
-    let subtitle: String
+    let title: LocalizedStringResource
+    let subtitle: LocalizedStringResource
 
     var body: some View {
         HStack(spacing: SpacingTokens.md) {
@@ -275,8 +277,8 @@ private struct SelectionRowLabel: View {
     @Environment(\.theme) private var theme
     @Environment(\.isFocused) private var isFocused
 
-    let name: String
-    let description: String
+    let name: LocalizedStringResource
+    let description: LocalizedStringResource
     let isSelected: Bool
 
     var body: some View {
@@ -305,22 +307,23 @@ private struct SelectionRowLabel: View {
 
 /// How the streaming tiers read to a viewer. The values live in JellyfinKit
 /// (they are what the server is asked for); the words are the app's, so the
-/// client package carries no UI strings.
+/// client package carries no UI strings. Number-only names ("40 Mbps")
+/// still go through the catalog: the unit and its spacing are the locale's.
 private extension StreamingQualityTier {
-    /// The engine's declared ceiling, formatted for the Maximum row, so the
+    /// The engine's declared ceiling in Mbps, for the Maximum row, so the
     /// label and the declaration cannot drift apart.
-    static var declaredCeilingLabel: String {
-        "\(AVFoundationPlayerEngine.capabilities.maxStreamingBitrate / 1_000_000) Mbps"
+    static var declaredCeilingMbps: Int {
+        AVFoundationPlayerEngine.capabilities.maxStreamingBitrate / 1_000_000
     }
 
-    var displayName: String {
+    var displayName: LocalizedStringResource {
         switch self {
-        case .maximum: "Maximum"
-        case .mbps40: "40 Mbps"
-        case .mbps20: "20 Mbps"
-        case .mbps8: "8 Mbps"
-        case .mbps4: "4 Mbps"
-        case .mbps2: "2 Mbps"
+        case .maximum: LocalizedStringResource("settings.streamingQuality.maximum", bundle: #bundle, comment: "Streaming quality option with no limit below the player’s own ceiling.")
+        case .mbps40: LocalizedStringResource("settings.streamingQuality.mbps \(40)", bundle: #bundle, comment: "A streaming bitrate limit in megabits per second. %lld is the number, such as 40.")
+        case .mbps20: LocalizedStringResource("settings.streamingQuality.mbps \(20)", bundle: #bundle, comment: "A streaming bitrate limit in megabits per second. %lld is the number, such as 40.")
+        case .mbps8: LocalizedStringResource("settings.streamingQuality.mbps \(8)", bundle: #bundle, comment: "A streaming bitrate limit in megabits per second. %lld is the number, such as 40.")
+        case .mbps4: LocalizedStringResource("settings.streamingQuality.mbps \(4)", bundle: #bundle, comment: "A streaming bitrate limit in megabits per second. %lld is the number, such as 40.")
+        case .mbps2: LocalizedStringResource("settings.streamingQuality.mbps \(2)", bundle: #bundle, comment: "A streaming bitrate limit in megabits per second. %lld is the number, such as 40.")
         }
     }
 
@@ -328,14 +331,14 @@ private extension StreamingQualityTier {
     /// ceiling and nothing else, so what the server sends back at a given
     /// tier depends on the source and its own encoder settings. These say
     /// which connection a tier is for, which is the part that is true.
-    var summary: String {
+    var summary: LocalizedStringResource {
         switch self {
-        case .maximum: "Up to \(Self.declaredCeilingLabel), best quality on a fast network"
-        case .mbps40: "Plenty of room for large files on a strong home network"
-        case .mbps20: "A comfortable ceiling for most home networks"
-        case .mbps8: "For a shared or busy connection"
-        case .mbps4: "For a slow or metered connection"
-        case .mbps2: "For a connection that stalls at anything higher"
+        case .maximum: LocalizedStringResource("settings.streamingQuality.maximum.summary \(Self.declaredCeilingMbps)", bundle: #bundle, comment: "Explains the Maximum streaming quality. %lld is the player’s ceiling in megabits per second, such as 120.")
+        case .mbps40: LocalizedStringResource("settings.streamingQuality.mbps40.summary", bundle: #bundle, comment: "Explains the 40 Mbps streaming limit.")
+        case .mbps20: LocalizedStringResource("settings.streamingQuality.mbps20.summary", bundle: #bundle, comment: "Explains the 20 Mbps streaming limit.")
+        case .mbps8: LocalizedStringResource("settings.streamingQuality.mbps8.summary", bundle: #bundle, comment: "Explains the 8 Mbps streaming limit.")
+        case .mbps4: LocalizedStringResource("settings.streamingQuality.mbps4.summary", bundle: #bundle, comment: "Explains the 4 Mbps streaming limit.")
+        case .mbps2: LocalizedStringResource("settings.streamingQuality.mbps2.summary", bundle: #bundle, comment: "Explains the 2 Mbps streaming limit.")
         }
     }
 }

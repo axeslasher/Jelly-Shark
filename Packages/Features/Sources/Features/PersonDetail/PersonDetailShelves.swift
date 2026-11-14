@@ -22,7 +22,7 @@ struct PersonShelfSection: View {
         case episode
     }
 
-    let title: String
+    let title: LocalizedStringResource
     let icon: String
     let items: [MediaItem]
     let style: Style
