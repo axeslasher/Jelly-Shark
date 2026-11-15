@@ -20,6 +20,26 @@ back to the system font (San Francisco). See `FontScheme.swift`.
 Run `make fonts` from the repo root. It fetches every file below from Fontshare
 and the google/fonts repo, skips files already present, and re-downloads
 everything with `make fonts FORCE=1`. The script is `scripts/fetch-fonts.sh`.
+It fails unless every file matches `scripts/fonts.sha256`, and the release
+workflow runs it before archiving, so a changed font can't reach a build
+unnoticed.
+
+## Updating a font
+
+Fontshare always serves its latest build, so an upstream update shows up as a
+checksum failure. To take it on purpose:
+
+1. Run `make fonts FORCE=1`, which re-downloads and fails on the changed files.
+2. Check the new files on device in every theme that uses them.
+3. Regenerate the list in the same PR, from the repo root (Atkinson is
+   committed, so it stays out of the list):
+
+   ```bash
+   (cd Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts &&
+     shasum -a 256 $(ls *.ttf | grep -v Atkinson)) > scripts/fonts.sha256
+   ```
+
+   For a Google font, also move the commit pinned in `GOOGLE_URL`.
 
 To download by hand instead:
 

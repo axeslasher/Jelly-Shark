@@ -8,13 +8,21 @@
 #
 # Files already present are skipped, so re-running only fills gaps. FORCE=1
 # re-downloads everything.
+#
+# Every file, fetched or already present, must match scripts/fonts.sha256.
+# Release builds embed these bytes in a signed app, and Fontshare's API always
+# serves its latest build, so the checksums are what stop an upstream change
+# from shipping unnoticed. Updating a font means refreshing that file in the
+# same change (FONTS.md § Updating a font).
 
 set -eu
 
-FONTS_DIR="$(cd "$(dirname "$0")/.." && pwd)/Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts"
+SCRIPTS_DIR="$(cd "$(dirname "$0")" && pwd)"
+FONTS_DIR="$(cd "$SCRIPTS_DIR/.." && pwd)/Packages/DesignSystem/Sources/DesignSystem/Resources/Fonts"
 FONTSHARE_URL="https://api.fontshare.com/v2/fonts/download"
-# Brackets in Google's variable-font filenames are URL-encoded (%5B, %5D).
-GOOGLE_URL="https://raw.githubusercontent.com/google/fonts/main/ofl"
+# Pinned to a google/fonts commit rather than main. Brackets in Google's
+# variable-font filenames are URL-encoded (%5B, %5D).
+GOOGLE_URL="https://raw.githubusercontent.com/google/fonts/cc39c4c2c304bc368c9b7c311ea2bcc6013299fe/ofl"
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
@@ -69,4 +77,9 @@ google grenze 'Grenze%5Bwght%5D.ttf' Grenze-VariableFont_wght.ttf
 google grenze 'Grenze-Italic%5Bwght%5D.ttf' Grenze-Italic-VariableFont_wght.ttf
 google grenzegotisch 'GrenzeGotisch%5Bwght%5D.ttf' GrenzeGotisch-VariableFont_wght.ttf
 
-echo "Fonts ready in $FONTS_DIR"
+if ! (cd "$FONTS_DIR" && shasum -a 256 -c --quiet "$SCRIPTS_DIR/fonts.sha256"); then
+    echo "error: fonts don't match scripts/fonts.sha256; see FONTS.md § Updating a font" >&2
+    exit 1
+fi
+
+echo "Fonts ready and verified in $FONTS_DIR"
