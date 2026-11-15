@@ -10,7 +10,7 @@ import SwiftUI
 /// Callers supply their own items via `@ViewBuilder` content — typically a
 /// `ForEach` of ``ArtworkShelfItem`` — so a shelf can mix card shapes freely.
 public struct ContentShelf<Content: View>: View {
-    private let title: String
+    private let title: Text
     private let icon: String?
     private let headerVisible: Bool
     private let content: Content
@@ -23,17 +23,33 @@ public struct ContentShelf<Content: View>: View {
 
     @Environment(\.theme) private var theme
 
-    /// - Parameter headerVisible: Fades/slides the header away while false
-    ///   (its layout space is kept, so the cards never reflow). Used by
-    ///   shelves that sit under a hero and reveal their header only once the
-    ///   hero has left the screen.
+    /// - Parameters:
+    ///   - title: The app's own copy, looked up in the caller's catalog.
+    ///   - headerVisible: Fades/slides the header away while false (its
+    ///     layout space is kept, so the cards never reflow). Used by shelves
+    ///     that sit under a hero and reveal their header only once the hero
+    ///     has left the screen.
     public init(
-        _ title: String,
+        _ title: LocalizedStringResource,
         icon: String? = nil,
         headerVisible: Bool = true,
         @ViewBuilder content: () -> Content,
     ) {
-        self.title = title
+        self.title = Text(title)
+        self.icon = icon
+        self.headerVisible = headerVisible
+        self.content = content()
+    }
+
+    /// A shelf whose title is shown exactly as given, never looked up: a
+    /// title that is data, not the app's copy.
+    public init(
+        verbatim title: String,
+        icon: String? = nil,
+        headerVisible: Bool = true,
+        @ViewBuilder content: () -> Content,
+    ) {
+        self.title = Text(verbatim: title)
         self.icon = icon
         self.headerVisible = headerVisible
         self.content = content()
@@ -47,7 +63,7 @@ public struct ContentShelf<Content: View>: View {
                         .foregroundStyle(theme.accent)
                 }
 
-                Text(title)
+                title
                     .jsStyle(.headline)
                     .foregroundStyle(theme.primary)
             }
@@ -72,7 +88,7 @@ public struct ContentShelf<Content: View>: View {
 #if DEBUG
     private struct PreviewShelf: View {
         var body: some View {
-            ContentShelf("Recently Added", icon: "sparkles") {
+            ContentShelf(verbatim: "Recently Added", icon: "sparkles") {
                 ForEach(Array(PreviewData.movieTitles.prefix(6).enumerated()), id: \.offset) { index, title in
                     ArtworkShelfItem(
                         url: nil,

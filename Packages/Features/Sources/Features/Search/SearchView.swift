@@ -302,15 +302,15 @@ struct SearchView: View {
     private var resultsShelves: some View {
         VStack(alignment: .leading, spacing: SpacingTokens.sectionSpacing) {
             SearchShelfSection(
-                title: "Movies", icon: "film.fill",
+                title: LocalizedStringResource("shelf.movies", bundle: #bundle, comment: "Shelf of films on a search or person page."), icon: "film.fill",
                 items: viewModel.movies, style: .poster, focusBinding: $focusedItem,
             )
             SearchShelfSection(
-                title: "TV Series", icon: "tv.fill",
+                title: LocalizedStringResource("shelf.tvSeries", bundle: #bundle, comment: "Shelf of TV series on a search or person page."), icon: "tv.fill",
                 items: viewModel.series, style: .poster, focusBinding: $focusedItem,
             )
             SearchShelfSection(
-                title: "Episodes", icon: "play.tv",
+                title: LocalizedStringResource("shelf.episodes", bundle: #bundle, comment: "Shelf of single episodes on a search or person page."), icon: "play.tv",
                 items: viewModel.episodes, style: .landscape, focusBinding: $focusedItem,
             )
         }

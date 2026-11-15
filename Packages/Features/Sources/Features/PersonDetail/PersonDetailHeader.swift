@@ -64,7 +64,7 @@ struct PersonDetailHeader: View {
 
                 CircleActionButton(
                     systemImage: isFavorite ? "heart.fill" : "heart",
-                    title: isFavorite ? "Favorited" : "Favorite",
+                    title: isFavorite ? LocalizedStringResource("detail.action.favorited", bundle: #bundle, comment: "Round button label once the title or person is a favorite; pressing it removes the favorite.") : LocalizedStringResource("detail.action.favorite", bundle: #bundle, comment: "Round button that adds the title or person to favorites."),
                     tint: isFavorite ? theme.accent : theme.primary,
                     focusedTint: isFavorite ? theme.accent : nil,
                     isEnabled: session.client != nil,

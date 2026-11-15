@@ -59,7 +59,7 @@ public struct PersonDetailView: View {
                     // Retry button keeps this focus region reachable.
                     if viewModel.filmographyStatus.isFailed {
                         FailedShelfNotice(
-                            message: "Couldn't load filmography — check your connection",
+                            message: LocalizedStringResource("person.failed.message", bundle: #bundle, comment: "Shown on a person’s page when their filmography failed to load."),
                             retry: { Task { await viewModel.retry() } },
                         )
                     } else if viewModel.filmographyStatus == .loading {
@@ -70,17 +70,17 @@ public struct PersonDetailView: View {
                         filmographySkeleton
                     } else {
                         PersonShelfSection(
-                            title: "Movies", icon: "film.fill",
+                            title: LocalizedStringResource("shelf.movies", bundle: #bundle, comment: "Shelf of films on a search or person page."), icon: "film.fill",
                             items: viewModel.movies, style: .poster,
                             playbackItem: $playbackItem,
                         )
                         PersonShelfSection(
-                            title: "TV Series", icon: "tv.fill",
+                            title: LocalizedStringResource("shelf.tvSeries", bundle: #bundle, comment: "Shelf of TV series on a search or person page."), icon: "tv.fill",
                             items: viewModel.series, style: .poster,
                             playbackItem: $playbackItem,
                         )
                         PersonShelfSection(
-                            title: "Episodes", icon: "play.tv",
+                            title: LocalizedStringResource("shelf.episodes", bundle: #bundle, comment: "Shelf of single episodes on a search or person page."), icon: "play.tv",
                             items: viewModel.episodes, style: .episode,
                             playbackItem: $playbackItem,
                         )

@@ -1,4 +1,5 @@
 import DesignSystem
+import JellyfinKit
 import SwiftUI
 
 /// Truncated tagline + overview lockup, used as the label of a `.plain` button
@@ -17,7 +18,7 @@ struct OverviewLabel: View {
 
     /// Small uppercase label directly over the tagline (the `CreditEntry`
     /// label treatment) — the episode page's "Season 4 · Episode 1".
-    var eyebrow: String?
+    var eyebrow: LocalizedStringResource?
     let tagline: String?
     let overview: String?
     /// On-page clamp for the overview text; the overlay shows the full text.
@@ -31,7 +32,6 @@ struct OverviewLabel: View {
                         Text(eyebrow)
                             .jsStyle(.eyebrow)
                             .foregroundStyle(isFocused ? theme.onFocusFillSecondary : theme.tertiary)
-                            .textCase(.uppercase)
                     }
                     if let tagline, !tagline.isEmpty {
                         Text(tagline)
@@ -55,6 +55,16 @@ struct OverviewLabel: View {
     }
 }
 
+extension MediaItem {
+    /// "SEASON 2 · EPISODE 4" over an episode's overview. The capitals come
+    /// from the catalog, so each language sets its own casing; nil for
+    /// anything but a numbered episode.
+    var seasonEpisodeEyebrow: LocalizedStringResource? {
+        guard type == .episode, let season = parentIndexNumber, let episode = indexNumber else { return nil }
+        return LocalizedStringResource("detail.eyebrow.seasonEpisode \(season) \(episode)", bundle: #bundle, comment: "Small capitals over an episode’s overview, such as “SEASON 2 · EPISODE 4”; write it in capitals if the language has them. %1$lld is the season number, %2$lld the episode number.")
+    }
+}
+
 #if DEBUG
     /// The lockup lives inside a `.plain` button; on focus the text swaps to
     /// the on-platter colors, which the static render can't show.
@@ -71,7 +81,7 @@ struct OverviewLabel: View {
 
                 Button {} label: {
                     OverviewLabel(
-                        eyebrow: "Season 2 · Episode 4",
+                        eyebrow: "SEASON 2 · EPISODE 4",
                         tagline: nil,
                         overview: PreviewData.episode.overview,
                     )

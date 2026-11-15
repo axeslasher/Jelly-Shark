@@ -27,7 +27,7 @@ struct MediaDetailHeroSection: View {
     let yearSpanOverride: String?
     /// Play-button title, computed by the owner ("Play", "Resume", "Replay",
     /// "Resume S2E4" on series pages)
-    let playTitle: String
+    let playTitle: LocalizedStringResource
     /// SF Symbol for the Play button, computed by the owner alongside the
     /// title — "play.fill" for Play/Resume, "arrow.counterclockwise" for Replay.
     let playIcon: String
@@ -59,8 +59,8 @@ struct MediaDetailHeroSection: View {
     /// over the episode title in the overview lockup — "Season 2 · Episode 4"
     /// in the credits column's label treatment. Nil (renders nothing) for
     /// every other type.
-    private var episodeEyebrow: String? {
-        item.seasonEpisodeText
+    private var episodeEyebrow: LocalizedStringResource? {
+        item.seasonEpisodeEyebrow
     }
 
     var body: some View {
@@ -223,7 +223,7 @@ struct MediaDetailHeroSection: View {
             // stays legible while the button is lifted.
             CircleActionButton(
                 systemImage: isPlayed ? "checkmark" : "eye.fill",
-                title: isPlayed ? "Watched" : "Mark Watched",
+                title: isPlayed ? LocalizedStringResource("detail.action.watched", bundle: #bundle, comment: "Round button label on a detail page once the title is marked watched; pressing it marks it unwatched.") : LocalizedStringResource("detail.action.markWatched", bundle: #bundle, comment: "Round button on a detail page that marks the title watched."),
                 tint: isPlayed ? theme.accent : theme.primary,
                 focusedTint: isPlayed ? theme.accent : nil,
                 isEnabled: session.client != nil,
@@ -233,7 +233,7 @@ struct MediaDetailHeroSection: View {
 
             CircleActionButton(
                 systemImage: isFavorite ? "heart.fill" : "heart",
-                title: isFavorite ? "Favorited" : "Favorite",
+                title: isFavorite ? LocalizedStringResource("detail.action.favorited", bundle: #bundle, comment: "Round button label once the title or person is a favorite; pressing it removes the favorite.") : LocalizedStringResource("detail.action.favorite", bundle: #bundle, comment: "Round button that adds the title or person to favorites."),
                 tint: isFavorite ? theme.accent : theme.primary,
                 focusedTint: isFavorite ? theme.accent : nil,
                 isEnabled: session.client != nil,
@@ -247,7 +247,7 @@ struct MediaDetailHeroSection: View {
             if item.type == .episode {
                 CircleActionButton(
                     systemImage: "square.stack",
-                    title: "Go to Series",
+                    title: LocalizedStringResource("detail.action.goToSeries", bundle: #bundle, comment: "Round button on an episode’s detail page that opens its series."),
                     tint: theme.primary,
                     isEnabled: viewModel.seriesItem != nil,
                 ) {

@@ -5,7 +5,7 @@ import SwiftUI
 /// lockup compact when idle.
 public struct CircleActionButton: View {
     private let systemImage: String
-    private let title: String
+    private let title: LocalizedStringResource
     private let tint: Color
     private let focusedTint: Color?
     private let isEnabled: Bool
@@ -25,7 +25,7 @@ public struct CircleActionButton: View {
     ///   visible through focus.
     public init(
         systemImage: String,
-        title: String,
+        title: LocalizedStringResource,
         tint: Color,
         focusedTint: Color? = nil,
         isEnabled: Bool = true,
@@ -77,7 +77,7 @@ public extension View {
     /// - Parameter isFocused: tvOS's trigger. visionOS never tells an app where
     ///   someone is looking, so there the reveal comes from a hover effect the
     ///   system runs on the app's behalf, and this is unused.
-    func hangingActionLabel(_ title: String, isFocused: Bool) -> some View {
+    func hangingActionLabel(_ title: LocalizedStringResource, isFocused: Bool) -> some View {
         modifier(HangingActionLabel(title: title, isFocused: isFocused))
     }
 }
@@ -86,7 +86,7 @@ public extension View {
 private struct HangingActionLabel: ViewModifier {
     @Environment(\.theme) private var theme
 
-    let title: String
+    let title: LocalizedStringResource
     let isFocused: Bool
 
     func body(content: Content) -> some View {

@@ -21,8 +21,8 @@ struct MediaInfoSection: View {
 
         if !information.isEmpty || !languages.isEmpty || fileName != nil || !fileFacts.isEmpty {
             HStack(alignment: .top, spacing: SpacingTokens.xl) {
-                column("Information", icon: "info.circle", entries: information)
-                column("Languages", icon: "globe", entries: languages)
+                column(LocalizedStringResource("detail.info.column.information", bundle: #bundle, comment: "Heading of the detail page column of general facts."), icon: "info.circle", entries: information)
+                column(LocalizedStringResource("detail.info.column.languages", bundle: #bundle, comment: "Heading of the detail page column of audio and subtitle languages."), icon: "globe", entries: languages)
                 fileColumn(name: fileName, facts: fileFacts)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -32,7 +32,7 @@ struct MediaInfoSection: View {
 
     /// Column header treatment, matching the shelves' (`ContentShelf`):
     /// accent icon + headline title.
-    private func header(_ title: String, icon: String) -> some View {
+    private func header(_ title: LocalizedStringResource, icon: String) -> some View {
         HStack(spacing: SpacingTokens.xs) {
             Image(systemName: icon)
                 .foregroundStyle(theme.accent)
@@ -44,12 +44,12 @@ struct MediaInfoSection: View {
 
     /// A titled column of credit entries.
     @ViewBuilder
-    private func column(_ title: String, icon: String, entries: [(label: String, value: String)]) -> some View {
+    private func column(_ title: LocalizedStringResource, icon: String, entries: [Entry]) -> some View {
         if !entries.isEmpty {
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
                 header(title, icon: icon)
                 VStack(alignment: .leading, spacing: SpacingTokens.sm) {
-                    ForEach(entries, id: \.label) { entry in
+                    ForEach(entries, id: \.label.key) { entry in
                         CreditEntry(label: entry.label, value: entry.value, lineLimit: 3)
                     }
                 }
@@ -62,13 +62,13 @@ struct MediaInfoSection: View {
     /// names need the room), and the short facts pack into a two-column grid
     /// beneath it.
     @ViewBuilder
-    private func fileColumn(name: String?, facts: [(label: String, value: String)]) -> some View {
+    private func fileColumn(name: String?, facts: [Entry]) -> some View {
         if name != nil || !facts.isEmpty {
             VStack(alignment: .leading, spacing: SpacingTokens.md) {
-                header("File", icon: "internaldrive")
+                header(LocalizedStringResource("detail.info.column.file", bundle: #bundle, comment: "Heading of the detail page column of media file facts."), icon: "internaldrive")
                 VStack(alignment: .leading, spacing: SpacingTokens.sm) {
                     if let name {
-                        CreditEntry(label: "File Name", value: name, lineLimit: 3)
+                        CreditEntry(label: LocalizedStringResource("detail.info.fileName", bundle: #bundle, comment: "Eyebrow over the media file’s name. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), value: name, lineLimit: 3)
                     }
                     if !facts.isEmpty {
                         // Pack the facts into two-per-row pairs, keyed by the
@@ -79,7 +79,7 @@ struct MediaInfoSection: View {
                             (leading: facts[index], trailing: index + 1 < facts.count ? facts[index + 1] : nil)
                         }
                         Grid(alignment: .topLeading, horizontalSpacing: SpacingTokens.lg, verticalSpacing: SpacingTokens.sm) {
-                            ForEach(rows, id: \.leading.label) { row in
+                            ForEach(rows, id: \.leading.label.key) { row in
                                 GridRow {
                                     CreditEntry(label: row.leading.label, value: row.leading.value)
                                     if let trailing = row.trailing {
@@ -97,73 +97,76 @@ struct MediaInfoSection: View {
 
     // MARK: - Entries
 
-    private var informationEntries: [(label: String, value: String)] {
-        var entries: [(String, String)] = []
+    /// A labelled fact: our own label over a value that is data
+    typealias Entry = (label: LocalizedStringResource, value: String)
+
+    private var informationEntries: [Entry] {
+        var entries: [Entry] = []
         // Episodes lead with where they sit in their show.
         if item.type == .episode {
             if let series = item.seriesName {
-                entries.append(("Series", series))
+                entries.append((LocalizedStringResource("detail.info.series", bundle: #bundle, comment: "Eyebrow over the series an episode belongs to. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), series))
             }
             if let season = item.parentIndexNumber, let episode = item.indexNumber {
-                entries.append(("Episode", "Season \(season), Episode \(episode)"))
+                entries.append((LocalizedStringResource("detail.info.episode", bundle: #bundle, comment: "Eyebrow over where an episode sits in its series. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), String(localized: LocalizedStringResource("detail.info.seasonEpisode \(season) \(episode)", bundle: #bundle, comment: "Where an episode sits in its series, such as “Season 2, Episode 4”. %1$lld is the season number, %2$lld the episode number."))))
             }
         }
         if let studios = item.studios, !studios.isEmpty {
-            entries.append((studios.count > 1 ? "Studios" : "Studio", studios.formatted(.list(type: .and))))
+            entries.append((studios.count > 1 ? LocalizedStringResource("detail.info.studios", bundle: #bundle, comment: "Eyebrow over several studio names. Small capitals label over a fact on a detail page; write it in capitals if the language has them.") : LocalizedStringResource("detail.info.studio", bundle: #bundle, comment: "Eyebrow over one studio name. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), studios.formatted(.list(type: .and))))
         }
         if let premiereDate = item.premiereDate {
             let label = switch item.type {
-            case .series: "First Aired"
-            case .episode: "Aired"
-            default: "Released"
+            case .series: LocalizedStringResource("detail.info.firstAired", bundle: #bundle, comment: "Eyebrow over a series’ first air date. Small capitals label over a fact on a detail page; write it in capitals if the language has them.")
+            case .episode: LocalizedStringResource("detail.info.aired", bundle: #bundle, comment: "Eyebrow over an episode’s air date. Small capitals label over a fact on a detail page; write it in capitals if the language has them.")
+            default: LocalizedStringResource("detail.info.released", bundle: #bundle, comment: "Eyebrow over a film’s release date. Small capitals label over a fact on a detail page; write it in capitals if the language has them.")
             }
             entries.append((label, premiereDate.formatted(date: .long, time: .omitted)))
         }
         if item.type == .series, let status = item.status {
-            entries.append(("Status", status))
+            entries.append((LocalizedStringResource("detail.info.status", bundle: #bundle, comment: "Eyebrow over whether a series is still running. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), status))
         }
         if let genres = item.genres, !genres.isEmpty {
-            entries.append(("Genres", genres.joined(separator: ", ")))
+            entries.append((LocalizedStringResource("detail.info.genres", bundle: #bundle, comment: "Eyebrow over the genre names. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), genres.formatted(.list(type: .and))))
         }
         return entries
     }
 
-    private var languageEntries: [(label: String, value: String)] {
+    private var languageEntries: [Entry] {
         guard let tech = item.technicalInfo else { return [] }
-        var entries: [(String, String)] = []
+        var entries: [Entry] = []
         if let original = tech.originalAudioLanguage {
-            entries.append(("Original Audio", original))
+            entries.append((LocalizedStringResource("detail.info.originalAudio", bundle: #bundle, comment: "Eyebrow over the original audio language. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), original))
         }
         if !tech.audioLanguages.isEmpty {
-            entries.append(("Audio", tech.audioLanguages.joined(separator: ", ")))
+            entries.append((LocalizedStringResource("detail.info.audio", bundle: #bundle, comment: "Eyebrow over the audio track languages. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), tech.audioLanguages.formatted(.list(type: .and))))
         }
         if !tech.subtitleLanguages.isEmpty {
-            entries.append(("Subtitles", tech.subtitleLanguages.joined(separator: ", ")))
+            entries.append((LocalizedStringResource("detail.info.subtitles", bundle: #bundle, comment: "Eyebrow over the subtitle languages. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), tech.subtitleLanguages.formatted(.list(type: .and))))
         }
         return entries
     }
 
     /// Short file facts for the grid — everything but the file name.
-    private var fileFactEntries: [(label: String, value: String)] {
+    private var fileFactEntries: [Entry] {
         guard let tech = item.technicalInfo else { return [] }
-        var entries: [(String, String)] = []
+        var entries: [Entry] = []
         if let bytes = tech.fileSizeBytes {
-            entries.append(("Size", bytes.formatted(.byteCount(style: .file))))
+            entries.append((LocalizedStringResource("detail.info.size", bundle: #bundle, comment: "Eyebrow over the file size. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), bytes.formatted(.byteCount(style: .file))))
         }
         if let container = tech.container {
-            entries.append(("Container", container))
+            entries.append((LocalizedStringResource("detail.info.container", bundle: #bundle, comment: "Eyebrow over the file format, such as MKV. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), container))
         }
         if let codec = tech.videoCodec {
-            entries.append(("Video Codec", codec))
+            entries.append((LocalizedStringResource("detail.info.videoCodec", bundle: #bundle, comment: "Eyebrow over the video codec, such as HEVC. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), codec))
         }
         if let bitrate = tech.bitrate {
             let mbps = (Double(bitrate) / 1_000_000)
                 .formatted(.number.precision(.fractionLength(0 ... 1)))
-            entries.append(("Bitrate", "\(mbps) Mbps"))
+            entries.append((LocalizedStringResource("detail.info.bitrate", bundle: #bundle, comment: "Eyebrow over the bitrate. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), String(localized: LocalizedStringResource("detail.info.mbps \(mbps)", bundle: #bundle, comment: "A bitrate in megabits per second. %@ is the number, already formatted, such as 12.5."))))
         }
         if let frameRate = tech.frameRate {
             let fps = frameRate.formatted(.number.precision(.fractionLength(0 ... 3)))
-            entries.append(("Frame Rate", "\(fps) fps"))
+            entries.append((LocalizedStringResource("detail.info.frameRate", bundle: #bundle, comment: "Eyebrow over the frame rate. Small capitals label over a fact on a detail page; write it in capitals if the language has them."), String(localized: LocalizedStringResource("detail.info.fps \(fps)", bundle: #bundle, comment: "A frame rate in frames per second. %@ is the number, already formatted, such as 23.976."))))
         }
         return entries
     }

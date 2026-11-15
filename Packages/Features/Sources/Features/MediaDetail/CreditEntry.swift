@@ -1,13 +1,15 @@
 import DesignSystem
 import SwiftUI
 
-/// A small labeled fact: uppercase eyebrow label over a body value. The shared
+/// A small labeled fact: uppercase eyebrow label over a body value. The label
+/// is written in capitals in the catalog rather than uppercased here, so each
+/// language decides its own casing. The shared
 /// typographic unit of the hero's credits column and the info section below
 /// the shelves.
 struct CreditEntry: View {
     @Environment(\.theme) private var theme
 
-    let label: String
+    let label: LocalizedStringResource
     let value: String
     var lineLimit: Int = 2
 
@@ -16,7 +18,6 @@ struct CreditEntry: View {
             Text(label)
                 .jsStyle(.eyebrow)
                 .foregroundStyle(theme.tertiary)
-                .textCase(.uppercase)
             Text(value)
                 .jsStyle(.body, .emphasized)
                 .foregroundStyle(theme.secondary)
@@ -27,9 +28,9 @@ struct CreditEntry: View {
 
 #Preview("Standard") {
     VStack(alignment: .leading, spacing: SpacingTokens.lg) {
-        CreditEntry(label: "Director", value: "Marisol Vane")
+        CreditEntry(label: "DIRECTOR", value: "Marisol Vane")
         CreditEntry(
-            label: "Starring",
+            label: "STARRING",
             value: "Teddy Okafor, June Castellane, Arno Pike, Priya Ramanathan, and Wallace Thorn",
         )
     }
@@ -40,9 +41,9 @@ struct CreditEntry: View {
 
 #Preview("Horror") {
     VStack(alignment: .leading, spacing: SpacingTokens.lg) {
-        CreditEntry(label: "Director", value: "Marisol Vane")
+        CreditEntry(label: "DIRECTOR", value: "Marisol Vane")
         CreditEntry(
-            label: "Starring",
+            label: "STARRING",
             value: "Teddy Okafor, June Castellane, Arno Pike, Priya Ramanathan, and Wallace Thorn",
         )
     }
@@ -53,9 +54,9 @@ struct CreditEntry: View {
 
 #Preview("Action") {
     VStack(alignment: .leading, spacing: SpacingTokens.lg) {
-        CreditEntry(label: "Director", value: "Marisol Vane")
+        CreditEntry(label: "DIRECTOR", value: "Marisol Vane")
         CreditEntry(
-            label: "Starring",
+            label: "STARRING",
             value: "Teddy Okafor, June Castellane, Arno Pike, Priya Ramanathan, and Wallace Thorn",
         )
     }
@@ -66,9 +67,9 @@ struct CreditEntry: View {
 
 #Preview("Video Store") {
     VStack(alignment: .leading, spacing: SpacingTokens.lg) {
-        CreditEntry(label: "Director", value: "Marisol Vane")
+        CreditEntry(label: "DIRECTOR", value: "Marisol Vane")
         CreditEntry(
-            label: "Starring",
+            label: "STARRING",
             value: "Teddy Okafor, June Castellane, Arno Pike, Priya Ramanathan, and Wallace Thorn",
         )
     }
@@ -79,9 +80,9 @@ struct CreditEntry: View {
 
 #Preview("Sci-Fi") {
     VStack(alignment: .leading, spacing: SpacingTokens.lg) {
-        CreditEntry(label: "Director", value: "Marisol Vane")
+        CreditEntry(label: "DIRECTOR", value: "Marisol Vane")
         CreditEntry(
-            label: "Starring",
+            label: "STARRING",
             value: "Teddy Okafor, June Castellane, Arno Pike, Priya Ramanathan, and Wallace Thorn",
         )
     }

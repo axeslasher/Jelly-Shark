@@ -15,13 +15,13 @@ enum HeroPlayLabel {
     static func label(
         played: Bool,
         hasProgress: Bool,
-    ) -> (title: String, systemImage: String) {
+    ) -> (title: LocalizedStringResource, systemImage: String) {
         if played {
-            return (title: "Replay", systemImage: "arrow.counterclockwise")
+            return (title: LocalizedStringResource("detail.play.replay", bundle: #bundle, comment: "Play button for a title already watched to the end."), systemImage: "arrow.counterclockwise")
         }
         return hasProgress
-            ? (title: "Resume", systemImage: "play.fill")
-            : (title: "Play", systemImage: "play.fill")
+            ? (title: LocalizedStringResource("detail.play.resume", bundle: #bundle, comment: "Play button for a title the viewer has started."), systemImage: "play.fill")
+            : (title: LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page."), systemImage: "play.fill")
     }
 }
 
@@ -191,19 +191,21 @@ public struct MediaDetailView: View {
     /// ("Resume S2E4"), collection pages their target movie ("Play Jaws 2") —
     /// both keep the play glyph; everything else is Play / Resume / Replay
     /// (see `HeroPlayLabel`), where Replay swaps in the circular-arrow icon.
-    private var playButtonLabel: (title: String, systemImage: String) {
+    private var playButtonLabel: (title: LocalizedStringResource, systemImage: String) {
         switch item.type {
         case .series:
-            guard let episode = playableItem, episode.type == .episode else { return ("Play", "play.fill") }
-            let verb = episode.hasProgress ? "Resume" : "Play"
-            return (episode.episodeCode.map { "\(verb) \($0)" } ?? verb, "play.fill")
+            guard let episode = playableItem, episode.type == .episode else { return (LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page."), "play.fill") }
+            guard let code = episode.episodeCode else {
+                return (episode.hasProgress ? LocalizedStringResource("detail.play.resume", bundle: #bundle, comment: "Play button for a title the viewer has started.") : LocalizedStringResource("detail.play.play", bundle: #bundle, comment: "Play button on a detail page."), "play.fill")
+            }
+            return (episode.hasProgress ? LocalizedStringResource("detail.play.resumeEpisode \(code)", bundle: #bundle, comment: "Play button on a series page for an episode the viewer has started. %@ is the episode’s code, such as S1E4.") : LocalizedStringResource("detail.play.playEpisode \(code)", bundle: #bundle, comment: "Play button on a series page. %@ is the episode’s code, such as S1E4."), "play.fill")
         case .boxSet:
             // Movie titles get long; a positional label reads better on the
             // button. "Play Next" only while the collection is genuinely in
             // progress — untouched or fully watched both restart at the top.
             let watchedCount = viewModel.collectionItems.count { $0.userData?.played ?? false }
             let inProgress = watchedCount > 0 && watchedCount < viewModel.collectionItems.count
-            return (inProgress ? "Play Next" : "Play First", "play.fill")
+            return (inProgress ? LocalizedStringResource("detail.play.playNext", bundle: #bundle, comment: "Play button on a collection the viewer is partway through: plays the next film.") : LocalizedStringResource("detail.play.playFirst", bundle: #bundle, comment: "Play button on a collection: plays its first film."), "play.fill")
         default:
             return HeroPlayLabel.label(
                 played: viewModel.heroIsPlayed,
@@ -265,7 +267,7 @@ public struct MediaDetailView: View {
                         // Retry button keeps this focus region reachable.
                         if viewModel.status.isFailed {
                             FailedShelfNotice(
-                                message: "Couldn't load details — check your connection",
+                                message: LocalizedStringResource("detail.failed.message", bundle: #bundle, comment: "Shown on a detail page whose details failed to load."),
                                 retry: { Task { await viewModel.retry() } },
                             )
                         }
@@ -473,7 +475,7 @@ public struct MediaDetailView: View {
         // And the rest of the season leads on episode pages, parked on
         // the page's own episode. Renders nothing for other types.
         SeasonEpisodesSection(
-            title: displayItem.seasonName ?? "Episodes",
+            title: displayItem.seasonName,
             episodes: viewModel.seasonEpisodes,
             currentEpisodeId: item.id,
             isRegionFocused: focusedRegion == .shelves,
@@ -533,7 +535,7 @@ public struct MediaDetailView: View {
         OverviewOverlay(
             // Episodes headline the overlay with their own title under the
             // season/episode eyebrow, matching the hero's overview lockup.
-            eyebrow: displayItem.seasonEpisodeText,
+            eyebrow: displayItem.seasonEpisodeEyebrow,
             tagline: item.type == .episode ? displayItem.name : displayItem.tagline,
             overview: displayItem.overview,
             backdropURL: viewModel.heroBackdropURL(for: displayItem),

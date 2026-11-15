@@ -13,21 +13,28 @@ import SwiftUI
 public struct FailedShelfNotice: View {
     @Environment(\.theme) private var theme
 
-    private let title: String?
+    private let title: LocalizedStringResource?
     private let icon: String?
-    private let message: String
+    private let message: LocalizedStringResource
     private let retry: (() -> Void)?
 
+    /// - Parameter message: The caller's own copy; nil shows the generic
+    ///   connection message. Not a default argument: `#bundle` there would
+    ///   resolve to the caller's bundle, which has no such string.
     public init(
-        title: String? = nil,
+        title: LocalizedStringResource? = nil,
         icon: String? = nil,
-        message: String = "Couldn't load — check your connection",
+        message: LocalizedStringResource? = nil,
         retry: (() -> Void)? = nil,
     ) {
         self.title = title
         self.icon = icon
-        self.message = message
+        self.message = message ?? Self.defaultMessage
         self.retry = retry
+    }
+
+    private static var defaultMessage: LocalizedStringResource {
+        LocalizedStringResource("shelf.failed.message", bundle: #bundle, comment: "Shown where a row of posters would be when it failed to load.")
     }
 
     public var body: some View {

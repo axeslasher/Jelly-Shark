@@ -20,7 +20,7 @@ struct OnAirNowShelf: View {
         // the player's cover hangs off this view and would go with it.
         if guide.hasChannels || playingChannel != nil {
             ContentShelf(
-                String(localized: "liveTV.shelf.onAirNow", bundle: #bundle, comment: "Home shelf listing what each live TV channel is showing right now."),
+                LocalizedStringResource("liveTV.shelf.onAirNow", bundle: #bundle, comment: "Home shelf listing what each live TV channel is showing right now."),
                 icon: "antenna.radiowaves.left.and.right",
             ) {
                 ForEach(guide.channels) { channel in

@@ -21,7 +21,7 @@ struct SearchShelfSection: View {
         case landscape
     }
 
-    let title: String
+    let title: LocalizedStringResource
     let icon: String
     let items: [MediaItem]
     let style: Style
@@ -41,7 +41,7 @@ struct SearchShelfSection: View {
 
     @ViewBuilder
     private func card(for item: MediaItem) -> some View {
-        let id = ShelfFocusID(row: title, item: item.id)
+        let id = ShelfFocusID(row: title.key, item: item.id)
         switch style {
         case .poster:
             item.posterShelfItem(client: session.client, focusBinding: focusBinding, focusID: id)

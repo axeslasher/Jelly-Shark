@@ -13,9 +13,9 @@ import SwiftUI
 struct SeasonEpisodesSection: View {
     @Environment(\.theme) private var theme
 
-    /// Shelf header — the season's name ("Season 2"), falling back to
-    /// "Episodes" when the season is unnamed.
-    let title: String
+    /// Shelf header: the season's name from the server ("Season 2"); nil
+    /// shows our own "Episodes"
+    let title: String?
     /// The season's episodes, in season order
     let episodes: [MediaItem]
     /// The page's own episode: where the shelf parks and first focus lands
@@ -62,7 +62,7 @@ struct SeasonEpisodesSection: View {
                 HStack(spacing: SpacingTokens.xs) {
                     Image(systemName: "square.stack.fill")
                         .foregroundStyle(theme.accent)
-                    Text(title)
+                    titleText
                         .jsStyle(.headline)
                         .foregroundStyle(theme.primary)
                 }
@@ -121,6 +121,14 @@ struct SeasonEpisodesSection: View {
     private func parkShelf(atEpisodeIndex index: Int) {
         let x = CGFloat(index) * (Self.episodeCardWidth + SpacingTokens.cardGap)
         shelfPosition.scrollTo(x: max(0, x))
+    }
+
+    private var titleText: Text {
+        if let title {
+            Text(verbatim: title)
+        } else {
+            Text(LocalizedStringResource("detail.shelf.episodes", bundle: #bundle, comment: "Heading of the episode shelf on an episode's detail page, when the season has no name."))
+        }
     }
 }
 

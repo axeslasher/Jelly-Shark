@@ -20,7 +20,7 @@ struct GenreShelvesView: View {
 
     var body: some View {
         ForEach(shelves) { shelf in
-            ContentShelf("Browse \(shelf.library.name) by genre", icon: shelf.library.systemImageName) {
+            ContentShelf(LocalizedStringResource("genre.shelf.browseLibrary \(shelf.library.name)", bundle: #bundle, comment: "Home shelf of genre cards for one library. %@ is the library’s name from the server, such as “Movies”."), icon: shelf.library.systemImageName) {
                 ForEach(shelf.genres, id: \.self) { genre in
                     GenreCardView(
                         library: shelf.library,
@@ -35,7 +35,7 @@ struct GenreShelvesView: View {
         // view model re-arms its own reload); the notice is for the
         // nothing-survived case only.
         if shelves.isEmpty, status.isFailed {
-            FailedShelfNotice(title: "Browse by genre", icon: "theatermasks.fill", retry: onRetry)
+            FailedShelfNotice(title: LocalizedStringResource("genre.shelf.failed", bundle: #bundle, comment: "Heading of the Home genre shelf when it failed to load."), icon: "theatermasks.fill", retry: onRetry)
         }
     }
 }

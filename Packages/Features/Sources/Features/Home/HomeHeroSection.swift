@@ -431,14 +431,14 @@ struct HomeHeroSection: View {
 
             CircleNavigationLink(
                 systemImage: "info.circle.text.page.fill",
-                title: "Details",
+                title: LocalizedStringResource("home.hero.details", bundle: #bundle, comment: "Round button on the Home hero that opens the title’s detail page."),
                 value: item,
             )
             .focused($heroFocus, equals: HeroFocus(page: pageIndex, control: .details))
 
             CircleActionButton(
                 systemImage: "chevron.forward",
-                title: "Next",
+                title: LocalizedStringResource("home.hero.next", bundle: #bundle, comment: "Round button on the Home hero that moves to the next featured title."),
                 tint: theme.primary,
                 isEnabled: items.count > 1,
             ) {
@@ -523,7 +523,7 @@ private struct CircleNavigationLink<Value: Hashable>: View {
     @FocusState private var isFocused: Bool
 
     let systemImage: String
-    let title: String
+    let title: LocalizedStringResource
     let value: Value
 
     var body: some View {
