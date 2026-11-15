@@ -70,9 +70,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # A manual run's input is pinned to refs/tags/ so it can only name a
+      # tag. A bare name would also resolve a branch called v-something,
+      # whose commit would then be built with the key from a run the
+      # environment admitted because it was dispatched from main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           path: tagged
           persist-credentials: false
 
@@ -97,9 +101,10 @@ jobs:
       matrix:
         platform: [tvOS, visionOS]
     steps:
+      # refs/tags/ pin: see verify-version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           persist-credentials: false
 
       - name: Xcode version
