@@ -132,6 +132,8 @@ gh release create v0.12.0 --title "v0.12.0 — <name>" --notes "<same summary>"
 
 **Pushing the tag also triggers the upload.** `.github/workflows/release.yml` archives both platforms from the tagged commit and uploads them to App Store Connect (TestFlight), after checking that the tag matches `MARKETING_VERSION` — a mismatched tag fails the run instead of shipping a mislabeled build. It signs via xcodebuild cloud signing with an App Store Connect API key; the required secrets and variables are listed at the top of the workflow file. Never rename that file — the build-number hazard below is scoped to it. The workflow can also be run by hand against an already-pushed tag (Actions → Release → Run workflow, giving the tag name) — needed for a tag that predates the workflow, since the Release tags ruleset forbids deleting and re-pushing a `v*` tag to re-fire the push event.
 
+**Then approve the upload.** The upload jobs run in the `release` environment, which holds the App Store Connect secrets and waits for the owner's approval on every run. Open the run (Actions → Release), choose **Review deployments**, tick `release`, and approve. The environment only accepts runs from `main` or a `v*` tag, so a manual run must be started from `main`.
+
 ## Build numbers
 
 `CURRENT_PROJECT_VERSION` stays at `1` in `project.pbxproj` — that is the local-developer default, and nothing about local builds should change. The release invocation overrides it on the command line, which `xcodebuild` accepts directly:

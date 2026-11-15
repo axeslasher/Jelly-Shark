@@ -13,12 +13,20 @@ name: Release
 # keep increasing within a marketing version. If a rename is ever unavoidable,
 # bump MARKETING_VERSION in the same change (docs/RELEASING.md § Build numbers).
 #
-# Required configuration (Settings → Secrets and variables → Actions), all
-# from an App Store Connect API key with the App Manager role:
+# Required configuration. The secrets live only in the `release` environment
+# (Settings → Environments → release), never at repo level, so only a run the
+# owner approves from `main` or a v* tag can read them. All three come from an
+# App Store Connect API key with the App Manager role:
 #   secrets.ASC_API_KEY_ID      the key's ID
 #   secrets.ASC_API_ISSUER_ID   the issuer ID
 #   secrets.ASC_API_KEY_P8      the full contents of the .p8 private key file
+# The team ID is not secret and stays a repo variable
+# (Settings → Secrets and variables → Actions → Variables):
 #   vars.APPLE_TEAM_ID          the developer team ID
+#
+# Every checkout sets persist-credentials: false. Nothing here runs
+# authenticated git, so the job token has no reason to sit in .git/config
+# where the code being built could read it.
 
 on:
   push:
@@ -59,11 +67,18 @@ jobs:
       # from the tag, so a manual run against a tag older than the script
       # still gets checked. On a tag push the two are the same commit.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
+      # A manual run's input is pinned to refs/tags/ so it can only name a
+      # tag. A bare name would also resolve a branch called v-something,
+      # whose commit would then be built with the key from a run the
+      # environment admitted because it was dispatched from main.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           path: tagged
+          persist-credentials: false
 
       - name: Compare
         env:
@@ -73,6 +88,9 @@ jobs:
   upload:
     name: Archive + upload (${{ matrix.platform }})
     needs: verify-version
+    # Holds the App Store Connect secrets. Its rules refuse any ref but `main`
+    # and v* tags, and each run waits for the owner's approval.
+    environment: release
     # Same image as tests.yml, so an upload is built by the Xcode CI tested.
     runs-on: xcode-27
     timeout-minutes: 60
@@ -83,9 +101,11 @@ jobs:
       matrix:
         platform: [tvOS, visionOS]
     steps:
+      # refs/tags/ pin: see verify-version.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.tag || github.ref }}
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
 
       - name: Xcode version
         run: xcodebuild -version
