@@ -129,7 +129,7 @@ public protocol SessionStoring: Sendable {
 /// 12.4), and its device list shows one row per signed-in user, all under
 /// this one ID (verified on 10.11.11).
 public struct SessionStore: SessionStoring, Sendable {
-    private let keychain: KeychainStore
+    private let keychain: any KeychainStoring
 
     private static let profilesKey = "profiles"
     private static let deviceIDKey = "deviceID"
@@ -152,7 +152,7 @@ public struct SessionStore: SessionStoring, Sendable {
         self.keychain = KeychainStore(service: service)
     }
 
-    init(keychain: KeychainStore) {
+    init(keychain: any KeychainStoring) {
         self.keychain = keychain
     }
 
@@ -189,7 +189,7 @@ public struct SessionStore: SessionStoring, Sendable {
         if list.activeID == id {
             list.activeID = nil
         }
-        try write(list)
+        try write(list, requiringLegacyDelete: true)
     }
 
     public func clearSession() throws {
@@ -197,7 +197,7 @@ public struct SessionStore: SessionStoring, Sendable {
         guard let activeID = list.activeID else { return }
         list.profiles.removeAll { $0.id == activeID }
         list.activeID = nil
-        try write(list)
+        try write(list, requiringLegacyDelete: true)
     }
 
     public func deviceID() -> String {
@@ -225,6 +225,11 @@ public struct SessionStore: SessionStoring, Sendable {
     /// failure throws instead of reading as empty: writing a list built from
     /// nothing would delete every other profile's token. Corrupt data still
     /// reads as empty, since nothing in it can be recovered.
+    ///
+    /// A legacy session that can't be read is treated as absent, and the
+    /// write then deletes it. That loses one unreadable sign-in, which is
+    /// signed in again; keeping it would let it overwrite a newer token, or
+    /// bring back a forgotten profile, once it became readable.
     private func readListForWriting() throws -> ProfileList {
         // A Keychain failure is not "nothing saved": adopting the legacy
         // session here could overwrite profiles that do exist
@@ -263,12 +268,19 @@ public struct SessionStore: SessionStoring, Sendable {
         return adopted
     }
 
-    private func write(_ list: ProfileList) throws {
+    /// - Parameter requiringLegacyDelete: True for a removal, which throws if
+    ///   the legacy item can't be deleted: it may hold the removed profile's
+    ///   token, which a later read would adopt again.
+    private func write(_ list: ProfileList, requiringLegacyDelete: Bool = false) throws {
         let data = try JSONEncoder().encode(list)
         try keychain.setData(data, for: Self.profilesKey)
         // Once the profile list exists the legacy item must not outlive it:
         // a forgotten profile's token would otherwise sit there, and be
         // adopted again if the list were ever lost
-        try? keychain.delete(Self.legacySessionKey)
+        if requiringLegacyDelete {
+            try keychain.delete(Self.legacySessionKey)
+        } else {
+            try? keychain.delete(Self.legacySessionKey)
+        }
     }
 }

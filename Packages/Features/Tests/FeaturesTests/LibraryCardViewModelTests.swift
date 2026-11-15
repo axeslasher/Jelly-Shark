@@ -286,4 +286,36 @@ struct LibraryCardViewModelTests {
         #expect(viewModel.selection == nil)
         #expect(store.selection(for: .library(id: Self.movies.id)) == nil)
     }
+
+    @Test("A profile switch during a repair leaves the new profile's pick alone")
+    func switchDuringRepairKeepsNewProfilesPick() async {
+        let store = await makeStore()
+        let client = MockJellyfinClient()
+        client.libraryItemsPages = [.success(page(["gone"]))]
+        let viewModel = makeViewModel(store: store)
+        await viewModel.load(client: client, library: Self.movies)
+
+        // The repair finds no artwork at all, which would clear the pick
+        client.libraryItemsPages = [.success(MediaItemPage(
+            items: [MediaItem(id: "bare", name: "bare", type: .movie)],
+            startIndex: 0,
+            totalRecordCount: 1,
+        ))]
+        let gate = AsyncGate()
+        client.libraryItemsDelay = { try? await gate.wait() }
+        let repair = Task { await viewModel.backdropUnavailable(client: client, library: Self.movies) }
+        await gate.arrivals(atLeast: 1)
+
+        await store.activate(cache: ScopedCache(
+            store: .makeInMemory(),
+            scope: CacheScope(serverURL: URL(string: "https://demo.example.org")!, userID: "user-2"),
+        ))
+        let otherPick = GenreBackdropSelection(itemId: "user-2-face", imageTypeRawValue: "Backdrop", blurHash: nil, poolCount: 1)
+        store.setSelection(otherPick, for: .library(id: Self.movies.id))
+
+        await gate.open()
+        await repair.value
+
+        #expect(store.selection(for: .library(id: Self.movies.id)) == otherPick)
+    }
 }

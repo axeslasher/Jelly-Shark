@@ -31,7 +31,13 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
         }
     }
 
+    /// Thrown by `save` when set, as a Keychain refusing the write would
+    var saveError: (any Error)?
+
     func save(_ session: SavedSession) throws {
+        if let saveError {
+            throw saveError
+        }
         savedProfiles.removeAll { $0.id == session.id }
         savedProfiles.insert(session, at: 0)
         activeID = session.id
@@ -57,7 +63,13 @@ final class InMemorySessionStore: SessionStoring, @unchecked Sendable {
         activeID = id
     }
 
+    /// Thrown by `remove` when set, leaving the profile saved
+    var removeError: (any Error)?
+
     func remove(_ id: ProfileID) throws {
+        if let removeError {
+            throw removeError
+        }
         forgetCallCount += 1
         savedProfiles.removeAll { $0.id == id }
         if activeID == id {

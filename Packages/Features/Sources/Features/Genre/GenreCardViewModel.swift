@@ -164,6 +164,10 @@ final class GenreCardViewModel {
             limit: Self.pageSize,
             startIndex: startIndex,
         ) else { return false }
+        // The pick belongs to the profile that asked; a switch since then
+        // must not hand it to the next one. Checked before the retry below,
+        // which would otherwise start over under the new profile's scope.
+        guard store?.boundScope == scopeAtStart else { return false }
 
         // An offset derived from a remembered pool count can overshoot a genre
         // that has since shrunk; an empty page is the server saying so, so
@@ -191,9 +195,6 @@ final class GenreCardViewModel {
             poolCount: page.totalRecordCount,
         )
         selection = chosenSelection
-        // The pick belongs to the profile that asked; a switch since then
-        // must not hand it to the next one
-        guard store?.boundScope == scopeAtStart else { return false }
         store?.setSelection(chosenSelection, for: Self.key(library: library, genre: genre))
         return true
     }

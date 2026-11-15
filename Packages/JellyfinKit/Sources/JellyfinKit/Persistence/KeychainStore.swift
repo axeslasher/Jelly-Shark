@@ -7,12 +7,22 @@ public enum KeychainError: Error, Sendable, Equatable {
     case unexpectedStatus(OSStatus)
 }
 
+/// The Keychain operations `SessionStore` uses, so a test can make one of
+/// them fail
+protocol KeychainStoring: Sendable {
+    func setData(_ data: Data, for key: String) throws
+    func data(for key: String) throws -> Data?
+    func setString(_ value: String, for key: String) throws
+    func string(for key: String) throws -> String?
+    func delete(_ key: String) throws
+}
+
 /// A minimal wrapper around the Keychain for storing small secrets
 ///
 /// Items are stored as generic passwords under a shared service namespace,
 /// keyed by account name. Reads distinguish "not found" (returns nil) from
 /// genuine Keychain failures (throws `KeychainError`).
-public struct KeychainStore: Sendable {
+public struct KeychainStore: KeychainStoring, Sendable {
     /// The Keychain service namespace for all items in this store
     public let service: String
 

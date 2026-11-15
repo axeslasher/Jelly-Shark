@@ -498,4 +498,27 @@ struct GenreCardViewModelTests {
         #expect(viewModel.selection == nil)
         #expect(store.selection(for: key) == nil)
     }
+
+    @Test("A profile switch during an overshooting fetch stops the retry from writing to the new profile")
+    func switchDuringOvershootStopsRetry() async {
+        let store = await makeStore()
+        let client = MockJellyfinClient()
+        // The offset overshot, so the card starts over from the top
+        client.libraryItemsPages = [.success(page([], startIndex: 12, total: 0)), .success(page(["x"]))]
+        let gate = AsyncGate()
+        client.libraryItemsDelay = { try? await gate.wait() }
+        let viewModel = makeViewModel(store: store)
+        let roll = Task { await viewModel.roll(client: client, library: Self.library, genre: Self.genre, startIndex: 12) }
+        await gate.arrivals(atLeast: 1)
+
+        await store.activate(cache: ScopedCache(
+            store: .makeInMemory(),
+            scope: CacheScope(serverURL: URL(string: "https://demo.example.org")!, userID: "user-2"),
+        ))
+
+        await gate.open()
+        _ = await roll.value
+
+        #expect(store.selection(for: key) == nil)
+    }
 }
