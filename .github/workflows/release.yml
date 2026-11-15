@@ -110,6 +110,14 @@ jobs:
       - name: Xcode version
         run: xcodebuild -version
 
+      # The theme typefaces are git-ignored (the Fontshare EULA forbids
+      # redistributing the files, though it allows embedding them in the app),
+      # so a fresh checkout has only Atkinson. Without this step every theme
+      # silently falls back to SF. The script fails on any download or unzip
+      # error, so a missing font fails the release rather than shipping.
+      - name: Fetch theme fonts
+        run: make fonts
+
       # xcodebuild's cloud signing (-allowProvisioningUpdates) authenticates
       # with the App Store Connect API key directly; no certificates or
       # profiles are stored in the repo or in secrets beyond the key itself.
