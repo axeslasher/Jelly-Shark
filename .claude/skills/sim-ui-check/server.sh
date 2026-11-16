@@ -95,12 +95,19 @@ up() {
     docker run -d --rm --name "$name" -p "127.0.0.1:$port:8096" -v "$media:/media:ro" \
         "jellyfin/jellyfin:$version" >/dev/null
 
-    local i
+    # Wait for three answers in a row, not the first one: a cold 12.4 can answer
+    # once mid-startup and then refuse for a moment, and a single confirm curl
+    # after that first answer failed the start with the container healthy.
+    local i answered=0
     for i in $(seq 1 90); do
-        curl -sf "$base/System/Info/Public" >/dev/null && break
+        if curl -sf "$base/System/Info/Public" >/dev/null; then
+            ((++answered >= 3)) && break
+        else
+            answered=0
+        fi
         sleep 1
     done
-    curl -sf "$base/System/Info/Public" >/dev/null || fail "server did not come up on $base"
+    ((answered >= 3)) || fail "server did not come up on $base"
 
     # On a cold start /System/Info/Public answers before the wizard endpoints
     # do, and a bare call here exited silently under `set -e`. Retry it.
