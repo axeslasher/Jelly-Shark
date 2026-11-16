@@ -260,14 +260,14 @@ struct JellyfinKitTests {
             let person = Person(from: BaseItemDto(
                 endDate: death,
                 id: "person-guid",
-                imageBlurHashes: BaseItemDto.ImageBlurHashes(primary: ["head-tag": "hash-1"]),
+                imageBlurHashes: ImageBlurHashes(primary: ["head-tag": "hash-1"]),
                 imageTags: ["Primary": "head-tag"],
                 name: "Boris Karloff",
                 overview: "An English actor.",
                 premiereDate: birth,
                 productionLocations: ["London, England, UK", "Elsewhere"],
                 type: .person,
-                userData: UserItemDataDto(isFavorite: true),
+                userData: UserItemDataDto(isFavorite: true, key: "person-guid"),
             ))
 
             #expect(person.id == "person-guid")

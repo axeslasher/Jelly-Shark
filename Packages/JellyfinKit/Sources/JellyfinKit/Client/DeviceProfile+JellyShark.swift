@@ -49,12 +49,12 @@ extension JellyfinAPI.DeviceProfile {
             },
             transcodingProfiles: [
                 JellyfinAPI.TranscodingProfile(
+                    protocol: .hls,
                     audioCodec: capabilities.transcoding.audioCodecs.joined(separator: ","),
-                    isBreakOnNonKeyFrames: capabilities.transcoding.breaksOnNonKeyFrames,
                     container: capabilities.transcoding.containers.joined(separator: ","),
                     context: .streaming,
+                    isBreakOnNonKeyFrames: capabilities.transcoding.breaksOnNonKeyFrames,
                     minSegments: capabilities.transcoding.minSegments,
-                    protocol: .hls,
                     type: .video,
                     videoCodec: capabilities.transcoding.videoCodecs.joined(separator: ","),
                 ),

@@ -384,7 +384,7 @@ extension ImageTags {
     init?(
         from tags: [String: String]?,
         backdropTags: [String]? = nil,
-        blurHashes: JellyfinAPI.BaseItemDto.ImageBlurHashes? = nil,
+        blurHashes: JellyfinAPI.ImageBlurHashes? = nil,
     ) {
         let backdrop = tags?["Backdrop"] ?? backdropTags?.first
         guard tags != nil || backdrop != nil else { return nil }

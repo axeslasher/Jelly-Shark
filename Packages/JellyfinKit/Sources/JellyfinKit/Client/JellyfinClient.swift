@@ -1255,11 +1255,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         do {
             let body = JellyfinAPI.PlaybackInfoDto(
                 audioStreamIndex: audioStreamIndex,
-                isAutoOpenLiveStream: true,
                 deviceProfile: JellyfinAPI.DeviceProfile(capabilities: capabilities),
                 enableDirectPlay: true,
                 enableDirectStream: true,
                 enableTranscoding: true,
+                isAutoOpenLiveStream: true,
                 // Without an explicit budget the server applies a low default
                 // bitrate cap and refuses direct play for most real files
                 // (observed: ~2.5 Mbps cutoff). Apple TV is a wired/strong-
@@ -1382,10 +1382,17 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
     /// rebuild abandons its old PlaySessionId without a stopped report, so
     /// without this the orphaned ffmpeg runs until the server's idle
     /// timeout. Fire-and-forget: failure only delays that cleanup.
+    ///
+    /// Hand-built because Jellyfin 12 dropped this endpoint from its API
+    /// document, so the generated SDK has no `Paths` call for it. Both 10.11.11
+    /// and 12.4 still stop the transcode when it arrives (#291). The request
+    /// matches the one SDK 0.6.0 generated: same path, method and query names.
     public func stopEncoding(playSessionId: String) async {
-        _ = try? await sdkClient.send(Paths.stopEncodingProcess(
-            deviceID: configuration.deviceID,
-            playSessionID: playSessionId,
+        _ = try? await sdkClient.send(Request<Void>(
+            path: "/Videos/ActiveEncodings",
+            method: "DELETE",
+            query: [("deviceId", configuration.deviceID), ("playSessionId", playSessionId)],
+            id: "StopEncodingProcess",
         ))
     }
 
@@ -1399,7 +1406,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         subtitleStreamIndex: Int?,
     ) async throws {
         do {
-            let info = JellyfinAPI.PlaybackStartInfo(
+            let info = JellyfinAPI.PlaybackStateInfo(
                 audioStreamIndex: audioStreamIndex,
                 canSeek: true,
                 isPaused: false,
@@ -1431,7 +1438,7 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
         subtitleStreamIndex: Int?,
     ) async throws {
         do {
-            let info = JellyfinAPI.PlaybackProgressInfo(
+            let info = JellyfinAPI.PlaybackStateInfo(
                 audioStreamIndex: audioStreamIndex,
                 canSeek: true,
                 isPaused: isPaused,
@@ -1545,11 +1552,11 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
 
         do {
             let body = JellyfinAPI.PlaybackInfoDto(
-                isAutoOpenLiveStream: true,
                 deviceProfile: JellyfinAPI.DeviceProfile(liveCapabilities: capabilities),
                 enableDirectPlay: false,
                 enableDirectStream: true,
                 enableTranscoding: true,
+                isAutoOpenLiveStream: true,
                 maxStreamingBitrate: capabilities.maxStreamingBitrate,
                 userID: userId,
             )
@@ -1771,9 +1778,10 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             parameters.userID = userId
             parameters.seriesID = seriesId
             parameters.limit = 1
-            // Surface the first episode for never-started series too, so the
-            // hero Play button always has a target.
-            parameters.isDisableFirstEpisode = false
+            // A never-started series still answers with its first episode, so
+            // the hero Play button always has a target. The server does that
+            // for a per-series query on its own; the old disableFirstEpisode
+            // switch was ignored by 10.11 and is gone from 12 (#291).
             parameters.enableResumable = true
 
             let response = try await sdkClient.send(
@@ -1797,10 +1805,9 @@ public final class JellyfinClient: JellyfinClientProtocol, @unchecked Sendable {
             var parameters = Paths.GetNextUpParameters()
             parameters.userID = userId
             parameters.limit = limit
-            // Unlike the per-series variant: skip never-started series (their
-            // first episodes aren't "next up" for a Home shelf) and exclude
-            // resumable episodes (those already surface in Continue Watching).
-            parameters.isDisableFirstEpisode = true
+            // Unlike the per-series variant: exclude resumable episodes (those
+            // already surface in Continue Watching). Never-started series stay
+            // out of this list on the server's own rule, not a parameter.
             parameters.enableResumable = false
             // `dateCreated` lets the merged Continue Watching lane rank a
             // just-added episode of an actively watched show by its arrival.
