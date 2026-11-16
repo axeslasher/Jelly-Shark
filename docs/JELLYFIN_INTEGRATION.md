@@ -2,7 +2,7 @@
 
 ## Overview
 
-Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (0.6.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
+Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (3.4.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
 
 > **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + streaming (direct play with HLS remux/transcode fallback), and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. **SwiftData caching is implemented** (#24, 2026-07-30): a per-user-per-server metadata and user-state cache behind `CachingJellyfinClient`, alongside session tokens (Keychain) and artwork (`URLCache`). See Caching Strategy below.
 

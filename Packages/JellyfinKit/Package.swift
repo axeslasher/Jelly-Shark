@@ -28,9 +28,9 @@ let package = Package(
     ],
     dependencies: [
         // upToNextMinor, not `from:` — a minor SDK release regenerates the API
-        // from a newer server (3.3.0 was "Generate 12.1"), and regeneration
-        // renames types and reorders initializer arguments, which breaks source
-        // even inside one major. Move the minor deliberately, as #291 did.
+        // from a newer server (3.3.0 was "Generate 12.1"), and a regeneration
+        // can rename types or reorder initializer arguments. Move the minor
+        // deliberately.
         .package(url: "https://github.com/jellyfin/jellyfin-sdk-swift.git", .upToNextMinor(from: "3.4.0")),
         // Also a dependency of jellyfin-sdk-swift; declared directly because
         // JellyfinClient imports Get to translate its transport errors. Left on
