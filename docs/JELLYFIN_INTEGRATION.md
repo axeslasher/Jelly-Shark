@@ -57,7 +57,7 @@ _(planned)_ Auto-detect via mDNS/Bonjour on the local network.
 
 ## Core API Endpoints
 
-All endpoints are accessed through `jellyfin-sdk-swift` (`Paths.*`) rather than hand-rolled requests. The list below marks current implementation status.
+All endpoints but one are accessed through `jellyfin-sdk-swift` (`Paths.*`) rather than hand-rolled requests. The exception is `DELETE /Videos/ActiveEncodings`, which the Jellyfin 12 API document no longer lists but both 10.11 and 12 servers still honour. The list below marks current implementation status.
 
 ### Authentication — ✅ implemented
 ```
@@ -578,7 +578,7 @@ above.
 ## API Client Architecture
 
 ### Networking Layer
-**Library**: `jellyfin-sdk-swift` (built on [Get](https://github.com/kean/Get)/URLSession). JellyfinKit does not issue raw requests — it calls SDK `Paths.*` and adapts the DTOs to domain models.
+**Library**: `jellyfin-sdk-swift` (built on [Get](https://github.com/kean/Get)/URLSession). JellyfinKit calls SDK `Paths.*` and adapts the DTOs to domain models. Its one hand-built request is `stopEncoding(playSessionId:)`: Jellyfin 12 dropped `DELETE /Videos/ActiveEncodings` from its API document, so the generated SDK has no `Paths` call for it, yet 10.11.11 and 12.4 both stop the transcode when it arrives.
 
 **Structure (as implemented)**:
 ```

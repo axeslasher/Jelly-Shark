@@ -78,7 +78,7 @@ Not built yet (listed here so nothing above reads as a promise):
 - Swift 6.2+
 - SwiftUI
 - AVKit / AVPlayer for direct play and HLS playback
-- [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.x) for the Jellyfin API
+- [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (3.4.x) for the Jellyfin API
 - Keychain for secure session storage; `URLCache` for artwork
 - Swift Package Manager (modular: JellyfinKit, DesignSystem, Features)
 - Swift Testing
