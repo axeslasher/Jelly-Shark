@@ -21,6 +21,10 @@ let package = Package(
     dependencies: [
         .package(path: "../JellyfinKit"),
         .package(path: "../DesignSystem"),
+        // Spike #60 only: breaks the binary-dependency policy on purpose
+        // (docs/spikes/60.md). Pinned to the minor because upstream ships
+        // roughly daily; no optional traits.
+        .package(url: "https://github.com/superuser404notfound/AetherEngine", .upToNextMinor(from: "7.70.0")),
     ],
     targets: [
         .target(
@@ -28,6 +32,7 @@ let package = Package(
             dependencies: [
                 "JellyfinKit",
                 "DesignSystem",
+                .product(name: "AetherEngine", package: "AetherEngine"),
             ],
             resources: [
                 .process("Localizable.xcstrings"),

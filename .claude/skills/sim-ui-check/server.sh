@@ -80,6 +80,82 @@ EOF
     echo "$fixture_version" >"$media/.complete"
 }
 
+# Spike #60 (docs/spikes/60.md): MKV sources the default engine cannot
+# direct-play, for trialling a second engine. Opt-in with UI_CHECK_SPIKE=1 and
+# kept in a cache of their own, so branches without this block never see the
+# ordinary cache change under them.
+spike_media="$HOME/Library/Caches/jelly-shark-ui-check/media-spike"
+spike_version=1
+
+spike_nfo() { # dir, title, year, plot
+    art "$1/poster.jpg" 600x900 teal
+    art "$1/backdrop.jpg" 1920x1080 teal
+    echo "<movie><title>$2</title><year>$3</year><plot>$4</plot><genre>Drama</genre><runtime>1</runtime></movie>" >"$1/$2 ($3).nfo"
+}
+
+seed_spike_media() {
+    [[ $(cat "$spike_media/.complete" 2>/dev/null) == "$spike_version" ]] && return
+    command -v ffmpeg >/dev/null || fail "ffmpeg is required (brew install ffmpeg)"
+    rm -rf "$spike_media"
+    local video="testsrc2=size=640x360:rate=24:duration" tone="sine=frequency" dir i
+    local surround="pan=5.1(side)|FL=c0|FR=c0|FC=c0|LFE=c0|SL=c0|SR=c0"
+
+    # HEVC 10-bit HDR10, two audio tracks (the second an octave up, to tell
+    # a switch by ear) and two text subtitle tracks. setparams is what makes
+    # the stream read smpte2084: the x265 flags alone left it "unknown".
+    dir="$spike_media/movies/Signal Fire (2024)"
+    mkdir -p "$dir"
+    printf '1\n00:00:01,000 --> 00:00:04,000\nFixture subtitle one\n\n2\n00:00:05,000 --> 00:00:09,000\nFixture subtitle two\n' >"$dir/en.srt"
+    printf '1\n00:00:01,000 --> 00:00:04,000\nSubtitulo uno\n\n2\n00:00:05,000 --> 00:00:09,000\nSubtitulo dos\n' >"$dir/es.srt"
+    ffmpeg -loglevel error -y -f lavfi -i "$video=20" -f lavfi -i "$tone=440:duration=20" \
+        -f lavfi -i "$tone=880:duration=20" -i "$dir/en.srt" -i "$dir/es.srt" \
+        -map 0:v -map 1:a -map 2:a -map 3 -map 4 \
+        -vf "format=yuv420p10le,setparams=color_primaries=bt2020:color_trc=smpte2084:colorspace=bt2020nc:range=tv" \
+        -c:v libx265 -preset ultrafast \
+        -x265-params "log-level=error:colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc:hdr10=1:repeat-headers=1:master-display=G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1):max-cll=1000,400" \
+        -filter:a:0 "$surround" -c:a:0 eac3 -b:a:0 384k -c:a:1 aac -ac:a:1 2 -c:s srt \
+        -metadata:s:a:0 language=eng -metadata:s:a:1 language=fra \
+        -metadata:s:s:0 language=eng -metadata:s:s:1 language=spa \
+        -disposition:a:0 default -disposition:a:1 0 -disposition:s:0 0 -disposition:s:1 0 \
+        "$dir/Signal Fire (2024).mkv"
+    rm "$dir/en.srt" "$dir/es.srt"
+    spike_nfo "$dir" "Signal Fire" 2024 "Spike fixture: HEVC HDR10 MKV, E-AC-3 5.1 and AAC, two SRT tracks."
+
+    # DTS 5.1: AVFoundation has no decoder, so the default engine needs a
+    # server audio transcode here.
+    dir="$spike_media/movies/Copper Wire (2020)"
+    mkdir -p "$dir"
+    ffmpeg -loglevel error -y -f lavfi -i "$video=20" -f lavfi -i "$tone=440:duration=20" \
+        -map 0:v -map 1:a -c:v libx264 -pix_fmt yuv420p \
+        -filter:a "$surround" -c:a dca -strict -2 -b:a 1509k -metadata:s:a:0 language=eng \
+        "$dir/Copper Wire (2020).mkv"
+    spike_nfo "$dir" "Copper Wire" 2020 "Spike fixture: H.264 MKV with DTS 5.1."
+
+    # AV1 + Opus: no hardware AV1 on the simulator, so this lands on a
+    # software decode path.
+    dir="$spike_media/movies/Glass Orbit (2025)"
+    mkdir -p "$dir"
+    SVT_LOG=1 ffmpeg -loglevel error -y -f lavfi -i "$video=20" -f lavfi -i "$tone=440:duration=20" \
+        -map 0:v -map 1:a -c:v libsvtav1 -preset 10 -pix_fmt yuv420p -c:a libopus -b:a 96k \
+        "$dir/Glass Orbit (2025).mkv"
+    spike_nfo "$dir" "Glass Orbit" 2025 "Spike fixture: AV1 MKV with Opus."
+
+    # A series for Up Next. 45s for the same reason as Night Shift Radio.
+    local show="$spike_media/shows/Relay Station"
+    mkdir -p "$show/Season 01"
+    art "$show/poster.jpg" 600x900 teal
+    art "$show/backdrop.jpg" 1920x1080 teal
+    echo '<tvshow><title>Relay Station</title><year>2024</year><plot>Spike fixture series: HEVC MKV with AC-3.</plot><genre>Drama</genre></tvshow>' >"$show/tvshow.nfo"
+    for i in 1 2 3; do
+        ffmpeg -loglevel error -y -f lavfi -i "$video=45" -f lavfi -i "$tone=440:duration=45" \
+            -map 0:v -map 1:a -c:v libx265 -preset ultrafast -x265-params log-level=error -pix_fmt yuv420p \
+            -c:a ac3 -b:a 192k "$show/Season 01/Relay Station S01E0$i.mkv"
+        echo "<episodedetails><title>Relay $i</title><season>1</season><episode>$i</episode><plot>Spike fixture episode $i.</plot></episodedetails>" \
+            >"$show/Season 01/Relay Station S01E0$i.nfo"
+    done
+    echo "$spike_version" >"$spike_media/.complete"
+}
+
 api() { # method, path, [json]
     curl -sf -X "$1" -H 'Content-Type: application/json' -H "Authorization: $auth${TOKEN:+, Token=\"$TOKEN\"}" \
         "$base$2" ${3:+-d "$3"}
@@ -89,10 +165,17 @@ up() {
     command -v docker >/dev/null || fail "docker is required"
     docker info >/dev/null 2>&1 || fail "docker is not running"
     seed_media
+    local mounts=(-v "$media:/media:ro") expected=6 spike=""
+    if [[ -n ${UI_CHECK_SPIKE:-} ]]; then
+        seed_spike_media
+        mounts+=(-v "$spike_media:/media-spike:ro")
+        expected=12
+        spike=" + spike library: 3 MKV movies, 1 MKV series of 3 episodes"
+    fi
     docker rm -f "$name" >/dev/null 2>&1 || true
     # Loopback only: the admin is test/test, so it must not be reachable from
     # the LAN. The simulator shares the Mac's localhost, which is all it needs.
-    docker run -d --rm --name "$name" -p "127.0.0.1:$port:8096" -v "$media:/media:ro" \
+    docker run -d --rm --name "$name" -p "127.0.0.1:$port:8096" "${mounts[@]}" \
         "jellyfin/jellyfin:$version" >/dev/null
 
     # Wait for three answers in a row, not the first one: a cold 12.4 can answer
@@ -131,6 +214,10 @@ up() {
     local options='{"LibraryOptions":{"EnableInternetProviders":false,"EnableRealtimeMonitor":false,"TypeOptions":[]}}'
     api POST "/Library/VirtualFolders?name=Movies&collectionType=movies&paths=%2Fmedia%2Fmovies&refreshLibrary=false" "$options" >/dev/null
     api POST "/Library/VirtualFolders?name=Shows&collectionType=tvshows&paths=%2Fmedia%2Fshows&refreshLibrary=false" "$options" >/dev/null
+    if [[ -n $spike ]]; then
+        api POST "/Library/VirtualFolders?name=Spike%20Movies&collectionType=movies&paths=%2Fmedia-spike%2Fmovies&refreshLibrary=false" "$options" >/dev/null
+        api POST "/Library/VirtualFolders?name=Spike%20Shows&collectionType=tvshows&paths=%2Fmedia-spike%2Fshows&refreshLibrary=false" "$options" >/dev/null
+    fi
     api POST /Library/Refresh >/dev/null
 
     # The scan is asynchronous: wait until every fixture item is indexed.
@@ -138,10 +225,10 @@ up() {
     for i in $(seq 1 90); do
         count=$(api GET "/Items?Recursive=true&IncludeItemTypes=Movie,Episode" |
             python3 -c 'import sys,json;print(json.load(sys.stdin)["TotalRecordCount"])')
-        [[ $count -ge 6 ]] && break
+        [[ $count -ge $expected ]] && break
         sleep 1
     done
-    [[ $count -ge 6 ]] || fail "library scan found $count of 6 items"
+    [[ $count -ge $expected ]] || fail "library scan found $count of $expected items"
 
     local live=""
     if [[ -n ${UI_CHECK_LIVETV_M3U:-} ]]; then
@@ -149,7 +236,7 @@ up() {
         live=", $LIVE_CHANNELS live channels"
     fi
 
-    echo "$base  (Jellyfin $version, user test / password test, 3 movies + 1 series of 3 episodes$live)"
+    echo "$base  (Jellyfin $version, user test / password test, 3 movies + 1 series of 3 episodes$spike$live)"
 }
 
 seed_live_tv() {

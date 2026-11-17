@@ -1,3 +1,4 @@
+import AetherEngine
 import DesignSystem
 import JellyfinKit
 import SwiftUI
@@ -28,7 +29,9 @@ public struct PlaybackContainerView: View {
     /// deliberately doesn't expose, and reading it here is what gets the
     /// first load onto the screen. A rebuild keeps the same instance and
     /// swaps the item inside it, so nothing here re-renders mid-session.
-    @State private var playerEngine: AVFoundationPlayerEngine
+    ///
+    /// Spike #60: typed as either engine, chosen by launch argument.
+    @State private var playerEngine: any PlayerEngine & AVPlayerHosting
 
     /// Focus for the error screen's Close button. `.failed` used to be
     /// reachable only from `.loading`, whose ProgressView holds no focus, so
@@ -54,7 +57,9 @@ public struct PlaybackContainerView: View {
         playbackTicket: Binding<ContentRefreshCoordinator.PlaybackTicket?>,
     ) {
         _presenterTicket = playbackTicket
-        let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
+        let engine: any PlayerEngine & AVPlayerHosting = PlayerEngineSelection.usesAether
+            ? AetherPlayerEngine(streamingBitrateCap: streamingBitrateCap)
+            : AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)
         _viewModel = State(initialValue: PlaybackViewModel(
             client: client,
@@ -165,7 +170,10 @@ public struct PlaybackContainerView: View {
             // mid-session. That is the invariant #183 turns on: SwiftUI
             // removing this view while AVKit's fullscreen window is up leaves
             // the app's own window hidden with nothing to restore it.
-            if let player = playerEngine.player {
+            // Spike #60: the trial engine's software route has no AVPlayer.
+            if let softwareEngine = (playerEngine as? AetherPlayerEngine)?.softwareRouteEngine {
+                AetherPlayerSurface(engine: softwareEngine)
+            } else if let player = playerEngine.player {
                 PlayerViewControllerRepresentable(
                     player: player,
                     audioStreams: viewModel.mediaSource?.audioStreams ?? [],

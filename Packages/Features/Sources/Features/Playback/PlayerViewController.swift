@@ -246,6 +246,12 @@
             configureInfoTabs(for: controller, coordinator: context.coordinator)
             syncReconnectingBanner(for: controller, coordinator: context.coordinator)
             #if os(tvOS)
+                // Spike #60: the trial engine writes the display criteria
+                // itself, before the item exists; its tvOS host setup says
+                // AVKit's automatic write must be off for HDR to play.
+                if PlayerEngineSelection.usesAether {
+                    controller.appliesPreferredDisplayCriteriaAutomatically = false
+                }
                 // Install the Up Next card once, here in a main-actor context;
                 // AVKit reuses it for every proposal and the `shouldPresent`
                 // delegate only approves presentation (#186). The dismissal
