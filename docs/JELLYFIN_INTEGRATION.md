@@ -315,7 +315,6 @@ struct LibraryFilterOptions { let genres: [String]; let officialRatings: [String
 ```swift
 struct ServerInfo {
     let serverName, version, id: String
-    let operatingSystem: String?
     let startupWizardCompleted: Bool?
     static let minimumVersion = "10.11.11"   // computed isSupported
 }

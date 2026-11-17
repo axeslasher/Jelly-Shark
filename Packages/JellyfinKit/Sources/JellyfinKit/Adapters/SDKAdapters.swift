@@ -38,7 +38,6 @@ extension ServerInfo {
             serverName: info.serverName ?? "",
             version: info.version ?? "unknown",
             id: info.id ?? "",
-            operatingSystem: info.operatingSystem,
             startupWizardCompleted: info.isStartupWizardCompleted,
         )
     }
