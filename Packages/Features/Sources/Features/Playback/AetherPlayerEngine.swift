@@ -56,6 +56,19 @@ enum AetherEngineHost {
 final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
+    /// Evidence for H4: the app's physical footprint, the figure the system's
+    /// memory limit is enforced against. 0 if the read fails.
+    private static func memoryFootprintMegabytes() -> Int {
+        var info = task_vm_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+            }
+        }
+        return result == KERN_SUCCESS ? Int(info.phys_footprint / 1_048_576) : 0
+    }
+
     /// The default engine's declaration, widened to what this engine reads
     /// itself, so the server answers direct play for sources AVFoundation
     /// would need remuxed or transcoded.
@@ -399,7 +412,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                 // Evidence for H3: a line every 5 s of playhead, read back
                 // from the simulator log after a check.
                 if Int(time / 5) != Int((observedPlayheadSeconds ?? -5) / 5) {
-                    Self.logger.info("[aether] playhead \(time, format: .fixed(precision: 1))s route=\(engine.videoRoute.rawValue, privacy: .public) phase=\(String(describing: engine.playbackPhase), privacy: .public)")
+                    Self.logger.info("[aether] playhead \(time, format: .fixed(precision: 1))s route=\(engine.videoRoute.rawValue, privacy: .public) phase=\(String(describing: engine.playbackPhase), privacy: .public) mem=\(Self.memoryFootprintMegabytes())MB")
                 }
                 observedPlayheadSeconds = time
                 activityTicks &+= 1
