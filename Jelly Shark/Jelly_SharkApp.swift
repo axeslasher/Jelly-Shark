@@ -30,6 +30,15 @@ struct Jelly_SharkApp: App {
                 // (focus platters, materials, glass) in its dark variants
                 // instead of following the viewer's system appearance.
                 .preferredColorScheme(.dark)
+            #if os(visionOS)
+                .uniformWindowResizing()
+            #endif
         }
+        #if os(visionOS)
+        // 16:9 at 1080p points: the app opens at a deliberate size, and
+        // `uniformWindowResizing()` keeps that shape. See the 2026-11-13
+        // row in docs/ARCHITECTURE.md § Decision Log.
+        .defaultSize(width: 1920, height: 1080)
+        #endif
     }
 }
