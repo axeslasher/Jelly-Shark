@@ -57,6 +57,7 @@ public struct PlaybackContainerView: View {
         playbackTicket: Binding<ContentRefreshCoordinator.PlaybackTicket?>,
     ) {
         _presenterTicket = playbackTicket
+        SpikeFootprintLog.startIfNeeded()
         let engine: any PlayerEngine & AVPlayerHosting = PlayerEngineSelection.usesAether
             ? AetherPlayerEngine(streamingBitrateCap: streamingBitrateCap)
             : AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
