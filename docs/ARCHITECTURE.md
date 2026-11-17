@@ -24,7 +24,7 @@ Jelly Shark is a multi-platform Jellyfin client for tvOS and visionOS, built wit
 - Media streaming coordination
 - Persistence: Keychain session storage and the SwiftData metadata/user-state cache (`Persistence/`)
 
-**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (0.6.0), [Get](https://github.com/kean/Get) (declared `from: 2.1.6`, resolves to 2.2.1; used to inspect HTTP status codes for error mapping)
+**Dependencies**: Foundation, [jellyfin-sdk-swift](https://github.com/jellyfin/jellyfin-sdk-swift) (3.4.0, generated from the Jellyfin 12 API; 10.11 servers stay supported), [Get](https://github.com/kean/Get) (declared `from: 2.1.6`, resolves to 2.2.1; used to inspect HTTP status codes for error mapping)
 
 **Platform support**: Fully shared (tvOS, visionOS)
 
@@ -254,7 +254,7 @@ Preference: Keep components platform-agnostic when possible, use injection over 
 
 **Language**: Swift 6.2+  
 **UI Framework**: SwiftUI  
-**Networking**: jellyfin-sdk-swift (0.6.0), built on Get/URLSession  
+**Networking**: jellyfin-sdk-swift (3.4.0), built on Get/URLSession  
 **Playback**: AVKit / AVPlayer (HLS transcode streaming)  
 **Persistence**: Keychain (session) + SwiftData (metadata/user-state cache) + URLCache (artwork) + UserDefaults (theme)  
 **Testing**: Swift Testing  

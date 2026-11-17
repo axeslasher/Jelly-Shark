@@ -2,7 +2,7 @@
 
 ## Overview
 
-Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (0.6.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
+Jelly Shark integrates with Jellyfin servers through the official [`jellyfin-sdk-swift`](https://github.com/jellyfin/jellyfin-sdk-swift) SDK (3.4.0), wrapped behind a `JellyfinClientProtocol` facade in JellyfinKit. The server is the source of truth for all media content, metadata, and user state. Local storage is exclusively for caching and performance optimization.
 
 > **Implementation status note**: This document describes both what is built and what is planned. Sections marked _(planned)_ are not yet implemented. As of now, the client supports authentication, paged library/item browsing with sort/filter, search, image URLs, resume/latest discovery, seasons/episodes + next-up, similar items, people (person detail + filmography), playback info + streaming (direct play with HLS remux/transcode fallback), and playback reporting. **"Mark played/unplayed" and "favorites" are implemented** — read via item `UserData` and written back through optimistic toggles on media and person detail. **SwiftData caching is implemented** (#24, 2026-07-30): a per-user-per-server metadata and user-state cache behind `CachingJellyfinClient`, alongside session tokens (Keychain) and artwork (`URLCache`). See Caching Strategy below.
 
@@ -57,7 +57,7 @@ _(planned)_ Auto-detect via mDNS/Bonjour on the local network.
 
 ## Core API Endpoints
 
-All endpoints are accessed through `jellyfin-sdk-swift` (`Paths.*`) rather than hand-rolled requests. The list below marks current implementation status.
+All endpoints but one are accessed through `jellyfin-sdk-swift` (`Paths.*`) rather than hand-rolled requests. The exception is `DELETE /Videos/ActiveEncodings`, which the Jellyfin 12 API document no longer lists but both 10.11 and 12 servers still honour. The list below marks current implementation status.
 
 ### Authentication — ✅ implemented
 ```
@@ -315,7 +315,6 @@ struct LibraryFilterOptions { let genres: [String]; let officialRatings: [String
 ```swift
 struct ServerInfo {
     let serverName, version, id: String
-    let operatingSystem: String?
     let startupWizardCompleted: Bool?
     static let minimumVersion = "10.11.11"   // computed isSupported
 }
@@ -578,7 +577,7 @@ above.
 ## API Client Architecture
 
 ### Networking Layer
-**Library**: `jellyfin-sdk-swift` (built on [Get](https://github.com/kean/Get)/URLSession). JellyfinKit does not issue raw requests — it calls SDK `Paths.*` and adapts the DTOs to domain models.
+**Library**: `jellyfin-sdk-swift` (built on [Get](https://github.com/kean/Get)/URLSession). JellyfinKit calls SDK `Paths.*` and adapts the DTOs to domain models. Its one hand-built request is `stopEncoding(playSessionId:)`: Jellyfin 12 dropped `DELETE /Videos/ActiveEncodings` from its API document, so the generated SDK has no `Paths` call for it, yet 10.11.11 and 12.4 both stop the transcode when it arrives.
 
 **Structure (as implemented)**:
 ```

@@ -11,9 +11,6 @@ public struct ServerInfo: Sendable, Codable, Equatable {
     /// Server ID
     public let id: String
 
-    /// Operating system the server is running on
-    public let operatingSystem: String?
-
     /// Whether the server has been set up
     public let startupWizardCompleted: Bool?
 
@@ -21,13 +18,11 @@ public struct ServerInfo: Sendable, Codable, Equatable {
         serverName: String,
         version: String,
         id: String,
-        operatingSystem: String? = nil,
         startupWizardCompleted: Bool? = nil,
     ) {
         self.serverName = serverName
         self.version = version
         self.id = id
-        self.operatingSystem = operatingSystem
         self.startupWizardCompleted = startupWizardCompleted
     }
 
@@ -48,7 +43,6 @@ extension ServerInfo {
         case serverName = "ServerName"
         case version = "Version"
         case id = "Id"
-        case operatingSystem = "OperatingSystem"
         case startupWizardCompleted = "StartupWizardCompleted"
     }
 }

@@ -27,11 +27,11 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // upToNextMinor, not `from:` — the SDK is pre-1.0, and SPM's `from:` is
-        // up-to-next-MAJOR at every version, so `from: "0.6.0"` would accept any
-        // 0.x release. On a 0.x library that is where breaking changes land.
-        // (Unlike npm, SPM does not special-case 0.x the way `^0.6.0` does.)
-        .package(url: "https://github.com/jellyfin/jellyfin-sdk-swift.git", .upToNextMinor(from: "0.6.0")),
+        // upToNextMinor, not `from:` — a minor SDK release regenerates the API
+        // from a newer server (3.3.0 was "Generate 12.1"), and a regeneration
+        // can rename types or reorder initializer arguments. Move the minor
+        // deliberately.
+        .package(url: "https://github.com/jellyfin/jellyfin-sdk-swift.git", .upToNextMinor(from: "3.4.0")),
         // Also a dependency of jellyfin-sdk-swift; declared directly because
         // JellyfinClient imports Get to translate its transport errors. Left on
         // up-to-next-major: Get is past 1.0 and follows semver.

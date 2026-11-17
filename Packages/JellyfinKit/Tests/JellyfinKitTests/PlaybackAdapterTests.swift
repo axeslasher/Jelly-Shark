@@ -13,10 +13,10 @@ struct PlaybackAdapterTests {
             defaultSubtitleStreamIndex: 2,
             eTag: "etag-1",
             id: "source-1",
-            runTimeTicks: 72_000_000_000,
             isSupportsDirectPlay: true,
             isSupportsDirectStream: true,
             isSupportsTranscoding: true,
+            runTimeTicks: 72_000_000_000,
             transcodingURL: "/videos/source-1/master.m3u8",
         )
 
