@@ -112,6 +112,11 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
 
     @ObservationIgnored private var pendingUpNextProposal: UpNextProposal?
 
+    /// The resume point the session layer asked for while a load was still
+    /// starting, and the start position that load actually used.
+    @ObservationIgnored private var pendingResumeSeconds: Double?
+    @ObservationIgnored private var appliedStartSeconds: Double?
+
     @ObservationIgnored var onEvent: ((PlayerEngineEvent) -> Void)?
 
     @ObservationIgnored private var engine: AetherEngine?
@@ -167,11 +172,21 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         }
 
         Self.logger.info("[aether] load \(AetherEngine.version, privacy: .public) gen=\(generation)")
+        pendingResumeSeconds = nil
+        appliedStartSeconds = nil
         loadTask = Task { [weak self] in
             do {
+                // Let the view model's `seekForResume`, issued right after
+                // `load`, register first: the engine rejects a seek before
+                // its own load has begun (E10), so a resume point has to
+                // ride in as the load's start position.
+                await Task.yield()
+                let start = self?.pendingResumeSeconds
+                self?.appliedStartSeconds = start
+                Self.logger.info("[aether] engine.load startPosition=\(start.map { String($0) } ?? "nil", privacy: .public)")
                 // The view model calls `play()` itself once it has seeked
                 // to the resume point, as it does on the default engine.
-                try await engine.load(url: url, options: LoadOptions(autoplay: false))
+                try await engine.load(url: url, startPosition: start, options: LoadOptions(autoplay: false))
                 guard let self, self.generation == generation else { return }
                 Self.logger.info("[aether] loaded route=\(engine.videoRoute.rawValue, privacy: .public) tracks=\(engine.audioTracks.count)")
                 onEvent?(.mediaSelectionOptionsLoaded)
@@ -198,6 +213,16 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     }
 
     func seekForResume(toSeconds seconds: Double) async {
+        guard let loadTask else {
+            await engine?.seek(to: seconds)
+            return
+        }
+        // Hand the position to the load in flight, wait for it, and seek
+        // only if the load had already started without it.
+        pendingResumeSeconds = seconds
+        let generation = generation
+        await loadTask.value
+        guard self.generation == generation, appliedStartSeconds != seconds else { return }
         await engine?.seek(to: seconds)
     }
 
