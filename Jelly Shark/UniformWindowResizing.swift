@@ -23,16 +23,28 @@
         final class AnchorView: UIView {
             private static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Window")
 
+            /// Below this the library grid and Home shelves get too cramped to
+            /// read, judged on device.
+            private static let minimumSize = CGSize(width: 1280, height: 720)
+
             override func didMoveToWindow() {
                 super.didMoveToWindow()
                 guard let window, let scene = window.windowScene else { return }
                 // Uniform resizing keeps whatever shape the window has, so a
-                // window that isn't 16:9 is corrected, keeping its width. A 16:9
-                // window is sent no size, because one would override `defaultSize`.
-                let width = window.bounds.width
+                // window that isn't 16:9 is corrected, keeping its width but
+                // never going below the minimum. A 16:9 window is sent no size,
+                // because one would override `defaultSize`.
+                let width = max(window.bounds.width, Self.minimumSize.width)
                 let height = (width * 9 / 16).rounded()
-                let size = abs(window.bounds.height - height) > 1 ? CGSize(width: width, height: height) : nil
-                scene.requestGeometryUpdate(.Vision(size: size, resizingRestrictions: .uniform)) { error in
+                let isSixteenByNine = abs(window.bounds.height - (window.bounds.width * 9 / 16).rounded()) <= 1
+                let size = isSixteenByNine ? nil : CGSize(width: width, height: height)
+                let preferences = UIWindowScene.GeometryPreferences.Vision(
+                    size: size,
+                    minimumSize: Self.minimumSize,
+                    maximumSize: nil,
+                    resizingRestrictions: .uniform,
+                )
+                scene.requestGeometryUpdate(preferences) { error in
                     Self.logger.error("Window geometry request failed: \(error.localizedDescription, privacy: .public)")
                 }
             }
