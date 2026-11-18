@@ -27,6 +27,11 @@ enum PlayerEngineSelection {
     static var usesAether: Bool {
         ProcessInfo.processInfo.arguments.contains("-spike-aether")
     }
+
+    /// Vision Pro round, part A. False for step A1, true for step A2: tell
+    /// the engine the headset presents Dolby Vision, which it cannot
+    /// observe on visionOS. Flip it between the two builds.
+    static let assertsDolbyVisionOnVisionOS = false
 }
 
 /// Evidence for H4 on both engines: one footprint line every 5 s from the
@@ -200,6 +205,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     @ObservationIgnored private weak var observedItem: AVPlayerItem?
     @ObservationIgnored private var legibleGroup: AVMediaSelectionGroup?
     @ObservationIgnored private var legibleObserver: (any NSObjectProtocol)?
+    @ObservationIgnored private weak var formatLoggedItem: AVPlayerItem?
     let legibleOptions: [LegibleOption] = []
 
     init(streamingBitrateCap: Int? = nil) {
@@ -261,6 +267,13 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                 // The app has its own fallback, the server, so a refused
                 // item should fail rather than move to software decode.
                 options.escalatesToSoftwarePath = false
+                #if os(visionOS)
+                    if PlayerEngineSelection.assertsDolbyVisionOnVisionOS {
+                        options.panelPresentsDolbyVision = true
+                        options.panelIsInHDRMode = true
+                    }
+                    Self.logger.info("[aether] visionOS display assertion: dolbyVision=\(PlayerEngineSelection.assertsDolbyVisionOnVisionOS)")
+                #endif
                 try await engine.load(url: url, startPosition: start, options: options)
                 guard let self, self.generation == generation else { return }
                 Self.logger.info("[aether] loaded route=\(engine.videoRoute.rawValue, privacy: .public) tracks=\(engine.audioTracks.count)")
@@ -411,6 +424,38 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         return true
     }
 
+    // MARK: - Accepted video format
+
+    /// Vision Pro round, part A: what the player itself reports it is
+    /// playing, once per item. `dvh1` or `dvhe` means it accepted the
+    /// stream as Dolby Vision; `hvc1` or `hev1` means plain HEVC. It says
+    /// nothing about what the display then did with it.
+    private func logAcceptedVideoFormat() {
+        guard let item = engine?.currentAVPlayerItem, item !== formatLoggedItem else { return }
+        formatLoggedItem = item
+        Task { [weak self, weak item] in
+            // An HLS item lists its tracks some time after it is mounted.
+            for _ in 0 ..< 40 {
+                guard let item, self?.formatLoggedItem === item else { return }
+                for track in item.tracks {
+                    guard let assetTrack = track.assetTrack, assetTrack.mediaType == .video,
+                          let description = try? await assetTrack.load(.formatDescriptions).first
+                    else { continue }
+                    let code = CMFormatDescriptionGetMediaSubType(description)
+                    let fourCC = String(bytes: [24, 16, 8, 0].map { UInt8((code >> $0) & 0xFF) }, encoding: .ascii) ?? "?"
+                    let extensions = CMFormatDescriptionGetExtensions(description) as? [String: Any]
+                    let transfer = extensions?[kCMFormatDescriptionExtension_TransferFunction as String] as? String ?? "-"
+                    let primaries = extensions?[kCMFormatDescriptionExtension_ColorPrimaries as String] as? String ?? "-"
+                    let size = CMVideoFormatDescriptionGetDimensions(description)
+                    Self.logger.info("[aether] accepted video format: \(fourCC, privacy: .public) \(size.width)x\(size.height) transfer=\(transfer, privacy: .public) primaries=\(primaries, privacy: .public)")
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            Self.logger.info("[aether] accepted video format: no video track listed after 10 s")
+        }
+    }
+
     // MARK: - AVKit's subtitle menu
 
     private func resetSystemSubtitleMenu() {
@@ -420,6 +465,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         legibleObserver = nil
         legibleGroup = nil
         observedItem = nil
+        formatLoggedItem = nil
         markerPosition = nil
         systemMenuSubtitlePick = .none
         systemMenuSubtitlePositions = []
@@ -505,8 +551,44 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     private func reportSystemMenuPick(_ pick: SystemSubtitlePick, cause: String) {
         Self.logger.info("[aether] subtitle menu pick: \(String(describing: pick), privacy: .public) (\(cause, privacy: .public))")
         systemMenuSubtitlePick = pick
-        onEvent?(.mediaSelectionChanged)
+        #if os(visionOS)
+            drawPickWithAVKit(pick)
+        #else
+            onEvent?(.mediaSelectionChanged)
+        #endif
     }
+
+    #if os(visionOS)
+        /// Vision Pro round, part B. No overlay can live in AVKit's player
+        /// on visionOS (#309), so the pick is handed back to AVKit to draw:
+        /// the engine's rendition is selected for real, not as a marker,
+        /// and the engine is told the rendition is the display. The session
+        /// layer is not told, so the reported subtitle index stays as it
+        /// was; this is a probe of whether anything draws at all.
+        private func drawPickWithAVKit(_ pick: SystemSubtitlePick) {
+            guard let engine else { return }
+            switch pick {
+            case .none:
+                return
+            case .off:
+                markerPosition = nil
+                engine.clearSubtitle()
+                Self.logger.info("[aether] visionOS subtitle off")
+            case let .embedded(position):
+                let embedded = engine.subtitleTracks.filter { !$0.isExternal }
+                guard embedded.indices.contains(position),
+                      let menuPosition = systemMenuSubtitlePositions.firstIndex(of: position)
+                else { return }
+                let track = embedded[position]
+                // Remembered so the engine's own select, which echoes
+                // through the same notification, is not read as a new pick.
+                markerPosition = menuPosition
+                engine.selectSubtitleTrack(index: track.id)
+                engine.setNativeSubtitleRendering(true)
+                Self.logger.info("[aether] visionOS subtitle → AVKit draws menu position \(menuPosition) id=\(track.id) codec=\(track.codec, privacy: .public) lang=\(track.language ?? "-", privacy: .public)")
+            }
+        }
+    #endif
 
     /// The engine clears a pick it did not make and forwards only its
     /// language (its `systemCaptionRequest` contract). Answer with the
@@ -595,6 +677,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                 Self.logger.info("[aether] item or duration published; item=\(self.engine?.currentAVPlayerItem == nil ? "nil" : "set", privacy: .public)")
                 attachUpNextProposalIfPossible()
                 observeSystemSubtitleMenu()
+                logAcceptedVideoFormat()
             }
             .store(in: &subscriptions)
 
