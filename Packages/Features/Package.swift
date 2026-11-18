@@ -24,7 +24,10 @@ let package = Package(
         // Spike #60 only: breaks the binary-dependency policy on purpose
         // (docs/spikes/60.md). Pinned to the minor because upstream ships
         // roughly daily; no optional traits.
-        .package(url: "https://github.com/superuser404notfound/AetherEngine", .upToNextMinor(from: "7.70.0")),
+        // Spike #60, E18: pinned to the unreleased fix for AE#1052 to test
+        // it on device. Was `.upToNextMinor(from: "7.70.0")`; go back to a
+        // release once the fix ships in one.
+        .package(url: "https://github.com/superuser404notfound/AetherEngine", revision: "e3097a7e294d8494119ad86f7f0985b1ab3b6013"),
     ],
     targets: [
         .target(
