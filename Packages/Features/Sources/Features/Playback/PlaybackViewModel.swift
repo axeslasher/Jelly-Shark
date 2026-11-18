@@ -578,7 +578,12 @@ public final class PlaybackViewModel {
     /// never reach into that picker either way (#91).
     public var offeredSubtitleStreams: [MediaStreamInfo] {
         if drawsSubtitlesInApp {
-            return embeddedSubtitleStreams
+            // AVKit's menu already lists these; the app's menu carries
+            // only what that menu cannot.
+            let listed = Set(engine.systemMenuSubtitlePositions)
+            return embeddedSubtitleStreams.enumerated()
+                .filter { !listed.contains($0.offset) }
+                .map(\.element)
         }
         return canOfferSubtitleStreams ? (mediaSource?.subtitleStreams ?? []) : []
     }
@@ -603,6 +608,27 @@ public final class PlaybackViewModel {
     /// burn an image track in, or drop direct play for it (spike #60, E15).
     private var serverSubtitleStreamIndex: Int? {
         drawsSubtitlesInApp ? nil : selectedSubtitleStreamIndex
+    }
+
+    /// Spike #60: follow a choice the viewer made in AVKit's subtitle menu
+    /// on an engine that draws subtitles through the app.
+    private func applySystemMenuSubtitlePick() async {
+        guard drawsSubtitlesInApp else { return }
+        let index: Int?
+        switch engine.systemMenuSubtitlePick {
+        case .none:
+            return
+        case .off:
+            index = nil
+        case let .embedded(position):
+            guard embeddedSubtitleStreams.indices.contains(position) else { return }
+            index = embeddedSubtitleStreams[position].index
+        }
+        guard index != selectedSubtitleStreamIndex else { return }
+        selectedSubtitleStreamIndex = index
+        hasExplicitSubtitleSelection = true
+        applyEngineDrawnSubtitle()
+        await reportProgress()
     }
 
     /// Put the committed subtitle selection onto an engine that draws its
@@ -1251,6 +1277,7 @@ public final class PlaybackViewModel {
 
         case .mediaSelectionChanged:
             Task { @MainActor [weak self] in
+                await self?.applySystemMenuSubtitlePick()
                 await self?.reconcileMediaSelection()
             }
 

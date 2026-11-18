@@ -298,6 +298,24 @@ protocol PlayerEngine: AnyObject {
     ///
     /// - Returns: false when the engine cannot map or show the track.
     func selectSubtitleInPlace(embeddedPosition: Int?) -> Bool
+
+    /// Spike #60: the embedded subtitle positions AVKit's own subtitle menu
+    /// lists for this session. The app's menu leaves those out.
+    var systemMenuSubtitlePositions: [Int] { get }
+
+    /// Spike #60: what the viewer last chose in AVKit's subtitle menu. Read
+    /// after a `.mediaSelectionChanged` event.
+    var systemMenuSubtitlePick: SystemSubtitlePick { get }
+}
+
+/// A choice made in AVKit's subtitle menu, in the terms of an engine that
+/// draws subtitles through the app (spike #60).
+enum SystemSubtitlePick: Equatable {
+    /// Nothing to act on.
+    case none
+    case off
+    /// The embedded subtitle stream at this position.
+    case embedded(Int)
 }
 
 extension PlayerEngine {
@@ -313,5 +331,13 @@ extension PlayerEngine {
 
     func selectSubtitleInPlace(embeddedPosition _: Int?) -> Bool {
         false
+    }
+
+    var systemMenuSubtitlePositions: [Int] {
+        []
+    }
+
+    var systemMenuSubtitlePick: SystemSubtitlePick {
+        .none
     }
 }

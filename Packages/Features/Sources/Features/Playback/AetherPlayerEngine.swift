@@ -4,6 +4,7 @@ import Combine
 import Foundation
 import JellyfinKit
 import OSLog
+import VideoToolbox
 #if os(tvOS)
     import UIKit
 #endif
@@ -97,7 +98,13 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         capabilities.directPlay = [
             PlaybackCapabilities.DirectPlayRule(
                 containers: ["mkv", "mp4", "m4v", "mov", "webm", "ts", "avi"],
-                videoCodecs: ["hevc", "h264", "av1", "vp9", "mpeg2video", "vc1"],
+                // AV1 and VP9 only where the device decodes them in
+                // hardware. Without it the engine falls to software decode,
+                // which could not keep real time on Apple TV (E15); left
+                // undeclared, the server transcodes them as it does today.
+                videoCodecs: ["hevc", "h264", "mpeg2video", "vc1"]
+                    + (VTIsHardwareDecodeSupported(kCMVideoCodecType_AV1) ? ["av1"] : [])
+                    + (VTIsHardwareDecodeSupported(kCMVideoCodecType_VP9) ? ["vp9"] : []),
                 audioCodecs: ["aac", "ac3", "eac3", "flac", "alac", "dts", "truehd", "opus", "mp3", "vorbis"],
             ),
         ]
@@ -181,6 +188,18 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     @ObservationIgnored private(set) var observedPlayheadSeconds: Double?
 
     private(set) var audibleOptions: [AudibleOption] = []
+
+    /// For each entry in AVKit's subtitle menu, the embedded subtitle
+    /// position it stands for. Empty when the engine serves no renditions
+    /// for this session, or when the menu did not match what was expected.
+    private(set) var systemMenuSubtitlePositions: [Int] = []
+    @ObservationIgnored private(set) var systemMenuSubtitlePick: SystemSubtitlePick = .none
+
+    /// The menu entry the engine was last told to tick (AE#1052's marker).
+    @ObservationIgnored private var markerPosition: Int?
+    @ObservationIgnored private weak var observedItem: AVPlayerItem?
+    @ObservationIgnored private var legibleGroup: AVMediaSelectionGroup?
+    @ObservationIgnored private var legibleObserver: (any NSObjectProtocol)?
     let legibleOptions: [LegibleOption] = []
 
     init(streamingBitrateCap: Int? = nil) {
@@ -210,12 +229,18 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
             // The app plays no audio of its own, so let the engine release
             // the session on a final stop, as its tvOS host setup advises.
             engine.deactivatesAudioSessionOnStop = true
+            // No subtitle offset control in this app. Without this the
+            // engine reads the file a second time to keep cues ready for
+            // one: on a 20 GB title that reader pulled 765 MB in 30 s next
+            // to the video's 452 MB (E17).
+            engine.maximumSubtitleOffsetSeconds = 0
             subscribe(to: engine)
         }
 
         Self.logger.info("[aether] load \(AetherEngine.version, privacy: .public) gen=\(generation)")
         pendingResumeSeconds = nil
         appliedStartSeconds = nil
+        resetSystemSubtitleMenu()
         loadTask = Task { [weak self] in
             do {
                 // Let the view model's `seekForResume`, issued right after
@@ -228,7 +253,15 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                 Self.logger.info("[aether] engine.load startPosition=\(start.map { String($0) } ?? "nil", privacy: .public)")
                 // The view model calls `play()` itself once it has seeked
                 // to the resume point, as it does on the default engine.
-                try await engine.load(url: url, startPosition: start, options: LoadOptions(autoplay: false))
+                var options = LoadOptions(autoplay: false)
+                // Every subtitle track becomes an entry in AVKit's own
+                // subtitle menu. The app still draws the cues; the entry
+                // the viewer picked is ticked with a marker.
+                options.prepareNativeSubtitles = true
+                // The app has its own fallback, the server, so a refused
+                // item should fail rather than move to software decode.
+                options.escalatesToSoftwarePath = false
+                try await engine.load(url: url, startPosition: start, options: options)
                 guard let self, self.generation == generation else { return }
                 Self.logger.info("[aether] loaded route=\(engine.videoRoute.rawValue, privacy: .public) tracks=\(engine.audioTracks.count)")
                 onEvent?(.mediaSelectionOptionsLoaded)
@@ -279,6 +312,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         softwareRouteEngine = nil
         audibleOptions = []
         lastTransportStatus = nil
+        resetSystemSubtitleMenu()
     }
 
     func suspendForRebuild() {
@@ -353,6 +387,10 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         guard let engine else { return false }
         guard let embeddedPosition else {
             engine.clearSubtitle()
+            if markerPosition != nil {
+                markerPosition = nil
+                engine.setNativeSubtitleSelected(track: nil)
+            }
             Self.logger.info("[aether] subtitle off")
             return true
         }
@@ -364,7 +402,134 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         let track = embedded[embeddedPosition]
         Self.logger.info("[aether] subtitle position=\(embeddedPosition) id=\(track.id) codec=\(track.codec, privacy: .public) lang=\(track.language ?? "-", privacy: .public)")
         engine.selectSubtitleTrack(index: track.id)
+        // Tick the same track in AVKit's menu without having AVKit draw it.
+        if let menuPosition = systemMenuSubtitlePositions.firstIndex(of: embeddedPosition) {
+            markerPosition = menuPosition
+            engine.setNativeSubtitleSelected(track: menuPosition, markerOnly: true)
+            Self.logger.info("[aether] subtitle marker → menu position \(menuPosition)")
+        }
         return true
+    }
+
+    // MARK: - AVKit's subtitle menu
+
+    private func resetSystemSubtitleMenu() {
+        if let legibleObserver {
+            NotificationCenter.default.removeObserver(legibleObserver)
+        }
+        legibleObserver = nil
+        legibleGroup = nil
+        observedItem = nil
+        markerPosition = nil
+        systemMenuSubtitlePick = .none
+        systemMenuSubtitlePositions = []
+    }
+
+    private static func isBitmapSubtitle(_ codec: String) -> Bool {
+        ["pgs", "dvd", "dvb", "xsub"].contains { codec.contains($0) }
+    }
+
+    private static func isClosedCaption(_ codec: String) -> Bool {
+        ["eia", "608", "708"].contains { codec.contains($0) }
+    }
+
+    /// Watch the current item's subtitle selection. The engine lists its
+    /// text renditions first and its image renditions after them, each in
+    /// file order (`AetherEngine+Loading.swift`, 7.70.0), which is what
+    /// the mapping below relies on. A menu that does not have exactly
+    /// that many entries is left unmapped, and the app's menu stays.
+    private func observeSystemSubtitleMenu() {
+        guard let engine, let item = engine.currentAVPlayerItem, item !== observedItem else { return }
+        if let legibleObserver {
+            NotificationCenter.default.removeObserver(legibleObserver)
+        }
+        legibleObserver = nil
+        legibleGroup = nil
+        observedItem = item
+        let generation = generation
+        Task { [weak self] in
+            let group = try? await item.asset.loadMediaSelectionGroup(for: .legible)
+            guard let self, self.generation == generation, observedItem === item else { return }
+
+            let embedded = engine.subtitleTracks.filter { !$0.isExternal }.enumerated()
+            let text = embedded.filter { !Self.isBitmapSubtitle($0.element.codec) && !Self.isClosedCaption($0.element.codec) }
+            let image = embedded.filter { Self.isBitmapSubtitle($0.element.codec) }
+            let expected = (text.prefix(engine.nativeSubtitleTracks.count) + image).map(\.offset)
+            let names = (group?.options ?? []).map(\.displayName).joined(separator: " | ")
+            Self.logger.info("[aether] subtitle menu: \(group?.options.count ?? 0) entries, \(expected.count) expected, served=\(engine.nativeSubtitleRenditionsServed) [\(names, privacy: .public)]")
+
+            guard let group, !expected.isEmpty, group.options.count == expected.count else {
+                systemMenuSubtitlePositions = []
+                return
+            }
+            legibleGroup = group
+            systemMenuSubtitlePositions = expected
+            legibleObserver = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.mediaSelectionDidChangeNotification,
+                object: item,
+                queue: .main,
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.systemSubtitleSelectionChanged()
+                }
+            }
+        }
+    }
+
+    private var selectedMenuPosition: Int? {
+        guard let item = observedItem, let group = legibleGroup,
+              let option = item.currentMediaSelection.selectedMediaOption(in: group)
+        else { return nil }
+        return group.options.firstIndex(of: option)
+    }
+
+    private func systemSubtitleSelectionChanged() {
+        if let selected = selectedMenuPosition {
+            // The engine's own marker select echoes here too.
+            guard selected != markerPosition, systemMenuSubtitlePositions.indices.contains(selected) else { return }
+            reportSystemMenuPick(.embedded(systemMenuSubtitlePositions[selected]), cause: "menu position \(selected)")
+        } else if markerPosition != nil {
+            // The engine deselects and reselects around its own marker
+            // work, so "nothing selected" only means Off if it holds.
+            let generation = generation
+            Task { [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self, self.generation == generation,
+                      markerPosition != nil, selectedMenuPosition == nil
+                else { return }
+                reportSystemMenuPick(.off, cause: "menu Off")
+            }
+        }
+    }
+
+    private func reportSystemMenuPick(_ pick: SystemSubtitlePick, cause: String) {
+        Self.logger.info("[aether] subtitle menu pick: \(String(describing: pick), privacy: .public) (\(cause, privacy: .public))")
+        systemMenuSubtitlePick = pick
+        onEvent?(.mediaSelectionChanged)
+    }
+
+    /// The engine clears a pick it did not make and forwards only its
+    /// language (its `systemCaptionRequest` contract). Answer with the
+    /// first menu entry in that language, unless the pick was already
+    /// seen directly.
+    private func answerSystemCaptionRequest(language: String?) {
+        guard let engine, let language, markerPosition == nil else { return }
+        let embedded = engine.subtitleTracks.filter { !$0.isExternal }
+        let wanted = Self.baseLanguage(language)
+        guard let menuPosition = systemMenuSubtitlePositions.firstIndex(where: { position in
+            embedded.indices.contains(position) && Self.baseLanguage(embedded[position].language) == wanted
+        }) else {
+            Self.logger.info("[aether] caption request for \(language, privacy: .public): no matching track")
+            return
+        }
+        let pick = SystemSubtitlePick.embedded(systemMenuSubtitlePositions[menuPosition])
+        guard pick != systemMenuSubtitlePick else { return }
+        reportSystemMenuPick(pick, cause: "caption request \(language)")
+    }
+
+    private static func baseLanguage(_ tag: String?) -> String? {
+        guard let tag, !tag.isEmpty else { return nil }
+        return Locale.Language(identifier: tag).languageCode?.identifier(.alpha3) ?? tag.lowercased()
     }
 
     // MARK: - Metadata
@@ -429,6 +594,17 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                 guard let self, sessionRequested else { return }
                 Self.logger.info("[aether] item or duration published; item=\(self.engine?.currentAVPlayerItem == nil ? "nil" : "set", privacy: .public)")
                 attachUpNextProposalIfPossible()
+                observeSystemSubtitleMenu()
+            }
+            .store(in: &subscriptions)
+
+        // Subscribed once, before the first load, as the engine's host
+        // contract asks; nothing is replayed.
+        engine.systemCaptionRequest
+            .receive(on: RunLoop.main)
+            .sink { [weak self] request in
+                guard let self, sessionRequested else { return }
+                answerSystemCaptionRequest(language: request.language)
             }
             .store(in: &subscriptions)
 
