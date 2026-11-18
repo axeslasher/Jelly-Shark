@@ -284,6 +284,20 @@ protocol PlayerEngine: AnyObject {
     /// nothing. A no-op on visionOS, where the post-roll SwiftUI overlay
     /// stands in pending #182.
     func setUpNextProposal(_ proposal: UpNextProposal?)
+
+    /// Spike #60: whether this engine decodes subtitles itself and hands
+    /// them to the app to draw. When true the session layer never asks the
+    /// server for a subtitle, offers text tracks in the app's own menu, and
+    /// routes every pick through `selectSubtitleInPlace`.
+    var drawsSubtitlesInApp: Bool { get }
+
+    /// Spike #60: show the embedded subtitle track at `embeddedPosition`
+    /// (its place among the source's embedded subtitle streams), or none.
+    /// This is the engine's own cue pipeline, not AVKit's legible
+    /// selection, so the #91 rule above is not in play.
+    ///
+    /// - Returns: false when the engine cannot map or show the track.
+    func selectSubtitleInPlace(embeddedPosition: Int?) -> Bool
 }
 
 extension PlayerEngine {
@@ -291,5 +305,13 @@ extension PlayerEngine {
     /// predate #168 — and the test double — need no change.
     var streamingBitrateCap: Int? {
         nil
+    }
+
+    var drawsSubtitlesInApp: Bool {
+        false
+    }
+
+    func selectSubtitleInPlace(embeddedPosition _: Int?) -> Bool {
+        false
     }
 }

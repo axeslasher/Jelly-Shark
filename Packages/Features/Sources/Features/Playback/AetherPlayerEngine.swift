@@ -81,8 +81,9 @@ enum AetherEngineHost {
 /// AetherEngine behind the `PlayerEngine` seam.
 ///
 /// Covers what H3 to H5 need: load, transport, playhead, audio switch.
-/// Left out on purpose: legible options (the engine hands subtitles to the
-/// host to draw), metadata enrichment, and the software route, where the
+/// Subtitles go through `selectSubtitleInPlace` and the app's own overlay,
+/// never AVKit's legible options, which stay empty here.
+/// Left out on purpose: metadata enrichment, and the software route, where the
 /// engine publishes no `AVPlayer` and the AVKit hosting shows nothing.
 @MainActor
 @Observable
@@ -116,6 +117,15 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                 ],
             ),
         ]
+        // The engine decodes embedded subtitles and the app draws them, on
+        // tvOS only. Declared as embedded so a subtitle the server picks by
+        // default (the viewer's remembered language, say) does not cost the
+        // session direct play for a burn-in (E16).
+        #if os(tvOS)
+            capabilities.subtitles = ["pgssub", "dvdsub", "dvbsub", "subrip", "srt", "ass", "ssa", "vtt", "webvtt", "mov_text"]
+                .map { PlaybackCapabilities.SubtitleRule(format: $0, delivery: .embed) }
+                + capabilities.subtitles
+        #endif
         return capabilities
     }()
 
@@ -328,6 +338,33 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         let track = engine.audioTracks[position]
         Self.logger.info("[aether] selectAudible position=\(position) id=\(track.id) codec=\(track.codec, privacy: .public)")
         engine.selectAudioTrack(index: track.id)
+    }
+
+    /// The overlay that draws the engine's cues exists on tvOS only.
+    var drawsSubtitlesInApp: Bool {
+        #if os(tvOS)
+            true
+        #else
+            false
+        #endif
+    }
+
+    func selectSubtitleInPlace(embeddedPosition: Int?) -> Bool {
+        guard let engine else { return false }
+        guard let embeddedPosition else {
+            engine.clearSubtitle()
+            Self.logger.info("[aether] subtitle off")
+            return true
+        }
+        let embedded = engine.subtitleTracks.filter { !$0.isExternal }
+        guard embedded.indices.contains(embeddedPosition) else {
+            Self.logger.warning("[aether] subtitle position \(embeddedPosition) out of range (\(embedded.count) embedded track(s))")
+            return false
+        }
+        let track = embedded[embeddedPosition]
+        Self.logger.info("[aether] subtitle position=\(embeddedPosition) id=\(track.id) codec=\(track.codec, privacy: .public) lang=\(track.language ?? "-", privacy: .public)")
+        engine.selectSubtitleTrack(index: track.id)
+        return true
     }
 
     // MARK: - Metadata

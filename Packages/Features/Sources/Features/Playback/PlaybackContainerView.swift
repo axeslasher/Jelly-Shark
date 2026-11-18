@@ -179,6 +179,7 @@ public struct PlaybackContainerView: View {
                     player: player,
                     audioStreams: viewModel.mediaSource?.audioStreams ?? [],
                     subtitleStreams: viewModel.offeredSubtitleStreams,
+                    drawsSubtitlesInApp: viewModel.drawsSubtitlesInApp,
                     selectedAudioIndex: viewModel.selectedAudioStreamIndex,
                     selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
                     people: viewModel.castMembers,

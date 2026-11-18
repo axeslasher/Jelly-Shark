@@ -16,6 +16,10 @@
         let player: AVPlayer
         let audioStreams: [MediaStreamInfo]
         let subtitleStreams: [MediaStreamInfo]
+
+        /// Spike #60: the session's engine draws subtitles itself, so the
+        /// app's menu lists text tracks too and a pick never reloads.
+        var drawsSubtitlesInApp = false
         let selectedAudioIndex: Int?
         let selectedSubtitleIndex: Int?
         let people: [CastMember]
@@ -126,6 +130,11 @@
             /// across the item swap of an audio switch. Without it the swap
             /// shows a flash (E11).
             var heldPictureView: AetherStillView?
+
+            #if os(tvOS)
+                /// Spike #60: draws the trial engine's subtitle cues.
+                var subtitleOverlayView: AetherSubtitleOverlayView?
+            #endif
 
             /// Latest dismissal handler, refreshed every update pass for the
             /// same reason `onToggleFavorite` is: the delegate outlives the
@@ -291,6 +300,10 @@
                 still.removeFromSuperview()
                 coordinator.heldPictureView = nil
             }
+            #if os(tvOS)
+                coordinator.subtitleOverlayView?.removeFromSuperview()
+                coordinator.subtitleOverlayView = nil
+            #endif
             // Symmetric with the install in `syncReconnectingBanner`: the
             // host leaves the player controller's containment before the
             // controller itself goes
@@ -374,6 +387,22 @@
                 engine.bindStillView(still)
                 coordinator.heldPictureView = still
                 Self.spikeLogger.info("[aether] still view bound")
+
+                // Above the held frame, below the reconnecting card and
+                // AVKit's controls. Takes no input and is never focusable.
+                let subtitles = AetherSubtitleOverlayView(frame: overlay.bounds)
+                subtitles.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                // tvOS has no `videoBounds`, so fit the item's picture size
+                // into the overlay the way the player does.
+                subtitles.videoRect = { [weak controller, weak overlay] in
+                    guard let overlay, let size = controller?.player?.currentItem?.presentationSize,
+                          size.width > 0, size.height > 0
+                    else { return .zero }
+                    return AVMakeRect(aspectRatio: size, insideRect: overlay.bounds)
+                }
+                overlay.insertSubview(subtitles, aboveSubview: still)
+                subtitles.bind(to: engine)
+                coordinator.subtitleOverlayView = subtitles
             #endif
         }
 
@@ -573,7 +602,10 @@
                 // all. The app must never programmatically clear the legible
                 // selection: that latches AVKit's subtitle display off
                 // process-wide (#91).
-                let burnInStreams = subtitleStreams.filter { !$0.isTextSubtitleStream }
+                // Spike #60: the trial engine draws text tracks too, in place,
+                // so its menu lists every offered stream and never reloads.
+                let drawnInApp = drawsSubtitlesInApp
+                let burnInStreams = drawnInApp ? subtitleStreams : subtitleStreams.filter { !$0.isTextSubtitleStream }
                 if !burnInStreams.isEmpty {
                     var actions: [UIAction] = [
                         UIAction(
@@ -585,7 +617,7 @@
                     ]
                     actions += burnInStreams.map { stream in
                         UIAction(
-                            title: BurnInSubtitleLabel.title(for: stream),
+                            title: drawnInApp ? stream.displayTitle ?? BurnInSubtitleLabel.title(for: stream) : BurnInSubtitleLabel.title(for: stream),
                             state: stream.index == selectedSubtitleIndex ? .on : .off,
                         ) { _ in
                             onSelectSubtitle(stream.index)
@@ -595,9 +627,9 @@
                     // renders the captions bubble): at transport-bar size the
                     // two menus are told apart by icon alone
                     menus.append(UIMenu(
-                        title: "Image Subtitles",
-                        subtitle: "Requires reload",
-                        image: UIImage(systemName: "text.below.photo"),
+                        title: drawnInApp ? "Subtitles" : "Image Subtitles",
+                        subtitle: drawnInApp ? nil : "Requires reload",
+                        image: UIImage(systemName: drawnInApp ? "captions.bubble" : "text.below.photo"),
                         options: [.singleSelection],
                         children: actions,
                     ))
@@ -622,10 +654,10 @@
         /// The image-subtitle counterpart to `audioDataSignature`.
         private var imageSubtitleDataSignature: String {
             let burnIn = subtitleStreams
-                .filter { !$0.isTextSubtitleStream }
+                .filter { drawsSubtitlesInApp || !$0.isTextSubtitleStream }
                 .map { "\($0.index):\(BurnInSubtitleLabel.title(for: $0))" }
                 .joined(separator: ",")
-            return "\(burnIn)/\(selectedSubtitleIndex.map(String.init) ?? "-")"
+            return "\(drawsSubtitlesInApp)/\(burnIn)/\(selectedSubtitleIndex.map(String.init) ?? "-")"
         }
 
         #if os(tvOS)
