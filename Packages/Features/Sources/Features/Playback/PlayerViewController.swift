@@ -1,4 +1,5 @@
 #if canImport(UIKit)
+    import AetherEngine
     import AVKit
     import JellyfinKit
     import OSLog
@@ -120,6 +121,11 @@
             /// pass (a favorite toggle, cast arriving) does not re-render
             /// the card
             var reconnectingBannerOutage: ServerOutage?
+
+            /// Spike #60: where the trial engine holds the outgoing picture
+            /// across the item swap of an audio switch. Without it the swap
+            /// shows a flash (E11).
+            var heldPictureView: AetherStillView?
 
             /// Latest dismissal handler, refreshed every update pass for the
             /// same reason `onToggleFavorite` is: the delegate outlives the
@@ -245,6 +251,7 @@
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
             syncReconnectingBanner(for: controller, coordinator: context.coordinator)
+            syncHeldPictureView(for: controller, coordinator: context.coordinator)
             #if os(tvOS)
                 // Spike #60: the trial engine writes the display criteria
                 // itself, before the item exists; its tvOS host setup says
@@ -275,9 +282,15 @@
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
             syncReconnectingBanner(for: controller, coordinator: context.coordinator)
+            syncHeldPictureView(for: controller, coordinator: context.coordinator)
         }
 
         static func dismantleUIViewController(_: AVPlayerViewController, coordinator: Coordinator) {
+            if let still = coordinator.heldPictureView {
+                try? AetherEngineHost.shared().unbindStillView(still)
+                still.removeFromSuperview()
+                coordinator.heldPictureView = nil
+            }
             // Symmetric with the install in `syncReconnectingBanner`: the
             // host leaves the player controller's containment before the
             // controller itself goes
@@ -342,6 +355,29 @@
                 coordinator.reconnectingBannerOutage = outage
             #endif
         }
+
+        /// Spike #60: mount the trial engine's still view at the bottom of
+        /// AVKit's overlay, above the video and below the reconnecting card
+        /// and the controls. A plain view, not a child view controller. tvOS
+        /// only until the visionOS overlay is checked on device (#309).
+        private func syncHeldPictureView(for controller: AVPlayerViewController, coordinator: Coordinator) {
+            #if os(tvOS)
+                guard PlayerEngineSelection.usesAether, coordinator.heldPictureView == nil,
+                      let overlay = controller.contentOverlayView,
+                      let engine = try? AetherEngineHost.shared()
+                else { return }
+
+                let still = AetherStillView(frame: overlay.bounds)
+                still.videoGravity = controller.videoGravity
+                still.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                overlay.insertSubview(still, at: 0)
+                engine.bindStillView(still)
+                coordinator.heldPictureView = still
+                Self.spikeLogger.info("[aether] still view bound")
+            #endif
+        }
+
+        private static let spikeLogger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
 
         /// The hosted tree is detached from the app's, so the theme is
         /// re-applied at its root — the same shape the Up Next card uses.
