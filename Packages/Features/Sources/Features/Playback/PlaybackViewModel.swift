@@ -269,7 +269,7 @@ public final class PlaybackViewModel {
                 mediaSourceId: preferredMediaSourceId,
                 startTimeTicks: resumeTicks > 0 ? resumeTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
-                subtitleStreamIndex: selectedSubtitleStreamIndex,
+                subtitleStreamIndex: serverSubtitleStreamIndex,
                 capabilities: engine.capabilities,
             )
             guard isCurrentLoad(generation) else {
@@ -296,7 +296,8 @@ public final class PlaybackViewModel {
             // keeps an explicit mid-session "off" alive across rebuilds and
             // across a load this very selection restarted (#212); autoplay
             // resets the selection so each episode reseeds.
-            if !hasExplicitSubtitleSelection,
+            if !engine.drawsSubtitlesInApp,
+               !hasExplicitSubtitleSelection,
                selectedSubtitleStreamIndex == nil,
                source.subtitleRequiresBurnIn(at: source.defaultSubtitleStreamIndex)
             {
@@ -310,12 +311,12 @@ public final class PlaybackViewModel {
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
-                    subtitleStreamIndex: selectedSubtitleStreamIndex,
+                    subtitleStreamIndex: serverSubtitleStreamIndex,
                 ),
                 capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
-            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
+            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "start")
 
             // Playback extras: resolve trickplay and chapters up front so
@@ -576,7 +577,73 @@ public final class PlaybackViewModel {
     /// expose the file's own embedded text tracks through it. The app must
     /// never reach into that picker either way (#91).
     public var offeredSubtitleStreams: [MediaStreamInfo] {
-        canOfferSubtitleStreams ? (mediaSource?.subtitleStreams ?? []) : []
+        if drawsSubtitlesInApp {
+            // AVKit's menu already lists these; the app's menu carries
+            // only what that menu cannot.
+            let listed = Set(engine.systemMenuSubtitlePositions)
+            return embeddedSubtitleStreams.enumerated()
+                .filter { !listed.contains($0.offset) }
+                .map(\.element)
+        }
+        return canOfferSubtitleStreams ? (mediaSource?.subtitleStreams ?? []) : []
+    }
+
+    /// Whether this session's subtitles are decoded by the engine and drawn
+    /// by the app. Only while direct playing: when the server transcodes,
+    /// the engine never sees the file's subtitle tracks, and a pick has to go
+    /// to the server as it does on the default engine (#60, E16).
+    public var drawsSubtitlesInApp: Bool {
+        engine.drawsSubtitlesInApp && playMethod == .directPlay
+    }
+
+    /// The subtitle streams inside the file, in Jellyfin's order: the
+    /// positions `PlayerEngine.selectSubtitleInPlace` counts in. The only
+    /// ones an engine that draws subtitles itself can reach; sidecar files
+    /// are left out.
+    private var embeddedSubtitleStreams: [MediaStreamInfo] {
+        (mediaSource?.subtitleStreams ?? []).filter { !$0.isExternal }
+    }
+
+    /// The subtitle index the server is told about. Nil when the engine
+    /// draws subtitles itself: an index sent there would make the server
+    /// burn an image track in, or drop direct play for it (#60, E15).
+    private var serverSubtitleStreamIndex: Int? {
+        drawsSubtitlesInApp ? nil : selectedSubtitleStreamIndex
+    }
+
+    /// Follow a choice the viewer made in AVKit's subtitle menu on an engine
+    /// that draws subtitles through the app.
+    private func applySystemMenuSubtitlePick() async {
+        guard drawsSubtitlesInApp else { return }
+        let index: Int?
+        switch engine.systemMenuSubtitlePick {
+        case .none:
+            return
+        case .off:
+            index = nil
+        case let .embedded(position):
+            guard embeddedSubtitleStreams.indices.contains(position) else { return }
+            index = embeddedSubtitleStreams[position].index
+        }
+        guard index != selectedSubtitleStreamIndex else { return }
+        selectedSubtitleStreamIndex = index
+        hasExplicitSubtitleSelection = true
+        applyEngineDrawnSubtitle()
+        await reportProgress()
+    }
+
+    /// Put the committed subtitle selection onto an engine that draws its
+    /// own. Run on a pick and again after every load, since a fresh engine
+    /// session starts with subtitles off.
+    private func applyEngineDrawnSubtitle() {
+        guard drawsSubtitlesInApp, engine.isLoaded else { return }
+        let position = selectedSubtitleStreamIndex.flatMap { index in
+            embeddedSubtitleStreams.firstIndex { $0.index == index }
+        }
+        let shown = engine.selectSubtitleInPlace(embeddedPosition: position)
+        Self.logger.info(
+            "[subtitle] engine-drawn → index \(self.selectedSubtitleStreamIndex.map(String.init) ?? "off", privacy: .public) position \(position.map(String.init) ?? "-", privacy: .public) ok=\(shown)",
+        )
     }
 
     /// Switch subtitles to the given stream index, or nil to turn them off.
@@ -600,7 +667,7 @@ public final class PlaybackViewModel {
         // next rebuild for a track this session cannot deliver, and setting
         // the explicit flag would suppress the server default's seed for the
         // rest of the session (#212's shape, #218's cause).
-        guard canOfferSubtitleStreams else {
+        guard canOfferSubtitleStreams || drawsSubtitlesInApp else {
             Self.logger.info(
                 "[subtitle] refusing a selection this session's delivery would discard (index=\(index.map(String.init) ?? "off", privacy: .public))",
             )
@@ -653,6 +720,12 @@ public final class PlaybackViewModel {
     /// dismissed.
     private func applySelection(_ change: TrackSelection) async {
         guard !hasStopped else { return }
+
+        if change == .subtitle, drawsSubtitlesInApp {
+            applyEngineDrawnSubtitle()
+            await reportProgress()
+            return
+        }
 
         if change == .audio, switchAudibleInPlace() {
             // One heartbeat so the server's session view follows the
@@ -898,7 +971,7 @@ public final class PlaybackViewModel {
             mediaSource: mediaSource,
             playSessionId: playSessionId,
             audioStreamIndex: selectedAudioStreamIndex,
-            subtitleStreamIndex: selectedSubtitleStreamIndex,
+            subtitleStreamIndex: serverSubtitleStreamIndex,
             trickplayInfo: trickplayInfo,
             capabilities: engine.capabilities,
             avoidInAppRemux: avoidInAppRemuxDelivery,
@@ -1125,7 +1198,7 @@ public final class PlaybackViewModel {
                 mediaSourceId: preferredMediaSourceId,
                 startTimeTicks: positionTicks > 0 ? positionTicks : nil,
                 audioStreamIndex: selectedAudioStreamIndex,
-                subtitleStreamIndex: selectedSubtitleStreamIndex,
+                subtitleStreamIndex: serverSubtitleStreamIndex,
                 capabilities: engine.capabilities,
             )
             guard isCurrentLoad(generation) else {
@@ -1148,12 +1221,12 @@ public final class PlaybackViewModel {
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
-                    subtitleStreamIndex: selectedSubtitleStreamIndex,
+                    subtitleStreamIndex: serverSubtitleStreamIndex,
                 ),
                 capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
-            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: selectedSubtitleStreamIndex)
+            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitleStreamIndex)
             logResolution(resolution, source: source, context: "rebuild")
 
             await beginPlayback(resolution: resolution, resumeTicks: positionTicks, generation: generation)
@@ -1205,11 +1278,13 @@ public final class PlaybackViewModel {
 
         case .mediaSelectionChanged:
             Task { @MainActor [weak self] in
+                await self?.applySystemMenuSubtitlePick()
                 await self?.reconcileMediaSelection()
             }
 
         case .mediaSelectionOptionsLoaded:
             mediaSelectionReconcileArmed = true
+            applyEngineDrawnSubtitle()
 
         case let .deliveryFailed(reason, cause):
             // Deferred onto a fresh main-actor turn like every sibling case.

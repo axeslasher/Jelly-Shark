@@ -1473,6 +1473,100 @@ struct PlaybackViewModelTests {
         #expect(engine.teardownCount == 0)
     }
 
+    // MARK: - Engine-Drawn Subtitles (#199)
+
+    @Test("An engine that draws subtitles takes a pick in place and the server never hears of it")
+    func engineDrawnPickStaysInPlace() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        #expect(viewModel.drawsSubtitlesInApp)
+
+        // The PGS track, which on AVKit's rules would force a burn-in reload
+        await viewModel.selectSubtitleStream(index: 4)
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(engine.subtitleInPlaceSelections.last == .some(2))
+        #expect(client.playbackInfoRequests.count == 1)
+        #expect(engine.loadRequests.count == 1)
+    }
+
+    @Test("An engine-drawn engine gets the committed pick again once a load's options arrive")
+    func engineDrawnPickReappliedAfterLoad() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: 3)
+        engine.send(.mediaSelectionOptionsLoaded)
+
+        // Once for the pick, once more for the fresh load's options
+        #expect(engine.subtitleInPlaceSelections == [1, 1])
+    }
+
+    @Test("A burn-in default is not seeded when the engine draws subtitles itself")
+    func engineDrawnSkipsBurnInSeed() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 4)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(client.streamResolutions[0].playMethod == .directPlay)
+    }
+
+    @Test("The app's menu leaves out what AVKit's menu lists")
+    func engineDrawnMenuSkipsSystemMenuTracks() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+        engine.systemMenuSubtitlePositions = [0, 1]
+
+        await viewModel.start()
+
+        #expect(viewModel.offeredSubtitleStreams.map(\.index) == [4])
+    }
+
+    @Test("A pick in AVKit's menu maps back to the Jellyfin stream")
+    func engineDrawnSystemMenuPickAdopted() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        engine.systemMenuSubtitlePick = .embedded(1)
+        engine.send(.mediaSelectionChanged)
+        await waitUntil { viewModel.selectedSubtitleStreamIndex != nil }
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 3)
+        #expect(engine.subtitleInPlaceSelections.last == .some(1))
+        #expect(engine.loadRequests.count == 1)
+    }
+
+    @Test("On a transcode the engine-drawn path stays off and the server gets the pick")
+    func engineDrawnOffWhenTranscoding() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: 4)
+
+        #expect(!viewModel.drawsSubtitlesInApp)
+        #expect(engine.subtitleInPlaceSelections.isEmpty)
+        #expect(client.playbackInfoRequests.last?.subtitleStreamIndex == 4)
+    }
+
     // MARK: - Subtitles the delivery cannot carry (#218)
 
     /// The #218 population: an HDR MKV with image-based subtitle tracks, the

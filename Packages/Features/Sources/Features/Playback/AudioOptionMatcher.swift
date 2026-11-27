@@ -4,17 +4,23 @@ import JellyfinKit
 /// An audible media-selection option distilled to the values needed to
 /// correlate it with a Jellyfin audio stream, mirroring `LegibleOption` so
 /// the matching logic stays free of AVFoundation types.
-struct AudibleOption: Equatable {
+public struct AudibleOption: Equatable, Sendable {
     /// Position within the AVMediaSelectionGroup's options
-    let position: Int
+    public let position: Int
 
     /// The option's display name. HLS renditions carry the stream's
     /// DisplayTitle; a direct-played file's embedded tracks report whatever
     /// the container stores, which rarely matches Jellyfin's naming.
-    let displayName: String
+    public let displayName: String
 
     /// BCP-47 or ISO-639 language tag, if the option declares one
-    let languageTag: String?
+    public let languageTag: String?
+
+    public init(position: Int, displayName: String, languageTag: String?) {
+        self.position = position
+        self.displayName = displayName
+        self.languageTag = languageTag
+    }
 }
 
 /// Correlates an audible media-selection option with a Jellyfin audio

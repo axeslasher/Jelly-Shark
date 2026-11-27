@@ -23,12 +23,12 @@ public struct PlaybackContainerView: View {
     /// unregister in case `onDisappear` never runs (#301).
     @Binding private var presenterTicket: ContentRefreshCoordinator.PlaybackTicket?
 
-    /// The concrete engine, held alongside the view model: the AVKit
-    /// hosting below needs the typed `player` the `PlayerEngine` protocol
-    /// deliberately doesn't expose, and reading it here is what gets the
-    /// first load onto the screen. A rebuild keeps the same instance and
-    /// swaps the item inside it, so nothing here re-renders mid-session.
-    @State private var playerEngine: AVFoundationPlayerEngine
+    /// The engine, held alongside the view model for its hosting half: the
+    /// view below reads `renderRoute`, which `PlayerEngine` deliberately
+    /// doesn't expose, and reading it here is what gets the first load onto
+    /// the screen. A rebuild keeps the same instance and swaps the item
+    /// inside it, so nothing here re-renders mid-session.
+    @State private var playerEngine: any PlayerEngine & PlayerEngineHosting
 
     /// Focus for the error screen's Close button. `.failed` used to be
     /// reachable only from `.loading`, whose ProgressView holds no focus, so
@@ -54,7 +54,7 @@ public struct PlaybackContainerView: View {
         playbackTicket: Binding<ContentRefreshCoordinator.PlaybackTicket?>,
     ) {
         _presenterTicket = playbackTicket
-        let engine = AVFoundationPlayerEngine(streamingBitrateCap: streamingBitrateCap)
+        let engine = PlayerEngineRegistry.makeEngine(streamingBitrateCap: streamingBitrateCap)
         _playerEngine = State(initialValue: engine)
         _viewModel = State(initialValue: PlaybackViewModel(
             client: client,
@@ -161,15 +161,19 @@ public struct PlaybackContainerView: View {
         #if canImport(UIKit)
             // The engine holds its player across a rebuild (it suspends
             // rather than tears down), so within `.playing` and `.rebuilding`
-            // this is never nil and the representable is never unmounted
-            // mid-session. That is the invariant #183 turns on: SwiftUI
-            // removing this view while AVKit's fullscreen window is up leaves
-            // the app's own window hidden with nothing to restore it.
-            if let player = playerEngine.player {
+            // the route is never nil and never changes, and the representable
+            // is never unmounted mid-session. That is the invariant #183 turns
+            // on: SwiftUI removing this view while AVKit's fullscreen window
+            // is up leaves the app's own window hidden with nothing to restore
+            // it.
+            switch playerEngine.renderRoute {
+            case let .avPlayer(player):
                 PlayerViewControllerRepresentable(
                     player: player,
+                    engineHosting: playerEngine,
                     audioStreams: viewModel.mediaSource?.audioStreams ?? [],
                     subtitleStreams: viewModel.offeredSubtitleStreams,
+                    drawsSubtitlesInApp: viewModel.drawsSubtitlesInApp,
                     selectedAudioIndex: viewModel.selectedAudioStreamIndex,
                     selectedSubtitleIndex: viewModel.selectedSubtitleStreamIndex,
                     people: viewModel.castMembers,
@@ -205,6 +209,10 @@ public struct PlaybackContainerView: View {
                         viewModel.deferUpNext()
                     },
                 )
+            case let .hostedViewController(controller):
+                EngineHostedViewController(controller: controller)
+            case nil:
+                EmptyView()
             }
         #else
             Text("player.unsupportedPlatform", bundle: #bundle, comment: "Shown in place of the player on a platform without playback.")
@@ -251,3 +259,17 @@ public struct PlaybackContainerView: View {
         .onAppear { isRetryFocused = true }
     }
 }
+
+#if canImport(UIKit)
+    /// Mounts the player surface an engine on the `.hostedViewController`
+    /// route supplies. The engine owns the controller and everything in it.
+    private struct EngineHostedViewController: UIViewControllerRepresentable {
+        let controller: UIViewController
+
+        func makeUIViewController(context _: Context) -> UIViewController {
+            controller
+        }
+
+        func updateUIViewController(_: UIViewController, context _: Context) {}
+    }
+#endif

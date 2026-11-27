@@ -6,7 +6,7 @@ import JellyfinKit
 /// Engine-agnostic transport state: the three situations AVPlayer's
 /// `timeControlStatus` distinguishes, without naming the AVFoundation type
 /// so session-layer code and its tests stay engine-free.
-enum PlaybackTransportStatus: Equatable {
+public enum PlaybackTransportStatus: Equatable, Sendable {
     case playing
     case paused
     /// A rate was requested but nothing is rendering yet — startup or a
@@ -23,7 +23,7 @@ enum PlaybackTransportStatus: Equatable {
 /// `PlayerEngine.onEvent` — a single closure, not a stream or delegate,
 /// because exactly one consumer exists and synchronous delivery keeps the
 /// order deterministic under test.
-enum PlayerEngineEvent {
+public enum PlayerEngineEvent: Sendable {
     /// The transport moved between playing/paused/waiting. The session
     /// layer reports a progress heartbeat so the server's session view
     /// follows pause and resume promptly.
@@ -59,10 +59,16 @@ enum PlayerEngineEvent {
 /// metadata, so the player's title view, Info tab, and chapter panel are
 /// reconstructed from Jellyfin data. The session layer describes that data
 /// here; how it reaches the player UI is the engine's business.
-struct PlayerSessionMetadata {
-    let item: MediaItem
-    let chapters: [Chapter]
-    let durationSeconds: Double?
+public struct PlayerSessionMetadata: Sendable {
+    public let item: MediaItem
+    public let chapters: [Chapter]
+    public let durationSeconds: Double?
+
+    public init(item: MediaItem, chapters: [Chapter], durationSeconds: Double?) {
+        self.item = item
+        self.chapters = chapters
+        self.durationSeconds = durationSeconds
+    }
 }
 
 // MARK: - Up Next Proposal
@@ -76,27 +82,41 @@ struct PlayerSessionMetadata {
 /// inside its own view-controller hierarchy ahead of the item's end (#186).
 /// Kept engine-free (no AVKit/UIKit types) so the session layer and its
 /// tests stay platform-agnostic.
-struct UpNextProposal: Equatable {
+public struct UpNextProposal: Equatable, Sendable {
     /// Title shown on the prompt — the next episode's name, without the
     /// season/episode code baked in.
-    let title: String
+    public let title: String
 
     /// The compact season/episode code ("S2E4"), shown as its own eyebrow
     /// line so the title keeps its full width (the same call
     /// `landscapeShelfItem` documents); nil when the item carries no numbers.
-    let episodeCode: String?
+    public let episodeCode: String?
 
     /// Decoded preview image (poster/thumb) bytes, nil when unavailable.
     /// The engine decodes it into its platform's image type.
-    let previewImageData: Data?
+    public let previewImageData: Data?
 
     /// How many seconds before the item's end to present the prompt.
-    let leadSeconds: Double
+    public let leadSeconds: Double
 
     /// How many seconds before the item's end the prompt auto-accepts if
     /// the viewer does nothing. Kept shorter than `leadSeconds` so the
     /// natural ending stays on screen for a beat before cutting away.
-    let autoAcceptSeconds: Double
+    public let autoAcceptSeconds: Double
+
+    public init(
+        title: String,
+        episodeCode: String?,
+        previewImageData: Data?,
+        leadSeconds: Double,
+        autoAcceptSeconds: Double,
+    ) {
+        self.title = title
+        self.episodeCode = episodeCode
+        self.previewImageData = previewImageData
+        self.leadSeconds = leadSeconds
+        self.autoAcceptSeconds = autoAcceptSeconds
+    }
 }
 
 // MARK: - Delivery Progress
@@ -115,12 +135,17 @@ struct UpNextProposal: Equatable {
 ///
 /// `bytesTransferred` has no such precondition. It is the honest "is the
 /// socket moving" counter, and it is what saves the direct-play case.
-struct DeliveryProgress: Equatable {
-    var bufferedSeconds: Double = 0
-    var bytesTransferred: Int64 = 0
+public struct DeliveryProgress: Equatable, Sendable {
+    public var bufferedSeconds: Double = 0
+    public var bytesTransferred: Int64 = 0
+
+    public init(bufferedSeconds: Double = 0, bytesTransferred: Int64 = 0) {
+        self.bufferedSeconds = bufferedSeconds
+        self.bytesTransferred = bytesTransferred
+    }
 
     /// Whether anything at all advanced since `other`.
-    func advanced(since other: Self) -> Bool {
+    public func advanced(since other: Self) -> Bool {
         bufferedSeconds > other.bufferedSeconds || bytesTransferred > other.bytesTransferred
     }
 }
@@ -132,11 +157,16 @@ struct DeliveryProgress: Equatable {
 /// reporting all of it to the server — lives in `PlaybackViewModel`, which
 /// talks only to this protocol (#85).
 ///
-/// `AVFoundationPlayerEngine` is the sole implementation. A second engine
-/// would conform here, declare its own capabilities (#85 PR2), and provide
-/// its own hosting view where `PlaybackContainerView` builds the AVKit one.
+/// Public so an engine can live in its own package (#199). The app target
+/// registers it through `PlayerEngineRegistry`; `PlaybackContainerView`
+/// hosts it through `PlayerEngineHosting`. `AVFoundationPlayerEngine` is the
+/// default whenever no registered engine is supplied.
+///
+/// The requirements below that are stated as obligations are behaviour the
+/// session layer relies on and the signatures cannot show. AVPlayer meets
+/// each one natively; a second engine has to meet them on purpose.
 @MainActor
-protocol PlayerEngine: AnyObject {
+public protocol PlayerEngine: AnyObject {
     /// What this engine decodes and renders. The `DeviceProfile` sent with
     /// every PlaybackInfo request is derived from this declaration, so the
     /// server negotiates against the engine that will actually decode the
@@ -158,22 +188,38 @@ protocol PlayerEngine: AnyObject {
 
     // MARK: Lifecycle
 
-    /// Create a fresh player for `url` and attach every observer.
+    /// Start playing `url` and attach every observer.
     ///
-    /// Obligation (#151): the failure observers must be armed before this
-    /// returns. Until they exist a delivery failure has no way to reach the
-    /// session layer, and the caller's next steps include network awaits.
+    /// Obligations:
+    /// - The failure observers must be armed before this returns (#151).
+    ///   Until they exist a delivery failure has no way to reach the session
+    ///   layer, and the caller's next steps include network awaits.
+    /// - When a player already exists — a rebuild after `suspendForRebuild`
+    ///   — replace the *item* inside it rather than construct a new player
+    ///   (#217). Handing a mounted `AVPlayerViewController` a different
+    ///   `AVPlayer` costs its RealityKit video entity the player component
+    ///   on visionOS.
     ///
     /// - Parameter loadsLegibleOptions: whether to load the legible
     ///   media-selection group. The session layer skips it on direct play
     ///   (no renditions; the embedded defaults are left to the player).
     func load(url: URL, metadata: PlayerSessionMetadata, loadsLegibleOptions: Bool)
 
+    /// Obligation: honour a call that arrives while the stream is still
+    /// being prepared, by starting once it is ready. The session layer calls
+    /// this once, after `load` and any resume seek, without waiting for the
+    /// stream, and does not repeat it (#60, E3).
     func play()
+
     func pause()
 
     /// Seek to a resume position: frame-exact before, tolerant after, so
     /// resume never lands earlier than the viewer left off.
+    ///
+    /// Obligation: honour a seek issued in the same instant as `load`,
+    /// before the stream is ready, rather than dropping it. The session
+    /// layer awaits this before calling `play()`; a dropped seek resumes
+    /// every session from zero (#60, E10).
     func seekForResume(toSeconds seconds: Double) async
 
     /// Pause, drop the player, and remove every observer. Idempotent.
@@ -191,8 +237,11 @@ protocol PlayerEngine: AnyObject {
     ///
     /// `load` re-arms from scratch (it removes observers and bumps its own
     /// generation), so this exists only to stop the outgoing session's events
-    /// during the window before the successor arrives. `isLoaded` stays true
-    /// across it, deliberately: the session layer routes on it.
+    /// during the window before the successor arrives.
+    ///
+    /// Obligation: `isLoaded` stays true across it. The session layer routes
+    /// on it (`applySelection`, `retry()`), so an engine must not report
+    /// itself unloaded mid-rebuild.
     func suspendForRebuild()
 
     // MARK: State
@@ -241,7 +290,8 @@ protocol PlayerEngine: AnyObject {
     /// renders. The app used to select and clear, and the clear
     /// (`select(nil)`) latched AVKit's subtitle display off process-wide,
     /// surviving full player recreation (#91). No engine API may reintroduce
-    /// that path.
+    /// that path — including the engine-drawn subtitle members below, which
+    /// must never reach AVKit's legible group.
     var legibleOptions: [LegibleOption] { get }
 
     /// Position of the currently selected audible option, in
@@ -262,6 +312,42 @@ protocol PlayerEngine: AnyObject {
     /// deselected — which is why this takes a non-optional position.
     /// A position outside `audibleOptions` is refused.
     func selectAudible(position: Int)
+
+    // MARK: Engine-Drawn Subtitles
+
+    /// Whether this engine decodes a direct-played file's embedded subtitles
+    /// itself and draws them through the app. Defaults to false, which keeps
+    /// every member in this group inert.
+    ///
+    /// When true, and only while the session direct plays, the session
+    /// layer never asks the server for a subtitle (an index sent there would
+    /// burn an image track in, or drop direct play), lists the embedded
+    /// tracks AVKit's menu does not in the app's own menu, and routes every
+    /// pick through `selectSubtitleInPlace`.
+    var drawsSubtitlesInApp: Bool { get }
+
+    /// Show the embedded subtitle at `embeddedPosition`, or none for nil.
+    ///
+    /// `embeddedPosition` counts only the source's embedded subtitle streams
+    /// (sidecar files excluded), in the order Jellyfin lists them. This is
+    /// the engine's own cue pipeline: it must not select or clear AVKit's
+    /// legible group, so the #91 latch is never in play. Called after each
+    /// pick and again once `mediaSelectionOptionsLoaded` arrives, since a
+    /// fresh load starts with subtitles off.
+    ///
+    /// - Returns: false when the engine cannot map or show the track. The
+    ///   session layer logs the refusal, so a pick that does nothing is
+    ///   explainable from the log.
+    func selectSubtitleInPlace(embeddedPosition: Int?) -> Bool
+
+    /// The embedded subtitle positions AVKit's own subtitle menu lists for
+    /// this session. The app's menu leaves those out, so no track is offered
+    /// twice.
+    var systemMenuSubtitlePositions: [Int] { get }
+
+    /// What the viewer last chose in AVKit's subtitle menu, read after a
+    /// `mediaSelectionChanged` event.
+    var systemMenuSubtitlePick: SystemSubtitlePick { get }
 
     // MARK: Metadata
 
@@ -286,10 +372,39 @@ protocol PlayerEngine: AnyObject {
     func setUpNextProposal(_ proposal: UpNextProposal?)
 }
 
-extension PlayerEngine {
+/// A choice made in AVKit's subtitle menu, in the terms of an engine that
+/// draws subtitles through the app.
+public enum SystemSubtitlePick: Equatable, Sendable {
+    /// Nothing to act on.
+    case none
+    case off
+    /// The embedded subtitle stream at this position, counted as
+    /// `PlayerEngine.selectSubtitleInPlace(embeddedPosition:)` counts.
+    case embedded(Int)
+}
+
+public extension PlayerEngine {
     /// No cap unless an engine says otherwise, so conforming types that
     /// predate #168 — and the test double — need no change.
     var streamingBitrateCap: Int? {
         nil
+    }
+
+    /// Engines draw no subtitles of their own unless they say so; AVKit's
+    /// legible group stays in charge.
+    var drawsSubtitlesInApp: Bool {
+        false
+    }
+
+    func selectSubtitleInPlace(embeddedPosition _: Int?) -> Bool {
+        false
+    }
+
+    var systemMenuSubtitlePositions: [Int] {
+        []
+    }
+
+    var systemMenuSubtitlePick: SystemSubtitlePick {
+        .none
     }
 }
