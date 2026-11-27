@@ -1567,6 +1567,74 @@ struct PlaybackViewModelTests {
         #expect(client.playbackInfoRequests.last?.subtitleStreamIndex == 4)
     }
 
+    @Test("A rebuild after an in-place pick never asks the server for the subtitle")
+    func engineDrawnRebuildSendsNoSubtitle() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: 4)
+        // No audible options are loaded, so the audio switch declines the
+        // in-place arm and rebuilds the stream
+        await viewModel.selectAudioStream(index: 9)
+
+        #expect(client.playbackInfoRequests.count == 2)
+        #expect(client.playbackInfoRequests.last?.subtitleStreamIndex == nil)
+        #expect(client.streamResolutions.last?.parameters.subtitleStreamIndex == Int??.some(nil))
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+    }
+
+    @Test("Engine-drawn positions count embedded streams only, skipping sidecar files")
+    func engineDrawnPositionsSkipSidecars() async {
+        let client = MockJellyfinClient()
+        let sidecar = MediaStreamInfo(
+            index: 7,
+            type: .subtitle,
+            displayTitle: "French - SUBRIP - External",
+            language: "fre",
+            codec: "subrip",
+            isExternal: true,
+            isTextSubtitleStream: true,
+        )
+        client.playbackInfoResult = .success(
+            PlaybackSessionInfo(
+                playSessionId: "session-1",
+                mediaSources: [
+                    MediaSource(
+                        id: "source-1",
+                        container: "mp4",
+                        supportsDirectPlay: true,
+                        supportsDirectStream: true,
+                        supportsTranscoding: true,
+                        subtitleStreams: [sidecar, Self.englishSrt, Self.englishPgs],
+                    ),
+                ],
+            ),
+        )
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: 4)
+
+        #expect(engine.subtitleInPlaceSelections.last == .some(1))
+        #expect(viewModel.offeredSubtitleStreams.map(\.index) == [2, 4])
+    }
+
+    @Test("An engine's dismiss request finishes the session")
+    func dismissRequestedFinishes() async {
+        let client = MockJellyfinClient()
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+
+        await viewModel.start()
+        engine.send(.dismissRequested)
+        await waitUntil { viewModel.state == .finished }
+
+        #expect(viewModel.state == .finished)
+    }
+
     // MARK: - Subtitles the delivery cannot carry (#218)
 
     /// The #218 population: an HDR MKV with image-based subtitle tracks, the

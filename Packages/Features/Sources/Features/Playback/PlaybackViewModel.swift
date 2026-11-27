@@ -304,6 +304,10 @@ public final class PlaybackViewModel {
                 selectedSubtitleStreamIndex = source.defaultSubtitleStreamIndex
             }
 
+            // Read once, before `playMethod` moves: the stream request, the
+            // burn-in flag and the delivery must all name the subtitle the
+            // server was actually asked for.
+            let serverSubtitle = serverSubtitleStreamIndex
             let resolution = try client.resolveStream(
                 for: source,
                 parameters: StreamParameters(
@@ -311,12 +315,12 @@ public final class PlaybackViewModel {
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
-                    subtitleStreamIndex: serverSubtitleStreamIndex,
+                    subtitleStreamIndex: serverSubtitle,
                 ),
                 capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
-            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitleStreamIndex)
+            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitle)
             logResolution(resolution, source: source, context: "start")
 
             // Playback extras: resolve trickplay and chapters up front so
@@ -348,7 +352,12 @@ public final class PlaybackViewModel {
                 userState.ingest(serverItems: [fresh])
             }
 
-            await beginPlayback(resolution: resolution, resumeTicks: resumeTicks, generation: generation)
+            await beginPlayback(
+                resolution: resolution,
+                serverSubtitleStreamIndex: serverSubtitle,
+                resumeTicks: resumeTicks,
+                generation: generation,
+            )
         } catch {
             // A superseded build's error is not the session's error: the
             // cancellation that superseded it would otherwise flash an error
@@ -648,12 +657,13 @@ public final class PlaybackViewModel {
 
     /// Switch subtitles to the given stream index, or nil to turn them off.
     ///
-    /// This is the app-menu path, and post-#90 the app's menu carries only
-    /// burn-in (image) tracks — AVKit's native picker owns text subtitles,
-    /// selecting renditions directly on the player item, and the view model
-    /// merely observes it (`reconcileMediaSelection`). Every change made
-    /// here is a stream-shape change (a track burned in or out of the video
-    /// by the server), so it always rebuilds.
+    /// This is the app-menu path. On AVKit's rules (post-#90) the app's menu
+    /// carries only burn-in (image) tracks — AVKit's native picker owns text
+    /// subtitles, selecting renditions directly on the player item, and the
+    /// view model merely observes it (`reconcileMediaSelection`). A change
+    /// there is a stream-shape change (a track burned in or out of the video
+    /// by the server), so it rebuilds. An engine that draws subtitles itself
+    /// takes the pick in place instead (`drawsSubtitlesInApp`).
     ///
     /// Critically, no path ever clears the legible selection in place
     /// anymore — and `PlayerEngine` deliberately offers no API to do so:
@@ -694,8 +704,10 @@ public final class PlaybackViewModel {
     /// dropping to a server remux for the rest of it.
     /// `switchAudibleInPlace` steers confidently or not at all; when it
     /// declines, the selection falls through to the rebuild, which always
-    /// honors it. Subtitles never take this arm: post-#90 the app's menu
-    /// carries only burn-in tracks, and burn-in is a stream-shape change.
+    /// honors it. On AVKit's rules subtitles never take this arm: the app's
+    /// menu carries only burn-in tracks, and burn-in is a stream-shape
+    /// change. An engine that draws subtitles itself is the exception, and
+    /// its picks go to `selectSubtitleInPlace` without a rebuild.
     ///
     /// A loaded engine means there is a session to rebuild. No loaded engine
     /// means the initial load is still in flight, and it has already sent its
@@ -948,7 +960,14 @@ public final class PlaybackViewModel {
     /// current session
     private var metadataArtworkTask: Task<Void, Never>?
 
-    private func beginPlayback(resolution: StreamResolution, resumeTicks: Int64, generation: Int) async {
+    /// - Parameter serverSubtitleStreamIndex: the subtitle this build asked
+    ///   the server for, read before `playMethod` changed
+    private func beginPlayback(
+        resolution: StreamResolution,
+        serverSubtitleStreamIndex: Int?,
+        resumeTicks: Int64,
+        generation: Int,
+    ) async {
         // Where this session is anchored, for a rebuild that finds no
         // playhead to read. Recorded per build rather than taken from the
         // launching item, so it follows autoplay to the next episode and
@@ -1214,6 +1233,10 @@ public final class PlaybackViewModel {
             playSessionId = session.playSessionId
             mediaSource = source
 
+            // Read once, before `playMethod` moves: the stream request, the
+            // burn-in flag and the delivery must all name the subtitle the
+            // server was actually asked for.
+            let serverSubtitle = serverSubtitleStreamIndex
             let resolution = try client.resolveStream(
                 for: source,
                 parameters: StreamParameters(
@@ -1221,15 +1244,20 @@ public final class PlaybackViewModel {
                     mediaSourceId: source.id,
                     playSessionId: playSessionId,
                     audioStreamIndex: selectedAudioStreamIndex,
-                    subtitleStreamIndex: serverSubtitleStreamIndex,
+                    subtitleStreamIndex: serverSubtitle,
                 ),
                 capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
-            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitleStreamIndex)
+            sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitle)
             logResolution(resolution, source: source, context: "rebuild")
 
-            await beginPlayback(resolution: resolution, resumeTicks: positionTicks, generation: generation)
+            await beginPlayback(
+                resolution: resolution,
+                serverSubtitleStreamIndex: serverSubtitle,
+                resumeTicks: positionTicks,
+                generation: generation,
+            )
         } catch {
             guard isCurrentLoad(generation) else { return }
             state = .failed(error.localizedDescription)
@@ -1286,6 +1314,16 @@ public final class PlaybackViewModel {
             mediaSelectionReconcileArmed = true
             applyEngineDrawnSubtitle()
 
+        case .dismissRequested:
+            // The same exit `cancelAutoplay` takes: `.finished` dismisses the
+            // container, whose `onDisappear` stops the session and reports
+            // the final position. Deferred like its siblings, off whatever
+            // view update the engine's surface sent it from.
+            Task { @MainActor [weak self] in
+                guard let self, !hasStopped else { return }
+                state = .finished
+            }
+
         case let .deliveryFailed(reason, cause):
             // Deferred onto a fresh main-actor turn like every sibling case.
             // AVKit can fire this synchronously from inside a SwiftUI update
@@ -1317,6 +1355,9 @@ public final class PlaybackViewModel {
             // whenever the engine finishes loading its selection groups —
             // which on a fast stream can precede the start report.
             true
+        case .dismissRequested:
+            // Ungated: the viewer can leave at any moment, loading included.
+            true
         case .deliveryFailed:
             deliveryFailureEventsArmed
         }
@@ -1331,6 +1372,7 @@ public final class PlaybackViewModel {
         case .playedToEnd: "playedToEnd"
         case .mediaSelectionChanged: "mediaSelectionChanged"
         case .mediaSelectionOptionsLoaded: "mediaSelectionOptionsLoaded"
+        case .dismissRequested: "dismissRequested"
         case let .deliveryFailed(_, cause): "deliveryFailed(\(cause))"
         }
     }

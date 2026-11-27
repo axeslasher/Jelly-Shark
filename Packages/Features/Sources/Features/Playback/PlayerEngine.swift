@@ -48,7 +48,19 @@ public enum PlayerEngineEvent: Sendable {
     /// in place. Reconciliation stays disarmed until this arrives — a
     /// change notification before then could not be mapped to a Jellyfin
     /// stream index.
+    ///
+    /// Obligation: send it after every `load`, direct play included (when
+    /// `loadsLegibleOptions` is false). It is also when an engine that draws
+    /// subtitles itself gets the committed pick re-applied, so an engine
+    /// that skips it loses the viewer's subtitle on every rebuild.
     case mediaSelectionOptionsLoaded
+
+    /// The viewer asked to leave the player from a surface the engine draws
+    /// itself (the `.hostedViewController` route), where the app's own
+    /// player controls are absent. Ends the session exactly as closing the
+    /// app's player does: the final position is reported and the player
+    /// dismissed.
+    case dismissRequested
 }
 
 // MARK: - Session Metadata

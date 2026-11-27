@@ -15,8 +15,13 @@ public enum PlayerRenderRoute {
         case avPlayer(AVPlayer)
 
         /// The engine draws its own frames and supplies the whole player
-        /// surface, controls included. The app mounts the controller as is
-        /// and adds nothing to it.
+        /// surface, controls included. The app mounts the controller as is.
+        ///
+        /// What the app's player would otherwise provide becomes the
+        /// engine's to provide: a way out (send `.dismissRequested`), track
+        /// menus, and the tvOS pre-roll Up Next card, which has no
+        /// counterpart on this route. On visionOS the app's post-roll Up
+        /// Next overlay still draws over the surface.
         case hostedViewController(UIViewController)
     #endif
 }
