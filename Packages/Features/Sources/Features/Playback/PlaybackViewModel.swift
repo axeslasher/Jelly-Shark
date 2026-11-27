@@ -296,7 +296,12 @@ public final class PlaybackViewModel {
             // keeps an explicit mid-session "off" alive across rebuilds and
             // across a load this very selection restarted (#212); autoplay
             // resets the selection so each episode reseeds.
-            if !engine.drawsSubtitlesInApp,
+            //
+            // An engine that draws subtitles itself takes the default in place
+            // when it direct plays, so the seed is skipped only for a source
+            // that can: one that cannot will transcode, where the server
+            // burns the default in as it does on the default engine.
+            if !(engine.drawsSubtitlesInApp && source.supportsDirectPlay),
                !hasExplicitSubtitleSelection,
                selectedSubtitleStreamIndex == nil,
                source.subtitleRequiresBurnIn(at: source.defaultSubtitleStreamIndex)
@@ -320,6 +325,7 @@ public final class PlaybackViewModel {
                 capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
+            dropSubtitleWithheldFromServer(serverSubtitle)
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitle)
             logResolution(resolution, source: source, context: "start")
 
@@ -618,6 +624,22 @@ public final class PlaybackViewModel {
     /// burn an image track in, or drop direct play for it (#60, E15).
     private var serverSubtitleStreamIndex: Int? {
         drawsSubtitlesInApp ? nil : selectedSubtitleStreamIndex
+    }
+
+    /// Drop an engine-drawn pick the server was never told about, once a
+    /// build has left direct play. The build asked the server for no
+    /// subtitle, and without direct play the engine can't draw one, so
+    /// keeping the index would show a ticked track that never renders, and
+    /// picking it again would be ignored as unchanged. Cleared, the menu
+    /// tells the truth and a new pick rebuilds with the track burned in.
+    private func dropSubtitleWithheldFromServer(_ serverSubtitle: Int?) {
+        guard engine.drawsSubtitlesInApp, playMethod != .directPlay,
+              serverSubtitle == nil, let held = selectedSubtitleStreamIndex
+        else { return }
+        Self.logger.info(
+            "[subtitle] engine-drawn pick \(held, privacy: .public) dropped: the build left direct play without it",
+        )
+        selectedSubtitleStreamIndex = nil
     }
 
     /// Follow a choice the viewer made in AVKit's subtitle menu on an engine
@@ -1249,6 +1271,7 @@ public final class PlaybackViewModel {
                 capabilities: engine.capabilities,
             )
             playMethod = resolution.playMethod
+            dropSubtitleWithheldFromServer(serverSubtitle)
             sessionUsesBurnIn = source.subtitleRequiresBurnIn(at: serverSubtitle)
             logResolution(resolution, source: source, context: "rebuild")
 
@@ -1312,7 +1335,12 @@ public final class PlaybackViewModel {
 
         case .mediaSelectionOptionsLoaded:
             mediaSelectionReconcileArmed = true
-            applyEngineDrawnSubtitle()
+            // Only a pick the viewer made is re-applied. Before one, the
+            // engine keeps the file's own default, which a nil here would
+            // switch off (forced subtitles included).
+            if hasExplicitSubtitleSelection {
+                applyEngineDrawnSubtitle()
+            }
 
         case .dismissRequested:
             // The same exit `cancelAutoplay` takes: `.finished` dismisses the

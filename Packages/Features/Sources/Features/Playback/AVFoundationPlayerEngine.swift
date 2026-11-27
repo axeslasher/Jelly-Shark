@@ -15,9 +15,10 @@ import OSLog
 ///
 /// `@Observable` is load-bearing: `PlaybackContainerView` reads
 /// `renderRoute` (and so `player`) in its body to feed
-/// `AVPlayerViewController`, and the first load has to reach the view. A mid-session rebuild deliberately does *not* change the
-/// instance — it replaces the item underneath (see `load`) — so within a
-/// session the view sees one player from first frame to teardown.
+/// `AVPlayerViewController`, and the first load has to reach the view. A
+/// mid-session rebuild deliberately does *not* change the instance — it
+/// replaces the item underneath (see `load`) — so within a session the view
+/// sees one player from first frame to teardown.
 @Observable
 @MainActor
 final class AVFoundationPlayerEngine: PlayerEngine, PlayerEngineHosting {

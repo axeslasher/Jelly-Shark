@@ -341,11 +341,16 @@ public protocol PlayerEngine: AnyObject {
     /// Show the embedded subtitle at `embeddedPosition`, or none for nil.
     ///
     /// `embeddedPosition` counts only the source's embedded subtitle streams
-    /// (sidecar files excluded), in the order Jellyfin lists them. This is
-    /// the engine's own cue pipeline: it must not select or clear AVKit's
-    /// legible group, so the #91 latch is never in play. Called after each
-    /// pick and again once `mediaSelectionOptionsLoaded` arrives, since a
-    /// fresh load starts with subtitles off.
+    /// (sidecar files excluded), in the order Jellyfin lists them. Called
+    /// after each pick, and again once `mediaSelectionOptionsLoaded`
+    /// arrives if the viewer has picked a subtitle this session; until then
+    /// the engine keeps whatever default the file carries.
+    ///
+    /// For a track in `systemMenuSubtitlePositions` the engine may *select*
+    /// it in AVKit's legible group, so AVKit's menu shows the pick. It must
+    /// never *clear* that group (`select(nil)`): that is the #91 latch. For
+    /// nil, hide the engine's own cues and leave AVKit's selection as it
+    /// is.
     ///
     /// - Returns: false when the engine cannot map or show the track. The
     ///   session layer logs the refusal, so a pick that does nothing is
@@ -355,6 +360,11 @@ public protocol PlayerEngine: AnyObject {
     /// The embedded subtitle positions AVKit's own subtitle menu lists for
     /// this session. The app's menu leaves those out, so no track is offered
     /// twice.
+    ///
+    /// Obligation: observable. The container's body reads it through the
+    /// session layer, so an engine that fills it after `load` must let
+    /// Observation see the change, or the app's menu keeps listing tracks
+    /// AVKit's menu already shows.
     var systemMenuSubtitlePositions: [Int] { get }
 
     /// What the viewer last chose in AVKit's subtitle menu, read after a

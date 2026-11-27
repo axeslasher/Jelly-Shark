@@ -1583,7 +1583,53 @@ struct PlaybackViewModelTests {
         #expect(client.playbackInfoRequests.count == 2)
         #expect(client.playbackInfoRequests.last?.subtitleStreamIndex == nil)
         #expect(client.streamResolutions.last?.parameters.subtitleStreamIndex == Int??.some(nil))
+        // The explicit audio pick lands on a server remux, where the engine
+        // can no longer draw the track the server was never asked for: the
+        // pick is dropped rather than left ticked with nothing rendering
+        #expect(client.streamResolutions.last?.playMethod != .directPlay)
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+        #expect(!viewModel.drawsSubtitlesInApp)
+    }
+
+    @Test("A rebuild that stays on direct play keeps the engine-drawn pick")
+    func engineDrawnPickSurvivesDirectPlayRebuild() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: 4)
+        await viewModel.retry()
+
+        #expect(client.streamResolutions.last?.playMethod == .directPlay)
         #expect(viewModel.selectedSubtitleStreamIndex == 4)
+    }
+
+    @Test("Before the viewer picks, a load leaves the engine's own default subtitle alone")
+    func engineDrawnNoPickLeavesDefault() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        engine.send(.mediaSelectionOptionsLoaded)
+
+        #expect(engine.subtitleInPlaceSelections.isEmpty)
+    }
+
+    @Test("A source that cannot direct play seeds its burn-in default even when the engine draws subtitles")
+    func engineDrawnSeedsBurnInWhenTranscoding() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, directPlay: false, defaultSubtitleStreamIndex: 4)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+
+        #expect(viewModel.selectedSubtitleStreamIndex == 4)
+        #expect(client.streamResolutions[0].parameters.subtitleStreamIndex == 4)
     }
 
     @Test("Engine-drawn positions count embedded streams only, skipping sidecar files")

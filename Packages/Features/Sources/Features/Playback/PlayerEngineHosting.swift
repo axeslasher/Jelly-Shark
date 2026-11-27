@@ -80,12 +80,17 @@ public protocol PlayerEngineHosting: AnyObject {
 
 /// Where the app target supplies a playback engine from outside `Features`.
 ///
-/// Set once at launch, before any player is presented. Consulted at every
-/// presentation, so a factory can decide per session (a Settings switch,
-/// say) and return nil to fall back to the default AVFoundation engine.
-/// A static rather than an environment value because the engine has to
-/// exist when `PlaybackContainerView.init` builds its view model, before
-/// any environment can be read.
+/// Set once at launch, before any player is presented. Called from
+/// `PlaybackContainerView.init`, so a factory can decide per session (a
+/// Settings switch, say) and return nil to fall back to the default
+/// AVFoundation engine. A static rather than an environment value because
+/// the engine has to exist when that init builds its view model, before any
+/// environment can be read.
+///
+/// Obligation: cheap and free of side effects until `load`. SwiftUI runs
+/// the container's init each time its presenter re-renders and keeps only
+/// the first engine, so a factory can be called several times for one
+/// session and every engine but one is discarded unused.
 @MainActor
 public enum PlayerEngineRegistry {
     /// Builds an engine for one session. The argument is the viewer's
