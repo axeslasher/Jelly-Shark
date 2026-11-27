@@ -81,12 +81,19 @@
             var lines: [String] = []
             let picture = pictureRect
 
+            // E22: when AVKit draws the active track, the engine still
+            // publishes its cues; drawing them here too would double them.
+            let drawsText = !PlayerEngineSelection.avKitDrawsActiveSubtitle
             for cue in active {
                 switch cue.body {
                 case let .text(text):
-                    lines.append(text)
+                    if drawsText {
+                        lines.append(text)
+                    }
                 case let .richText(runs):
-                    lines.append(runs.map(\.text).joined())
+                    if drawsText {
+                        lines.append(runs.map(\.text).joined())
+                    }
                 case let .image(image):
                     let view = UIImageView(image: UIImage(cgImage: image.cgImage))
                     view.frame = Self.frame(for: image, in: picture)

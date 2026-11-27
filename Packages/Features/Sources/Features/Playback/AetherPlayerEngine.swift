@@ -32,6 +32,16 @@ enum PlayerEngineSelection {
     /// the engine the headset presents Dolby Vision, which it cannot
     /// observe on visionOS. Flip it between the two builds.
     static let assertsDolbyVisionOnVisionOS = true
+
+    /// E22: on tvOS, hand text subtitle tracks to AVKit to draw from the
+    /// engine's renditions, and keep the app's overlay for image tracks
+    /// and for sessions where AVKit's menu lists nothing. False restores
+    /// E17's behaviour, where the app draws every cue.
+    static let drawsTextSubtitlesWithAVKit = true
+
+    /// True while AVKit is drawing the active subtitle, so the app's
+    /// overlay leaves text cues alone and the two never draw one line twice.
+    @MainActor static var avKitDrawsActiveSubtitle = false
 }
 
 /// Evidence for H4 on both engines: one footprint line every 5 s from the
@@ -201,7 +211,29 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     @ObservationIgnored private(set) var systemMenuSubtitlePick: SystemSubtitlePick = .none
 
     /// The menu entry the engine was last told to tick (AE#1052's marker).
-    @ObservationIgnored private var markerPosition: Int?
+    @ObservationIgnored private var markerPosition: Int? {
+        didSet {
+            markerSeenSelected = false
+            markerSetAt = Date()
+        }
+    }
+
+    /// When `markerPosition` was last set. The engine clears AVKit's
+    /// selection itself just after a pick, while it prepares the track, and
+    /// E22's second run showed `markerSeenSelected` alone does not fence
+    /// that off: something re-selects the viewer's choice for an instant
+    /// first. A viewer cannot reopen the menu and choose Off inside three
+    /// seconds of a pick, so an empty selection that soon is the engine's.
+    @ObservationIgnored private var markerSetAt = Date.distantPast
+    private static let engineDeselectWindow: TimeInterval = 3
+
+    /// Whether AVKit's selection has been seen sitting on `markerPosition`
+    /// since it was set. "Nothing selected" only means the viewer chose Off
+    /// once that has happened: before it, the engine itself clears the
+    /// selection while it prepares the track, for a second or two when
+    /// AVKit is to draw it. E22's first run read that gap as Off, so every
+    /// track had to be picked twice.
+    @ObservationIgnored private var markerSeenSelected = false
     @ObservationIgnored private weak var observedItem: AVPlayerItem?
     @ObservationIgnored private var legibleGroup: AVMediaSelectionGroup?
     @ObservationIgnored private var legibleObserver: (any NSObjectProtocol)?
@@ -400,7 +432,12 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         guard let engine else { return false }
         guard let embeddedPosition else {
             engine.clearSubtitle()
-            if markerPosition != nil {
+            if PlayerEngineSelection.avKitDrawsActiveSubtitle {
+                // The rendition was the display; take the request back.
+                PlayerEngineSelection.avKitDrawsActiveSubtitle = false
+                engine.setNativeSubtitleRendering(false)
+                markerPosition = nil
+            } else if markerPosition != nil {
                 markerPosition = nil
                 engine.setNativeSubtitleSelected(track: nil)
             }
@@ -414,10 +451,26 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         }
         let track = embedded[embeddedPosition]
         Self.logger.info("[aether] subtitle position=\(embeddedPosition) id=\(track.id) codec=\(track.codec, privacy: .public) lang=\(track.language ?? "-", privacy: .public)")
+        let menuPosition = systemMenuSubtitlePositions.firstIndex(of: embeddedPosition)
+        let drawnByAVKit = PlayerEngineSelection.drawsTextSubtitlesWithAVKit
+            && menuPosition != nil && !Self.isBitmapSubtitle(track.codec)
+        if PlayerEngineSelection.avKitDrawsActiveSubtitle, !drawnByAVKit {
+            // Leaving a track AVKit was drawing for one the app draws.
+            engine.setNativeSubtitleRendering(false)
+        }
+        PlayerEngineSelection.avKitDrawsActiveSubtitle = drawnByAVKit
         engine.selectSubtitleTrack(index: track.id)
-        // Tick the same track in AVKit's menu without having AVKit draw it.
-        if let menuPosition = systemMenuSubtitlePositions.firstIndex(of: embeddedPosition) {
-            markerPosition = menuPosition
+        guard let menuPosition else { return true }
+        // Remembered either way, so the engine's own select, which echoes
+        // through the selection notification, is not read as a new pick.
+        markerPosition = menuPosition
+        if drawnByAVKit {
+            // The rendition is the display: selected for real, drawn by
+            // AVKit in the system caption style.
+            engine.setNativeSubtitleRendering(true)
+            Self.logger.info("[aether] subtitle → AVKit draws menu position \(menuPosition)")
+        } else {
+            // Tick the track in AVKit's menu without having AVKit draw it.
             engine.setNativeSubtitleSelected(track: menuPosition, markerOnly: true)
             Self.logger.info("[aether] subtitle marker → menu position \(menuPosition)")
         }
@@ -475,6 +528,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
         observedItem = nil
         formatLoggedItem = nil
         markerPosition = nil
+        PlayerEngineSelection.avKitDrawsActiveSubtitle = false
         systemMenuSubtitlePick = .none
         systemMenuSubtitlePositions = []
     }
@@ -539,17 +593,23 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
 
     private func systemSubtitleSelectionChanged() {
         if let selected = selectedMenuPosition {
-            // The engine's own marker select echoes here too.
-            guard selected != markerPosition, systemMenuSubtitlePositions.indices.contains(selected) else { return }
+            // The engine's own select echoes here too.
+            if selected == markerPosition {
+                markerSeenSelected = true
+                return
+            }
+            guard systemMenuSubtitlePositions.indices.contains(selected) else { return }
             reportSystemMenuPick(.embedded(systemMenuSubtitlePositions[selected]), cause: "menu position \(selected)")
-        } else if markerPosition != nil {
+        } else if markerPosition != nil, markerSeenSelected,
+                  Date().timeIntervalSince(markerSetAt) > Self.engineDeselectWindow
+        {
             // The engine deselects and reselects around its own marker
             // work, so "nothing selected" only means Off if it holds.
             let generation = generation
             Task { [weak self] in
                 try? await Task.sleep(for: .milliseconds(400))
                 guard let self, self.generation == generation,
-                      markerPosition != nil, selectedMenuPosition == nil
+                      markerPosition != nil, markerSeenSelected, selectedMenuPosition == nil
                 else { return }
                 reportSystemMenuPick(.off, cause: "menu Off")
             }
