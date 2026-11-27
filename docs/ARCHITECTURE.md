@@ -157,7 +157,7 @@ Features/
 ├── Library/                (LibraryItemsView + LibraryItemsViewModel, LibraryFilterBar, GenreFilter, LibraryQueryDisplay, PosterGridLayout)
 ├── MediaDetail/            (MediaDetailView + MediaDetailViewModel, hero/episodes/shelves/credits sections)
 ├── PersonDetail/           (PersonDetailView + PersonDetailViewModel, PersonDetailHeader, PersonDetailShelves)
-├── Playback/               (PlaybackContainerView, PlayerViewController, PlaybackViewModel, PlaybackLocalServer, UpNextOverlayView, audio/subtitle option matchers)
+├── Playback/               (the public PlayerEngine seam and its registry, PlaybackContainerView, PlayerViewController, PlaybackViewModel, PlaybackLocalServer, UpNextOverlayView, audio/subtitle option matchers)
 ├── Search/                 (SearchView + SearchViewModel — debounced search UI)
 ├── Settings/               (SettingsView, ServerConnectionView, ServerConnectionViewModel)
 └── PreviewSupport/         (FeaturesPreview trait, PreviewData fixtures)
@@ -355,6 +355,7 @@ Two venues, both run by `.github/workflows/tests.yml` on every PR. `make test-ho
 | 2026-11-13 | **The visionOS window is locked to 16:9 and scales uniformly only, opening at 1920×1080 points (#142).** Matches Apple's TV app. | Artwork grids reflow by width, shelves are horizontal, the detail hero is a wide composition and playback is 16:9 or wider, so freeform resizing makes every screen survive every shape. Locking the ratio leaves one shape to design and verify. SwiftUI has no uniform mode: `WindowResizability` offers only `.automatic`, `.contentSize` and `.contentMinSize` (checked in the visionOS 27 SDK interface). So `uniformWindowResizing()` asks the UIKit scene for `UIWindowScene.GeometryPreferences.Vision(resizingRestrictions: .uniform)`, available since visionOS 1.0, and `defaultSize` sets the opening size. On the Vision Pro simulator the window opened at 1920×1080 from a fresh install, and again after a session that left it at 1600×1200 (verified 2026-11-13). On a Vision Pro the window opened at 1920×1080, scaled uniformly at 16:9, and came back 16:9 after resize, quit and relaunch (verified 2026-11-17). The system's own minimum was too small for the library grid and Home shelves, so the same request sets a 1280×720 minimum; a restored window is corrected to no less than that. Accepted cost: the viewer can't pick a shape. The maximum size is the system's. tvOS has no windows and is unaffected. |
 | 2026-11-27 | **AetherEngine is adopted as an experimental, opt-in playback engine (#60). AVFoundation stays the default, and nothing changes for a viewer who does not switch it on.** | #60 was written for VLCKit and mpv; the spike trialled AetherEngine instead, because it keeps `AVPlayer` and AVKit on its main route. Device-verified on Apple TV and Vision Pro (`docs/spikes/60.md`, E1 to E22): MKV direct play with no server remux, a mid-file resume in about a second where `main` never starts (#387), Atmos confirmed at the receiver, app memory no higher than the default engine, and subtitles through AVKit's own menu. Opt-in, not a replacement, because no display was seen applying Dolby Vision, one MKV shape shows no subtitles, and the spike's adapter is prior art, not merge material. It ships under `docs/experimental/` rules. |
 | 2026-11-27 | **Two exceptions to the binary dependency policy, for AetherEngine only: it may exceed the 15 MB ceiling, and it may replace AVFoundation's demux path.** They take effect when the dependency lands, in its own `Packages/` sibling. | Measured at about 23 MB added on arm64 tvOS, stripped (E2, E4). Granted on capability grounds, as the 2026-07-30 rule requires: the engine does what a feed-only binary cannot, and still hands a standard `AVPlayer` to AVKit on its native route. The licence bar is met: LGPL-3.0 with an App Store exception, FFmpeg as LGPL dynamic frameworks. The placement rule is not waived, so #199 is now a prerequisite with a consumer waiting. |
+| 2026-11-27 | **The `PlayerEngine` seam is public and stays in `Features` (#199). An engine from another package registers through `PlayerEngineRegistry`; AVFoundation stays the default.** | The binary dependency policy already points packages at `Features`, so a separate `PlaybackKit` would add a module without removing a dependency. The hosting contract covers both routes the #60 spike needed: an engine ending in an `AVPlayer`, and one that draws its own frames. The subtitle write side is inert unless an engine opts in, so the default engine behaves as before. See § The published playback seam. |
 
 ---
 
@@ -409,12 +410,26 @@ two-slice (`tvos-arm64`, `tvos-arm64-simulator`) `binaryTarget` xcframework,
 Xcode 27 beta (AppleTVOS27.0). The scaffold was deleted rather than committed; the value
 was the measurement.
 
-### Prerequisite: #199
+### The published playback seam (#199)
 
-The seam such a package would conform to is module-internal. `PlayerEngine`,
-`PlayerEngineEvent`, `PlayerSessionMetadata`, `DeliveryProgress`, `PlaybackTransportStatus`,
-`AudibleOption` and `LegibleOption` are all `internal` to `Features`, so an external package
-can link `Features` today but cannot implement a playback extension point.
-`PlaybackCapabilities` is already `public` and lives in `JellyfinKit`, so the
-capability-declaration half is done. Publishing the remainder is **#199**, a prerequisite
-for any binary-backed engine or renderer rather than a task of this policy.
+An engine in its own package conforms to `PlayerEngine` and registers with
+`PlayerEngineRegistry`. The seam stays in `Features`, following the dependency direction
+above; no `PlaybackKit` package was split out.
+
+| Public in `Features` | What it is for |
+|---|---|
+| `PlayerEngine` | Transport, state, media selection, metadata and Up Next. The obligations a signature cannot show (timing, rebuilds, the #91 rule) are in its doc comments |
+| `PlayerEngineHosting`, `PlayerRenderRoute` | How the container mounts the engine: an `AVPlayer` in the app's `AVPlayerViewController`, or a view controller the engine supplies. Mount and dismantle hooks let an engine add views to the player |
+| `PlayerEngineRegistry` | A factory the app target sets at launch. Returning nil, or setting none, keeps `AVFoundationPlayerEngine` |
+| `PlayerEngineEvent`, `PlayerSessionMetadata`, `UpNextProposal`, `DeliveryProgress`, `PlaybackTransportStatus`, `AudibleOption`, `LegibleOption`, `SystemSubtitlePick` | The values the protocol passes, each with a public initialiser where an engine builds one |
+
+`AVFoundationPlayerEngine` stays `internal`. `PlaybackCapabilities` was already public in
+`JellyfinKit`.
+
+The registry is a static, not an environment value, because `PlaybackContainerView.init`
+builds the engine and its view model before any environment can be read.
+
+Verified 2026-11-27 under Xcode 27.2 (AppleTVOS 27.2): a scratch package outside the repo,
+with `.package(path:)` on `Features`, conformed once per route, registered a factory, and
+built clean for `generic/platform=tvOS` and `generic/platform=visionOS`. As with the
+policy's own check, the scaffold was not committed.
