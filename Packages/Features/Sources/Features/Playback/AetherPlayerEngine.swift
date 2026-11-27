@@ -31,7 +31,7 @@ enum PlayerEngineSelection {
     /// Vision Pro round, part A. False for step A1, true for step A2: tell
     /// the engine the headset presents Dolby Vision, which it cannot
     /// observe on visionOS. Flip it between the two builds.
-    static let assertsDolbyVisionOnVisionOS = false
+    static let assertsDolbyVisionOnVisionOS = true
 }
 
 /// Evidence for H4 on both engines: one footprint line every 5 s from the
@@ -447,7 +447,15 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
                     let transfer = extensions?[kCMFormatDescriptionExtension_TransferFunction as String] as? String ?? "-"
                     let primaries = extensions?[kCMFormatDescriptionExtension_ColorPrimaries as String] as? String ?? "-"
                     let size = CMVideoFormatDescriptionGetDimensions(description)
-                    Self.logger.info("[aether] accepted video format: \(fourCC, privacy: .public) \(size.width)x\(size.height) transfer=\(transfer, privacy: .public) primaries=\(primaries, privacy: .public)")
+                    // Step A1 showed `hvc1` for both titles: the engine
+                    // signals Dolby Vision as a supplemental codec on an
+                    // HEVC entry, so the fourCC cannot tell. The sample
+                    // entry's own atoms can: `dvvC` or `dvcC` is the Dolby
+                    // Vision configuration the player was handed.
+                    let atoms = extensions?[kCMFormatDescriptionExtension_SampleDescriptionExtensionAtoms as String] as? [String: Any]
+                    let atomNames = (atoms?.keys.sorted() ?? []).joined(separator: ",")
+                    let hdrVideo = assetTrack.hasMediaCharacteristic(.containsHDRVideo)
+                    Self.logger.info("[aether] accepted video format: \(fourCC, privacy: .public) \(size.width)x\(size.height) transfer=\(transfer, privacy: .public) primaries=\(primaries, privacy: .public) atoms=[\(atomNames, privacy: .public)] hdrVideo=\(hdrVideo)")
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(250))
