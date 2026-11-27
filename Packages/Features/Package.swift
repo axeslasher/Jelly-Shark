@@ -26,7 +26,7 @@ let package = Package(
         // roughly daily; no optional traits.
         // 7.71.0 is the first release with the AE#1052 marker fixes this
         // spike reported and tested (E18 to E20).
-        .package(url: "https://github.com/superuser404notfound/AetherEngine", .upToNextMinor(from: "7.71.0")),
+        .package(url: "https://github.com/superuser404notfound/AetherEngine", .upToNextMinor(from: "7.76.0")),
     ],
     targets: [
         .target(

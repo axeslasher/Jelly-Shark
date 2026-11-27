@@ -592,6 +592,11 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
     }
 
     private func systemSubtitleSelectionChanged() {
+        // #395 capture: every selection change, with what the adapter
+        // believed at that moment. The engine logs its own selects, so a
+        // change with no engine line next to it came from AVKit.
+        let sinceMarker = markerPosition == nil ? -1 : Int(Date().timeIntervalSince(markerSetAt) * 1000)
+        Self.logger.info("[aether] #395 selection changed: selected=\(self.selectedMenuPosition.map(String.init) ?? "none", privacy: .public) marker=\(self.markerPosition.map(String.init) ?? "none", privacy: .public) seen=\(self.markerSeenSelected) sinceMarker=\(sinceMarker)ms")
         if let selected = selectedMenuPosition {
             // The engine's own select echoes here too.
             if selected == markerPosition {
@@ -755,6 +760,7 @@ final class AetherPlayerEngine: PlayerEngine, AVPlayerHosting {
             .receive(on: RunLoop.main)
             .sink { [weak self] request in
                 guard let self, sessionRequested else { return }
+                Self.logger.info("[aether] #395 engine caption request: lang=\(request.language ?? "none", privacy: .public) marker=\(self.markerPosition.map(String.init) ?? "none", privacy: .public)")
                 answerSystemCaptionRequest(language: request.language)
             }
             .store(in: &subscriptions)
