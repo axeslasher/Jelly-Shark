@@ -626,6 +626,18 @@ public final class PlaybackViewModel {
         drawsSubtitlesInApp ? nil : selectedSubtitleStreamIndex
     }
 
+    /// Whether a subtitle pick changes anything. An engine that draws
+    /// subtitles shows the file's own default until the viewer picks, while
+    /// the stored index stays nil, so the first explicit Off is a change: it
+    /// is how the viewer turns that default (forced subtitles included) off.
+    /// Repeated Offs after it are not.
+    private func isSubtitleChange(_ index: Int?) -> Bool {
+        if index == nil, drawsSubtitlesInApp, !hasExplicitSubtitleSelection {
+            return true
+        }
+        return index != selectedSubtitleStreamIndex
+    }
+
     /// Drop an engine-drawn pick the server was never told about, once a
     /// build has left direct play. The build asked the server for no
     /// subtitle, and without direct play the engine can't draw one, so
@@ -656,7 +668,7 @@ public final class PlaybackViewModel {
             guard embeddedSubtitleStreams.indices.contains(position) else { return }
             index = embeddedSubtitleStreams[position].index
         }
-        guard index != selectedSubtitleStreamIndex else { return }
+        guard isSubtitleChange(index) else { return }
         selectedSubtitleStreamIndex = index
         hasExplicitSubtitleSelection = true
         applyEngineDrawnSubtitle()
@@ -705,7 +717,7 @@ public final class PlaybackViewModel {
             )
             return
         }
-        guard index != selectedSubtitleStreamIndex else { return }
+        guard isSubtitleChange(index) else { return }
         selectedSubtitleStreamIndex = index
         hasExplicitSubtitleSelection = true
         await applySelection(.subtitle)

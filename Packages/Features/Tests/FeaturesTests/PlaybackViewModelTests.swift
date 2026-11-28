@@ -1619,6 +1619,37 @@ struct PlaybackViewModelTests {
         #expect(engine.subtitleInPlaceSelections.isEmpty)
     }
 
+    @Test("The first Off turns the engine's own default subtitle off; a repeat is a no-op")
+    func engineDrawnFirstOffReachesEngine() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        await viewModel.selectSubtitleStream(index: nil)
+        await viewModel.selectSubtitleStream(index: nil)
+
+        #expect(engine.subtitleInPlaceSelections == [nil])
+        #expect(client.playbackInfoRequests.count == 1)
+    }
+
+    @Test("An Off in AVKit's menu reaches the engine before any pick")
+    func engineDrawnSystemMenuOffReachesEngine() async {
+        let client = MockJellyfinClient()
+        stubSubtitledSource(on: client, defaultSubtitleStreamIndex: 2)
+        let (viewModel, engine) = makePlayback(client: client, item: makeMovie())
+        engine.drawsSubtitlesInApp = true
+
+        await viewModel.start()
+        engine.systemMenuSubtitlePick = .off
+        engine.send(.mediaSelectionChanged)
+        await waitUntil { !engine.subtitleInPlaceSelections.isEmpty }
+
+        #expect(engine.subtitleInPlaceSelections == [nil])
+        #expect(viewModel.selectedSubtitleStreamIndex == nil)
+    }
+
     @Test("A source that cannot direct play seeds its burn-in default even when the engine draws subtitles")
     func engineDrawnSeedsBurnInWhenTranscoding() async {
         let client = MockJellyfinClient()

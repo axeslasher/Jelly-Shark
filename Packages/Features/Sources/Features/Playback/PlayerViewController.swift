@@ -595,7 +595,9 @@
                     // menu takes the captions bubble because it is the
                     // subtitle menu for the tracks AVKit's does not list.
                     menus.append(UIMenu(
-                        title: drawnInApp ? "Subtitles" : "Image Subtitles",
+                        title: drawnInApp
+                            ? String(localized: "player.menu.subtitles", bundle: #bundle, comment: "Transport-bar menu for picking a subtitle track that the playback engine draws itself, shown in place of the image-subtitle menu.")
+                            : "Image Subtitles",
                         subtitle: drawnInApp ? nil : "Requires reload",
                         image: UIImage(systemName: drawnInApp ? "captions.bubble" : "text.below.photo"),
                         options: [.singleSelection],
