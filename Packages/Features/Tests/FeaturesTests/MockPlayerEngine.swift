@@ -98,6 +98,19 @@ final class MockPlayerEngine: PlayerEngine {
         await seekGate?()
     }
 
+    /// Engine-drawn subtitles (#199). Off by default, like the protocol's
+    /// own defaults, so every suite that predates them sees AVKit's rules.
+    var drawsSubtitlesInApp = false
+    var systemMenuSubtitlePositions: [Int] = []
+    var systemMenuSubtitlePick: SystemSubtitlePick = .none
+    /// Every `selectSubtitleInPlace` call, nil (off) included
+    private(set) var subtitleInPlaceSelections: [Int?] = []
+
+    func selectSubtitleInPlace(embeddedPosition: Int?) -> Bool {
+        subtitleInPlaceSelections.append(embeddedPosition)
+        return true
+    }
+
     func selectAudible(position: Int) {
         audibleSelections.append(position)
         selectedAudiblePosition = position

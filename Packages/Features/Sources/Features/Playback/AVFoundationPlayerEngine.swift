@@ -13,14 +13,15 @@ import OSLog
 /// AVKit-facing metadata. Everything AVFoundation in playback lives here or
 /// in the view layer that hosts the player — never in `PlaybackViewModel`.
 ///
-/// `@Observable` is load-bearing: `PlaybackContainerView` reads `player` in
-/// its body to feed `AVPlayerViewController`, and the first load has to reach
-/// the view. A mid-session rebuild deliberately does *not* change the
-/// instance — it replaces the item underneath (see `load`) — so within a
-/// session the view sees one player from first frame to teardown.
+/// `@Observable` is load-bearing: `PlaybackContainerView` reads
+/// `renderRoute` (and so `player`) in its body to feed
+/// `AVPlayerViewController`, and the first load has to reach the view. A
+/// mid-session rebuild deliberately does *not* change the instance — it
+/// replaces the item underneath (see `load`) — so within a session the view
+/// sees one player from first frame to teardown.
 @Observable
 @MainActor
-final class AVFoundationPlayerEngine: PlayerEngine {
+final class AVFoundationPlayerEngine: PlayerEngine, PlayerEngineHosting {
     // `nonisolated`: `Logger` is Sendable, and the dropped-frame sampler logs
     // from its own queue.
     private nonisolated static let logger = Logger(subsystem: "com.justinlascelle.jellyshark", category: "Playback")
@@ -185,9 +186,12 @@ final class AVFoundationPlayerEngine: PlayerEngine {
     }
 
     /// The player, for the hosting view. Not part of `PlayerEngine`: only
-    /// the AVKit hosting path needs it, and it holds a typed reference to
-    /// this engine.
+    /// the AVKit hosting path needs it, through `renderRoute`.
     private(set) var player: AVPlayer?
+
+    var renderRoute: PlayerRenderRoute? {
+        player.map { .avPlayer($0) }
+    }
 
     @ObservationIgnored var onEvent: ((PlayerEngineEvent) -> Void)?
 

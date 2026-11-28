@@ -13,8 +13,18 @@
     /// rebuilding the stream server-side).
     struct PlayerViewControllerRepresentable: UIViewControllerRepresentable {
         let player: AVPlayer
+
+        /// The engine behind `player`, told when the controller mounts and
+        /// dismantles so it can add its own views and settings (#199)
+        let engineHosting: any PlayerEngineHosting
+
         let audioStreams: [MediaStreamInfo]
         let subtitleStreams: [MediaStreamInfo]
+
+        /// The session's engine draws subtitles itself, so the app's menu
+        /// lists its text tracks too and a pick never reloads
+        var drawsSubtitlesInApp = false
+
         let selectedAudioIndex: Int?
         let selectedSubtitleIndex: Int?
         let people: [CastMember]
@@ -120,6 +130,12 @@
             /// pass (a favorite toggle, cast arriving) does not re-render
             /// the card
             var reconnectingBannerOutage: ServerOutage?
+
+            /// The engine to notify on dismantle, and whether it has been
+            /// told this controller mounted. Weak: the container owns the
+            /// engine, and a dismantle after it has gone has nothing to undo.
+            weak var engineHosting: (any PlayerEngineHosting)?
+            var hasNotifiedEngineMount = false
 
             /// Latest dismissal handler, refreshed every update pass for the
             /// same reason `onToggleFavorite` is: the delegate outlives the
@@ -238,6 +254,7 @@
             let controller = AVPlayerViewController()
             controller.player = player
             controller.delegate = context.coordinator
+            context.coordinator.engineHosting = engineHosting
             context.coordinator.onRequestDismiss = onRequestDismiss
             context.coordinator.onAcceptUpNext = onAcceptUpNext
             context.coordinator.onDeclineUpNext = onDeclineUpNext
@@ -245,6 +262,7 @@
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
             syncReconnectingBanner(for: controller, coordinator: context.coordinator)
+            notifyEngineMountIfReady(for: controller, coordinator: context.coordinator)
             #if os(tvOS)
                 // Install the Up Next card once, here in a main-actor context;
                 // AVKit reuses it for every proposal and the `shouldPresent`
@@ -269,9 +287,14 @@
             configureMenus(for: controller, coordinator: context.coordinator)
             configureInfoTabs(for: controller, coordinator: context.coordinator)
             syncReconnectingBanner(for: controller, coordinator: context.coordinator)
+            notifyEngineMountIfReady(for: controller, coordinator: context.coordinator)
         }
 
-        static func dismantleUIViewController(_: AVPlayerViewController, coordinator: Coordinator) {
+        static func dismantleUIViewController(_ controller: AVPlayerViewController, coordinator: Coordinator) {
+            if coordinator.hasNotifiedEngineMount {
+                coordinator.engineHosting?.playerViewControllerWillDismantle(controller)
+                coordinator.hasNotifiedEngineMount = false
+            }
             // Symmetric with the install in `syncReconnectingBanner`: the
             // host leaves the player controller's containment before the
             // controller itself goes
@@ -335,6 +358,15 @@
                 coordinator.reconnectingBannerHost = host
                 coordinator.reconnectingBannerOutage = outage
             #endif
+        }
+
+        /// Hand the controller to the engine once, on the first pass where
+        /// `contentOverlayView` exists: AVKit creates it with its own view,
+        /// so `make` can run before it does (see `syncReconnectingBanner`).
+        private func notifyEngineMountIfReady(for controller: AVPlayerViewController, coordinator: Coordinator) {
+            guard !coordinator.hasNotifiedEngineMount, controller.contentOverlayView != nil else { return }
+            coordinator.hasNotifiedEngineMount = true
+            engineHosting.playerViewControllerDidMount(controller)
         }
 
         /// The hosted tree is detached from the app's, so the theme is
@@ -531,7 +563,13 @@
                 // all. The app must never programmatically clear the legible
                 // selection: that latches AVKit's subtitle display off
                 // process-wide (#91).
-                let burnInStreams = subtitleStreams.filter { !$0.isTextSubtitleStream }
+                //
+                // An engine that draws subtitles itself takes text tracks in
+                // place too, so its menu lists every offered stream (the
+                // session layer has already left out what AVKit's menu lists)
+                // and never reloads.
+                let drawnInApp = drawsSubtitlesInApp
+                let burnInStreams = drawnInApp ? subtitleStreams : subtitleStreams.filter { !$0.isTextSubtitleStream }
                 if !burnInStreams.isEmpty {
                     var actions: [UIAction] = [
                         UIAction(
@@ -543,7 +581,9 @@
                     ]
                     actions += burnInStreams.map { stream in
                         UIAction(
-                            title: BurnInSubtitleLabel.title(for: stream),
+                            title: drawnInApp
+                                ? stream.displayTitle ?? BurnInSubtitleLabel.title(for: stream)
+                                : BurnInSubtitleLabel.title(for: stream),
                             state: stream.index == selectedSubtitleIndex ? .on : .off,
                         ) { _ in
                             onSelectSubtitle(stream.index)
@@ -551,11 +591,15 @@
                     }
                     // Distinct name and glyph from AVKit's own picker (which
                     // renders the captions bubble): at transport-bar size the
-                    // two menus are told apart by icon alone
+                    // two menus are told apart by icon alone. An engine-drawn
+                    // menu takes the captions bubble because it is the
+                    // subtitle menu for the tracks AVKit's does not list.
                     menus.append(UIMenu(
-                        title: "Image Subtitles",
-                        subtitle: "Requires reload",
-                        image: UIImage(systemName: "text.below.photo"),
+                        title: drawnInApp
+                            ? String(localized: "player.menu.subtitles", bundle: #bundle, comment: "Transport-bar menu for picking a subtitle track that the playback engine draws itself, shown in place of the image-subtitle menu.")
+                            : "Image Subtitles",
+                        subtitle: drawnInApp ? nil : "Requires reload",
+                        image: UIImage(systemName: drawnInApp ? "captions.bubble" : "text.below.photo"),
                         options: [.singleSelection],
                         children: actions,
                     ))
@@ -580,10 +624,10 @@
         /// The image-subtitle counterpart to `audioDataSignature`.
         private var imageSubtitleDataSignature: String {
             let burnIn = subtitleStreams
-                .filter { !$0.isTextSubtitleStream }
+                .filter { drawsSubtitlesInApp || !$0.isTextSubtitleStream }
                 .map { "\($0.index):\(BurnInSubtitleLabel.title(for: $0))" }
                 .joined(separator: ",")
-            return "\(burnIn)/\(selectedSubtitleIndex.map(String.init) ?? "-")"
+            return "\(drawsSubtitlesInApp)/\(burnIn)/\(selectedSubtitleIndex.map(String.init) ?? "-")"
         }
 
         #if os(tvOS)

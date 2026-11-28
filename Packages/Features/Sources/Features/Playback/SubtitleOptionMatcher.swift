@@ -4,27 +4,27 @@ import JellyfinKit
 /// A legible media-selection option distilled to the values needed to
 /// correlate it with a Jellyfin subtitle stream, keeping the matching
 /// logic free of AVFoundation types so it stays unit-testable.
-struct LegibleOption: Equatable {
+public struct LegibleOption: Equatable, Sendable {
     /// Position within the AVMediaSelectionGroup's options
-    let position: Int
+    public let position: Int
 
     /// AVFoundation's *formulated* label. Per its documentation it "takes
     /// into account this option's common metadata, media characteristics,
     /// and locale properties" — device-verified to come back as plain
     /// "English" for both of two English tracks whose playlist NAMEs were
     /// distinct, so it cannot identify a track on its own.
-    let displayName: String
+    public let displayName: String
 
     /// The playlist's own `NAME`, read from the option's common metadata
     /// rather than its formulated display name. Jellyfin sets NAME to the
     /// stream's DisplayTitle, so when this survives it identifies the track
     /// exactly. Nil when the option carries no title metadata.
-    let title: String?
+    public let title: String?
 
     /// BCP-47 or ISO-639 language tag, if the option declares one
-    let languageTag: String?
+    public let languageTag: String?
 
-    init(position: Int, displayName: String, title: String? = nil, languageTag: String?) {
+    public init(position: Int, displayName: String, title: String? = nil, languageTag: String?) {
         self.position = position
         self.displayName = displayName
         self.title = title

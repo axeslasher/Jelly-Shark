@@ -1681,6 +1681,18 @@
         }
       }
     },
+    "player.menu.subtitles": {
+      "comment": "Transport-bar menu for picking a subtitle track that the playback engine draws itself, shown in place of the image-subtitle menu.",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subtitles"
+          }
+        }
+      }
+    },
     "player.selectVersion": {
       "comment": "Title of the prompt asking which version of a movie to play, such as 4K or 1080p.",
       "extractionState": "manual",
